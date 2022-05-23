@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.ui.plugins;
 import org.osgi.framework.BundleContext;
 
 import edu.cuny.citytech.refactoring.common.ui.RefactoringPlugin;
+import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 
 public class HybridizeFunctionRefactoringPlugin extends RefactoringPlugin {
 
@@ -14,8 +15,7 @@ public class HybridizeFunctionRefactoringPlugin extends RefactoringPlugin {
 
 	@Override
 	protected String getRefactoringId() {
-		// TODO Auto-generated method stub
-		return null;
+		return HybridizeFunctionRefactoringDescriptor.REFACTORING_ID;
 	}
 
 	@Override
