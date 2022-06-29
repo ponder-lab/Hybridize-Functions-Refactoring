@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+  <extension point="org.eclipse.ui.commands">
+    <command categoryId="org.python.pydev.ui.category.refactoring" defaultHandler="edu.cuny.hunter.hybridize.ui.handlers.HybridizeFunctionHandler" description="%HybridizeFunctionDescription" id="edu.cuny.hunter.hybridize.function.command" name="%HybridizeFunctionLabel" />
+  </extension>
+  <extension point="org.eclipse.core.expressions.definitions">
+    <definition id="edu.cuny.hunter.hybridize.ui.definitions.actionSet">
+      <with variable="selection">
+        <iterate ifEmpty="false" operator="or">
+          <instanceof
+                value="org.eclipse.core.resources.IProject"/>
+        </iterate>
+      </with>
+    </definition>
+  </extension>
+  <extension point="org.eclipse.ui.handlers">
+    <handler class="edu.cuny.hunter.hybridize.ui.handlers.HybridizeFunctionHandler" commandId="edu.cuny.hunter.hybridize.function.command">
+      <activeWhen>
+        <reference definitionId="edu.cuny.hunter.hybridize.ui.definitions.actionSet" />
+      </activeWhen>
+    </handler>
+  </extension>
+  <extension point="org.eclipse.ui.menus">
+    <menuContribution locationURI="menu:org.python.pydev.refactoring.refactoringMenu?after=additions">
+      <!-- [rk] Doesn't seem to be working -->
+      <command commandId="edu.cuny.hunter.hybridize.function.command" id="edu.cuny.hunter.hybridize.function.menus.command" label="%HybridizeFunctionLabel" mnemonic="%command.mnemonic">
+        <visibleWhen>
+          <reference definitionId="edu.cuny.hunter.hybridize.ui.definitions.actionSet" />
+        </visibleWhen>
+      </command>
+    </menuContribution>
+    <menuContribution locationURI="popup:org.python.pydev.refactoring.refactoringMenu?after=additions">
+      <command commandId="edu.cuny.hunter.hybridize.function.command" label="%HybridizeFunctionLabel" style="push">
+        <visibleWhen>
+          <reference definitionId="edu.cuny.hunter.hybridize.ui.definitions.actionSet" />
+        </visibleWhen>
+      </command>
+    </menuContribution>
+  </extension>
+</plugin>
