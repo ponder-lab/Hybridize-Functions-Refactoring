@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?eclipse version="3.4"?>
 <plugin>
+   <extension
+         point="org.eclipse.ltk.core.refactoring.refactoringContributions">
+      <contribution
+            class="edu.cuny.hunter.hybridize.core.contributions.HybridizeFunctionRefactoringContribution"
+            id="edu.cuny.hunter.hybridize.function.contribution">
+      </contribution>
+   </extension>
 
 </plugin>

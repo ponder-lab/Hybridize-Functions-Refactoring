@@ -4,10 +4,16 @@ Bundle-Name: %Bundle-Name
 Bundle-SymbolicName: edu.cuny.hunter.hybridize.core;singleton:=true
 Bundle-Version: 1.0.0.qualifier
 Bundle-Vendor: %Bundle-Vendor
+Bundle-ClassPath: .
 Automatic-Module-Name: edu.cuny.hunter.hybridize.core
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Require-Bundle: org.eclipse.ltk.core.refactoring,
  edu.cuny.citytech.refactoring.common.core,
- org.eclipse.osgi
-Import-Package: org.eclipse.core.runtime;version="3.7.0"
-Export-Package: edu.cuny.hunter.hybridize.core.descriptors
+ org.eclipse.equinox.registry,
+ org.eclipse.osgi,
+ org.python.pydev.parser
+Import-Package: org.eclipse.core.runtime;version="3.7.0",
+ org.python.pydev.parser.jython.ast,
+ org.python.pydev.shared_core.model
+Export-Package: edu.cuny.hunter.hybridize.core.analysis,
+ edu.cuny.hunter.hybridize.core.descriptors
