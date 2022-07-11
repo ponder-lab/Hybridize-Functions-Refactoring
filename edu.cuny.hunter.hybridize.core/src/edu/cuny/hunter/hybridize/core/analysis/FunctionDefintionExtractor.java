@@ -8,13 +8,12 @@ import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 
 /**
- * Extracts function definitions from a given AST node. 
+ * Extracts function definitions from a given AST node.
  * 
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
- *
  */
 public class FunctionDefintionExtractor extends VisitorBase {
-	
+
 	private Set<FunctionDef> definitions = new HashSet<>();
 
 	@Override
@@ -25,7 +24,6 @@ public class FunctionDefintionExtractor extends VisitorBase {
 
 	@Override
 	protected Object unhandled_node(SimpleNode node) throws Exception {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
@@ -37,5 +35,4 @@ public class FunctionDefintionExtractor extends VisitorBase {
 	public Set<FunctionDef> getDefinitions() {
 		return definitions;
 	}
-
 }

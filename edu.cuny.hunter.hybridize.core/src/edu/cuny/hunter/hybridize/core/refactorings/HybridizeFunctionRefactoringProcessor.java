@@ -10,11 +10,21 @@ import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
+import org.python.pydev.parser.jython.ast.FunctionDef;
 
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
+
+	private FunctionDef[] functions = new FunctionDef[0];
+
+	public HybridizeFunctionRefactoringProcessor() {
+	}
+
+	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions) {
+		this.functions = functions;
+	}
 
 	@Override
 	public Object[] getElements() {
