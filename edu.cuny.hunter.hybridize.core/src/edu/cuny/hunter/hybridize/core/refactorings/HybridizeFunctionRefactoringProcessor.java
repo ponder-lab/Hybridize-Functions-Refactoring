@@ -8,16 +8,16 @@ import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
-import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 
+import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
-	private FunctionDef[] functions = new FunctionDef[0];
+	private FunctionDef[] functions;
 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
@@ -51,28 +51,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	@Override
 	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
 			throws CoreException, OperationCanceledException {
+		RefactoringStatus status = super.checkInitialConditions(pm);
 		// TODO Auto-generated method stub
-		// TODO: Going to have to turn the common plug-in into a hierarchy.
-		// From streams:
-//		try {
-//			this.clearCaches();
-//			this.getExcludedTimeCollector().clear();
-//
-//			// if (this.getSourceMethods().isEmpty())
-//			// return
-//			// RefactoringStatus.createFatalErrorStatus(Messages.StreamsNotSpecified);
-//			// else {
-//			RefactoringStatus status = new RefactoringStatus();
-//			pm.beginTask(Messages.CheckingPreconditions, 1);
-//			return status;
-//			// }
-//		} catch (Exception e) {
-//			JavaPlugin.log(e);
-//			throw e;
-//		} finally {
-//			pm.done();
-//		}
-		return new RefactoringStatus();
+		return status;
 	}
 
 	@Override
@@ -93,5 +74,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			throws CoreException {
 		// TODO Auto-generated method stub
 		return new RefactoringParticipant[0];
+	}
+
+	@Override
+	protected void clearCaches() {
+		// NOTE: Nothing right now.
 	}
 }

@@ -128,10 +128,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						// NOTE: Do not re-parse the elements if it all possible.
 					}
 				}
-
 		}
 
 		return null;
 	}
-
 }
