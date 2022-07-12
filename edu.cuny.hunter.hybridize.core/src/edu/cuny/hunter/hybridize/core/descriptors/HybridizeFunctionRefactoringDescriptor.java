@@ -22,11 +22,10 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 		super(refactoringID, project, description, comment, arguments);
 	}
 
-//	public HybridizeFunctionRefactoringDescriptor(String project) {
-//		super(REFACTORING_ID, project, "Hybridize a TensforFlow client function.",
-//				"Improves efficiency in imperatives style TensorFlow client code.",
-//				RefactoringDescriptor.STRUCTURAL_CHANGE | RefactoringDescriptor.MULTI_CHANGE);
-//	}
+	public HybridizeFunctionRefactoringDescriptor(String project, @SuppressWarnings("rawtypes") Map arguments) {
+		super(REFACTORING_ID, project, "Hybridize a TensforFlow client function.",
+				"Improves efficiency in imperatives style TensorFlow client code.", arguments);
+	}
 
 	@Override
 	protected Refactoring createRefactoring() {
