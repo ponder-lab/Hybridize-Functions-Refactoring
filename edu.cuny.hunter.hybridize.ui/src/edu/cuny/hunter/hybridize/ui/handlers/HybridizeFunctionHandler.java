@@ -4,7 +4,6 @@ import static org.eclipse.ui.handlers.HandlerUtil.getActiveShellChecked;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -38,7 +37,7 @@ import edu.cuny.hunter.hybridize.ui.wizards.HybridizeFunctionRefactoringWizard;
 
 public class HybridizeFunctionHandler extends AbstractHandler {
 
-	// FIXME: Use our own logger?
+	// FIXME: Use our own logger.
 	private static final ILog LOG = PydevPlugin.getDefault().getLog();
 
 	/**
@@ -85,8 +84,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						Shell shell = getActiveShellChecked(event);
 
 						HybridizeFunctionRefactoringWizard.startRefactoring(
-								availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell,
-								Optional.empty());
+								availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
 
 						// ---------------------------------------------------------------------------------
 

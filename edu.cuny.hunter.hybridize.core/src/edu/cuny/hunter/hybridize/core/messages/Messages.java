@@ -22,6 +22,7 @@ public class Messages extends NLS {
 	public static String PreconditionFailed;
 	public static String RefactoringNotPossible;
 	public static String FunctionsNotSpecified;
+	public static String CheckingFunctions;
 
 	static {
 		// initialize resource bundle

@@ -1,8 +1,15 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
+import static org.python.pydev.core.log.Log.logInfo;
+
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
@@ -15,15 +22,23 @@ import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
+// FIXME: Use our own logger.
+
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
-	private FunctionDef[] functions;
+	private Set<FunctionDef> functions = new LinkedHashSet<>();
+
+	// FIXME: Use our own logger.
+
+	protected Set<FunctionDef> getFunctions() {
+		return functions;
+	}
 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
 	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions) {
-		this.functions = functions;
+		Collections.addAll(this.getFunctions(), functions);
 	}
 
 	@Override
@@ -51,16 +66,54 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	@Override
 	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
 			throws CoreException, OperationCanceledException {
-		RefactoringStatus status = super.checkInitialConditions(pm);
-		// TODO Auto-generated method stub
-		return status;
+		return super.checkInitialConditions(pm);
 	}
 
 	@Override
 	public RefactoringStatus checkFinalConditions(IProgressMonitor pm, CheckConditionsContext context)
 			throws CoreException, OperationCanceledException {
-		// TODO Auto-generated method stub
-		return new RefactoringStatus();
+		RefactoringStatus status = new RefactoringStatus();
+		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100); // TODO: Adjust amount of
+																							// work later.
+
+		status.merge(checkFunctions(progress.split(1)));
+
+		return status;
+	}
+
+	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
+		RefactoringStatus status = new RefactoringStatus();
+
+		Set<FunctionDef> functions = this.getFunctions();
+		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
+		logInfo("Checking " + functions.size() + " functions.");
+
+		for (FunctionDef func : functions) {
+			logInfo("Checking function: " + func + ".");
+
+			// TODO: Can we create a Function class and record all the info?
+			// TODO: Whether a function has a tensor argument should probably be an initial
+			// condition: functions w/o such arguments should not be candidates.
+			// TODO: It might be time to now go back to the paper to see how we can
+			// formulate the precoditions. Have a look at the stream refactoring paper.
+
+			status.merge(checkParameters(func));
+			status.merge(checkDecorators(func));
+		}
+
+		return status;
+	}
+
+	private RefactoringStatus checkParameters(FunctionDef func) {
+		RefactoringStatus status = new RefactoringStatus();
+		// TODO: Does the function have a tensor parameter?
+		return status;
+	}
+
+	private RefactoringStatus checkDecorators(FunctionDef func) {
+		RefactoringStatus status = new RefactoringStatus();
+		// TODO: Is the function already decorated with tf.function?
+		return status;
 	}
 
 	@Override
