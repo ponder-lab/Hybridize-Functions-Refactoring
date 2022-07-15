@@ -12,7 +12,7 @@ import org.python.pydev.parser.jython.ast.VisitorBase;
  * 
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
-public class FunctionDefintionExtractor extends VisitorBase {
+public class FunctionExtractor extends VisitorBase {
 
 	private Set<FunctionDef> definitions = new HashSet<>();
 

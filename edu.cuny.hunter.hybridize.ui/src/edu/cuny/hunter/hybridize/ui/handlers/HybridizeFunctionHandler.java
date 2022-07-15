@@ -31,7 +31,7 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 import org.python.pydev.plugin.PydevPlugin;
 
-import edu.cuny.hunter.hybridize.core.analysis.FunctionDefintionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 import edu.cuny.hunter.hybridize.ui.wizards.HybridizeFunctionRefactoringWizard;
 
@@ -65,7 +65,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						SimpleNode simpleNode = ast.node;
 
 						// extract function definitions.
-						FunctionDefintionExtractor functionExtractor = new FunctionDefintionExtractor();
+						FunctionExtractor functionExtractor = new FunctionExtractor();
 						try {
 							simpleNode.accept(functionExtractor);
 						} catch (Exception e) {
