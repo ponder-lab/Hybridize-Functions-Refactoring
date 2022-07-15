@@ -2,10 +2,10 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static org.python.pydev.core.log.Log.logInfo;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
-
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
@@ -19,6 +19,7 @@ import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
+import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
@@ -26,11 +27,11 @@ import edu.cuny.hunter.hybridize.core.messages.Messages;
 
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
-	private Set<FunctionDef> functions = new LinkedHashSet<>();
+	private Set<Function> functions = new LinkedHashSet<>();
 
 	// FIXME: Use our own logger.
 
-	protected Set<FunctionDef> getFunctions() {
+	protected Set<Function> getFunctions() {
 		return functions;
 	}
 
@@ -38,7 +39,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions) {
-		Collections.addAll(this.getFunctions(), functions);
+		// Convert the FunctionDefs to Functions.
+		Function[] functionArray = Arrays.stream(functions).map(Function::new).toArray(Function[]::new);
+
+		// Add all of the Functions to the Function set.
+		Collections.addAll(this.getFunctions(), functionArray);
 	}
 
 	@Override
@@ -84,18 +89,17 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
 		RefactoringStatus status = new RefactoringStatus();
 
-		Set<FunctionDef> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions();
 		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
 		logInfo("Checking " + functions.size() + " functions.");
 
-		for (FunctionDef func : functions) {
+		for (Function func : functions) {
 			logInfo("Checking function: " + func + ".");
 
-			// TODO: Can we create a Function class and record all the info?
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.
 			// TODO: It might be time to now go back to the paper to see how we can
-			// formulate the precoditions. Have a look at the stream refactoring paper.
+			// formulate the preconditions. Have a look at the stream refactoring paper.
 
 			status.merge(checkParameters(func));
 			status.merge(checkDecorators(func));
@@ -104,13 +108,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
-	private RefactoringStatus checkParameters(FunctionDef func) {
+	private RefactoringStatus checkParameters(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
 		// TODO: Does the function have a tensor parameter?
 		return status;
 	}
 
-	private RefactoringStatus checkDecorators(FunctionDef func) {
+	private RefactoringStatus checkDecorators(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
 		// TODO: Is the function already decorated with tf.function?
 		return status;

@@ -92,12 +92,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 							FunctionDef function = (FunctionDef) simpleNode;
 							System.out.println(function);
 
-							decoratorsType[] decs = function.decs;
-
-							if (decs != null)
-								for (decoratorsType dt : decs)
-									System.out.println(dt);
-
 							argumentsType args = function.args;
 							System.out.println(args);
 							exprType[] annotation = args.annotation;
