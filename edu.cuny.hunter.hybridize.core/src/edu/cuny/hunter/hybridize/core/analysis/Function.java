@@ -84,4 +84,8 @@ public class Function extends RefactorableProgramEntity {
 
 		return ret.toString();
 	}
+
+	public boolean isHybrid() {
+		return isHybrid;
+	}
 }
