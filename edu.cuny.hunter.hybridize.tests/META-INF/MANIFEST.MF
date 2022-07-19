@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: %Bundle-Name
+Bundle-SymbolicName: edu.cuny.hunter.hybridize.tests;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-ActivationPolicy: lazy
+Bundle-Vendor: %Bundle-Vendor
+Automatic-Module-Name: edu.cuny.hunter.hybridize.tests
+Bundle-RequiredExecutionEnvironment: JavaSE-11
+Require-Bundle: edu.cuny.citytech.refactoring.common.tests;bundle-version="3.0.0"
