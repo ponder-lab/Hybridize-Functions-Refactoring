@@ -31,7 +31,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	// FIXME: Use our own logger.
 
-	protected Set<Function> getFunctions() {
+	public Set<Function> getFunctions() {
 		return functions;
 	}
 

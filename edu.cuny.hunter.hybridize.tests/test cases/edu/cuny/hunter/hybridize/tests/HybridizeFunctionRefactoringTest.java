@@ -1,25 +1,49 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
+import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.Test;
-import org.python.pydev.navigator.elements.PythonNode;
+import org.python.pydev.core.IGrammarVersionProvider;
+import org.python.pydev.core.MisconfigurationException;
+import org.python.pydev.parser.PyParser;
+import org.python.pydev.parser.PyParser.ParserInfo;
+import org.python.pydev.parser.jython.ParseException;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.Token;
+import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
+import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
+import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
+@SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String REFACTORING_PATH = "HybridizeFunction/";
 
 	private static final String TEST_FILE_EXTENION = "py";
 
-	private static final ILog log = getLog(HybridizeFunctionRefactoringTest.class);
-	
+	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
+
 	@Override
 	protected String getRefactoringPath() {
 		return REFACTORING_PATH;
@@ -27,27 +51,85 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Runs a single analysis test.
+	 * @return 
 	 */
-	private void helper() throws IOException {
-		PythonNode pythonNode = createPythonNodeFromTestFile("A");
+	private Set<Function> getFunctions() throws Exception {
+		SimpleNode pythonNode = createPythonNodeFromTestFile("A");
+
+		// extract function definitions.
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+		pythonNode.accept(functionExtractor);
+		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+		
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(availableFunctions.toArray(FunctionDef[]::new));
+		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+		RefactoringStatus status = performRefactoringWithStatus(refactoring);
+		assertTrue(status.isOK());
+
+		return processor.getFunctions();
 	}
 
-	private PythonNode createPythonNodeFromTestFile(String fileName) throws IOException {
+	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
 		return createPythonNodeFromTestFile(fileName, true);
 	}
 
-	private PythonNode createPythonNodeFromTestFile(String fileName, boolean input) throws IOException {
+	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
+			throws IOException, MisconfigurationException {
 		String contents = input ? getFileContents(getInputTestFileName(fileName))
 				: getFileContents(getOutputTestFileName(fileName));
 
-		return createPythonNode(fileName + '.' + TEST_FILE_EXTENION, contents);
+		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
 	}
 
-	private PythonNode createPythonNode(String name, String contents) {
-//		this.log.info("Creating PythonNode for: " + name);
-//		this.log.info("Contents: " + contents);
-		// TODO: Look at bookmarks in PyDev.
-		return null;
+	private SimpleNode createPythonNode(String moduleName, String fileName, String contents)
+			throws MisconfigurationException {
+		this.LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
+		this.LOG.info("Contents: " + contents);
+
+		IDocument document = new Document(contents);
+
+		IGrammarVersionProvider provider = new IGrammarVersionProvider() {
+
+			@Override
+			public int getGrammarVersion() throws MisconfigurationException {
+				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
+			}
+
+			@Override
+			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
+				return null;
+			}
+		};
+
+		ParserInfo parserInfo = new ParserInfo(document, provider, moduleName, new File(fileName));
+
+		// Parsing.
+		ParseOutput parseOutput = PyParser.reparseDocument(parserInfo);
+
+		// Check for parsing errors.
+		Object err = parseOutput.error;
+		if (err != null) {
+			String s = "";
+			if (err instanceof ParseException) {
+				ParseException parseErr = (ParseException) err;
+				parseErr.printStackTrace();
+
+				Token token = parseErr.currentToken;
+				if (token != null) {
+					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:"
+							+ token.beginLine + "\ncol:" + token.beginColumn);
+				}
+			}
+
+			fail("Expected no error, received:\n" + err + "\n" + s);
+		}
+
+		// Check for AST failure.
+		assertNotNull("Failed to generate AST.", parseOutput.ast);
+
+		return (SimpleNode) parseOutput.ast;
 	}
 
 	/**
@@ -57,10 +139,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * argument.
 	 */
 	@Test
-	public void testIsHybrid() throws IOException {
-		log.info("Hi");
-		assertTrue(true);
-		this.helper();
+	public void testIsHybrid() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
 	}
 
 	@Override
@@ -106,7 +191,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Override
 	public void genericbefore() throws Exception {
-		if (fIsVerbose){
+		if (fIsVerbose) {
 			System.out.println("\n---------------------------------------------");
 			System.out.println("\nTest:" + getClass() + "." + getName());
 		}

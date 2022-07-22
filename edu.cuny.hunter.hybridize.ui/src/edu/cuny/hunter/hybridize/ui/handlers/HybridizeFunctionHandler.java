@@ -106,6 +106,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 								for (exprType argType : args2)
 									System.out.println(argType);
 						}
+
+						// ---------------------------------------------------------------------------------
 					} else if (obj instanceof PythonFolder) {
 						// Could be something like a "package."
 						System.out.println("Package?");
