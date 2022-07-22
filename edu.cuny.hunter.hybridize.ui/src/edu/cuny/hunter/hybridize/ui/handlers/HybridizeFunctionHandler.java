@@ -69,7 +69,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						try {
 							simpleNode.accept(functionExtractor);
 						} catch (Exception e) {
-							Log.log(e);
+							Log.log(e); // TODO: Use our own logger.
 							throw new ExecutionException("Failed to start refactoring.", e);
 						}
 

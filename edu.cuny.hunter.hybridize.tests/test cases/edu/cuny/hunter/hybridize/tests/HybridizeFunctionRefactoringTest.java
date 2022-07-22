@@ -1,8 +1,12 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+
+import org.eclipse.core.runtime.ILog;
+import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.junit.Test;
 import org.python.pydev.navigator.elements.PythonNode;
 
@@ -14,6 +18,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String TEST_FILE_EXTENION = "py";
 
+	private static final ILog log = getLog(HybridizeFunctionRefactoringTest.class);
+	
 	@Override
 	protected String getRefactoringPath() {
 		return REFACTORING_PATH;
@@ -34,10 +40,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String contents = input ? getFileContents(getInputTestFileName(fileName))
 				: getFileContents(getOutputTestFileName(fileName));
 
-		return createPythonNode(fileName + ".py", contents);
+		return createPythonNode(fileName + '.' + TEST_FILE_EXTENION, contents);
 	}
 
 	private PythonNode createPythonNode(String name, String contents) {
+//		this.log.info("Creating PythonNode for: " + name);
+//		this.log.info("Contents: " + contents);
 		// TODO: Look at bookmarks in PyDev.
 		return null;
 	}
@@ -50,7 +58,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid() throws IOException {
-		System.out.println("Hi");
+		log.info("Hi");
 		assertTrue(true);
 		this.helper();
 	}
@@ -94,5 +102,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected String getOutputTestFileName(String cuName, String subDirName) {
 		// TODO Auto-generated method stub
 		return super.getOutputTestFileName(cuName, subDirName);
+	}
+
+	@Override
+	public void genericbefore() throws Exception {
+		if (fIsVerbose){
+			System.out.println("\n---------------------------------------------");
+			System.out.println("\nTest:" + getClass() + "." + getName());
+		}
+		RefactoringCore.getUndoManager().flush();
+	}
+
+	@Override
+	public void genericafter() throws Exception {
 	}
 }
