@@ -9,6 +9,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.ILog;
@@ -154,10 +155,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
+		Set<String> functions_signatures = new HashSet<String>();
+		
+		functions_signatures.add("func()");
+		functions_signatures.add("func1()");
+		functions_signatures.add("func1.func2()");
+		functions_signatures.add("class1.func_class1()");
+		functions_signatures.add("class1.class2.func_class2()");
 		assertNotNull(functions);
-		Function function = functions.iterator().next();
-		assertNotNull(function); 
-		assertEquals("func()", function.getIdentifer());
+		for (Function func: functions) {
+			assertNotNull(func); 
+			assertTrue(functions_signatures.contains(func.getIdentifer()));
+		}
 	}
 
 	@Override
