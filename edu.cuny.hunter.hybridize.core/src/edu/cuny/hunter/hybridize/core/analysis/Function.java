@@ -74,17 +74,17 @@ public class Function extends RefactorableProgramEntity {
 	 * @see https://peps.python.org/pep-3155
 	 * @return This {@link Function}'s FQN.
 	 */
-	private String getIdentifer() {
+	public String getIdentifer() {
 		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
-		String identifier_parent="";
+		String identifier_parent = "";
 		StringBuilder ret = new StringBuilder();
 		SimpleNode parent_node = this.functionDef.parent;
-		
+
 		int count = 0;
-		
+
 		while(parent_node instanceof ClassDef || parent_node instanceof FunctionDef) {
 			identifier_parent = NodeUtils.getFullRepresentationString(parent_node);
-	        
+
 			if (count == 0) {
 				ret.append(identifier_parent);
 				ret.append(".");
@@ -96,7 +96,7 @@ public class Function extends RefactorableProgramEntity {
 
 			parent_node = parent_node.parent;
 		}
-		
+
 		ret.append(identifier);
 		ret.append('(');
 		ret.append(')');

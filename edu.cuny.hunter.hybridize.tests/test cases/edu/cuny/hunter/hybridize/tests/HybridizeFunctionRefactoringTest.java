@@ -147,6 +147,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
 	}
+	
+	/**
+	 * Test #6. This simply tests whether we have the correct fully qualified name. 
+	 */
+	@Test
+	public void testFQN() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		Function function = functions.iterator().next();
+		assertNotNull(function); 
+		assertEquals("func()", function.getIdentifer());
+	}
 
 	@Override
 	protected String getName() {
