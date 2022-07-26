@@ -2,9 +2,13 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
+import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.jython.SimpleNode;
+
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -71,15 +75,33 @@ public class Function extends RefactorableProgramEntity {
 	 * @return This {@link Function}'s FQN.
 	 */
 	private String getIdentifer() {
-		// FIXME: We need an FQN per Python language spec here. Perhaps PyDev already
-		// has a way to do this, maybe through a "FunctionAdapter."
-		NameTok nameTok = (NameTok) this.functionDef.name;
-		String functioName = nameTok.id;
-
-		StringBuilder ret = new StringBuilder(functioName);
+		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
+		String identifier_parent="";
+		StringBuilder ret = new StringBuilder();
+		SimpleNode parent_node = this.functionDef.parent;
+		
+		int count = 0;
+		
+		while(parent_node instanceof ClassDef || parent_node instanceof FunctionDef) {
+			
+			
+			identifier_parent = NodeUtils.getFullRepresentationString(parent_node);
+	        
+	        if (count == 0) {
+	        	ret.append(identifier_parent);
+	        	ret.append(".");
+	        }
+	        else {
+	        	ret.insert(0, ".");
+	        	ret.insert(0, identifier_parent);
+	        }
+        	count++;
+	        
+        	parent_node = parent_node.parent;
+		}
+		
+		ret.append(identifier);
 		ret.append('(');
-		// TODO: Need (fully-qualified?) parameter here as well. The params may need not
-		// have types. How does Python identify functions?
 		ret.append(')');
 
 		return ret.toString();
