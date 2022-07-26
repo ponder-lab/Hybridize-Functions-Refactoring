@@ -98,13 +98,15 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		ret.append(identifier);
-		ret.append('(');
-		ret.append(')');
 
 		return ret.toString();
 	}
 
 	public boolean isHybrid() {
 		return isHybrid;
+	}
+	
+	public FunctionDef getFunctionDef() {
+		return this.functionDef;
 	}
 }

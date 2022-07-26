@@ -9,8 +9,11 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
 import java.util.Set;
-import java.util.HashSet;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.stream.Collectors;
+import org.python.pydev.parser.visitors.NodeUtils;
+
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -155,18 +158,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		Set<String> functions_signatures = new HashSet<String>();
+		assertNotNull(functions);
 		assertEquals(5, functions.size());
 		
-		functions_signatures.add("func()");
-		functions_signatures.add("func1()");
-		functions_signatures.add("func1.func2()");
-		functions_signatures.add("class1.func_class1()");
-		functions_signatures.add("class1.class2.func_class2()");
-		assertNotNull(functions);
+		Map<String, String> functionsExpectedSignatures = new HashMap<String, String>();
+		
+		functionsExpectedSignatures.put("func", "func");
+		functionsExpectedSignatures.put("func1", "func1");
+		functionsExpectedSignatures.put("func2","func1.func2");
+		functionsExpectedSignatures.put("func_class1", "Class1.func_class1");
+		functionsExpectedSignatures.put("func_class2","Class1.Class2.func_class2");
+		
 		for (Function func: functions) {
+			String identifier = NodeUtils.getFullRepresentationString(func.getFunctionDef());
 			assertNotNull(func); 
-			assertTrue(functions_signatures.contains(func.getIdentifer()));
+			assertEquals(functionsExpectedSignatures.get(identifier), func.getIdentifer());
 		}
 	}
 
