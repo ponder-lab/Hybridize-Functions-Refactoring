@@ -156,6 +156,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		Set<String> functions_signatures = new HashSet<String>();
+		assertEquals(5, functions.size());
 		
 		functions_signatures.add("func()");
 		functions_signatures.add("func1()");
