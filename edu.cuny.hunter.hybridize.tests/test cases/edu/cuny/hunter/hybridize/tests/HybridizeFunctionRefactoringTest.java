@@ -170,8 +170,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		functionsExpectedSignatures.put("func_class2","Class1.Class2.func_class2");
 		
 		for (Function func: functions) {
-			String identifier = NodeUtils.getFullRepresentationString(func.getFunctionDef());
 			assertNotNull(func); 
+			String identifier = NodeUtils.getFullRepresentationString(func.getFunctionDef());
 			assertEquals(functionsExpectedSignatures.get(identifier), func.getIdentifer());
 		}
 	}
