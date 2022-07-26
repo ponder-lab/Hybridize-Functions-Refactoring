@@ -83,21 +83,18 @@ public class Function extends RefactorableProgramEntity {
 		int count = 0;
 		
 		while(parent_node instanceof ClassDef || parent_node instanceof FunctionDef) {
-			
-			
 			identifier_parent = NodeUtils.getFullRepresentationString(parent_node);
 	        
-	        if (count == 0) {
-	        	ret.append(identifier_parent);
-	        	ret.append(".");
-	        }
-	        else {
-	        	ret.insert(0, ".");
-	        	ret.insert(0, identifier_parent);
-	        }
-        	count++;
-	        
-        	parent_node = parent_node.parent;
+			if (count == 0) {
+				ret.append(identifier_parent);
+				ret.append(".");
+			} else {
+				ret.insert(0, ".");
+				ret.insert(0, identifier_parent);
+			}
+			count++;
+
+			parent_node = parent_node.parent;
 		}
 		
 		ret.append(identifier);
