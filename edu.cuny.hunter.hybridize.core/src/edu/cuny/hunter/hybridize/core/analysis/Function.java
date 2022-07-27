@@ -75,25 +75,24 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public String getIdentifer() {
 		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
-		String identifier_parent = "";
 		StringBuilder ret = new StringBuilder();
-		SimpleNode parent_node = this.functionDef.parent;
+		SimpleNode parentNode = this.functionDef.parent;
 
 		int count = 0;
 
-		while(parent_node instanceof ClassDef || parent_node instanceof FunctionDef) {
-			identifier_parent = NodeUtils.getFullRepresentationString(parent_node);
+		while(parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
 
 			if (count == 0) {
-				ret.append(identifier_parent);
+				ret.append(identifierParent);
 				ret.append(".");
 			} else {
 				ret.insert(0, ".");
-				ret.insert(0, identifier_parent);
+				ret.insert(0, identifierParent);
 			}
 			count++;
 
-			parent_node = parent_node.parent;
+			parentNode = parentNode.parent;
 		}
 
 		ret.append(identifier);
@@ -101,11 +100,21 @@ public class Function extends RefactorableProgramEntity {
 		return ret.toString();
 	}
 
+	/**
+	 * Accessor for private member variable isHybrid
+	 *
+	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
+	 */
 	public boolean isHybrid() {
 		return isHybrid;
 	}
 	
+	/**
+	 * Accessor for private member variable functionDef
+	 *
+	 * @return The {@link FunctionDef} representing this {@link Function}
+	 */
 	public FunctionDef getFunctionDef() {
-		return this.functionDef;
+		return functionDef;
 	}
 }
