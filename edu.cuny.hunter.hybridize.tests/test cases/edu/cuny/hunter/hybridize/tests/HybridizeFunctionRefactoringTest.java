@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.python.pydev.parser.visitors.NodeUtils;
 
-
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.Document;
