@@ -9,7 +9,6 @@ import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.jython.SimpleNode;
 
-
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
 /**
