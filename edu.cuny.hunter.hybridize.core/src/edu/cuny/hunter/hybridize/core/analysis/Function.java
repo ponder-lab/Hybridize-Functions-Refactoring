@@ -2,9 +2,12 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
+import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.jython.SimpleNode;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -70,22 +73,48 @@ public class Function extends RefactorableProgramEntity {
 	 * @see https://peps.python.org/pep-3155
 	 * @return This {@link Function}'s FQN.
 	 */
-	private String getIdentifer() {
-		// FIXME: We need an FQN per Python language spec here. Perhaps PyDev already
-		// has a way to do this, maybe through a "FunctionAdapter."
-		NameTok nameTok = (NameTok) this.functionDef.name;
-		String functioName = nameTok.id;
+	public String getIdentifer() {
+		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
+		StringBuilder ret = new StringBuilder();
+		SimpleNode parentNode = this.functionDef.parent;
 
-		StringBuilder ret = new StringBuilder(functioName);
-		ret.append('(');
-		// TODO: Need (fully-qualified?) parameter here as well. The params may need not
-		// have types. How does Python identify functions?
-		ret.append(')');
+		int count = 0;
+
+		while(parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
+
+			if (count == 0) {
+				ret.append(identifierParent);
+				ret.append(".");
+			} else {
+				ret.insert(0, ".");
+				ret.insert(0, identifierParent);
+			}
+			count++;
+
+			parentNode = parentNode.parent;
+		}
+
+		ret.append(identifier);
 
 		return ret.toString();
 	}
 
+	/**
+	 * Accessor for private member variable isHybrid
+	 *
+	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
+	 */
 	public boolean isHybrid() {
 		return isHybrid;
+	}
+	
+	/**
+	 * Accessor for private member variable functionDef
+	 *
+	 * @return The {@link FunctionDef} representing this {@link Function}
+	 */
+	public FunctionDef getFunctionDef() {
+		return functionDef;
 	}
 }

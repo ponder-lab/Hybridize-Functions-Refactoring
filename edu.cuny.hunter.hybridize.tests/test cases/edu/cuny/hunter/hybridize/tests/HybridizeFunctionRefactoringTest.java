@@ -9,7 +9,10 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.stream.Collectors;
+import org.python.pydev.parser.visitors.NodeUtils;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -146,6 +149,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
+	}
+	
+	/**
+	 * Test #6. This simply tests whether we have the correct fully qualified name. 
+	 */
+	@Test
+	public void testFQN() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(5, functions.size());
+		
+		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<String, String>();
+		
+		funcSimpleNameToExpectedSignature.put("func", "func");
+		funcSimpleNameToExpectedSignature.put("func1", "func1");
+		funcSimpleNameToExpectedSignature.put("func2","func1.func2");
+		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
+		funcSimpleNameToExpectedSignature.put("func_class2","Class1.Class2.func_class2");
+		
+		for (Function func: functions) {
+			assertNotNull(func); 
+			String actualFunctionDefFullRepresentationString = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
+		}
 	}
 
 	@Override
