@@ -1,14 +1,11 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import org.python.pydev.parser.jython.ast.Attribute;
-import org.python.pydev.parser.jython.ast.Call;
-import org.python.pydev.parser.jython.ast.Expr;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
-import org.python.pydev.parser.jython.ast.stmtType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.jython.SimpleNode;
 
@@ -44,14 +41,13 @@ public class Function extends RefactorableProgramEntity {
 		// "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
-		
 		decoratorsType[] decoratorArray = functionDef.decs;
-		
-		//If tf.function is being used as a decorator
+
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
 				//If it is not an attribute then we cannot access it this way, therefore we need the if statement
 				if(decorator.func instanceof Attribute) {
+					System.out.println(decorator);
 					Attribute decoratorFunction = (Attribute) decorator.func;
 					System.out.println(decoratorFunction);
 					Name decoratorName = (Name) decoratorFunction.value;
@@ -66,26 +62,6 @@ public class Function extends RefactorableProgramEntity {
 					}
 				}
 			}
-		//If there was not a tf.function decorator, let's look at the body to see if the are calling tf.function
-		if(this.isHybrid == false) {
-			stmtType[] funcBody = functionDef.body;
-			for (stmtType stmt : funcBody) {
-				if(stmt instanceof Expr) {
-					Expr expr_stmt = (Expr) stmt;
-					Call callFunction = (Call) expr_stmt.value;
-					Attribute callBodyFunction = (Attribute) callFunction.func;
-					Name callFunctionName = (Name) callBodyFunction.value;
-					if (callFunctionName.id.equals("tf")) {
-						// We have a viable prefix. Get the attribute.
-						NameTok callAttribute = (NameTok) callBodyFunction.attr;
-						if (callAttribute.id.equals("function")) {
-							// Found "tf.function."
-							this.isHybrid = true;
-						}
-					}
-				}
-			}
-		}
 	}
 
 	@Override
