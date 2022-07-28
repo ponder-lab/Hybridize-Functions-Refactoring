@@ -41,22 +41,24 @@ public class Function extends RefactorableProgramEntity {
 		// "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
-
 		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
-				System.out.println(decorator);
-				Attribute decoratorFunction = (Attribute) decorator.func;
-				System.out.println(decoratorFunction);
-				Name decoratorName = (Name) decoratorFunction.value;
-				System.out.println(decoratorName);
-				if (decoratorName.id.equals("tf")) {
-					// We have a viable prefix. Get the attribute.
-					NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-					if (decoratorAttribute.id.equals("function")) {
-						// Found "tf.function."
-						this.isHybrid = true;
+				//If it is not an attribute then we cannot access it this way, therefore we need the if statement
+				if(decorator.func instanceof Attribute) {
+					System.out.println(decorator);
+					Attribute decoratorFunction = (Attribute) decorator.func;
+					System.out.println(decoratorFunction);
+					Name decoratorName = (Name) decoratorFunction.value;
+					System.out.println(decoratorName);
+					if (decoratorName.id.equals("tf")) {
+						// We have a viable prefix. Get the attribute.
+						NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
+						if (decoratorAttribute.id.equals("function")) {
+							// Found "tf.function."
+							this.isHybrid = true;
+						}
 					}
 				}
 			}
