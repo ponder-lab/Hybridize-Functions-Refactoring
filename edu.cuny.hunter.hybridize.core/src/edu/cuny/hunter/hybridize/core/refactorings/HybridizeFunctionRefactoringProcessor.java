@@ -94,7 +94,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		logInfo("Checking " + functions.size() + " functions.");
 
 		for (Function func : functions) {
-			logInfo("Checking function: " + func );
+			logInfo("Checking function: " + func + ".");
 
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.
