@@ -55,46 +55,67 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 					if (obj instanceof PythonProjectSourceFolder) {
 						System.out.println("Python Project Source Folder");
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
-						System.out.println(folder);
 						Map<IResource, IWrappedResource> children = folder.children;
-						System.out.println(children);
-						// TODO: Drill down and extract function definitions.
+						for (Map.Entry<IResource, IWrappedResource> child: children.entrySet()) {
+							if(child.getValue() instanceof PythonFile) {
+								PythonModelProvider provider = new PythonModelProvider();
+								Object childValue = child.getValue();
+								
+								Object[] childrenFile = provider.getChildren(childValue);
+								
+								for(Object childFile: childrenFile) {
+									if(childFile instanceof PythonNode) {
+										PythonNode pythonNode = (PythonNode) childFile;
+										ParsedItem entry = pythonNode.entry;
+										ASTEntryWithChildren ast = entry.getAstThis();
+										SimpleNode simpleNode = ast.node;
+										
+										//children can be imports, etc. We are only interested in the classes and methods
+										if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
+											extractFunctionDefinitions(simpleNode, event);
+										}
+									}
+								}
+							}
+							//Not necessary because the children given goes to the files for the folder already, so it would be duplicate
+							if(child.getValue() instanceof PythonFolder) {
+								System.out.println("Folder");
+							}
+						}
 					} else if (obj instanceof PythonNode) {
 						PythonNode pythonNode = (PythonNode) obj;
 						ParsedItem entry = pythonNode.entry;
 						ASTEntryWithChildren ast = entry.getAstThis();
 						SimpleNode simpleNode = ast.node;
-
-						// extract function definitions.
-						FunctionExtractor functionExtractor = new FunctionExtractor();
-						try {
-							simpleNode.accept(functionExtractor);
-						} catch (Exception e) {
-							Log.log(e); // TODO: Use our own logger.
-							throw new ExecutionException("Failed to start refactoring.", e);
-						}
-
-						Set<FunctionDef> functions = functionExtractor.getDefinitions();
-						LOG.info("Found " + functions.size() + " function definitions.");
-
-						Set<FunctionDef> availableFunctions = functions.stream()
-								.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
-								.collect(Collectors.toSet());
-						LOG.info("Found " + availableFunctions.size() + " available functions.");
-
-						Shell shell = getActiveShellChecked(event);
-
-						HybridizeFunctionRefactoringWizard.startRefactoring(
-								availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+						
+						extractFunctionDefinitions(simpleNode, event);
 
 					} else if (obj instanceof PythonFolder) {
-						// Could be something like a "package."
-						System.out.println("Package?");
 						PythonFolder folder = (PythonFolder) obj;
 						System.out.println(folder);
-						// TODO: Drill down here? Doesn't seem to be any constituent elements except for
-						// going up to the parent.
-					} else if (obj instanceof PythonFile) {						
+						PythonModelProvider provider = new PythonModelProvider();
+						
+						Object[] children = provider.getChildren(obj);
+						
+						for(Object child: children) {
+							if(child instanceof PythonFile) {
+								Object[] childrenFile = provider.getChildren(child);
+								for(Object childFile: childrenFile) {
+									if(childFile instanceof PythonNode) {
+										PythonNode pythonNode = (PythonNode) childFile;
+										ParsedItem entry = pythonNode.entry;
+										ASTEntryWithChildren ast = entry.getAstThis();
+										SimpleNode simpleNode = ast.node;
+										
+										//children can be imports, etc. We are only interested in the classes and methods
+										if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
+											extractFunctionDefinitions(simpleNode, event);
+										}
+									}
+								}
+							}
+						}
+					} else if (obj instanceof PythonFile) {		
 						PythonModelProvider provider = new PythonModelProvider();
 						
 						Object[] children = provider.getChildren(obj);
@@ -105,35 +126,46 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 								ParsedItem entry = pythonNode.entry;
 								ASTEntryWithChildren ast = entry.getAstThis();
 								SimpleNode simpleNode = ast.node;
-
+								
+								//children can be imports, etc. We are only interested in the classes and methods
 								if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
-									FunctionExtractor functionExtractor = new FunctionExtractor();
-									try {
-										simpleNode.accept(functionExtractor);
-									} catch (Exception e) {
-										Log.log(e); // TODO: Use our own logger.
-										throw new ExecutionException("Failed to start refactoring.", e);
-									}
-	
-									Set<FunctionDef> functions = functionExtractor.getDefinitions();
-									LOG.info("Found " + functions.size() + " function definitions.");
-	
-									Set<FunctionDef> availableFunctions = functions.stream()
-											.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
-											.collect(Collectors.toSet());
-									LOG.info("Found " + availableFunctions.size() + " available functions.");
-	
-									Shell shell = getActiveShellChecked(event);
-	
-									HybridizeFunctionRefactoringWizard.startRefactoring(
-											availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+									extractFunctionDefinitions(simpleNode, event);
 								}
 							}
 						}
+						
 					}
 				}
 		}
 
 		return null;
 	}
+	
+	public void extractFunctionDefinitions(SimpleNode simpleNode, ExecutionEvent event) throws ExecutionException {
+
+		// extract function definitions.
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+		try {
+			simpleNode.accept(functionExtractor);
+		} catch (Exception e) {
+			Log.log(e); // TODO: Use our own logger.
+			throw new ExecutionException("Failed to start refactoring.", e);
+		}
+
+		Set<FunctionDef> functions = functionExtractor.getDefinitions();
+		LOG.info("Found " + functions.size() + " function definitions.");
+
+		Set<FunctionDef> availableFunctions = functions.stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
+				.collect(Collectors.toSet());
+		LOG.info("Found " + availableFunctions.size() + " available functions.");
+
+		Shell shell = getActiveShellChecked(event);
+
+		HybridizeFunctionRefactoringWizard.startRefactoring(
+				availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+		
+	}
+	
+	
 }
