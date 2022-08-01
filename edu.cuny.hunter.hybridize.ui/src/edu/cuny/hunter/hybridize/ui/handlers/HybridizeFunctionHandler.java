@@ -24,13 +24,13 @@ import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.navigator.elements.PythonProjectSourceFolder;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.argumentsType;
-import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
+import org.python.pydev.navigator.PythonModelProvider;
 import org.python.pydev.plugin.PydevPlugin;
-
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 import edu.cuny.hunter.hybridize.ui.wizards.HybridizeFunctionRefactoringWizard;
@@ -53,6 +53,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			if (list != null)
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
+						System.out.println("Python Project Source Folder");
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
 						System.out.println(folder);
 						Map<IResource, IWrappedResource> children = folder.children;
@@ -86,28 +87,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						HybridizeFunctionRefactoringWizard.startRefactoring(
 								availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
 
-						// ---------------------------------------------------------------------------------
-
-						if (simpleNode instanceof FunctionDef) {
-							FunctionDef function = (FunctionDef) simpleNode;
-							System.out.println(function);
-
-							argumentsType args = function.args;
-							System.out.println(args);
-							exprType[] annotation = args.annotation;
-
-							for (exprType annot : annotation)
-								if (annot != null)
-									System.out.println(annot);
-
-							exprType[] args2 = args.args;
-
-							if (args2 != null)
-								for (exprType argType : args2)
-									System.out.println(argType);
-						}
-
-						// ---------------------------------------------------------------------------------
 					} else if (obj instanceof PythonFolder) {
 						// Could be something like a "package."
 						System.out.println("Package?");
@@ -115,11 +94,42 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						System.out.println(folder);
 						// TODO: Drill down here? Doesn't seem to be any constituent elements except for
 						// going up to the parent.
-					} else if (obj instanceof PythonFile) {
-						PythonFile file = (PythonFile) obj;
-						System.out.println(file);
-						// TODO: Drill down and extract function definitions.
-						// NOTE: Do not re-parse the elements if it all possible.
+					} else if (obj instanceof PythonFile) {						
+						PythonModelProvider provider = new PythonModelProvider();
+						
+						Object[] children = provider.getChildren(obj);
+						
+						for(Object child: children) {
+							if(child instanceof PythonNode) {
+								PythonNode pythonNode = (PythonNode) child;
+								ParsedItem entry = pythonNode.entry;
+								ASTEntryWithChildren ast = entry.getAstThis();
+								SimpleNode simpleNode = ast.node;
+
+								if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
+									FunctionExtractor functionExtractor = new FunctionExtractor();
+									try {
+										simpleNode.accept(functionExtractor);
+									} catch (Exception e) {
+										Log.log(e); // TODO: Use our own logger.
+										throw new ExecutionException("Failed to start refactoring.", e);
+									}
+	
+									Set<FunctionDef> functions = functionExtractor.getDefinitions();
+									LOG.info("Found " + functions.size() + " function definitions.");
+	
+									Set<FunctionDef> availableFunctions = functions.stream()
+											.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
+											.collect(Collectors.toSet());
+									LOG.info("Found " + availableFunctions.size() + " available functions.");
+	
+									Shell shell = getActiveShellChecked(event);
+	
+									HybridizeFunctionRefactoringWizard.startRefactoring(
+											availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+								}
+							}
+						}
 					}
 				}
 		}
