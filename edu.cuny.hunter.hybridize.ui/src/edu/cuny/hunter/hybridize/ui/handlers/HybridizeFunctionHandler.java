@@ -53,87 +53,15 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			if (list != null)
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
-						System.out.println("Python Project Source Folder");
-						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
-						Map<IResource, IWrappedResource> children = folder.children;
-						for (Map.Entry<IResource, IWrappedResource> child: children.entrySet()) {
-							if(child.getValue() instanceof PythonFile) {
-								PythonModelProvider provider = new PythonModelProvider();
-								Object childValue = child.getValue();
-								
-								Object[] childrenFile = provider.getChildren(childValue);
-								
-								for(Object childFile: childrenFile) {
-									if(childFile instanceof PythonNode) {
-										PythonNode pythonNode = (PythonNode) childFile;
-										ParsedItem entry = pythonNode.entry;
-										ASTEntryWithChildren ast = entry.getAstThis();
-										SimpleNode simpleNode = ast.node;
-										
-										//children can be imports, etc. We are only interested in the classes and methods
-										if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
-											extractFunctionDefinitions(simpleNode, event);
-										}
-									}
-								}
-							}
-							//Not necessary because the children given goes to the files for the folder already, so it would be duplicate
-							if(child.getValue() instanceof PythonFolder) {
-								System.out.println("Folder");
-							}
-						}
+						processPythonProjectSourceFolder(obj, event);
 					} else if (obj instanceof PythonNode) {
-						PythonNode pythonNode = (PythonNode) obj;
-						ParsedItem entry = pythonNode.entry;
-						ASTEntryWithChildren ast = entry.getAstThis();
-						SimpleNode simpleNode = ast.node;
-						
-						extractFunctionDefinitions(simpleNode, event);
+						processPythonNode(obj, event);
 
 					} else if (obj instanceof PythonFolder) {
-						PythonFolder folder = (PythonFolder) obj;
-						System.out.println(folder);
-						PythonModelProvider provider = new PythonModelProvider();
+						processPythonFolder(obj, event);
 						
-						Object[] children = provider.getChildren(obj);
-						
-						for(Object child: children) {
-							if(child instanceof PythonFile) {
-								Object[] childrenFile = provider.getChildren(child);
-								for(Object childFile: childrenFile) {
-									if(childFile instanceof PythonNode) {
-										PythonNode pythonNode = (PythonNode) childFile;
-										ParsedItem entry = pythonNode.entry;
-										ASTEntryWithChildren ast = entry.getAstThis();
-										SimpleNode simpleNode = ast.node;
-										
-										//children can be imports, etc. We are only interested in the classes and methods
-										if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
-											extractFunctionDefinitions(simpleNode, event);
-										}
-									}
-								}
-							}
-						}
 					} else if (obj instanceof PythonFile) {		
-						PythonModelProvider provider = new PythonModelProvider();
-						
-						Object[] children = provider.getChildren(obj);
-						
-						for(Object child: children) {
-							if(child instanceof PythonNode) {
-								PythonNode pythonNode = (PythonNode) child;
-								ParsedItem entry = pythonNode.entry;
-								ASTEntryWithChildren ast = entry.getAstThis();
-								SimpleNode simpleNode = ast.node;
-								
-								//children can be imports, etc. We are only interested in the classes and methods
-								if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) {
-									extractFunctionDefinitions(simpleNode, event);
-								}
-							}
-						}
-						
+						processPythonFile(obj, event);
 					}
 				}
 		}
@@ -141,7 +69,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		return null;
 	}
 	
-	public void extractFunctionDefinitions(SimpleNode simpleNode, ExecutionEvent event) throws ExecutionException {
+	public void processFunctionDefinitions(SimpleNode simpleNode, ExecutionEvent event) throws ExecutionException {
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
@@ -167,5 +95,60 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		
 	}
 	
+	public void processPythonNode(Object obj, ExecutionEvent event) throws ExecutionException {
+		PythonNode pythonNode = (PythonNode) obj;
+		ParsedItem entry = pythonNode.entry;
+		ASTEntryWithChildren ast = entry.getAstThis();
+		SimpleNode simpleNode = ast.node;
+		
+		processFunctionDefinitions(simpleNode, event);
+	}
 	
+	public void processPythonFile(Object obj, ExecutionEvent event) throws ExecutionException {
+		PythonModelProvider provider = new PythonModelProvider();
+		
+		Object[] children = provider.getChildren(obj);
+		
+		for (Object child: children) {
+			if (child instanceof PythonNode) {
+				PythonNode pythonNode = (PythonNode) child;
+				ParsedItem entry = pythonNode.entry;
+				ASTEntryWithChildren ast = entry.getAstThis();
+				SimpleNode simpleNode = ast.node;
+
+				if(simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef) 
+					processFunctionDefinitions(simpleNode, event);
+			}
+		}
+	}
+	
+	public void processPythonFolder(Object obj, ExecutionEvent event) throws ExecutionException {
+		PythonModelProvider provider = new PythonModelProvider();
+		
+		Object[] children = provider.getChildren(obj);
+		
+		for (Object child: children) {
+			if (child instanceof PythonFile)
+				processPythonFile(child, event);
+			if (child instanceof PythonFolder)
+				processPythonFolder(child, event);
+		}
+	}
+	
+	public void processPythonProjectSourceFolder(Object obj, ExecutionEvent event) throws ExecutionException{
+		PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
+		Map<IResource, IWrappedResource> children = folder.children;
+		
+		for (Map.Entry<IResource, IWrappedResource> child: children.entrySet()) {
+			
+			if(child.getValue() instanceof PythonFile) {
+				Object childValue = child.getValue();
+				processPythonFile(childValue, event);
+			}
+			
+			// Not necessary because the children given goes to the files for the folder already, so it would be duplicate
+			if (child.getValue() instanceof PythonFolder)
+				System.out.println("Folder");
+		}
+	}
 }
