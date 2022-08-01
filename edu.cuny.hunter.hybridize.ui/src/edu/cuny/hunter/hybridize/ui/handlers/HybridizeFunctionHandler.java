@@ -51,7 +51,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
 
 			if (list != null)
-				for (Object obj : list)
+				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
 
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
@@ -140,6 +140,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 							}
 
 					}
+				}
 		}
 
 		return null;
