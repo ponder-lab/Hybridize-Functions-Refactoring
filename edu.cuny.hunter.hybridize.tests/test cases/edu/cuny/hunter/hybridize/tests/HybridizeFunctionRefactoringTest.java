@@ -2,9 +2,7 @@ package edu.cuny.hunter.hybridize.tests;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -175,19 +173,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			String actualFunctionDefFullRepresentationString = NodeUtils.getFullRepresentationString(func.getFunctionDef());
 			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
 		}
-	}
-	
-	/**
-	 * Test #7. This simply tests whether we can process the decorator that has a decorator of type Name. 
-	 */
-	@Test
-	public void testProcesssDecorator() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		function.isHybrid();
 	}
 
 	@Override
