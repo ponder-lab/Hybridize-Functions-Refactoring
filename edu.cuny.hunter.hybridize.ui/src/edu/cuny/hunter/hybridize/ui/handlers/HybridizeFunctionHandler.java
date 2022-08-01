@@ -54,6 +54,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
 						processPythonProjectSourceFolder(obj, event);
+						
 					} else if (obj instanceof PythonNode) {
 						processPythonNode(obj, event);
 
