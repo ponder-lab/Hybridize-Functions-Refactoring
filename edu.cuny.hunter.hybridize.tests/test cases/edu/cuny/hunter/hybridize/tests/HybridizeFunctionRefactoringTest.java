@@ -174,6 +174,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
 		}
 	}
+	
+	/**
+	 * Test #7. This simply tests whether we can process the decorator that has a decorator of type Name. 
+	 */
+	@Test
+	public void testProcessDecorator() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		function.isHybrid();
+	}
 
 	@Override
 	protected String getName() {
