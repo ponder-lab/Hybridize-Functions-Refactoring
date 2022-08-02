@@ -8,14 +8,12 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Set;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
-import org.python.pydev.parser.visitors.NodeUtils;
 
 import org.eclipse.core.runtime.ILog;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
@@ -30,6 +28,7 @@ import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
@@ -88,8 +87,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private SimpleNode createPythonNode(String moduleName, String fileName, String contents)
 			throws MisconfigurationException {
-		this.LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
-		this.LOG.info("Contents: " + contents);
+		LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
+		LOG.info("Contents: " + contents);
 
 		IDocument document = new Document(contents);
 
