@@ -1,0 +1,63 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>edu.cuny.hunter.hybridize</groupId>
+	<artifactId>edu.cuny.hunter.hybridize</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>Hybridize Function Refactoring</name>
+	<description>This prototype refactoring plug-in for Eclipse PyDev represents ongoing work in developing an automated refactoring tool that would assist developers in hybridizing their Python functions.</description>
+	<ciManagement>
+		<system>Travis CI</system>
+		<url>https://app.travis-ci.com/github/ponder-lab/Hybridize-Functions-Refactoring</url>
+	</ciManagement>
+	<url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring</url>
+	<prerequisites>
+		<maven>3.6.3</maven>
+	</prerequisites>
+	<modules>
+		<module>edu.cuny.hunter.hybridize.core</module>
+		<module>edu.cuny.hunter.hybridize.tests</module>
+		<module>edu.cuny.hunter.hybridize.ui</module>
+	</modules>
+	<organization>
+		<name>CUNY PONDER</name>
+		<url>http://ponder-lab.github.io</url>
+	</organization>
+	<scm>
+		<url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring</url>
+	</scm>
+	<issueManagement>
+		<system>GitHub</system>
+		<url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues</url>
+	</issueManagement>
+	<properties>
+		<tycho-version>2.7.4</tycho-version>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<jacoco-version>0.8.8</jacoco-version>
+		<junit-version>4.13.2</junit-version>
+		<eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
+		<platform-version-name>2022-06</platform-version-name>
+		<platform-version>4.24.0</platform-version>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+	</properties>
+	<!-- run mvn versions:display-plugin-updates -->
+	<reporting>
+		<plugins>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>versions-maven-plugin</artifactId>
+				<version>2.11.0</version>
+				<reportSets>
+					<reportSet>
+						<reports>
+							<report>dependency-updates-report</report>
+							<report>plugin-updates-reportreprt>
+							<report>property-updates-report</report>
+						</reports>
+					</reportSet>
+				</reportSets>
+			</plugin>
+		</plugins>
+	</reporting>
+</project>
