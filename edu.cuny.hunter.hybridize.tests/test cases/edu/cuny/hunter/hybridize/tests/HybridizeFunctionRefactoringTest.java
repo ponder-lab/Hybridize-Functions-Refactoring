@@ -153,7 +153,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 	
 	/**
-	 * Test #. This simply tests whether the annotation is present for now. 
+	 * This simply tests whether the annotation is present for now. 
 	 * Case: not hybrid
 	 */
 	@Test
