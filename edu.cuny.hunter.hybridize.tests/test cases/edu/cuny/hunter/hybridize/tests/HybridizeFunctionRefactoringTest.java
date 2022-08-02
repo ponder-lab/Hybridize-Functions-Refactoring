@@ -185,6 +185,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+		// NOTE: This should actually be assertTrue() instead of assertFalse(). TODO:
+		// Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
 	}
 
