@@ -11,9 +11,6 @@
         <url>https://app.travis-ci.com/github/ponder-lab/Hybridize-Functions-Refactoring</url>
     </ciManagement>
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring</url>
-    <prerequisites>
-        <maven>3.6.3</maven>
-    </prerequisites>
     <modules>
         <module>edu.cuny.hunter.hybridize.core</module>
         <module>edu.cuny.hunter.hybridize.ui</module>
