@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Name;
@@ -63,6 +64,30 @@ public class Function extends RefactorableProgramEntity {
 								if (decoratorAttribute.id.equals("function")) {
 									// Found "tf.function."
 									this.isHybrid = true;
+								}
+							}
+						}
+					}
+					// If tf.function has arguments
+				} else if (decorator.func instanceof Call) {
+					System.out.println(decorator);
+					Call decoratorFunction = (Call) decorator.func;
+					System.out.println(decoratorFunction);
+					if (decoratorFunction.func instanceof Attribute) {
+						Attribute callFunction = (Attribute) decoratorFunction.func;
+						System.out.println(callFunction);
+						if (callFunction.value instanceof Name) {
+							Name decoratorName = (Name) callFunction.value;
+							System.out.println(decoratorName);
+							if (decoratorName.id.equals("tf")) {
+								// We have a viable prefix. Get the attribute.
+								if (callFunction.attr instanceof NameTok) {
+									NameTok decoratorAttribute = (NameTok) callFunction.attr;
+									if (decoratorAttribute.id.equals("function")) {
+										// Found "tf.function."
+										System.out.println("Found `tf.function.`");
+										this.isHybrid = true;
+									}
 								}
 							}
 						}
