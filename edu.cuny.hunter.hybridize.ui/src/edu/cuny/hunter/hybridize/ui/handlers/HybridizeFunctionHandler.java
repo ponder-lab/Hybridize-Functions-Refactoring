@@ -54,7 +54,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			if (list != null)
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
-
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
 						System.out.println(folder);
 						Map<IResource, IWrappedResource> children = folder.children;
