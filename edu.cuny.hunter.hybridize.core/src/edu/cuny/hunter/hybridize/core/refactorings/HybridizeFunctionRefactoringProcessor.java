@@ -27,7 +27,7 @@ import edu.cuny.hunter.hybridize.core.messages.Messages;
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
 	private Set<Function> functions = new LinkedHashSet<>();
-	
+
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
 	public Set<Function> getFunctions() {
