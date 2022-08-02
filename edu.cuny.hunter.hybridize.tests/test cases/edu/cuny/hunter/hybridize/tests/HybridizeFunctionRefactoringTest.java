@@ -191,7 +191,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
 		}
 	}
-	
 
 	@Override
 	protected String getName() {
