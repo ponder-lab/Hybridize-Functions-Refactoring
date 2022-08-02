@@ -1,12 +1,13 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
-import static org.python.pydev.core.log.Log.logInfo;
+import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
@@ -23,13 +24,11 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
-// FIXME: Use our own logger.
-
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
 	private Set<Function> functions = new LinkedHashSet<>();
-
-	// FIXME: Use our own logger.
+	
+	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
 	public Set<Function> getFunctions() {
 		return functions;
@@ -91,10 +90,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		Set<Function> functions = this.getFunctions();
 		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
-		logInfo("Checking " + functions.size() + " functions.");
+		this.LOG.info("Checking " + functions.size() + " functions.");
 
 		for (Function func : functions) {
-			logInfo("Checking function: " + func + ".");
+			this.LOG.info("Checking function: " + func + ".");
 
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.
