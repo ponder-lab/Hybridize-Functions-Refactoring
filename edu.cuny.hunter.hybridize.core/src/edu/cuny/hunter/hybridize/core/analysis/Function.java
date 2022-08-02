@@ -85,7 +85,6 @@ public class Function extends RefactorableProgramEntity {
 									NameTok decoratorAttribute = (NameTok) callFunction.attr;
 									if (decoratorAttribute.id.equals("function")) {
 										// Found "tf.function."
-										System.out.println("Found `tf.function.`");
 										this.isHybrid = true;
 									}
 								}
