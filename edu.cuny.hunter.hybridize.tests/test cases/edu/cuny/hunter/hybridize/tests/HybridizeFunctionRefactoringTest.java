@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.tests;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -185,7 +186,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		function.isHybrid();
+		assertFalse(function.isHybrid());
 	}
 
 	@Override
