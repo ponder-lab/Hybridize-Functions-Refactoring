@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.eclipse.core.runtime.Platform.getLog;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
@@ -36,8 +37,7 @@ import edu.cuny.hunter.hybridize.ui.wizards.HybridizeFunctionRefactoringWizard;
 
 public class HybridizeFunctionHandler extends AbstractHandler {
 
-	// FIXME: Use our own logger.
-	private static final ILog LOG = PydevPlugin.getDefault().getLog();
+	private static final ILog LOG = getLog(HybridizeFunctionHandler.class);
 
 	/**
 	 * Gather all functions from the user's selection.
@@ -68,7 +68,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						try {
 							simpleNode.accept(functionExtractor);
 						} catch (Exception e) {
-							Log.log(e); // TODO: Use our own logger.
+							LOG.error("Failed to start refactoring.", e);
 							throw new ExecutionException("Failed to start refactoring.", e);
 						}
 
