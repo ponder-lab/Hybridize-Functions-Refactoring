@@ -89,6 +89,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		RefactoringStatus status = new RefactoringStatus();
 
 		Set<Function> functions = this.getFunctions();
+		@SuppressWarnings("unused")
 		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
 		this.LOG.info("Checking " + functions.size() + " functions.");
 
