@@ -152,7 +152,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 	
 	/**
-	 * Test #6. This simply tests whether we have the correct fully qualified name. 
+	 * This simply tests whether we have the correct fully qualified name. 
 	 */
 	@Test
 	public void testFQN() throws Exception {
@@ -176,7 +176,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 	
 	/**
-	 * Test #7. This simply tests whether we can process the decorator that has a decorator of type Name. 
+	 * This simply tests whether we can process the decorator that has a decorator of type Name. 
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {
