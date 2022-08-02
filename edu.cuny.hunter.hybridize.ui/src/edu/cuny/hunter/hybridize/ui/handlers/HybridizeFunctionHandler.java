@@ -46,6 +46,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
+		PythonModelProvider provider = new PythonModelProvider();
 
 		if (currentSelection instanceof IStructuredSelection) {
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
@@ -61,7 +62,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 
 						for (Map.Entry<IResource, IWrappedResource> child : children.entrySet()) {
 							if (child.getValue() instanceof PythonFile) {
-								PythonModelProvider provider = new PythonModelProvider();
 								Object childValue = child.getValue();
 
 								Object[] childrenFile = provider.getChildren(childValue);
@@ -124,8 +124,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 					} else if (obj instanceof PythonFile) {
 						PythonFile file = (PythonFile) obj;
 						System.out.println(file);
-
-						PythonModelProvider provider = new PythonModelProvider();
 
 						Object[] children = provider.getChildren(obj);
 
