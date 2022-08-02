@@ -91,10 +91,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		Set<Function> functions = this.getFunctions();
 		@SuppressWarnings("unused")
 		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
-		this.LOG.info("Checking " + functions.size() + " functions.");
+		LOG.info("Checking " + functions.size() + " functions.");
 
 		for (Function func : functions) {
-			this.LOG.info("Checking function: " + func + ".");
+			LOG.info("Checking function: " + func + ".");
 
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.
