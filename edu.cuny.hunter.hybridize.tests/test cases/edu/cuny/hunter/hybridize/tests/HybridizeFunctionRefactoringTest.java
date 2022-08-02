@@ -142,6 +142,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * probably not a "candidate," however, since it doesn't have a Tensor argument.
 	 * NOTE: This may wind up failing at some point since it doesn't have a Tensor
 	 * argument.
+	 * Case: Hybrid
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
@@ -150,7 +151,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
+		assertTrue(function.isHybrid());
+	}
+	
+	/**
+	 * This simply tests whether the annotation is present for now. 
+	 * Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridFalse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+		
+		for (Function func: functions) {
+			assertNotNull(func); 
+			assertFalse(func.isHybrid());
+		} 
 	}
 
 	/**
