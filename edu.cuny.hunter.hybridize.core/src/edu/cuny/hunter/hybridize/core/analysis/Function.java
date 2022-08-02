@@ -36,27 +36,36 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private void computeIsHybrid() {
-		// FIXME: This is fragile. What we really want to know is whether the decorator
-		// is tensorflow.python.eager.def_function.function, which is "exported" as
+		// FIXME: This is fragile. What we really want to know is whether the
+		// decorator
+		// is tensorflow.python.eager.def_function.function, which is "exported"
+		// as
 		// "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
-
 		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
-				System.out.println(decorator);
-				Attribute decoratorFunction = (Attribute) decorator.func;
-				System.out.println(decoratorFunction);
-				Name decoratorName = (Name) decoratorFunction.value;
-				System.out.println(decoratorName);
-				if (decoratorName.id.equals("tf")) {
-					// We have a viable prefix. Get the attribute.
-					NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-					if (decoratorAttribute.id.equals("function")) {
-						// Found "tf.function."
-						this.isHybrid = true;
+				// If it is not an attribute then we cannot access it this way,
+				// therefore we need the if statement
+				if (decorator.func instanceof Attribute) {
+					System.out.println(decorator);
+					Attribute decoratorFunction = (Attribute) decorator.func;
+					System.out.println(decoratorFunction);
+					if (decoratorFunction.value instanceof Name) {
+						Name decoratorName = (Name) decoratorFunction.value;
+						System.out.println(decoratorName);
+						if (decoratorName.id.equals("tf")) {
+							// We have a viable prefix. Get the attribute.
+							if (decoratorFunction.attr instanceof NameTok) {
+								NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
+								if (decoratorAttribute.id.equals("function")) {
+									// Found "tf.function."
+									this.isHybrid = true;
+								}
+							}
+						}
 					}
 				}
 			}
@@ -80,7 +89,7 @@ public class Function extends RefactorableProgramEntity {
 
 		int count = 0;
 
-		while(parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
 			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
 
 			if (count == 0) {
@@ -103,12 +112,13 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable isHybrid
 	 *
-	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
+	 * @return Boolean that states if this {@link Function} is decorated with
+	 *         tf.function.
 	 */
 	public boolean isHybrid() {
 		return isHybrid;
 	}
-	
+
 	/**
 	 * Accessor for private member variable functionDef
 	 *
