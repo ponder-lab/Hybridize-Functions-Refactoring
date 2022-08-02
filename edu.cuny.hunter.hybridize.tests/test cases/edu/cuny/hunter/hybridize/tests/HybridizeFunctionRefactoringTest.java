@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.tests;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -140,6 +141,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * probably not a "candidate," however, since it doesn't have a Tensor argument.
 	 * NOTE: This may wind up failing at some point since it doesn't have a Tensor
 	 * argument.
+	 * Case: Hybrid
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
@@ -148,7 +150,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
+		assertTrue(function.isHybrid());
+	}
+	
+	/**
+	 * Test #. This simply tests whether the annotation is present for now. 
+	 * Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridFalse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+		
+		for (Function func: functions) {
+			assertNotNull(func); 
+			assertFalse(func.isHybrid());
+		} 
 	}
 	
 	/**
@@ -174,6 +192,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
 		}
 	}
+	
 
 	@Override
 	protected String getName() {
