@@ -68,17 +68,17 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						try {
 							simpleNode.accept(functionExtractor);
 						} catch (Exception e) {
-							this.LOG.error("Failed to start refactoring.",e);
+							LOG.error("Failed to start refactoring.", e);
 							throw new ExecutionException("Failed to start refactoring.", e);
 						}
 
 						Set<FunctionDef> functions = functionExtractor.getDefinitions();
-						this.LOG.info("Found " + functions.size() + " function definitions.");
+						LOG.info("Found " + functions.size() + " function definitions.");
 
 						Set<FunctionDef> availableFunctions = functions.stream()
 								.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
 								.collect(Collectors.toSet());
-						this.LOG.info("Found " + availableFunctions.size() + " available functions.");
+						LOG.info("Found " + availableFunctions.size() + " available functions.");
 
 						Shell shell = getActiveShellChecked(event);
 
