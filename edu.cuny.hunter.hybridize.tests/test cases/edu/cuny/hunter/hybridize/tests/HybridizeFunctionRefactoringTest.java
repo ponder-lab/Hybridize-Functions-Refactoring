@@ -145,7 +145,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Case: Hybrid
 	 */
 	@Test
-	public void testIsHybrid() throws Exception {
+	public void testIsHybridTrue() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
