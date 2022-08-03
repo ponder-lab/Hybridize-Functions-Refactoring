@@ -180,11 +180,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				Object childValue = child;
 				processPythonFile(childValue, event, provider, functions);
 			}
-
-			// Not necessary because the children given goes to the files for
-			// the folder already, so it would be duplicate
-			if (child instanceof PythonFolder)
-				System.out.println("Folder");
 		}
 	}
 }
