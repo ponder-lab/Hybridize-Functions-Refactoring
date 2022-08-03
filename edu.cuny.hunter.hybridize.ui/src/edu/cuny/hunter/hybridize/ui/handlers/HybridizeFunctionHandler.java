@@ -87,31 +87,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						ASTEntryWithChildren ast = entry.getAstThis();
 						SimpleNode simpleNode = ast.node;
 
-<<<<<<< HEAD
 						this.processFunctionDefinitions(simpleNode, event);
-=======
-						// extract function definitions.
-						FunctionExtractor functionExtractor = new FunctionExtractor();
-						try {
-							simpleNode.accept(functionExtractor);
-						} catch (Exception e) {
-							LOG.error("Failed to start refactoring.", e);
-							throw new ExecutionException("Failed to start refactoring.", e);
-						}
 
-						Set<FunctionDef> functions = functionExtractor.getDefinitions();
-						LOG.info("Found " + functions.size() + " function definitions.");
-
-						Set<FunctionDef> availableFunctions = functions.stream()
-								.filter(RefactoringAvailabilityTester::isHybridizationAvailable)
-								.collect(Collectors.toSet());
-						LOG.info("Found " + availableFunctions.size() + " available functions.");
-
-						Shell shell = getActiveShellChecked(event);
-
-						HybridizeFunctionRefactoringWizard.startRefactoring(
-								availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
->>>>>>> c5e3b3a95e3dfc26822ab3b366b285ddfa2ba3e3
 
 						// ---------------------------------------------------------------------------------
 
