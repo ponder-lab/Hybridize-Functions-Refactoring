@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.tests;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -53,7 +54,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Runs a single analysis test.
-	 * @return 
+	 * 
+	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
 		SimpleNode pythonNode = createPythonNodeFromTestFile("A");
@@ -63,8 +65,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		pythonNode.accept(functionExtractor);
 		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
-		
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(availableFunctions.toArray(FunctionDef[]::new));
+
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
+				availableFunctions.toArray(FunctionDef[]::new));
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
 		RefactoringStatus status = performRefactoringWithStatus(refactoring);
@@ -139,6 +142,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * probably not a "candidate," however, since it doesn't have a Tensor argument.
 	 * NOTE: This may wind up failing at some point since it doesn't have a Tensor
 	 * argument.
+	 * Case: Hybrid
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
@@ -147,31 +151,65 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.isHybrid()); // TODO: Need one that isn't hybrid.
+		assertTrue(function.isHybrid());
 	}
 	
 	/**
-	 * Test #6. This simply tests whether we have the correct fully qualified name. 
+	 * This simply tests whether the annotation is present for now. 
+	 * Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridFalse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+		
+		for (Function func: functions) {
+			assertNotNull(func); 
+			assertFalse(func.isHybrid());
+		} 
+	}
+
+	/**
+	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(5, functions.size());
-		
+
 		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<String, String>();
-		
+
 		funcSimpleNameToExpectedSignature.put("func", "func");
 		funcSimpleNameToExpectedSignature.put("func1", "func1");
-		funcSimpleNameToExpectedSignature.put("func2","func1.func2");
+		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
 		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
-		funcSimpleNameToExpectedSignature.put("func_class2","Class1.Class2.func_class2");
-		
-		for (Function func: functions) {
-			assertNotNull(func); 
-			String actualFunctionDefFullRepresentationString = NodeUtils.getFullRepresentationString(func.getFunctionDef());
-			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString), func.getIdentifer());
+		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String actualFunctionDefFullRepresentationString = NodeUtils
+					.getFullRepresentationString(func.getFunctionDef());
+			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString),
+					func.getIdentifer());
 		}
+	}
+
+	/**
+	 * This simply tests whether we can process the decorator that has a decorator
+	 * of type Name.
+	 */
+	@Test
+	public void testProcessDecorator() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// NOTE: This should actually be assertTrue() instead of assertFalse(). TODO:
+		// Change it to assertTrue() after we fix #20.
+		assertFalse(function.isHybrid());
 	}
 
 	@Override

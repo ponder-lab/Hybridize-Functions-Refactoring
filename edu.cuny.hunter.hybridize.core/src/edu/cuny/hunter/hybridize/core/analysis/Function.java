@@ -67,6 +67,7 @@ public class Function extends RefactorableProgramEntity {
 								}
 							}
 						}
+<<<<<<< HEAD
 					}
 					// If tf.function has arguments
 				} else if (decorator.func instanceof Call) {
@@ -90,6 +91,8 @@ public class Function extends RefactorableProgramEntity {
 								}
 							}
 						}
+=======
+>>>>>>> c5e3b3a95e3dfc26822ab3b366b285ddfa2ba3e3
 					}
 				}
 			}
