@@ -57,18 +57,24 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			if (list != null)
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
+						// Drill down and extract function definitions.
 						processPythonProjectSourceFolder(obj, event, provider, functions);
 					} else if (obj instanceof PythonNode) {
+						// Drill down and extract function definitions.
 						processPythonNode(obj, event, functions);
 
 					} else if (obj instanceof PythonFolder) {
+						// Drill down and extract function definitions.
 						processPythonFolder(obj, event, provider, functions);
 
 					} else if (obj instanceof PythonFile) {
+						// Drill down and extract function definitions.
 						processPythonFile(obj, event, provider, functions);
 					}
 				}
 		}
+		
+		// Refactoring on found functions
 
 		LOG.info("Found " + functions.size() + " function definitions.");
 
@@ -108,7 +114,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		SimpleNode simpleNode = ast.node;
 
 		processFunctionDefinitions(simpleNode, event, functions);
-		
+
 		// ---------------------------------------------------------------------------------
 
 		if (simpleNode instanceof FunctionDef) {
