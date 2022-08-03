@@ -172,19 +172,18 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 
 	private void processPythonProjectSourceFolder(Object obj, ExecutionEvent event, PythonModelProvider provider,
 			Set<FunctionDef> functions) throws ExecutionException {
-		PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
-		Map<IResource, IWrappedResource> children = folder.children;
+		Map<IResource, IWrappedResource> children = ((PythonProjectSourceFolder) obj).children;
 
-		for (Map.Entry<IResource, IWrappedResource> child : children.entrySet()) {
+		for (IWrappedResource child : children.values()) {
 
-			if (child.getValue() instanceof PythonFile) {
-				Object childValue = child.getValue();
+			if (child instanceof PythonFile) {
+				Object childValue = child;
 				processPythonFile(childValue, event, provider, functions);
 			}
 
 			// Not necessary because the children given goes to the files for
 			// the folder already, so it would be duplicate
-			if (child.getValue() instanceof PythonFolder)
+			if (child instanceof PythonFolder)
 				System.out.println("Folder");
 		}
 	}
