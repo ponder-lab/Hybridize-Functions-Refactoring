@@ -68,8 +68,7 @@ public class Function extends RefactorableProgramEntity {
 							}
 						}
 					}
-					// If tf.function has arguments
-				} else if (decorator.func instanceof Call) {
+				} else if (decorator.func instanceof Call) { // tf.function has arguments
 					System.out.println(decorator);
 					Call decoratorFunction = (Call) decorator.func;
 					System.out.println(decoratorFunction);
