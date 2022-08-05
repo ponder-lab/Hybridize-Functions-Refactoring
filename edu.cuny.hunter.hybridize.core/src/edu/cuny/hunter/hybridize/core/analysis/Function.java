@@ -50,7 +50,7 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
-				if (decorator.func instanceof Attribute) { // e.g., "tf.function"
+				if (decorator.func instanceof Attribute) { // e.g., tf.function
 					System.out.println(decorator);
 					Attribute decoratorFunction = (Attribute) decorator.func;
 					System.out.println(decoratorFunction);
@@ -68,7 +68,7 @@ public class Function extends RefactorableProgramEntity {
 							}
 						}
 					}
-				} else if (decorator.func instanceof Call) { // tf.function has arguments
+				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
 					System.out.println(decorator);
 					Call decoratorFunction = (Call) decorator.func;
 					System.out.println(decoratorFunction);
@@ -83,7 +83,7 @@ public class Function extends RefactorableProgramEntity {
 								if (callFunction.attr instanceof NameTok) {
 									NameTok decoratorAttribute = (NameTok) callFunction.attr;
 									if (decoratorAttribute.id.equals("function")) {
-										// Found "tf.function."
+										// Found tf.function(...)
 										this.isHybrid = true;
 									}
 								}
