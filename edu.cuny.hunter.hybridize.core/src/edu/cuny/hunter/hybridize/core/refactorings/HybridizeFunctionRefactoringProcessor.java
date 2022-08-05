@@ -77,7 +77,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public RefactoringStatus checkFinalConditions(IProgressMonitor pm, CheckConditionsContext context)
 			throws CoreException, OperationCanceledException {
 		RefactoringStatus status = new RefactoringStatus();
-		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100); //$NON-NLS-1$
+		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100);
 		// TODO: Adjust amount of work later.
 
 		status.merge(checkFunctions(progress.split(1)));
