@@ -4,7 +4,6 @@ import tensorflow as tf
 def next_collatz(x):
   print("Tracing with", x)
   return tf.where(x % 2 == 0, x // 2, 3 * x + 1)
-  
 
 @tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.int32),))
 def g(x):
