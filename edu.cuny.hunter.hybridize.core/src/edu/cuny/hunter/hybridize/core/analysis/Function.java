@@ -50,7 +50,7 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
-				if (decorator.func instanceof Attribute) {
+				if (decorator.func instanceof Attribute) { // e.g., "tf.function"
 					System.out.println(decorator);
 					Attribute decoratorFunction = (Attribute) decorator.func;
 					System.out.println(decoratorFunction);
