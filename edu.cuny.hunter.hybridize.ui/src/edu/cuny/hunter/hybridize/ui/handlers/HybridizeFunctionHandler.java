@@ -54,12 +54,12 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			if (list != null)
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
-						// Drill down and extract function definitions.
 						Map<IResource, IWrappedResource> projectChildren = ((PythonProjectSourceFolder) obj).children;
+						// Drill down and extract function definitions.
 						functions.addAll(process(projectChildren, provider));
 					} else if (obj instanceof PythonNode) {
-						// Drill down and extract function definitions.
 						PythonNode pythonNode = (PythonNode) obj;
+						// Drill down and extract function definitions.
 						functions.addAll(process(pythonNode));
 					} else if (obj instanceof PythonFolder) {
 						// Drill down and extract function definitions.
@@ -68,8 +68,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						// Drill down and extract function definitions.
 						functions.addAll(process(obj, provider));
 					} else if (obj instanceof PythonSourceFolder) {
-						// Drill down and extract function definitions.
 						Map<IResource, IWrappedResource> projectChildren = ((PythonSourceFolder) obj).children;
+						// Drill down and extract function definitions.
 						functions.addAll(process(projectChildren, provider));
 					}
 				}
