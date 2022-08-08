@@ -124,7 +124,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 * the children if it is a Python File
 	 * Returns the function definitions
 	 */
-	private Set<FunctionDef> process(Map<IResource, IWrappedResource> projectChildren, PythonModelProvider provider)
+	private static Set<FunctionDef> process(Map<IResource, IWrappedResource> projectChildren, PythonModelProvider provider)
 			throws ExecutionException {
 
 		Set<FunctionDef> functions = new HashSet<>();
@@ -149,7 +149,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 * the folder and file.
 	 * Returns the function definitions
 	 */
-	private Set<FunctionDef> process(Object folderOrFile, PythonModelProvider provider) throws ExecutionException {
+	private static Set<FunctionDef> process(Object folderOrFile, PythonModelProvider provider) throws ExecutionException {
 
 		Object[] children = provider.getChildren(folderOrFile);
 		Set<FunctionDef> functions = new HashSet<>();
@@ -175,7 +175,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 *
 	 * @throws ExecutionException
 	 */
-	private Set<FunctionDef> process(PythonNode node) throws ExecutionException {
+	private static Set<FunctionDef> process(PythonNode node) throws ExecutionException {
 		ParsedItem entry = node.entry;
 		ASTEntryWithChildren ast = entry.getAstThis();
 		SimpleNode simpleNode = ast.node;
