@@ -202,7 +202,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #19. This simply tests whether a decorator with parameters is
-	 * correctly identified as hybrid. Case: not hybrid
+	 * correctly identified as hybrid. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
@@ -211,7 +211,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(3, functions.size());
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertFalse(func.isHybrid());
+			assertTrue(func.isHybrid());
 		}
 	}
 
