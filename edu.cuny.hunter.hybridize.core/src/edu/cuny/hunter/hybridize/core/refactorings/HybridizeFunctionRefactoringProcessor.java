@@ -87,7 +87,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
 		RefactoringStatus status = new RefactoringStatus();
-
 		Set<Function> functions = this.getFunctions();
 		@SuppressWarnings("unused")
 		SubMonitor progress = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
@@ -108,14 +107,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
-	private RefactoringStatus checkParameters(Function func) {
+	private static RefactoringStatus checkParameters(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
+		LOG.info("Checking parameters for: " + func + ".");
 		// TODO: Does the function have a tensor parameter?
 		return status;
 	}
 
-	private RefactoringStatus checkDecorators(Function func) {
+	private static RefactoringStatus checkDecorators(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
+		LOG.info("Checking decorators for: " + func + ".");
 		// TODO: Is the function already decorated with tf.function?
 		return status;
 	}
