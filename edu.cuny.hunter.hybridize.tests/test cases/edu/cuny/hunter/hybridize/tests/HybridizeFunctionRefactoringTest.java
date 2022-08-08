@@ -168,23 +168,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(func.isHybrid());
 		}
 	}
-
-	/**
-	 * Test #23. This simply tests whether this tool does not crash with
-	 * decorators with multiple dots 
-	 * Case: not hybrid
-	 */
-	@Test
-	public void testIsHybridMulitpleAttributes() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
-		}
-	}
 	
 	/**
 	 * Test #17. This simply tests whether this tool looks at multiple decorator.
