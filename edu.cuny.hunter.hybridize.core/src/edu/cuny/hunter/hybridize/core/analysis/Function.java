@@ -16,6 +16,8 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * A representation of a Python function.
  *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
+ * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro
+ *         Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
 
