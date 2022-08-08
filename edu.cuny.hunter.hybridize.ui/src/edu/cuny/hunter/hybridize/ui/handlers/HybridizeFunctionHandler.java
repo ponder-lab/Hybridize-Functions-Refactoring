@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.ui.handlers;
 
+import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ui.handlers.HandlerUtil.getActiveShellChecked;
 
 import java.util.HashSet;
@@ -8,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.eclipse.core.runtime.Platform.getLog;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
@@ -18,7 +18,7 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.python.pydev.core.log.Log;
+import org.python.pydev.navigator.PythonModelProvider;
 import org.python.pydev.navigator.elements.IWrappedResource;
 import org.python.pydev.navigator.elements.PythonFile;
 import org.python.pydev.navigator.elements.PythonFolder;
@@ -26,13 +26,10 @@ import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.navigator.elements.PythonProjectSourceFolder;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
-import org.python.pydev.navigator.PythonModelProvider;
-import org.python.pydev.plugin.PydevPlugin;
 
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -50,7 +47,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
 		PythonModelProvider provider = new PythonModelProvider();
 		Set<FunctionDef> functions = new HashSet<FunctionDef>();
-
 		if (currentSelection instanceof IStructuredSelection) {
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
 
@@ -58,22 +54,22 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
 						// Drill down and extract function definitions.
-						processPythonProjectSourceFolder(obj, event, provider, functions);
+						Map<IResource, IWrappedResource> projectChildren = ((PythonProjectSourceFolder) obj).children;
+						functions.addAll(process(projectChildren, provider));
 					} else if (obj instanceof PythonNode) {
 						// Drill down and extract function definitions.
-						processPythonNode(obj, event, functions);
-
+						PythonNode pythonNode = (PythonNode) obj;
+						functions.addAll(process(pythonNode));
 					} else if (obj instanceof PythonFolder) {
 						// Drill down and extract function definitions.
-						processPythonFolder(obj, event, provider, functions);
-
+						functions.addAll(process(obj, provider));
 					} else if (obj instanceof PythonFile) {
 						// Drill down and extract function definitions.
-						processPythonFile(obj, event, provider, functions);
+						functions.addAll(process(obj, provider));
 					}
 				}
 		}
-		
+
 		// Refactoring on found functions
 
 		LOG.info("Found " + functions.size() + " function definitions.");
@@ -90,35 +86,13 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		return null;
 	}
 
-	private void processFunctionDefinitions(SimpleNode simpleNode, ExecutionEvent event, Set<FunctionDef> functions)
-			throws ExecutionException {
-
-		// extract function definitions.
-		FunctionExtractor functionExtractor = new FunctionExtractor();
-		try {
-			simpleNode.accept(functionExtractor);
-		} catch (Exception e) {
-			LOG.error("Failed to start refactoring.", e);
-			throw new ExecutionException("Failed to start refactoring.", e);
-		}
-
-		functions.addAll(functionExtractor.getDefinitions());
-
-	}
-
-	private void processPythonNode(Object obj, ExecutionEvent event, Set<FunctionDef> functions)
-			throws ExecutionException {
-		PythonNode pythonNode = (PythonNode) obj;
-		ParsedItem entry = pythonNode.entry;
-		ASTEntryWithChildren ast = entry.getAstThis();
-		SimpleNode simpleNode = ast.node;
-
-		processFunctionDefinitions(simpleNode, event, functions);
+	// Maintaining from previous code versions
+	private void printStatements(SimpleNode node) {
 
 		// ---------------------------------------------------------------------------------
 
-		if (simpleNode instanceof FunctionDef) {
-			FunctionDef function = (FunctionDef) simpleNode;
+		if (node instanceof FunctionDef) {
+			FunctionDef function = (FunctionDef) node;
 			System.out.println(function);
 
 			argumentsType args = function.args;
@@ -139,47 +113,91 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		// ---------------------------------------------------------------------------------
 	}
 
-	private void processPythonFile(Object obj, ExecutionEvent event, PythonModelProvider provider,
-			Set<FunctionDef> functions) throws ExecutionException {
+	/**
+	 * Process a Python Project Source Folder
+	 * Params: Map of the Project Source
+	 * Folder Children and the Python Model Provider that enables us to obtain
+	 * the children if it is a Python File
+	 * Return the function definitions
+	 */
+	private Set<FunctionDef> process(Map<IResource, IWrappedResource> projectChildren, PythonModelProvider provider)
+			throws ExecutionException {
+		
+		Set<FunctionDef> functions = new HashSet<FunctionDef>();
 
-		Object[] children = provider.getChildren(obj);
+		for (IWrappedResource child : projectChildren.values())
+			// We receive all the children. (e.g. project/folder and project/folder/file)
+			// Only interested on the files because we don't want to traverse redundant information
+			if (child instanceof PythonFile) {
+				Object file = child;
+				functions.addAll(process(file, provider));
+			}
+		return functions;
+	}
+
+	/**
+	 * Process a Folder or a File
+	 * Params: Object that represents a folder or a
+	 * file, we need it as type Object because the Python Model Provider
+	 * getChildren() takes an Object which enables us to obtain the children for
+	 * the folder and file
+	 * Return the function definitions
+	 */
+	private Set<FunctionDef> process(Object folderOrFile, PythonModelProvider provider) throws ExecutionException {
+
+		Object[] children = provider.getChildren(folderOrFile);
+		Set<FunctionDef> functions = new HashSet<FunctionDef>();
+		
 
 		for (Object child : children) {
+			// Object received was a File or Folder, its children could
+			// be a File or Folder. We need to process again to obtain the nodes
+			if ((child instanceof PythonFile) || (child instanceof PythonFolder))
+				functions.addAll(process(child, provider));
+			// Object received was a File, its children could be a Python Node
 			if (child instanceof PythonNode) {
 				PythonNode pythonNode = (PythonNode) child;
-				ParsedItem entry = pythonNode.entry;
-				ASTEntryWithChildren ast = entry.getAstThis();
-				SimpleNode simpleNode = ast.node;
-
-				if (simpleNode instanceof FunctionDef || simpleNode instanceof ClassDef)
-					processFunctionDefinitions(simpleNode, event, functions);
+				functions.addAll(process(pythonNode));
 			}
 		}
+		return functions;
 	}
 
-	private void processPythonFolder(Object obj, ExecutionEvent event, PythonModelProvider provider,
-			Set<FunctionDef> functions) throws ExecutionException {
+	/**
+	 * Process a Python Node
+	 * Params: PythonNode
+	 * Return the function definitions
+	 *
+	 * @throws ExecutionException
+	 */
+	private Set<FunctionDef> process(PythonNode node) throws ExecutionException {
+		ParsedItem entry = node.entry;
+		ASTEntryWithChildren ast = entry.getAstThis();
+		SimpleNode simpleNode = ast.node;
 
-		Object[] children = provider.getChildren(obj);
+		printStatements(simpleNode);
 
-		for (Object child : children) {
-			if (child instanceof PythonFile)
-				processPythonFile(child, event, provider, functions);
-			if (child instanceof PythonFolder)
-				processPythonFolder(child, event, provider, functions);
-		}
+		return process(simpleNode);
+
 	}
 
-	private void processPythonProjectSourceFolder(Object obj, ExecutionEvent event, PythonModelProvider provider,
-			Set<FunctionDef> functions) throws ExecutionException {
-		Map<IResource, IWrappedResource> children = ((PythonProjectSourceFolder) obj).children;
+	/**
+	 * Process a Simple Node
+	 * Params: SimpleNode
+	 * Return the function definitions
+	 */
+	private Set<FunctionDef> process(SimpleNode simpleNode) throws ExecutionException {
 
-		for (IWrappedResource child : children.values()) {
-
-			if (child instanceof PythonFile) {
-				Object childValue = child;
-				processPythonFile(childValue, event, provider, functions);
-			}
+		// extract function definitions.
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+		try {
+			simpleNode.accept(functionExtractor);
+		} catch (Exception e) {
+			LOG.error("Failed to start refactoring.", e);
+			throw new ExecutionException("Failed to start refactoring.", e);
 		}
+
+		return functionExtractor.getDefinitions();
+
 	}
 }
