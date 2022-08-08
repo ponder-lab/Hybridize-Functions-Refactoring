@@ -47,12 +47,12 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
 		PythonModelProvider provider = new PythonModelProvider();
-		Set<FunctionDef> functions = new HashSet<FunctionDef>();
+		Set<FunctionDef> functions = new HashSet<>();
 		if (currentSelection instanceof IStructuredSelection) {
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
 
 			if (list != null)
-				for (Object obj : list) {
+				for (Object obj : list)
 					if (obj instanceof PythonProjectSourceFolder) {
 						Map<IResource, IWrappedResource> projectChildren = ((PythonProjectSourceFolder) obj).children;
 						// Drill down and extract function definitions.
@@ -61,18 +61,17 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						PythonNode pythonNode = (PythonNode) obj;
 						// Drill down and extract function definitions.
 						functions.addAll(process(pythonNode));
-					} else if (obj instanceof PythonFolder) {
+					} else if (obj instanceof PythonFolder)
 						// Drill down and extract function definitions.
 						functions.addAll(process(obj, provider));
-					} else if (obj instanceof PythonFile) {
+					else if (obj instanceof PythonFile)
 						// Drill down and extract function definitions.
 						functions.addAll(process(obj, provider));
-					} else if (obj instanceof PythonSourceFolder) {
+					else if (obj instanceof PythonSourceFolder) {
 						Map<IResource, IWrappedResource> projectChildren = ((PythonSourceFolder) obj).children;
 						// Drill down and extract function definitions.
 						functions.addAll(process(projectChildren, provider));
 					}
-				}
 		}
 
 		// Refactoring on found functions
@@ -92,7 +91,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	}
 
 	// Maintaining from previous code versions
-	private void printStatements(SimpleNode simpleNode) {
+	private static void printStatements(SimpleNode simpleNode) {
 
 		// ---------------------------------------------------------------------------------
 
@@ -123,16 +122,18 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 * Params: Map of the Project Source
 	 * Folder Children and the Python Model Provider that enables us to obtain
 	 * the children if it is a Python File
-	 * Return the function definitions
+	 * Returns the function definitions
 	 */
 	private Set<FunctionDef> process(Map<IResource, IWrappedResource> projectChildren, PythonModelProvider provider)
 			throws ExecutionException {
-		
-		Set<FunctionDef> functions = new HashSet<FunctionDef>();
+
+		Set<FunctionDef> functions = new HashSet<>();
 
 		for (IWrappedResource child : projectChildren.values())
-			// We receive all the children. (e.g. project/folder and project/folder/file)
-			// Only interested on the files because we don't want to traverse redundant information
+			// We receive all the children. (e.g. project/folder and
+			// project/folder/file)
+			// Only interested on the files because we don't want to traverse
+			// redundant information
 			if (child instanceof PythonFile) {
 				Object file = child;
 				functions.addAll(process(file, provider));
@@ -145,19 +146,18 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 * Params: Object that represents a folder or a
 	 * file, we need it as type Object because the Python Model Provider
 	 * getChildren() takes an Object which enables us to obtain the children for
-	 * the folder and file
-	 * Return the function definitions
+	 * the folder and file.
+	 * Returns the function definitions
 	 */
 	private Set<FunctionDef> process(Object folderOrFile, PythonModelProvider provider) throws ExecutionException {
 
 		Object[] children = provider.getChildren(folderOrFile);
-		Set<FunctionDef> functions = new HashSet<FunctionDef>();
-		
+		Set<FunctionDef> functions = new HashSet<>();
 
 		for (Object child : children) {
 			// Object received was a File or Folder, its children could
 			// be a File or Folder. We need to process again to obtain the nodes
-			if ((child instanceof PythonFile) || (child instanceof PythonFolder))
+			if (child instanceof PythonFile || child instanceof PythonFolder)
 				functions.addAll(process(child, provider));
 			// Object received was a File, its children could be a Python Node
 			if (child instanceof PythonNode) {
@@ -180,7 +180,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		ASTEntryWithChildren ast = entry.getAstThis();
 		SimpleNode simpleNode = ast.node;
 
-		//printStatements(simpleNode);
+		// printStatements(simpleNode);
 
 		return process(simpleNode);
 
@@ -191,7 +191,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 * Params: SimpleNode
 	 * Return the function definitions
 	 */
-	private Set<FunctionDef> process(SimpleNode simpleNode) throws ExecutionException {
+	private static Set<FunctionDef> process(SimpleNode simpleNode) throws ExecutionException {
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
