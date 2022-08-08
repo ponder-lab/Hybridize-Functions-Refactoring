@@ -87,12 +87,12 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	}
 
 	// Maintaining from previous code versions
-	private void printStatements(SimpleNode node) {
+	private void printStatements(SimpleNode simpleNode) {
 
 		// ---------------------------------------------------------------------------------
 
-		if (node instanceof FunctionDef) {
-			FunctionDef function = (FunctionDef) node;
+		if (simpleNode instanceof FunctionDef) {
+			FunctionDef function = (FunctionDef) simpleNode;
 			System.out.println(function);
 
 			argumentsType args = function.args;
