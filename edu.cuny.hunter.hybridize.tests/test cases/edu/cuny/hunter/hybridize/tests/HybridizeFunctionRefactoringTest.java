@@ -211,7 +211,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(3, functions.size());
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertTrue(func.isHybrid());
+			assertFalse(func.isHybrid());
 		}
 	}
 
