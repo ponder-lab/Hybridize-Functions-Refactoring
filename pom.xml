@@ -142,6 +142,17 @@
                 <configuration>
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
+                    <compilerArgs>
+                        <arg>-err:all</arg>
+                        <arg>-err:-missingJavadocComments</arg>
+                        <arg>-err:-missingJavadocTags</arg>
+                        <arg>-err:-nls</arg>
+                        <arg>-err:-unqualifiedField</arg>
+                        <arg>-err:-localHiding</arg>
+                        <arg>-err:-super</arg>
+                        <arg>-err:-discouraged</arg>
+                        <arg>-err:-emptyBlock</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
