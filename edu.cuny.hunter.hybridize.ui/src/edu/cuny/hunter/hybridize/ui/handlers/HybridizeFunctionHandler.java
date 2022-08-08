@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.ui.handlers;
 
+import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ui.handlers.HandlerUtil.getActiveShellChecked;
 
 import java.util.List;
@@ -7,7 +8,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.eclipse.core.runtime.Platform.getLog;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
@@ -17,7 +17,6 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.python.pydev.core.log.Log;
 import org.python.pydev.navigator.elements.IWrappedResource;
 import org.python.pydev.navigator.elements.PythonFile;
 import org.python.pydev.navigator.elements.PythonFolder;
@@ -29,7 +28,6 @@ import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
-import org.python.pydev.plugin.PydevPlugin;
 
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
