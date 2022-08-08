@@ -24,6 +24,7 @@ import org.python.pydev.navigator.elements.PythonFile;
 import org.python.pydev.navigator.elements.PythonFolder;
 import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.navigator.elements.PythonProjectSourceFolder;
+import org.python.pydev.navigator.elements.PythonSourceFolder;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -66,6 +67,10 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 					} else if (obj instanceof PythonFile) {
 						// Drill down and extract function definitions.
 						functions.addAll(process(obj, provider));
+					} else if (obj instanceof PythonSourceFolder) {
+						// Drill down and extract function definitions.
+						Map<IResource, IWrappedResource> projectChildren = ((PythonSourceFolder) obj).children;
+						functions.addAll(process(projectChildren, provider));
 					}
 				}
 		}
@@ -175,7 +180,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		ASTEntryWithChildren ast = entry.getAstThis();
 		SimpleNode simpleNode = ast.node;
 
-		printStatements(simpleNode);
+		//printStatements(simpleNode);
 
 		return process(simpleNode);
 
