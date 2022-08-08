@@ -140,8 +140,8 @@
                 <artifactId>tycho-compiler-plugin</artifactId>
                 <version>${tycho-version}</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
                 </configuration>
             </plugin>
             <plugin>

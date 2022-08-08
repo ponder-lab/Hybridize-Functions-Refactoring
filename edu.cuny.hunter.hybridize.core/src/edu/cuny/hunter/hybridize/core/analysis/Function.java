@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Name;
@@ -49,7 +50,7 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
-				if (decorator.func instanceof Attribute) {
+				if (decorator.func instanceof Attribute) { // e.g., tf.function
 					System.out.println(decorator);
 					Attribute decoratorFunction = (Attribute) decorator.func;
 					System.out.println(decoratorFunction);
@@ -63,6 +64,28 @@ public class Function extends RefactorableProgramEntity {
 								if (decoratorAttribute.id.equals("function")) {
 									// Found "tf.function."
 									this.isHybrid = true;
+								}
+							}
+						}
+					}
+				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
+					System.out.println(decorator);
+					Call decoratorFunction = (Call) decorator.func;
+					System.out.println(decoratorFunction);
+					if (decoratorFunction.func instanceof Attribute) {
+						Attribute callFunction = (Attribute) decoratorFunction.func;
+						System.out.println(callFunction);
+						if (callFunction.value instanceof Name) {
+							Name decoratorName = (Name) callFunction.value;
+							System.out.println(decoratorName);
+							if (decoratorName.id.equals("tf")) {
+								// We have a viable prefix. Get the attribute.
+								if (callFunction.attr instanceof NameTok) {
+									NameTok decoratorAttribute = (NameTok) callFunction.attr;
+									if (decoratorAttribute.id.equals("function")) {
+										// Found tf.function(...)
+										this.isHybrid = true;
+									}
 								}
 							}
 						}
