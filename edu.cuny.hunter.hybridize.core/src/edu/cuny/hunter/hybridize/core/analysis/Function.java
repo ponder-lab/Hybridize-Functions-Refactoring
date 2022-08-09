@@ -1,17 +1,15 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
-import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.ClassDef;
+import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
-import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
-import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.jython.SimpleNode;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -25,44 +23,9 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 public class Function extends RefactorableProgramEntity {
 
 	/**
-	 * The {@link FunctionDef} representing this {@link Function}.
-	 */
-	private FunctionDef functionDef;
-
-	/**
-	 * True iff this {@link Function} is decorated with tf.function.
-	 */
-	private boolean isHybrid;
-
-	/**
-	 * True iff this {@link Function} has argument func.
-	 */
-	private boolean func;
-
-	/**
-	 * True iff this {@link Function} has argument input_signature.
-	 */
-	private boolean input_signature;
-
-	/**
 	 * True iff this {@link Function} has argument autograph.
 	 */
 	private boolean autograph;
-
-	/**
-	 * True iff this {@link Function} has argument jit_compile.
-	 */
-	private boolean jit_compile;
-
-	/**
-	 * True iff this {@link Function} has argument reduce_retracing.
-	 */
-	private boolean reduce_retracing;
-
-	/**
-	 * True iff this {@link Function} has argument experimental_implements.
-	 */
-	private boolean experimental_implements;
 
 	/**
 	 * True iff this {@link Function} has argument
@@ -76,12 +39,47 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean experimental_follow_type_hints;
 
+	/**
+	 * True iff this {@link Function} has argument experimental_implements.
+	 */
+	private boolean experimental_implements;
+
+	/**
+	 * True iff this {@link Function} has argument func.
+	 */
+	private boolean func;
+
+	/**
+	 * The {@link FunctionDef} representing this {@link Function}.
+	 */
+	private FunctionDef functionDef;
+
+	/**
+	 * True iff this {@link Function} has argument input_signature.
+	 */
+	private boolean input_signature;
+
+	/**
+	 * True iff this {@link Function} is decorated with tf.function.
+	 */
+	private boolean isHybrid;
+
+	/**
+	 * True iff this {@link Function} has argument jit_compile.
+	 */
+	private boolean jit_compile;
+
+	/**
+	 * True iff this {@link Function} has argument reduce_retracing.
+	 */
+	private boolean reduce_retracing;
+
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
-		
+
 		// Parse the tf.function parameters
 		this.computeParameters();
 	}
@@ -94,10 +92,10 @@ public class Function extends RefactorableProgramEntity {
 		// "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
-		decoratorsType[] decoratorArray = functionDef.decs;
+		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
-			for (decoratorsType decorator : decoratorArray) {
+			for (decoratorsType decorator : decoratorArray)
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
 				if (decorator.func instanceof Attribute) { // e.g., tf.function
@@ -107,18 +105,17 @@ public class Function extends RefactorableProgramEntity {
 					if (decoratorFunction.value instanceof Name) {
 						Name decoratorName = (Name) decoratorFunction.value;
 						System.out.println(decoratorName);
-						if (decoratorName.id.equals("tf")) {
+						if (decoratorName.id.equals("tf"))
 							// We have a viable prefix. Get the attribute.
 							if (decoratorFunction.attr instanceof NameTok) {
 								NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-								if (decoratorAttribute.id.equals("function")) {
+								if (decoratorAttribute.id.equals("function"))
 									// Found "tf.function."
 									this.isHybrid = true;
-								}
 							}
-						}
 					}
-				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
+				} else if (decorator.func instanceof Call) { // e.g.,
+																// tf.function(...)
 					System.out.println(decorator);
 					Call decoratorFunction = (Call) decorator.func;
 					System.out.println(decoratorFunction);
@@ -128,30 +125,27 @@ public class Function extends RefactorableProgramEntity {
 						if (callFunction.value instanceof Name) {
 							Name decoratorName = (Name) callFunction.value;
 							System.out.println(decoratorName);
-							if (decoratorName.id.equals("tf")) {
+							if (decoratorName.id.equals("tf"))
 								// We have a viable prefix. Get the attribute.
 								if (callFunction.attr instanceof NameTok) {
 									NameTok decoratorAttribute = (NameTok) callFunction.attr;
-									if (decoratorAttribute.id.equals("function")) {
+									if (decoratorAttribute.id.equals("function"))
 										// Found tf.function(...)
 										this.isHybrid = true;
-									}
 								}
-							}
 						}
 					}
 				}
-			}
 	}
-	
+
 	private void computeParameters() {
-		decoratorsType[] decoratorArray = functionDef.decs;
+		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
 				keywordType[] keywordArray = decorator.keywords;
 				if (keywordArray != null)
-					for (keywordType keyword : keywordArray) {
+					for (keywordType keyword : keywordArray)
 						if (keyword.arg instanceof NameTok) {
 							NameTok decoratorArg = (NameTok) keyword.arg;
 							if (decoratorArg.id.equals("func"))
@@ -173,13 +167,65 @@ public class Function extends RefactorableProgramEntity {
 							else if (decoratorArg.id.equals("experimental_follow_type_hints"))
 								this.experimental_follow_type_hints = true;
 						}
-					}
 			}
 	}
 
-	@Override
-	public String toString() {
-		return this.getIdentifer();
+	/**
+	 * Accessor for private member variable autograph
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         autograph
+	 */
+	public boolean getAutographParam() {
+		return this.autograph;
+	}
+
+	/**
+	 * Accessor for private member variable experimental_autograph_options
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_autograph_options
+	 */
+	public boolean getExpAutographOptParam() {
+		return this.experimental_autograph_options;
+	}
+
+	/**
+	 * Accessor for private member variable experimental_implements
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_implements
+	 */
+	public boolean getExpImplementsParam() {
+		return this.experimental_implements;
+	}
+
+	/**
+	 * Accessor for private member variable experimental_follow_type_hints
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_follow_type_hints
+	 */
+	public boolean getExpTypeHintsParam() {
+		return this.experimental_follow_type_hints;
+	}
+
+	/**
+	 * Accessor for private member variable func
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter func
+	 */
+	public boolean getFuncParam() {
+		return this.func;
+	}
+
+	/**
+	 * Accessor for private member variable functionDef
+	 *
+	 * @return The {@link FunctionDef} representing this {@link Function}
+	 */
+	public FunctionDef getFunctionDef() {
+		return this.functionDef;
 	}
 
 	/**
@@ -216,42 +262,13 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable isHybrid
-	 *
-	 * @return Boolean that states if this {@link Function} is decorated with
-	 *         tf.function.
-	 */
-	public boolean isHybrid() {
-		return isHybrid;
-	}
-
-	/**
-	 * Accessor for private member variable func
-	 *
-	 * @return Boolean that states if this {@link Function} has parameter func
-	 */
-	public boolean getFuncParam() {
-		return func;
-	}
-
-	/**
 	 * Accessor for private member variable input_signature
 	 *
 	 * @return Boolean that states if this {@link Function} has parameter
 	 *         input_signature
 	 */
 	public boolean getInputSignatureParam() {
-		return input_signature;
-	}
-
-	/**
-	 * Accessor for private member variable autograph
-	 *
-	 * @return Boolean that states if this {@link Function} has parameter
-	 *         autograph
-	 */
-	public boolean getAutographParam() {
-		return autograph;
+		return this.input_signature;
 	}
 
 	/**
@@ -261,7 +278,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         jit_compile
 	 */
 	public boolean getJitCompileParam() {
-		return jit_compile;
+		return this.jit_compile;
 	}
 
 	/**
@@ -271,45 +288,21 @@ public class Function extends RefactorableProgramEntity {
 	 *         reduce_retracing
 	 */
 	public boolean getReduceRetracingParam() {
-		return reduce_retracing;
+		return this.reduce_retracing;
 	}
 
 	/**
-	 * Accessor for private member variable experimental_implements
+	 * Accessor for private member variable isHybrid
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter
-	 *         experimental_implements
+	 * @return Boolean that states if this {@link Function} is decorated with
+	 *         tf.function.
 	 */
-	public boolean getExpImplementsParam() {
-		return experimental_implements;
+	public boolean isHybrid() {
+		return this.isHybrid;
 	}
 
-	/**
-	 * Accessor for private member variable experimental_autograph_options
-	 *
-	 * @return Boolean that states if this {@link Function} has parameter
-	 *         experimental_autograph_options
-	 */
-	public boolean getExpAutographOptParam() {
-		return experimental_autograph_options;
-	}
-
-	/**
-	 * Accessor for private member variable experimental_follow_type_hints
-	 *
-	 * @return Boolean that states if this {@link Function} has parameter
-	 *         experimental_follow_type_hints
-	 */
-	public boolean getExpTypeHintsParam() {
-		return experimental_follow_type_hints;
-	}
-
-	/**
-	 * Accessor for private member variable functionDef
-	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}
-	 */
-	public FunctionDef getFunctionDef() {
-		return functionDef;
+	@Override
+	public String toString() {
+		return this.getIdentifer();
 	}
 }
