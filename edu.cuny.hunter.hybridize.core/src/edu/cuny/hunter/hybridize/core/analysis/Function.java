@@ -86,10 +86,8 @@ public class Function extends RefactorableProgramEntity {
 
 	private void computeIsHybrid() {
 		// FIXME: This is fragile. What we really want to know is whether the
-		// decorator
-		// is tensorflow.python.eager.def_function.function, which is "exported"
-		// as
-		// "function." See https://bit.ly/3O5xpFH.
+		// decorator is tensorflow.python.eager.def_function.function, which is "exported"
+		// as "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
 		decoratorsType[] decoratorArray = this.functionDef.decs;
@@ -114,8 +112,7 @@ public class Function extends RefactorableProgramEntity {
 									this.isHybrid = true;
 							}
 					}
-				} else if (decorator.func instanceof Call) { // e.g.,
-																// tf.function(...)
+				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
 					System.out.println(decorator);
 					Call decoratorFunction = (Call) decorator.func;
 					System.out.println(decoratorFunction);
