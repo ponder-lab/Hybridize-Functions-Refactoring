@@ -33,44 +33,46 @@ public class Function extends RefactorableProgramEntity {
 	 * True iff this {@link Function} is decorated with tf.function.
 	 */
 	private boolean isHybrid;
-	
+
 	/**
 	 * True iff this {@link Function} has argument func.
 	 */
 	private boolean func;
-	
+
 	/**
 	 * True iff this {@link Function} has argument input_signature.
 	 */
 	private boolean input_signature;
-	
+
 	/**
 	 * True iff this {@link Function} has argument autograph.
 	 */
 	private boolean autograph;
-	
+
 	/**
 	 * True iff this {@link Function} has argument jit_compile.
 	 */
 	private boolean jit_compile;
-	
+
 	/**
 	 * True iff this {@link Function} has argument reduce_retracing.
 	 */
 	private boolean reduce_retracing;
-	
+
 	/**
 	 * True iff this {@link Function} has argument experimental_implements.
 	 */
 	private boolean experimental_implements;
-	
+
 	/**
-	 * True iff this {@link Function} has argument experimental_autograph_options.
+	 * True iff this {@link Function} has argument
+	 * experimental_autograph_options.
 	 */
 	private boolean experimental_autograph_options;
-	
+
 	/**
-	 * True iff this {@link Function} has argument experimental_follow_type_hints.
+	 * True iff this {@link Function} has argument
+	 * experimental_follow_type_hints.
 	 */
 	private boolean experimental_follow_type_hints;
 
@@ -78,7 +80,7 @@ public class Function extends RefactorableProgramEntity {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
-		//this.computeIsHybrid();
+		this.computeIsHybrid();
 		
 		// Parse the tf.function parameters
 		this.computeParameters();
@@ -222,7 +224,7 @@ public class Function extends RefactorableProgramEntity {
 	public boolean isHybrid() {
 		return isHybrid;
 	}
-	
+
 	/**
 	 * Accessor for private member variable func
 	 *
@@ -231,65 +233,72 @@ public class Function extends RefactorableProgramEntity {
 	public boolean getFuncParam() {
 		return func;
 	}
-	
+
 	/**
 	 * Accessor for private member variable input_signature
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter input_signature
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         input_signature
 	 */
 	public boolean getInputSignatureParam() {
 		return input_signature;
 	}
-	
+
 	/**
 	 * Accessor for private member variable autograph
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter autograph
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         autograph
 	 */
 	public boolean getAutographParam() {
 		return autograph;
 	}
-	
+
 	/**
 	 * Accessor for private member variable jit_compile
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter jit_compile
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         jit_compile
 	 */
 	public boolean getJitCompileParam() {
 		return jit_compile;
 	}
-	
+
 	/**
 	 * Accessor for private member variable reduce_retracing
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter reduce_retracing
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         reduce_retracing
 	 */
 	public boolean getReduceRetracingParam() {
 		return reduce_retracing;
 	}
-	
+
 	/**
 	 * Accessor for private member variable experimental_implements
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_implements
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_implements
 	 */
 	public boolean getExpImplementsParam() {
 		return experimental_implements;
 	}
-	
+
 	/**
 	 * Accessor for private member variable experimental_autograph_options
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_autograph_options
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_autograph_options
 	 */
 	public boolean getExpAutographOptParam() {
 		return experimental_autograph_options;
 	}
-	
+
 	/**
 	 * Accessor for private member variable experimental_follow_type_hints
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_follow_type_hints
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         experimental_follow_type_hints
 	 */
 	public boolean getExpTypeHintsParam() {
 		return experimental_follow_type_hints;
