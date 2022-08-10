@@ -194,7 +194,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testComputeParameters() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		assertEquals(7, functions.size());
 
 		Map<String, String> funcParameters = new HashMap<>();
 
@@ -205,12 +205,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		funcParameters.put("func3", "experimental_implements");
 		funcParameters.put("func4", "jit_compile");
 		funcParameters.put("func5", "reduce_retracing");
-		funcParameters.put("func5", "experimental_compile");
+		funcParameters.put("func6", "experimental_compile");
 
 		for (Function func : functions) {
 			assertNotNull(func);
 			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
 			String functionParameter = funcParameters.get(actualFunctionName);
+			System.out.println(functionParameter);
 			if(functionParameter == "input_signature")
 				assertTrue(func.getInputSignatureParam());
 			if (functionParameter =="autograph")

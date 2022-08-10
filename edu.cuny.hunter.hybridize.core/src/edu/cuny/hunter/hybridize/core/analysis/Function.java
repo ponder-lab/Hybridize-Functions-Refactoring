@@ -141,29 +141,40 @@ public class Function extends RefactorableProgramEntity {
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray)
 				if (decorator.func instanceof Call) {
+					// If tf.function has parameters it will be of instance Call
 					Call decoratorFunction = (Call) decorator.func;
+					// Get the keywords that will contain the parameters
 					keywordType[] keywordArray = decoratorFunction.keywords;
 					if (keywordArray != null)
+						// Traverse through the keywords
 						for (keywordType keyword : keywordArray)
 							if (keyword.arg instanceof NameTok) {
 								NameTok decoratorArg = (NameTok) keyword.arg;
 								if (decoratorArg.id.equals("func"))
+									// Found parameter func
 									this.func = true;
 								else if (decoratorArg.id.equals("input_signature"))
+									// Found parameter input_signature
 									this.input_signature = true;
 								else if (decoratorArg.id.equals("autograph"))
+									// Found parameter autograph
 									this.autograph = true;
 								else if (decoratorArg.id.equals("jit_compile")
 										|| decoratorArg.id.equals("experimental_compile"))
+									// Found parameter jit_compile/experimental_compile
 									this.jit_compile = true;
 								else if (decoratorArg.id.equals("reduce_retracing")
 										|| decoratorArg.id.equals("experimental_relax_shapes"))
+									// Found parameter reduce_retracing/experimental_relax_shapes
 									this.reduce_retracing = true;
 								else if (decoratorArg.id.equals("experimental_implements"))
+									// Found parameter experimental_implements
 									this.experimental_implements = true;
 								else if (decoratorArg.id.equals("experimental_autograph_options"))
+									// Found parameter experimental_autograph_options
 									this.experimental_autograph_options = true;
 								else if (decoratorArg.id.equals("experimental_follow_type_hints"))
+									// Found parameter experimental_follow_type_hints
 									this.experimental_follow_type_hints = true;
 							}
 				}
