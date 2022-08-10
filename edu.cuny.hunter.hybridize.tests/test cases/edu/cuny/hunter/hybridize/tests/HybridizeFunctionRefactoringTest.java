@@ -141,7 +141,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test #5. This simply tests whether the annotation is present for now.
 	 * It's probably not a "candidate," however, since it doesn't have a Tensor
 	 * argument. NOTE: This may wind up failing at some point since it doesn't
-	 * have a Tensor argument. Case: Hybrid
+	 * have a Tensor argument. 
+	 * Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -154,8 +155,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether the annotation is present for now. Case: not
-	 * hybrid
+	 * This simply tests whether the annotation is present for now. 
+	 * Case: not hybrid
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
@@ -171,7 +172,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #19. This simply tests whether a decorator with parameters is
-	 * correctly identified as hybrid. Case: not hybrid
+	 * correctly identified as hybrid.
+	 * Case: not hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
@@ -182,6 +184,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertTrue(func.isHybrid());
+		}
+	}
+	
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function arguments
+	 */
+	@Test
+	public void testComputeParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Map<String, String> funcParameters = new HashMap<>();
+
+		funcParameters.put("func", "input_signature");
+		funcParameters.put("func", "autograph");
+		funcParameters.put("func1", "experimental_autograph_options");
+		funcParameters.put("func2", "experimental_follow_type_hints");
+		funcParameters.put("func3", "experimental_implements");
+		funcParameters.put("func4", "jit_compile");
+		funcParameters.put("func5", "reduce_retracing");
+		funcParameters.put("func5", "experimental_compile");
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+			String functionParameter = funcParameters.get(actualFunctionName);
+			if(functionParameter == "input_signature")
+				assertTrue(func.getInputSignatureParam());
+			if (functionParameter =="autograph")
+				assertTrue(func.getAutographParam());
+			if (functionParameter =="jit_compile" || functionParameter =="experimental_compile")
+				assertTrue(func.getJitCompileParam());
+			if (functionParameter =="reduce_retracing" || functionParameter =="experimental_relax_shapes")
+				assertTrue(func.getReduceRetracingParam());
+			if (functionParameter =="experimental_implements")
+				assertTrue(func.getExpImplementsParam());
+			if (functionParameter =="experimental_autograph_options")
+				assertTrue(func.getExpAutographOptParam());
+			if (functionParameter =="experimental_follow_type_hints")
+				assertTrue(func.getExpTypeHintsParam());
 		}
 	}
 
