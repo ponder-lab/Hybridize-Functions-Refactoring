@@ -51,9 +51,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
-						System.out.println(folder);
 						Map<IResource, IWrappedResource> children = folder.children;
-						System.out.println(children);
 						// TODO: Drill down and extract function definitions.
 					} else if (obj instanceof PythonNode) {
 						PythonNode pythonNode = (PythonNode) obj;
@@ -107,14 +105,11 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						// ---------------------------------------------------------------------------------
 					} else if (obj instanceof PythonFolder) {
 						// Could be something like a "package."
-						System.out.println("Package?");
 						PythonFolder folder = (PythonFolder) obj;
-						System.out.println(folder);
 						// TODO: Drill down here? Doesn't seem to be any constituent elements except for
 						// going up to the parent.
 					} else if (obj instanceof PythonFile) {
 						PythonFile file = (PythonFile) obj;
-						System.out.println(file);
 						// TODO: Drill down and extract function definitions.
 						// NOTE: Do not re-parse the elements if it all possible.
 					}
