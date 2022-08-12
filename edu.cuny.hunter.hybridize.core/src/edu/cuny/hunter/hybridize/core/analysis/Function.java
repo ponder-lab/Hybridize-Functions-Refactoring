@@ -3,7 +3,6 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import org.eclipse.core.runtime.ILog;
-import org.eclipse.core.runtime.IStatus;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;

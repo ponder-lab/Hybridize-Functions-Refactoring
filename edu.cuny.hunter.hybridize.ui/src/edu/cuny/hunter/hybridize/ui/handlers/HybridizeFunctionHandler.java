@@ -51,6 +51,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				for (Object obj : list) {
 					if (obj instanceof PythonProjectSourceFolder) {
 						PythonProjectSourceFolder folder = (PythonProjectSourceFolder) obj;
+						@SuppressWarnings("unused")
 						Map<IResource, IWrappedResource> children = folder.children;
 						// TODO: Drill down and extract function definitions.
 					} else if (obj instanceof PythonNode) {
@@ -105,10 +106,12 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 						// ---------------------------------------------------------------------------------
 					} else if (obj instanceof PythonFolder) {
 						// Could be something like a "package."
+						@SuppressWarnings("unused")
 						PythonFolder folder = (PythonFolder) obj;
 						// TODO: Drill down here? Doesn't seem to be any constituent elements except for
 						// going up to the parent.
 					} else if (obj instanceof PythonFile) {
+						@SuppressWarnings("unused")
 						PythonFile file = (PythonFile) obj;
 						// TODO: Drill down and extract function definitions.
 						// NOTE: Do not re-parse the elements if it all possible.
