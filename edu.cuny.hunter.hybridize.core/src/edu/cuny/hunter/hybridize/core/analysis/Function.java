@@ -36,11 +36,17 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean isHybrid;
 
+	/**
+	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
+	 */
+	private boolean hasTensorParameter;
+
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
+		this.computeHasTensorParameter();
 	}
 
 	private void computeIsHybrid() {
@@ -90,6 +96,10 @@ public class Function extends RefactorableProgramEntity {
 					}
 				}
 			}
+	}
+	
+	private void computeHasTensorParameter() {
+		// TODO.
 	}
 
 	@Override
@@ -146,5 +156,14 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public FunctionDef getFunctionDef() {
 		return functionDef;
+	}
+
+	/**
+	 * True iff this {@link Function} has a tf.Tensor parameter.
+	 *
+	 * @return True iff this {@link Function} has a tf.Tensor parameter.
+	 */
+	public boolean hasTensorParameter() {
+		return hasTensorParameter;
 	}
 }

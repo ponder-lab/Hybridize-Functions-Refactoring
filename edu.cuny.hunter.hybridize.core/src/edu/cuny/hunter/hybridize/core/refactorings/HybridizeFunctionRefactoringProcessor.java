@@ -110,7 +110,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private static RefactoringStatus checkParameters(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
 		LOG.info("Checking parameters for: " + func + ".");
-		// TODO: Does the function have a tensor parameter?
+		// TODO: Does the function have a tensor parameter (#2)?
 		return status;
 	}
 
