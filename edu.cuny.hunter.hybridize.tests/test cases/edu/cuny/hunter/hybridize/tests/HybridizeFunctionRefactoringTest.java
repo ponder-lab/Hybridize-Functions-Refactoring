@@ -88,7 +88,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
 	}
 
-	private SimpleNode createPythonNode(String moduleName, String fileName, String contents)
+	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
 			throws MisconfigurationException {
 		LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
 		LOG.info("Contents: " + contents);
@@ -211,7 +211,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 		assertEquals(5, functions.size());
 
-		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<String, String>();
+		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
 		funcSimpleNameToExpectedSignature.put("func", "func");
 		funcSimpleNameToExpectedSignature.put("func1", "func1");
