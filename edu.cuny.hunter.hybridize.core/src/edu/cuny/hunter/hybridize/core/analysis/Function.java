@@ -16,6 +16,8 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * A representation of a Python function.
  *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
+ * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro
+ *         Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
 
@@ -102,7 +104,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Returns the FQN of this {@link Function}.
 	 *
-	 * @see https://peps.python.org/pep-3155
+	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
 	 * @return This {@link Function}'s FQN.
 	 */
 	public String getIdentifer() {
