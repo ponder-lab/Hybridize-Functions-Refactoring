@@ -6,6 +6,5 @@ package edu.cuny.hunter.hybridize.core.analysis;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public enum Refactoring {
-	CONVERT_EAGER_FUNCTION_TO_HYBRID,
-	OPTIMIZE_HYBRID_FUNCTION
+	CONVERT_EAGER_FUNCTION_TO_HYBRID, OPTIMIZE_HYBRID_FUNCTION
 }
