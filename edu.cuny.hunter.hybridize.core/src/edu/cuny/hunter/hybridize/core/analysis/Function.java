@@ -16,8 +16,7 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * A representation of a Python function.
  *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
- * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro
- *         Vélez</a>
+ * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
 
@@ -137,8 +136,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable isHybrid
 	 *
-	 * @return Boolean that states if this {@link Function} is decorated with
-	 *         tf.function.
+	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
 		return isHybrid;
