@@ -96,9 +96,10 @@ public class Function extends RefactorableProgramEntity {
 				}
 			}
 	}
-	
+
 	private void computeHasTensorParameter() {
-		// TODO.
+		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
+		// type hints are used.
 	}
 
 	@Override
@@ -158,7 +159,8 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100% sure.
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
+	 * sure.
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
