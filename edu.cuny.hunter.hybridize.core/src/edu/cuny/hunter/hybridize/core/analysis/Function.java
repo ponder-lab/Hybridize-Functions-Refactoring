@@ -308,7 +308,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         tf.function.
 	 */
 	public boolean isHybrid() {
-		return this.isHybrid;
+		return isHybrid;
 	}
 
 	@Override
