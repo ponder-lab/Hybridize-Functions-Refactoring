@@ -38,7 +38,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
-	private boolean hasTensorParameter;
+	private boolean likelyHasTensorParameter;
 
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
@@ -158,11 +158,11 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * True iff this {@link Function} has a tf.Tensor parameter.
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100% sure.
 	 *
-	 * @return True iff this {@link Function} has a tf.Tensor parameter.
+	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
-	public boolean hasTensorParameter() {
-		return hasTensorParameter;
+	public boolean likelyHasTensorParameter() {
+		return likelyHasTensorParameter;
 	}
 }
