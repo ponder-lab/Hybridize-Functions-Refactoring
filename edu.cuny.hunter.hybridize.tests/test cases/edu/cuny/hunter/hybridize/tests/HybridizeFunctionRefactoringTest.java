@@ -9,7 +9,9 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -188,7 +190,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 	
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function arguments
+	 * Test for #30. This simply tests whether we can parse the tf.function
+	 * arguments
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
@@ -196,36 +199,60 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 		assertEquals(7, functions.size());
 
-		Map<String, String> funcParameters = new HashMap<>();
+		// Needs to be an ArrayList because a decorator can have multiple
+		// parameters
+		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
 
-		funcParameters.put("func", "input_signature");
-		funcParameters.put("func", "autograph");
-		funcParameters.put("func1", "experimental_autograph_options");
-		funcParameters.put("func2", "experimental_follow_type_hints");
-		funcParameters.put("func3", "experimental_implements");
-		funcParameters.put("func4", "jit_compile");
-		funcParameters.put("func5", "reduce_retracing");
-		funcParameters.put("func6", "experimental_compile");
+		ArrayList<String> values_func = new ArrayList<String>();
+		ArrayList<String> values_func1 = new ArrayList<String>();
+		ArrayList<String> values_func2 = new ArrayList<String>();
+		ArrayList<String> values_func3 = new ArrayList<String>();
+		ArrayList<String> values_func4 = new ArrayList<String>();
+		ArrayList<String> values_func5 = new ArrayList<String>();
+		ArrayList<String> values_func6 = new ArrayList<String>();
+
+		values_func.add("input_signature");
+		values_func.add("autograph");
+		funcParameters.put("func", values_func);
+
+		values_func1.add("experimental_autograph_options");
+		funcParameters.put("func1", values_func1);
+
+		values_func2.add("experimental_follow_type_hints");
+		funcParameters.put("func2", values_func2);
+
+		values_func3.add("experimental_implements");
+		funcParameters.put("func3", values_func3);
+
+		values_func4.add("jit_compile");
+		funcParameters.put("func4", values_func4);
+
+		values_func5.add("reduce_retracing");
+		funcParameters.put("func5", values_func5);
+
+		values_func6.add("experimental_compile");
+		funcParameters.put("func6", values_func6);
 
 		for (Function func : functions) {
 			assertNotNull(func);
 			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
-			String functionParameter = funcParameters.get(actualFunctionName);
-			System.out.println(functionParameter);
-			if(functionParameter == "input_signature")
-				assertTrue(func.getInputSignatureParam());
-			if (functionParameter =="autograph")
-				assertTrue(func.getAutographParam());
-			if (functionParameter =="jit_compile" || functionParameter =="experimental_compile")
-				assertTrue(func.getJitCompileParam());
-			if (functionParameter =="reduce_retracing" || functionParameter =="experimental_relax_shapes")
-				assertTrue(func.getReduceRetracingParam());
-			if (functionParameter =="experimental_implements")
-				assertTrue(func.getExpImplementsParam());
-			if (functionParameter =="experimental_autograph_options")
-				assertTrue(func.getExpAutographOptParam());
-			if (functionParameter =="experimental_follow_type_hints")
-				assertTrue(func.getExpTypeHintsParam());
+			ArrayList<String> functionParameters = funcParameters.get(actualFunctionName);
+			for (String param : functionParameters) {
+				if (param == "input_signature")
+					assertTrue(func.getInputSignatureParam());
+				if (param == "autograph")
+					assertTrue(func.getAutographParam());
+				if (param == "jit_compile" || param == "experimental_compile")
+					assertTrue(func.getJitCompileParam());
+				if (param == "reduce_retracing" || param == "experimental_relax_shapes")
+					assertTrue(func.getReduceRetracingParam());
+				if (param == "experimental_implements")
+					assertTrue(func.getExpImplementsParam());
+				if (param == "experimental_autograph_options")
+					assertTrue(func.getExpAutographOptParam());
+				if (param == "experimental_follow_type_hints")
+					assertTrue(func.getExpTypeHintsParam());
+			}
 		}
 	}
 
