@@ -134,6 +134,11 @@ public class Function extends RefactorableProgramEntity {
 					}
 				}
 	}
+	
+	@Override
+	public String toString() {
+		return this.getIdentifer();
+	}
 
 	private void computeExistenceOfParameters() {
 		decoratorsType[] decoratorArray = functionDef.decs;
@@ -309,10 +314,5 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public boolean isHybrid() {
 		return isHybrid;
-	}
-
-	@Override
-	public String toString() {
-		return this.getIdentifer();
 	}
 }
