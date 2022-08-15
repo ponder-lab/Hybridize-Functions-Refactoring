@@ -138,10 +138,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now.
-	 * It's probably not a "candidate," however, since it doesn't have a Tensor
-	 * argument. NOTE: This may wind up failing at some point since it doesn't
-	 * have a Tensor argument. Case: Hybrid
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
+	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
+	 * Tensor argument. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -154,8 +153,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether the annotation is present for now. Case: not
-	 * hybrid
+	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
@@ -200,11 +198,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(func.isHybrid());
 		}
 	}
-	
+
 	/**
-	 * Test #23. This simply tests whether this tool does not crash with
-	 * decorators with multiple dots 
-	 * Case: not hybrid
+	 * Test #23. This simply tests whether this tool does not crash with decorators with multiple dots Case: not hybrid
 	 */
 	@Test
 	public void testIsHybridMultipleAttributes() throws Exception {
@@ -245,8 +241,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether we can process the decorator that has a
-	 * decorator of type Name.
+	 * This simply tests whether we can process the decorator that has a decorator of type Name.
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {

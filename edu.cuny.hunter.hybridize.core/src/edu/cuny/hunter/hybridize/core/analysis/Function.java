@@ -3,7 +3,6 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import org.eclipse.core.runtime.ILog;
-import org.eclipse.core.runtime.IStatus;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
@@ -36,17 +35,23 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean isHybrid;
 
+	/**
+	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
+	 */
+	private boolean likelyHasTensorParameter;
+
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
+		this.computeHasTensorParameter();
 	}
 
 	private void computeIsHybrid() {
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH.
-		// TODO: Consider mechanisms other than decorators (e.g., higher order functions).
+		// TODO: Consider mechanisms other than decorators (e.g., higher order functions). See #3.
 		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
@@ -90,6 +95,11 @@ public class Function extends RefactorableProgramEntity {
 					}
 				}
 			}
+	}
+
+	private void computeHasTensorParameter() {
+		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
+		// type hints are used.
 	}
 
 	@Override
@@ -146,5 +156,15 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public FunctionDef getFunctionDef() {
 		return functionDef;
+	}
+
+	/**
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
+	 * sure.
+	 *
+	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
+	 */
+	public boolean likelyHasTensorParameter() {
+		return likelyHasTensorParameter;
 	}
 }
