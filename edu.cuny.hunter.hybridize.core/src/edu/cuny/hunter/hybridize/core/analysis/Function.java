@@ -90,7 +90,7 @@ public class Function extends RefactorableProgramEntity {
 		// "exported" as "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order
 		// functions).
-		decoratorsType[] decoratorArray = this.functionDef.decs;
+		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray)
@@ -136,7 +136,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private void computeExistenceOfParameters() {
-		decoratorsType[] decoratorArray = this.functionDef.decs;
+		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray)
