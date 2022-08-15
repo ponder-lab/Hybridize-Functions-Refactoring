@@ -81,7 +81,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeIsHybrid();
 
 		// Parse the tf.function parameters
-		this.computeParameters();
+		this.computeExistenceOfParameters();
 	}
 
 	private void computeIsHybrid() {
@@ -135,7 +135,7 @@ public class Function extends RefactorableProgramEntity {
 				}
 	}
 
-	private void computeParameters() {
+	private void computeExistenceOfParameters() {
 		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
