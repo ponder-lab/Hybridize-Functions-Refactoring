@@ -110,14 +110,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private static RefactoringStatus checkParameters(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
 		LOG.info("Checking parameters for: " + func + ".");
-		// TODO: Does the function have a tensor parameter?
+		// TODO: Does the function have a tensor parameter (#2)?
+		// NOTE: Not sure if we will be checking everything individually here since we'll do the computation in the
+		// Function class. Instead, we may just need to check everything in checkFinalConditions(), as it is likely that
+		// the checking will depend on several things.
 		return status;
 	}
 
 	private static RefactoringStatus checkDecorators(Function func) {
 		RefactoringStatus status = new RefactoringStatus();
 		LOG.info("Checking decorators for: " + func + ".");
-		// TODO: Is the function already decorated with tf.function?
+		// TODO: Is the function already decorated with tf.function? NOTE: May move to checkFinalConditions() as this
+		// will be dependent on other things.
 		return status;
 	}
 

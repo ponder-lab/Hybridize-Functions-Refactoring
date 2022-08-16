@@ -1,5 +1,8 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static org.eclipse.core.runtime.Platform.getLog;
+
+import org.eclipse.core.runtime.ILog;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
@@ -17,10 +20,11 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * A representation of a Python function.
  *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
- * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro
- *         Vélez</a>
+ * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
+
+	private static final ILog LOG = getLog(Function.class);
 
 	/**
 	 * True iff this {@link Function} has argument autograph.
@@ -73,23 +77,28 @@ public class Function extends RefactorableProgramEntity {
 	 * True iff this {@link Function} has argument reduce_retracing.
 	 */
 	private boolean reduce_retracing;
+  
+  /**
+	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
+	 */
+	private boolean likelyHasTensorParameter;
 
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
-
+    this.computeHasTensorParameter();
+    
 		// Parse the tf.function parameters
 		this.computeExistenceOfParameters();
 	}
 
+
 	private void computeIsHybrid() {
-		// FIXME: This is fragile. What we really want to know is whether the
-		// decorator is tensorflow.python.eager.def_function.function, which is
-		// "exported" as "function." See https://bit.ly/3O5xpFH.
-		// TODO: Consider mechanisms other than decorators (e.g., higher order
-		// functions).
+		// FIXME: This is fragile. What we really want to know is whether the decorator is
+		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH.
+		// TODO: Consider mechanisms other than decorators (e.g., higher order functions). See #3.
 		decoratorsType[] decoratorArray = functionDef.decs;
 
 		if (decoratorArray != null)
@@ -97,44 +106,47 @@ public class Function extends RefactorableProgramEntity {
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
 				if (decorator.func instanceof Attribute) { // e.g., tf.function
-					System.out.println(decorator);
 					Attribute decoratorFunction = (Attribute) decorator.func;
-					System.out.println(decoratorFunction);
 					if (decoratorFunction.value instanceof Name) {
 						Name decoratorName = (Name) decoratorFunction.value;
-						System.out.println(decoratorName);
-						if (decoratorName.id.equals("tf"))
+						if (decoratorName.id.equals("tf")) {
 							// We have a viable prefix. Get the attribute.
 							if (decoratorFunction.attr instanceof NameTok) {
 								NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
 								if (decoratorAttribute.id.equals("function"))
 									// Found "tf.function."
 									this.isHybrid = true;
+									LOG.info(this + " is hybrid.");
+								}
 							}
 					}
 				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
-					System.out.println(decorator);
 					Call decoratorFunction = (Call) decorator.func;
-					System.out.println(decoratorFunction);
 					if (decoratorFunction.func instanceof Attribute) {
 						Attribute callFunction = (Attribute) decoratorFunction.func;
-						System.out.println(callFunction);
 						if (callFunction.value instanceof Name) {
 							Name decoratorName = (Name) callFunction.value;
-							System.out.println(decoratorName);
-							if (decoratorName.id.equals("tf"))
+							if (decoratorName.id.equals("tf")) {
 								// We have a viable prefix. Get the attribute.
 								if (callFunction.attr instanceof NameTok) {
 									NameTok decoratorAttribute = (NameTok) callFunction.attr;
 									if (decoratorAttribute.id.equals("function"))
 										// Found tf.function(...)
 										this.isHybrid = true;
+										LOG.info(this + " is hybrid.");
+									}
 								}
 						}
 					}
 				}
 	}
-	
+
+
+	private void computeHasTensorParameter() {
+		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
+		// type hints are used.
+	}
+
 	@Override
 	public String toString() {
 		return this.getIdentifer();
@@ -314,5 +326,15 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public boolean isHybrid() {
 		return isHybrid;
+	}
+
+	/**
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
+	 * sure.
+	 *
+	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
+	 */
+	public boolean likelyHasTensorParameter() {
+		return likelyHasTensorParameter;
 	}
 }

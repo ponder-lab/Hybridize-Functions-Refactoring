@@ -139,11 +139,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now.
-	 * It's probably not a "candidate," however, since it doesn't have a Tensor
-	 * argument. NOTE: This may wind up failing at some point since it doesn't
-	 * have a Tensor argument. 
-	 * Case: Hybrid
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
+	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
+	 * Tensor argument. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -156,8 +154,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether the annotation is present for now. 
-	 * Case: not hybrid
+	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
@@ -172,9 +169,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is
-	 * correctly identified as hybrid.
-	 * Case: not hybrid
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
+	 * hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
@@ -256,6 +252,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test #23. This simply tests whether this tool does not crash with decorators with multiple dots Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridMultipleAttributes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertFalse(func.isHybrid());
+		}
+	}
+
+	/**
 	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
@@ -282,8 +293,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether we can process the decorator that has a
-	 * decorator of type Name.
+	 * This simply tests whether we can process the decorator that has a decorator of type Name.
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {
@@ -293,8 +303,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		// NOTE: This should actually be assertTrue() instead of assertFalse().
-		// TODO:
-		// Change it to assertTrue() after we fix #20.
+		// TODO: Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
 	}
 
