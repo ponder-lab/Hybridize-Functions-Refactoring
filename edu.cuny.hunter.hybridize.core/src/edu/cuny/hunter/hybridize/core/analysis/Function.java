@@ -78,7 +78,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean reduce_retracing;
   
-  /**
+	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private boolean likelyHasTensorParameter;
@@ -88,7 +88,7 @@ public class Function extends RefactorableProgramEntity {
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
-    this.computeHasTensorParameter();
+		this.computeHasTensorParameter();
     
 		// Parse the tf.function parameters
 		this.computeExistenceOfParameters();
@@ -204,7 +204,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         autograph
 	 */
 	public boolean getAutographParam() {
-		return this.autograph;
+		return autograph;
 	}
 
 	/**
@@ -214,7 +214,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         experimental_autograph_options
 	 */
 	public boolean getExpAutographOptParam() {
-		return this.experimental_autograph_options;
+		return experimental_autograph_options;
 	}
 
 	/**
@@ -224,7 +224,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         experimental_implements
 	 */
 	public boolean getExpImplementsParam() {
-		return this.experimental_implements;
+		return experimental_implements;
 	}
 
 	/**
@@ -234,7 +234,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         experimental_follow_type_hints
 	 */
 	public boolean getExpTypeHintsParam() {
-		return this.experimental_follow_type_hints;
+		return experimental_follow_type_hints;
 	}
 
 	/**
@@ -243,7 +243,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return Boolean that states if this {@link Function} has parameter func
 	 */
 	public boolean getFuncParam() {
-		return this.func;
+		return func;
 	}
 
 	/**
@@ -295,7 +295,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         input_signature
 	 */
 	public boolean getInputSignatureParam() {
-		return this.input_signature;
+		return input_signature;
 	}
 
 	/**
@@ -305,7 +305,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         jit_compile
 	 */
 	public boolean getJitCompileParam() {
-		return this.jit_compile;
+		return jit_compile;
 	}
 
 	/**
@@ -315,7 +315,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         reduce_retracing
 	 */
 	public boolean getReduceRetracingParam() {
-		return this.reduce_retracing;
+		return reduce_retracing;
 	}
 
 	/**
