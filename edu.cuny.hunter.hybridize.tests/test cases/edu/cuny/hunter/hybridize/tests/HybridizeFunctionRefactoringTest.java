@@ -198,13 +198,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// parameters
 		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
 
-		ArrayList<String> values_func = new ArrayList<String>();
-		ArrayList<String> values_func1 = new ArrayList<String>();
-		ArrayList<String> values_func2 = new ArrayList<String>();
-		ArrayList<String> values_func3 = new ArrayList<String>();
-		ArrayList<String> values_func4 = new ArrayList<String>();
-		ArrayList<String> values_func5 = new ArrayList<String>();
-		ArrayList<String> values_func6 = new ArrayList<String>();
+		ArrayList<String> values_func = new ArrayList<>();
+		ArrayList<String> values_func1 = new ArrayList<>();
+		ArrayList<String> values_func2 = new ArrayList<>();
+		ArrayList<String> values_func3 = new ArrayList<>();
+		ArrayList<String> values_func4 = new ArrayList<>();
+		ArrayList<String> values_func5 = new ArrayList<>();
+		ArrayList<String> values_func6 = new ArrayList<>();
 
 		values_func.add("input_signature");
 		values_func.add("autograph");
