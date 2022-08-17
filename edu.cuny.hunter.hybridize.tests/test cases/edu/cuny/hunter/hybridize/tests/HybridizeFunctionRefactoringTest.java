@@ -184,8 +184,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is
-	 * correctly identified as hybrid. Case: Hybrid
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
+	 * hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
