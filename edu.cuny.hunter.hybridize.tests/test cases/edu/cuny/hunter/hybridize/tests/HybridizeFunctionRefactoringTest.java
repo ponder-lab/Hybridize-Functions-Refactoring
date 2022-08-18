@@ -143,7 +143,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tensor argument. Case: Hybrid
 	 */
 	@Test
-	public void test1() throws Exception {
+	public void testIsHybridTrue() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -156,7 +156,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
-	public void test2() throws Exception {
+	public void testIsHybridFalse() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
@@ -172,7 +172,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * hybrid
 	 */
 	@Test
-	public void test3() throws Exception {
+	public void testIsHybridWithParameters() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
@@ -187,7 +187,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test #23. This simply tests whether this tool does not crash with decorators with multiple dots Case: not hybrid
 	 */
 	@Test
-	public void test4() throws Exception {
+	public void testIsHybridMultipleAttributes() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
@@ -202,7 +202,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
-	public void test5() throws Exception {
+	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(5, functions.size());
@@ -228,7 +228,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * This simply tests whether we can process the decorator that has a decorator of type Name.
 	 */
 	@Test
-	public void test6() throws Exception {
+	public void testProcessDecorator() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
