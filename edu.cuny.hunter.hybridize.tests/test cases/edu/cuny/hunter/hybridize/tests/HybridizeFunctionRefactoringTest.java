@@ -238,6 +238,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
 	}
+	
+	/**
+	 * Test #20. This simply tests whether we can process the decorator function is considered as hybrid.
+	 */
+	@Test
+	public void testProcessFunctionDecorator() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+	}
 
 	@Override
 	protected String getName() {
