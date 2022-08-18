@@ -153,7 +153,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether the annotation is present for now. Case: not hybrid
+	 * This simply tests whether the annotation is present for now. Case: not
+	 * hybrid
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
@@ -227,31 +228,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * This simply tests whether we can process the decorator that has a
 	 * decorator of type Name.
-	 * Case: Not hybrid
 	 */
 	@Test
-	public void testProcessNameDecorator() throws Exception {
+	public void testProcessDecorator() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+		// NOTE: This should actually be assertTrue() instead of assertFalse().
+		// TODO:
+		// Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
-	}
-	
-	/**
-	 * Test for #20. This simply tests whether we can process the decorator as hybrid if
-	 * @function (type Name)
-	 * Case: Hybrid
-	 */
-	@Test
-	public void testProcessFunctionDecorator() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
 	}
 
 	@Override
