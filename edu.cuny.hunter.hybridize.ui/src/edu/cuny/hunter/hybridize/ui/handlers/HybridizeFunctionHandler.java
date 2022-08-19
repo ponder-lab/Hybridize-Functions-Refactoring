@@ -3,6 +3,8 @@ package edu.cuny.hunter.hybridize.ui.handlers;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ui.handlers.HandlerUtil.getActiveShellChecked;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -52,45 +54,13 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		if (currentSelection instanceof IStructuredSelection) {
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
 
-			if (list != null) {
+			if (list != null)
 				for (Object obj : list) {
-					if (obj instanceof PythonProjectSourceFolder) {
-						PythonProjectSourceFolder pythonProjectSourceFolder = (PythonProjectSourceFolder) obj;
-						Map<IResource, IWrappedResource> projectChildren = pythonProjectSourceFolder.children; // TODO: I don't think we need this. Just call recusively using the model provider.
+					Set<PythonNode> nodeSet = getPythonNodes(obj);
 
-						// Drill down and extract function definitions. Our goal here is to obtain AST nodes so that we
-						// can use the FunctionExtractor as in the case below.
-						for (IWrappedResource projectChild : projectChildren.values()) {
-							// NOTE: A folder's "children" will include *all* children recursively. Thus, there's no
-							// need to drill deeper into the file structure.
-							if (projectChild instanceof PythonFile) {
-								PythonFile file = (PythonFile) projectChild;
-
-								// Drill down the file to obtain PythonNodes.
-								Object[] fileChildren = provider.getChildren(file);
-
-								for (Object fileChild : fileChildren) {
-									if (fileChild instanceof PythonNode) {
-										PythonNode pythonNode = (PythonNode) fileChild;
-										functions.addAll(process(pythonNode));
-									}
-								}
-							}
-						}
-					} else if (obj instanceof PythonNode) {
-						PythonNode pythonNode = (PythonNode) obj;
-						functions.addAll(process(pythonNode));
-					} else if (obj instanceof PythonFolder) {
-						// Could be something like a "package."
-						PythonFolder folder = (PythonFolder) obj;
-					} else if (obj instanceof PythonFile) {
-						@SuppressWarnings("unused")
-						PythonFile file = (PythonFile) obj;
-						// TODO: Drill down and extract function definitions.
-						// NOTE: Do not re-parse the elements if it all possible.
-					}
+					for (PythonNode node : nodeSet)
+						functions.addAll(process(node));
 				}
-			}
 		}
 
 		LOG.info("Found " + functions.size() + " function definitions.");
@@ -105,6 +75,21 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 				.startRefactoring(availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
 
 		return null;
+	}
+
+	private static Set<PythonNode> getPythonNodes(Object obj) {
+		Set<PythonNode> ret = new HashSet<>();
+
+		if (obj instanceof PythonNode) {
+			PythonNode pythonNode = (PythonNode) obj;
+			ret.add(pythonNode);
+		} else {
+			Object[] children = provider.getChildren(obj);
+			for (Object child : children) {
+				ret.addAll(getPythonNodes(child));
+			}
+		}
+		return ret;
 	}
 
 	private static Set<FunctionDef> process(PythonNode pythonNode) throws ExecutionException {
