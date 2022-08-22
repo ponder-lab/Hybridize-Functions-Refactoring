@@ -9,7 +9,9 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -237,6 +239,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// NOTE: This should actually be assertTrue() instead of assertFalse().
 		// TODO: Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
+	}
+	
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file have different FQN if in different classes
+	 */
+	@Test
+	public void testSameFileSameName() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+		
+		List<String> functionNames = new ArrayList<String>();
+		
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+		
+		assertFalse(functionNames.get(0)==functionNames.get(1));
+		
 	}
 
 	@Override
