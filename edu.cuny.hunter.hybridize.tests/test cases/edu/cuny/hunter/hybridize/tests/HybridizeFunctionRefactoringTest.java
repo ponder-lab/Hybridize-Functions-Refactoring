@@ -250,7 +250,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
 		
-		List<String> functionNames = new ArrayList<String>();
+		List<String> functionNames = new ArrayList<>();
 		
 		for (Function func : functions) {
 			assertNotNull(func);
