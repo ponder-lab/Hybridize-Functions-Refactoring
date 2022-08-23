@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -250,14 +251,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
 		
-		List<String> functionNames = new ArrayList<>();
+		Set<String> functionNames = new HashSet<> ();
 		
 		for (Function func : functions) {
 			assertNotNull(func);
 			functionNames.add(func.getIdentifer());
 		}
 		
-		assertFalse(functionNames.get(0)==functionNames.get(1));
+		assertEquals(2, functionNames.size());
 		
 	}
 
