@@ -22,7 +22,7 @@ class Class1:
         # Class1.Class2.func_class2
         def func_class2():
             pass
-        # Class1.Class2.func_class2
+        # Class1.Class2.func_class4
         def func_class4(self):
             pass
 
