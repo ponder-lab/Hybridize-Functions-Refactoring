@@ -254,44 +254,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Override
-	protected String getName() {
-		// TODO Auto-generated method stub
-		return super.getName();
-	}
-
-	@Override
-	protected String getTestPath() {
-		// TODO Auto-generated method stub
-		return super.getTestPath();
-	}
-
-	@Override
 	protected String getTestFileExtension() {
 		return TEST_FILE_EXTENION;
-	}
-
-	@Override
-	protected String getInputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName);
-	}
-
-	@Override
-	protected String getInputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName, subDirName);
-	}
-
-	@Override
-	protected String getOutputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName);
-	}
-
-	@Override
-	protected String getOutputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName, subDirName);
 	}
 
 	@Override
