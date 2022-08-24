@@ -214,6 +214,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
 		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
 		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
 		for (Function func : functions) {
 			assertNotNull(func);

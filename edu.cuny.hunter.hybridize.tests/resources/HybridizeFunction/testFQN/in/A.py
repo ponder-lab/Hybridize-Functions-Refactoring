@@ -15,7 +15,13 @@ class Class1:
     # Class1.func_class1
     def func_class1():
         pass
+    # Class1.func_class3
+    def func_class3(self):
+        pass
     class Class2:
         # Class1.Class2.func_class2
         def func_class2():
+            pass
+        # Class1.Class2.func_class2
+        def func_class4(self):
             pass
