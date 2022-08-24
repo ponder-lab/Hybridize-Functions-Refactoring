@@ -13,4 +13,8 @@ def dummy_test(test_input, expected):
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="requires python3.10 or higher")
 def test_function():
     pass
-    
+
+if __name__ == '__main__':
+    dummy_fun()
+    dummy_test("1", "1")
+    test_function()
