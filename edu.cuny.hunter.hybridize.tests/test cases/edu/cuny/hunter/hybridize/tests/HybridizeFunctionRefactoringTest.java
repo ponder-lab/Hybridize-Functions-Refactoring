@@ -205,7 +205,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(5, functions.size());
+		assertEquals(7, functions.size());
 
 		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
