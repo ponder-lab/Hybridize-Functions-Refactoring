@@ -1,5 +1,3 @@
-import tensorflow as tf
-
 # func
 def func():
     pass
