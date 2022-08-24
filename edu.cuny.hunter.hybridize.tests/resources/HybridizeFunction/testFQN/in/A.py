@@ -6,7 +6,7 @@ def func():
 
 # func1
 def func1():
-    #func1.func2
+    # func1.func2
     def func2():
         pass
     pass
