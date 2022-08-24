@@ -205,7 +205,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(5, functions.size());
+		assertEquals(7, functions.size());
 
 		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
@@ -214,13 +214,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
 		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
 		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
 		for (Function func : functions) {
+			LOG.info("Checking: " + func);
+
 			assertNotNull(func);
-			String actualFunctionDefFullRepresentationString = NodeUtils
-					.getFullRepresentationString(func.getFunctionDef());
-			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString),
-					func.getIdentifer());
+
+			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+
+			LOG.info("Function simple name: " + simpleName);
+
+			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+
+			LOG.info("Expected signature: " + expectedSignature);
+
+			String actualSignature = func.getIdentifer();
+
+			LOG.info("Actual signature: " + actualSignature);
+
+			assertEquals(expectedSignature, actualSignature);
 		}
 	}
 
