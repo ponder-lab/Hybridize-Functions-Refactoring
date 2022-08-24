@@ -218,11 +218,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
 		for (Function func : functions) {
+			LOG.info("Checking: " + func);
+
 			assertNotNull(func);
-			String actualFunctionDefFullRepresentationString = NodeUtils
-					.getFullRepresentationString(func.getFunctionDef());
-			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString),
-					func.getIdentifer());
+
+			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+
+			LOG.info("Function simple name: " + simpleName);
+
+			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+
+			LOG.info("Expected signature: " + expectedSignature);
+
+			String actualSignature = func.getIdentifer();
+
+			LOG.info("Actual signature: " + actualSignature);
+
+			assertEquals(expectedSignature, actualSignature);
 		}
 	}
 
