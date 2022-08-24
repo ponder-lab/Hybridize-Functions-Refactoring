@@ -9,6 +9,7 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -258,13 +259,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return TEST_FILE_EXTENION;
 	}
 
+	private static void runCommand(String... command) throws IOException, InterruptedException {
+		ProcessBuilder processBuilder = new ProcessBuilder(command);
+		Process process = processBuilder.start();
+		int exitCode = process.waitFor();
+		assertEquals("Error code should be 0.", 0, exitCode);
+	}
+
 	@Override
 	public void genericbefore() throws Exception {
 		if (fIsVerbose) {
 			System.out.println("\n---------------------------------------------");
 			System.out.println("\nTest:" + getClass() + "." + getName());
 		}
+
 		RefactoringCore.getUndoManager().flush();
+
+		String inputTestFileName = getInputTestFileName("A");
+		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+
+		installRequirements(inputTestFileAbsolutionPath.getParent());
+		runPython(inputTestFileAbsolutionPath);
+	}
+
+	/**
+	 * Runs python on the file presented by the given {@link Path}.
+	 *
+	 * @param path The {@link Path} of the file to interpret.
+	 */
+	private static void runPython(Path path) throws IOException, InterruptedException {
+		// run the code.
+		runCommand("python", path.toString());
+	}
+
+	/**
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
+	 * given path.
+	 *
+	 * @param path The {@link Path} containing the requirements.txt file.
+	 */
+	private static void installRequirements(Path path) throws IOException, InterruptedException {
+		Path requirements = path.resolve("requirements.txt");
+
+		// install requirements.
+		runCommand("pip", "install", "-r", requirements.toString());
 	}
 
 	@Override
