@@ -9,7 +9,7 @@ def func1():
     # func1.func2
     def func2():
         pass
-    pass
+    func2()
 
 class Class1:
     # Class1.func_class1
@@ -25,3 +25,4 @@ class Class1:
         # Class1.Class2.func_class2
         def func_class4(self):
             pass
+
