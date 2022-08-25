@@ -170,17 +170,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(func.isHybrid());
 		}
 	}
-	
+
 	/**
-	 * Test #17. This simply tests whether this tool looks at multiple decorator.
-	 * Case: Hybrid
+	 * Test #17. This simply tests whether this tool looks at multiple decorator. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridMultipleDecorators() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
-		
+
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertTrue(func.isHybrid());
@@ -196,7 +195,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
-		
+
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertTrue(func.isHybrid());
