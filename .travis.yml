@@ -8,7 +8,9 @@ cache:
   - "$HOME/.m2"
 addons:
   apt:
-    packages: python3
+    packages:
+    - python3
+    - python-is-python3
 services:
 - xvfb
 before_script: python --version
