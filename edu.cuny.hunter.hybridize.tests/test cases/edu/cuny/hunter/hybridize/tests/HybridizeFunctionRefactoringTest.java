@@ -302,7 +302,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private static void runPython(Path path) throws IOException, InterruptedException {
 		// run the code.
-		runCommand("python", path.toString());
+		runCommand("python3", path.toString());
 	}
 
 	/**
