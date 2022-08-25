@@ -6,8 +6,12 @@ cache:
   apt: true
   directories:
   - "$HOME/.m2"
+addons:
+  apt:
+    packages: python3
 services:
 - xvfb
+before_script: python --version
 script: mvn clean verify -Pjacoco coveralls:report
 notifications:
   slack:
