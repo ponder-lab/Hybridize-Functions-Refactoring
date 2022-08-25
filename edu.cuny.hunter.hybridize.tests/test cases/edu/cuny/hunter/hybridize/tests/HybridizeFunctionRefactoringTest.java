@@ -276,7 +276,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
 		}
 
-		assertEquals("Error code should be 0. Error was: " + errorOutput + ".", 0, exitCode);
+		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
 	}
 
 	@Override
