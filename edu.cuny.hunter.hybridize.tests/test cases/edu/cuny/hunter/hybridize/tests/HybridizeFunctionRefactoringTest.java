@@ -7,8 +7,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -261,9 +263,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static void runCommand(String... command) throws IOException, InterruptedException {
 		ProcessBuilder processBuilder = new ProcessBuilder(command);
+
+		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
+
 		Process process = processBuilder.start();
 		int exitCode = process.waitFor();
-		assertEquals("Error code should be 0.", 0, exitCode);
+		String errorOutput = null;
+
+		if (exitCode != 0) { // there's a problem.
+			// retrieve the error output.
+			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+		}
+
+		assertEquals("Error code should be 0. Error was: " + errorOutput + ".", 0, exitCode);
 	}
 
 	@Override
