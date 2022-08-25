@@ -4,6 +4,7 @@ language: java
 jdk: openjdk11
 cache:
   apt: true
+  pip: true
   directories:
   - "$HOME/.m2"
 addons:
