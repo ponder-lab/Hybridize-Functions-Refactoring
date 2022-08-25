@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -254,6 +255,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// NOTE: This should actually be assertTrue() instead of assertFalse().
 		// TODO: Change it to assertTrue() after we fix #20.
 		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functions.size());
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functionNames.size());
+	}
+
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		// TODO: Change to 2 when #41 is fixed.
+		assertEquals(1, functions.size());
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		// NOTE: Both of these functions have the same qualified name.
+		assertEquals(1, functionNames.size());
 	}
 
 	@Override
