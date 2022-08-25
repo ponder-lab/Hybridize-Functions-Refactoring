@@ -108,9 +108,10 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			System.out.println(args);
 			exprType[] annotation = args.annotation;
 
-			for (exprType annot : annotation)
-				if (annot != null)
-					System.out.println(annot);
+			if (annotation != null)
+				for (exprType annot : annotation)
+					if (annot != null)
+						System.out.println(annot);
 
 			exprType[] args2 = args.args;
 
