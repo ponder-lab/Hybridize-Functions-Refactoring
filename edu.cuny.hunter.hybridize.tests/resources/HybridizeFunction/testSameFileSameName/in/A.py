@@ -1,7 +1,12 @@
-class test1:
-  def b():
-    print("b1")
+class Test:
+    def b(self):
+        pass
 
-class test2:
-  def b():
-    print("b2")
+class Test2:
+    def b(self):
+        pass
+
+if __name__ == '__main__':
+    Test().b()
+    Test2().b()
+
