@@ -7,9 +7,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -159,7 +163,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testIsHybridFalse() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		assertEquals(3, functions.size());
 
 		for (Function func : functions) {
 			assertNotNull(func);
@@ -221,7 +225,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testFQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(5, functions.size());
+		assertEquals(7, functions.size());
 
 		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
@@ -230,13 +234,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
 		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
 		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
 		for (Function func : functions) {
+			LOG.info("Checking: " + func);
+
 			assertNotNull(func);
-			String actualFunctionDefFullRepresentationString = NodeUtils
-					.getFullRepresentationString(func.getFunctionDef());
-			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString),
-					func.getIdentifer());
+
+			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+
+			LOG.info("Function simple name: " + simpleName);
+
+			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+
+			LOG.info("Expected signature: " + expectedSignature);
+
+			String actualSignature = func.getIdentifer();
+
+			LOG.info("Actual signature: " + actualSignature);
+
+			assertEquals(expectedSignature, actualSignature);
 		}
 	}
 
@@ -255,16 +273,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 	}
 
-	@Override
-	protected String getName() {
-		// TODO Auto-generated method stub
-		return super.getName();
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functions.size());
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functionNames.size());
 	}
 
-	@Override
-	protected String getTestPath() {
-		// TODO Auto-generated method stub
-		return super.getTestPath();
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		// TODO: Change to 2 when #41 is fixed.
+		assertEquals(1, functions.size());
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		// NOTE: Both of these functions have the same qualified name.
+		assertEquals(1, functionNames.size());
 	}
 
 	@Override
@@ -272,28 +322,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return TEST_FILE_EXTENION;
 	}
 
-	@Override
-	protected String getInputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName);
-	}
+	private static void runCommand(String... command) throws IOException, InterruptedException {
+		ProcessBuilder processBuilder = new ProcessBuilder(command);
 
-	@Override
-	protected String getInputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName, subDirName);
-	}
+		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
 
-	@Override
-	protected String getOutputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName);
-	}
+		Process process = processBuilder.start();
+		int exitCode = process.waitFor();
+		String errorOutput = null;
 
-	@Override
-	protected String getOutputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName, subDirName);
+		if (exitCode != 0) { // there's a problem.
+			// retrieve the error output.
+			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+		}
+
+		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
 	}
 
 	@Override
@@ -302,7 +346,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			System.out.println("\n---------------------------------------------");
 			System.out.println("\nTest:" + getClass() + "." + getName());
 		}
+
 		RefactoringCore.getUndoManager().flush();
+
+		String inputTestFileName = getInputTestFileName("A");
+		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+
+		installRequirements(inputTestFileAbsolutionPath.getParent());
+		runPython(inputTestFileAbsolutionPath);
+	}
+
+	/**
+	 * Runs python on the file presented by the given {@link Path}.
+	 *
+	 * @param path The {@link Path} of the file to interpret.
+	 */
+	private static void runPython(Path path) throws IOException, InterruptedException {
+		// run the code.
+		runCommand("python3", path.toString());
+	}
+
+	/**
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
+	 * given path.
+	 *
+	 * @param path The {@link Path} containing the requirements.txt file.
+	 */
+	private static void installRequirements(Path path) throws IOException, InterruptedException {
+		Path requirements = path.resolve("requirements.txt");
+
+		// install requirements.
+		runCommand("pip3", "install", "-r", requirements.toString());
 	}
 
 	@Override

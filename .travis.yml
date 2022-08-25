@@ -1,13 +1,18 @@
 os: linux
-dist: xenial
+dist: focal
 language: java
 jdk: openjdk11
 cache:
   apt: true
+  pip: true
   directories:
   - "$HOME/.m2"
+addons:
+  apt:
+    packages: python3
 services:
 - xvfb
+before_script: python3 --version
 script: mvn clean verify -Pjacoco coveralls:report
 notifications:
   slack:
