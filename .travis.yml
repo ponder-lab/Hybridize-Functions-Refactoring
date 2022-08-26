@@ -12,6 +12,7 @@ addons:
     packages: python3
 services:
 - xvfb
+install: skip # The below script command already does the installation.
 before_script: python3 --version
 script: mvn clean verify -Pjacoco coveralls:report
 notifications:
