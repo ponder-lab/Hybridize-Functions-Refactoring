@@ -68,7 +68,7 @@ public class Function extends RefactorableProgramEntity {
 					if (decoratorFunction.value instanceof Name) {
 						Name decoratorName = (Name) decoratorFunction.value;
 						// We have a viable prefix. Get the attribute.
-						if (decoratorName.id.equals("tf") && (decoratorFunction.attr instanceof NameTok)) {
+						if (decoratorName.id.equals("tf") && decoratorFunction.attr instanceof NameTok) {
 							NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
 							if (decoratorAttribute.id.equals("function")) {
 								// Found "tf.function."
@@ -84,7 +84,7 @@ public class Function extends RefactorableProgramEntity {
 						if (callFunction.value instanceof Name) {
 							Name decoratorName = (Name) callFunction.value;
 							// We have a viable prefix. Get the attribute.
-							if (decoratorName.id.equals("tf") && (callFunction.attr instanceof NameTok)) {
+							if (decoratorName.id.equals("tf") && callFunction.attr instanceof NameTok) {
 								NameTok decoratorAttribute = (NameTok) callFunction.attr;
 								if (decoratorAttribute.id.equals("function")) {
 									// Found tf.function(...)
