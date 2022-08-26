@@ -58,11 +58,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Runs a single analysis test.
-	 * 
+	 *
 	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
-		SimpleNode pythonNode = createPythonNodeFromTestFile("A");
+		SimpleNode pythonNode = this.createPythonNodeFromTestFile("A");
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
@@ -74,20 +74,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				availableFunctions.toArray(FunctionDef[]::new));
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
-		RefactoringStatus status = performRefactoringWithStatus(refactoring);
+		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
 		assertTrue(status.isOK());
 
 		return processor.getFunctions();
 	}
 
 	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
-		return createPythonNodeFromTestFile(fileName, true);
+		return this.createPythonNodeFromTestFile(fileName, true);
 	}
 
 	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
 			throws IOException, MisconfigurationException {
-		String contents = input ? getFileContents(getInputTestFileName(fileName))
-				: getFileContents(getOutputTestFileName(fileName));
+		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
+				: this.getFileContents(this.getOutputTestFileName(fileName));
 
 		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
 	}
@@ -126,10 +126,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				parseErr.printStackTrace();
 
 				Token token = parseErr.currentToken;
-				if (token != null) {
+				if (token != null)
 					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:"
 							+ token.beginLine + "\ncol:" + token.beginColumn);
-				}
 			}
 
 			fail("Expected no error, received:\n" + err + "\n" + s);
@@ -341,14 +340,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Override
 	public void genericbefore() throws Exception {
-		if (fIsVerbose) {
+		if (this.fIsVerbose) {
 			System.out.println("\n---------------------------------------------");
-			System.out.println("\nTest:" + getClass() + "." + getName());
+			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
 		}
 
 		RefactoringCore.getUndoManager().flush();
 
-		String inputTestFileName = getInputTestFileName("A");
+		String inputTestFileName = this.getInputTestFileName("A");
 		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
 
 		installRequirements(inputTestFileAbsolutionPath.getParent());

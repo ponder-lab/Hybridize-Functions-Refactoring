@@ -52,25 +52,23 @@ public class Function extends RefactorableProgramEntity {
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH.
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions). See #3.
-		decoratorsType[] decoratorArray = functionDef.decs;
+		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
-			for (decoratorsType decorator : decoratorArray) {
+			for (decoratorsType decorator : decoratorArray)
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
 				if (decorator.func instanceof Attribute) { // e.g., tf.function
 					Attribute decoratorFunction = (Attribute) decorator.func;
 					if (decoratorFunction.value instanceof Name) {
 						Name decoratorName = (Name) decoratorFunction.value;
-						if (decoratorName.id.equals("tf")) {
-							// We have a viable prefix. Get the attribute.
-							if (decoratorFunction.attr instanceof NameTok) {
-								NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-								if (decoratorAttribute.id.equals("function")) {
-									// Found "tf.function."
-									this.isHybrid = true;
-									LOG.info(this + " is hybrid.");
-								}
+						// We have a viable prefix. Get the attribute.
+						if (decoratorName.id.equals("tf") && (decoratorFunction.attr instanceof NameTok)) {
+							NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
+							if (decoratorAttribute.id.equals("function")) {
+								// Found "tf.function."
+								this.isHybrid = true;
+								LOG.info(this + " is hybrid.");
 							}
 						}
 					}
@@ -80,21 +78,18 @@ public class Function extends RefactorableProgramEntity {
 						Attribute callFunction = (Attribute) decoratorFunction.func;
 						if (callFunction.value instanceof Name) {
 							Name decoratorName = (Name) callFunction.value;
-							if (decoratorName.id.equals("tf")) {
-								// We have a viable prefix. Get the attribute.
-								if (callFunction.attr instanceof NameTok) {
-									NameTok decoratorAttribute = (NameTok) callFunction.attr;
-									if (decoratorAttribute.id.equals("function")) {
-										// Found tf.function(...)
-										this.isHybrid = true;
-										LOG.info(this + " is hybrid.");
-									}
+							// We have a viable prefix. Get the attribute.
+							if (decoratorName.id.equals("tf") && (callFunction.attr instanceof NameTok)) {
+								NameTok decoratorAttribute = (NameTok) callFunction.attr;
+								if (decoratorAttribute.id.equals("function")) {
+									// Found tf.function(...)
+									this.isHybrid = true;
+									LOG.info(this + " is hybrid.");
 								}
 							}
 						}
 					}
 				}
-			}
 	}
 
 	private void computeHasTensorParameter() {
@@ -146,7 +141,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
-		return isHybrid;
+		return this.isHybrid;
 	}
 
 	/**
@@ -155,7 +150,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return The {@link FunctionDef} representing this {@link Function}
 	 */
 	public FunctionDef getFunctionDef() {
-		return functionDef;
+		return this.functionDef;
 	}
 
 	/**
@@ -165,6 +160,6 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
 	public boolean likelyHasTensorParameter() {
-		return likelyHasTensorParameter;
+		return this.likelyHasTensorParameter;
 	}
 }

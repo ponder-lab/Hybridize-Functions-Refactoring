@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
+
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -31,7 +32,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
 	public Set<Function> getFunctions() {
-		return functions;
+		return this.functions;
 	}
 
 	public HybridizeFunctionRefactoringProcessor() {
@@ -80,7 +81,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100);
 		// TODO: Adjust amount of work later.
 
-		status.merge(checkFunctions(progress.split(1)));
+		status.merge(this.checkFunctions(progress.split(1)));
 
 		return status;
 	}

@@ -9,7 +9,7 @@ import org.python.pydev.parser.jython.ast.VisitorBase;
 
 /**
  * Extracts function definitions from a given AST node.
- * 
+ *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public class FunctionExtractor extends VisitorBase {
@@ -33,6 +33,6 @@ public class FunctionExtractor extends VisitorBase {
 	}
 
 	public Set<FunctionDef> getDefinitions() {
-		return definitions;
+		return this.definitions;
 	}
 }

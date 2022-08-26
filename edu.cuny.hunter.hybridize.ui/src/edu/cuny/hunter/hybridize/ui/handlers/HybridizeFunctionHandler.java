@@ -32,7 +32,7 @@ import edu.cuny.hunter.hybridize.ui.wizards.HybridizeFunctionRefactoringWizard;
 public class HybridizeFunctionHandler extends AbstractHandler {
 
 	private static final ILog LOG = getLog(HybridizeFunctionHandler.class);
-	
+
 	private static final PythonModelProvider provider = new PythonModelProvider();
 
 	/**
@@ -77,9 +77,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			ret.add(pythonNode);
 		} else {
 			Object[] children = provider.getChildren(obj);
-			for (Object child : children) {
+			for (Object child : children)
 				ret.addAll(getPythonNodes(child));
-			}
 		}
 		return ret;
 	}

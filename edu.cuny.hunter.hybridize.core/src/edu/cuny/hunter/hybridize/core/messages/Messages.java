@@ -6,8 +6,7 @@ package edu.cuny.hunter.hybridize.core.messages;
 import org.eclipse.osgi.util.NLS;
 
 /**
- * @author <a href="mailto:raffi.khatchadourian@hunter.cuny.edu">Raffi
- *         Khatchadourian</a>
+ * @author <a href="mailto:raffi.khatchadourian@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public class Messages extends NLS {
 	private static final String BUNDLE_NAME = "edu.cuny.hunter.hybridize.core.messages.messages"; //$NON-NLS-1$
@@ -30,6 +29,5 @@ public class Messages extends NLS {
 	}
 
 	private Messages() {
-		super();
 	}
 }
