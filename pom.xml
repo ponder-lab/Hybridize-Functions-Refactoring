@@ -32,6 +32,8 @@
         <tycho-version>2.7.4</tycho-version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jacoco-version>0.8.8</jacoco-version>
+        <maven-checkstyle-plugin-version>3.2.0</maven-checkstyle-plugin-version>
+        <checkstyle-version>10.3.2</checkstyle-version>
         <junit-version>4.13.2</junit-version>
         <eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
         <platform-version-name>2022-06</platform-version-name>
@@ -207,7 +209,42 @@
                     </environments>
                 </configuration>
             </plugin>
+            <plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>${maven-checkstyle-plugin-version}</version>
+				<dependencies>
+					<dependency>
+						<groupId>com.puppycrawl.tools</groupId>
+						<artifactId>checkstyle</artifactId>
+						<version>${checkstyle-version}</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<configLocation>google_checks.xml</configLocation>
+					<encoding>UTF-8</encoding>
+					<consoleOutput>true</consoleOutput>
+					<failsOnError>true</failsOnError>
+					<linkXRef>false</linkXRef>
+					<includeTestSourceDirectory>true</includeTestSourceDirectory>
+					<violationSeverity>warning</violationSeverity>
+					<sourceDirectories>
+						<sourceDirectory>${project.basedir}/src</sourceDirectory>
+					</sourceDirectories>
+					<testSourceDirectories>
+						<testSourceDirectory>${project.basedir}/test cases/</testSourceDirectory>
+					</testSourceDirectories>
+				</configuration>
+				<executions>
+					<execution>
+						<id>validate</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
         </plugins>
     </build>
 </project>
-
