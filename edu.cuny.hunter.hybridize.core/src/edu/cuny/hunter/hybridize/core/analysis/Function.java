@@ -98,7 +98,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable functionDef
+	 * Accessor for private member variable functionDef.
 	 *
 	 * @return The {@link FunctionDef} representing this {@link Function}
 	 */
@@ -140,7 +140,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable isHybrid
+	 * Accessor for private member variable isHybrid.
 	 *
 	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
 	 */
