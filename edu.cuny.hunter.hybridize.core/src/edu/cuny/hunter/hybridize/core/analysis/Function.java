@@ -48,6 +48,11 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter();
 	}
 
+	private void computeHasTensorParameter() {
+		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
+		// type hints are used.
+	}
+
 	private void computeIsHybrid() {
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH.
@@ -92,14 +97,13 @@ public class Function extends RefactorableProgramEntity {
 				}
 	}
 
-	private void computeHasTensorParameter() {
-		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
-		// type hints are used.
-	}
-
-	@Override
-	public String toString() {
-		return this.getIdentifer();
+	/**
+	 * Accessor for private member variable functionDef
+	 *
+	 * @return The {@link FunctionDef} representing this {@link Function}
+	 */
+	public FunctionDef getFunctionDef() {
+		return this.functionDef;
 	}
 
 	/**
@@ -145,15 +149,6 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable functionDef
-	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}
-	 */
-	public FunctionDef getFunctionDef() {
-		return this.functionDef;
-	}
-
-	/**
 	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
 	 * sure.
 	 *
@@ -161,5 +156,10 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public boolean likelyHasTensorParameter() {
 		return this.likelyHasTensorParameter;
+	}
+
+	@Override
+	public String toString() {
+		return this.getIdentifer();
 	}
 }

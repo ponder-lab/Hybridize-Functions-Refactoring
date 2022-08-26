@@ -45,52 +45,11 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 @SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
+	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
+
 	private static final String REFACTORING_PATH = "HybridizeFunction/";
 
 	private static final String TEST_FILE_EXTENION = "py";
-
-	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
-
-	@Override
-	protected String getRefactoringPath() {
-		return REFACTORING_PATH;
-	}
-
-	/**
-	 * Runs a single analysis test.
-	 *
-	 * @return The set of {@link Function}s analyzed.
-	 */
-	private Set<Function> getFunctions() throws Exception {
-		SimpleNode pythonNode = this.createPythonNodeFromTestFile("A");
-
-		// extract function definitions.
-		FunctionExtractor functionExtractor = new FunctionExtractor();
-		pythonNode.accept(functionExtractor);
-		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
-				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
-
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.toArray(FunctionDef[]::new));
-		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
-
-		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
-		assertTrue(status.isOK());
-
-		return processor.getFunctions();
-	}
-
-	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
-		return this.createPythonNodeFromTestFile(fileName, true);
-	}
-
-	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
-			throws IOException, MisconfigurationException {
-		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
-				: this.getFileContents(this.getOutputTestFileName(fileName));
-
-		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
-	}
 
 	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
 			throws MisconfigurationException {
@@ -102,13 +61,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		IGrammarVersionProvider provider = new IGrammarVersionProvider() {
 
 			@Override
-			public int getGrammarVersion() throws MisconfigurationException {
-				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
+			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
+				return null;
 			}
 
 			@Override
-			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
-				return null;
+			public int getGrammarVersion() throws MisconfigurationException {
+				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
 			}
 		};
 
@@ -141,79 +100,110 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
-	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
-	 * Tensor argument. Case: Hybrid
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
+	 * given path.
+	 *
+	 * @param path The {@link Path} containing the requirements.txt file.
 	 */
-	@Test
-	public void testIsHybridTrue() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+	private static void installRequirements(Path path) throws IOException, InterruptedException {
+		Path requirements = path.resolve("requirements.txt");
+
+		// install requirements.
+		runCommand("pip3", "install", "-r", requirements.toString());
+	}
+
+	private static void runCommand(String... command) throws IOException, InterruptedException {
+		ProcessBuilder processBuilder = new ProcessBuilder(command);
+
+		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
+
+		Process process = processBuilder.start();
+		int exitCode = process.waitFor();
+		String errorOutput = null;
+
+		if (exitCode != 0) { // there's a problem.
+			// retrieve the error output.
+			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+		}
+
+		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
 	}
 
 	/**
-	 * This simply tests whether the annotation is present for now. Case: not hybrid
+	 * Runs python on the file presented by the given {@link Path}.
+	 *
+	 * @param path The {@link Path} of the file to interpret.
 	 */
-	@Test
-	public void testIsHybridFalse() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+	private static void runPython(Path path) throws IOException, InterruptedException {
+		// run the code.
+		runCommand("python3", path.toString());
+	}
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
+	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
+		return this.createPythonNodeFromTestFile(fileName, true);
+	}
+
+	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
+			throws IOException, MisconfigurationException {
+		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
+				: this.getFileContents(this.getOutputTestFileName(fileName));
+
+		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
+	}
+
+	@Override
+	public void genericafter() throws Exception {
+	}
+
+	@Override
+	public void genericbefore() throws Exception {
+		if (this.fIsVerbose) {
+			System.out.println("\n---------------------------------------------");
+			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
 		}
+
+		RefactoringCore.getUndoManager().flush();
+
+		String inputTestFileName = this.getInputTestFileName("A");
+		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+
+		installRequirements(inputTestFileAbsolutionPath.getParent());
+		runPython(inputTestFileAbsolutionPath);
 	}
 
 	/**
-	 * Test #17. This simply tests whether this tool looks at multiple decorator. Case: Hybrid
+	 * Runs a single analysis test.
+	 *
+	 * @return The set of {@link Function}s analyzed.
 	 */
-	@Test
-	public void testIsHybridMultipleDecorators() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
+	private Set<Function> getFunctions() throws Exception {
+		SimpleNode pythonNode = this.createPythonNodeFromTestFile("A");
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
-		}
+		// extract function definitions.
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+		pythonNode.accept(functionExtractor);
+		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
+				availableFunctions.toArray(FunctionDef[]::new));
+		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
+		assertTrue(status.isOK());
+
+		return processor.getFunctions();
 	}
 
-	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
-	 * hybrid
-	 */
-	@Test
-	public void testIsHybridWithParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
-		}
+	@Override
+	protected String getRefactoringPath() {
+		return REFACTORING_PATH;
 	}
 
-	/**
-	 * Test #23. This simply tests whether this tool does not crash with decorators with multiple dots Case: not hybrid
-	 */
-	@Test
-	public void testIsHybridMultipleAttributes() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
-		}
+	@Override
+	protected String getTestFileExtension() {
+		return TEST_FILE_EXTENION;
 	}
 
 	/**
@@ -253,6 +243,82 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			LOG.info("Actual signature: " + actualSignature);
 
 			assertEquals(expectedSignature, actualSignature);
+		}
+	}
+
+	/**
+	 * This simply tests whether the annotation is present for now. Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridFalse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertFalse(func.isHybrid());
+		}
+	}
+
+	/**
+	 * Test #23. This simply tests whether this tool does not crash with decorators with multiple dots Case: not hybrid
+	 */
+	@Test
+	public void testIsHybridMultipleAttributes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertFalse(func.isHybrid());
+		}
+	}
+
+	/**
+	 * Test #17. This simply tests whether this tool looks at multiple decorator. Case: Hybrid
+	 */
+	@Test
+	public void testIsHybridMultipleDecorators() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertTrue(func.isHybrid());
+		}
+	}
+
+	/**
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
+	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
+	 * Tensor argument. Case: Hybrid
+	 */
+	@Test
+	public void testIsHybridTrue() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
+	 * hybrid
+	 */
+	@Test
+	public void testIsHybridWithParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertTrue(func.isHybrid());
 		}
 	}
 
@@ -313,71 +379,5 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// NOTE: Both of these functions have the same qualified name.
 		assertEquals(1, functionNames.size());
-	}
-
-	@Override
-	protected String getTestFileExtension() {
-		return TEST_FILE_EXTENION;
-	}
-
-	private static void runCommand(String... command) throws IOException, InterruptedException {
-		ProcessBuilder processBuilder = new ProcessBuilder(command);
-
-		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
-
-		Process process = processBuilder.start();
-		int exitCode = process.waitFor();
-		String errorOutput = null;
-
-		if (exitCode != 0) { // there's a problem.
-			// retrieve the error output.
-			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
-		}
-
-		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
-	}
-
-	@Override
-	public void genericbefore() throws Exception {
-		if (this.fIsVerbose) {
-			System.out.println("\n---------------------------------------------");
-			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
-		}
-
-		RefactoringCore.getUndoManager().flush();
-
-		String inputTestFileName = this.getInputTestFileName("A");
-		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
-
-		installRequirements(inputTestFileAbsolutionPath.getParent());
-		runPython(inputTestFileAbsolutionPath);
-	}
-
-	/**
-	 * Runs python on the file presented by the given {@link Path}.
-	 *
-	 * @param path The {@link Path} of the file to interpret.
-	 */
-	private static void runPython(Path path) throws IOException, InterruptedException {
-		// run the code.
-		runCommand("python3", path.toString());
-	}
-
-	/**
-	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
-	 * given path.
-	 *
-	 * @param path The {@link Path} containing the requirements.txt file.
-	 */
-	private static void installRequirements(Path path) throws IOException, InterruptedException {
-		Path requirements = path.resolve("requirements.txt");
-
-		// install requirements.
-		runCommand("pip3", "install", "-r", requirements.toString());
-	}
-
-	@Override
-	public void genericafter() throws Exception {
 	}
 }

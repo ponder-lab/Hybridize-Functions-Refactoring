@@ -35,40 +35,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 
 	private static final PythonModelProvider provider = new PythonModelProvider();
 
-	/**
-	 * Gather all functions from the user's selection.
-	 */
-	@Override
-	public Object execute(ExecutionEvent event) throws ExecutionException {
-		Set<FunctionDef> functions = new HashSet<>();
-		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
-
-		if (currentSelection instanceof IStructuredSelection) {
-			List<?> list = ((IStructuredSelection) currentSelection).toList();
-
-			if (list != null)
-				for (Object obj : list) {
-					Set<PythonNode> nodeSet = getPythonNodes(obj);
-
-					for (PythonNode node : nodeSet)
-						functions.addAll(process(node));
-				}
-		}
-
-		LOG.info("Found " + functions.size() + " function definitions.");
-
-		Set<FunctionDef> availableFunctions = functions.stream()
-				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
-		LOG.info("Found " + availableFunctions.size() + " available functions.");
-
-		Shell shell = getActiveShellChecked(event);
-
-		HybridizeFunctionRefactoringWizard
-				.startRefactoring(availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
-
-		return null;
-	}
-
 	private static Set<PythonNode> getPythonNodes(Object obj) {
 		Set<PythonNode> ret = new HashSet<>();
 
@@ -122,5 +88,39 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		// ---------------------------------------------------------------------------------
 
 		return functionExtractor.getDefinitions();
+	}
+
+	/**
+	 * Gather all functions from the user's selection.
+	 */
+	@Override
+	public Object execute(ExecutionEvent event) throws ExecutionException {
+		Set<FunctionDef> functions = new HashSet<>();
+		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
+
+		if (currentSelection instanceof IStructuredSelection) {
+			List<?> list = ((IStructuredSelection) currentSelection).toList();
+
+			if (list != null)
+				for (Object obj : list) {
+					Set<PythonNode> nodeSet = getPythonNodes(obj);
+
+					for (PythonNode node : nodeSet)
+						functions.addAll(process(node));
+				}
+		}
+
+		LOG.info("Found " + functions.size() + " function definitions.");
+
+		Set<FunctionDef> availableFunctions = functions.stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+		LOG.info("Found " + availableFunctions.size() + " available functions.");
+
+		Shell shell = getActiveShellChecked(event);
+
+		HybridizeFunctionRefactoringWizard
+				.startRefactoring(availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+
+		return null;
 	}
 }

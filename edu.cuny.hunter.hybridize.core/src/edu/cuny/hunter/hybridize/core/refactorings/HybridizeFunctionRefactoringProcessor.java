@@ -27,13 +27,27 @@ import edu.cuny.hunter.hybridize.core.messages.Messages;
 
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
-	private Set<Function> functions = new LinkedHashSet<>();
-
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
-	public Set<Function> getFunctions() {
-		return this.functions;
+	private static RefactoringStatus checkDecorators(Function func) {
+		RefactoringStatus status = new RefactoringStatus();
+		LOG.info("Checking decorators for: " + func + ".");
+		// TODO: Is the function already decorated with tf.function? NOTE: May move to checkFinalConditions() as this
+		// will be dependent on other things.
+		return status;
 	}
+
+	private static RefactoringStatus checkParameters(Function func) {
+		RefactoringStatus status = new RefactoringStatus();
+		LOG.info("Checking parameters for: " + func + ".");
+		// TODO: Does the function have a tensor parameter (#2)?
+		// NOTE: Not sure if we will be checking everything individually here since we'll do the computation in the
+		// Function class. Instead, we may just need to check everything in checkFinalConditions(), as it is likely that
+		// the checking will depend on several things.
+		return status;
+	}
+
+	private Set<Function> functions = new LinkedHashSet<>();
 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
@@ -44,34 +58,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		// Add all of the Functions to the Function set.
 		Collections.addAll(this.getFunctions(), functionArray);
-	}
-
-	@Override
-	public Object[] getElements() {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public String getIdentifier() {
-		return HybridizeFunctionRefactoringDescriptor.REFACTORING_ID;
-	}
-
-	@Override
-	public String getProcessorName() {
-		return Messages.Name;
-	}
-
-	@Override
-	public boolean isApplicable() throws CoreException {
-		// TODO Auto-generated method stub
-		return true;
-	}
-
-	@Override
-	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
-			throws CoreException, OperationCanceledException {
-		return super.checkInitialConditions(pm);
 	}
 
 	@Override
@@ -108,22 +94,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
-	private static RefactoringStatus checkParameters(Function func) {
-		RefactoringStatus status = new RefactoringStatus();
-		LOG.info("Checking parameters for: " + func + ".");
-		// TODO: Does the function have a tensor parameter (#2)?
-		// NOTE: Not sure if we will be checking everything individually here since we'll do the computation in the
-		// Function class. Instead, we may just need to check everything in checkFinalConditions(), as it is likely that
-		// the checking will depend on several things.
-		return status;
+	@Override
+	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
+			throws CoreException, OperationCanceledException {
+		return super.checkInitialConditions(pm);
 	}
 
-	private static RefactoringStatus checkDecorators(Function func) {
-		RefactoringStatus status = new RefactoringStatus();
-		LOG.info("Checking decorators for: " + func + ".");
-		// TODO: Is the function already decorated with tf.function? NOTE: May move to checkFinalConditions() as this
-		// will be dependent on other things.
-		return status;
+	@Override
+	protected void clearCaches() {
+		// NOTE: Nothing right now.
 	}
 
 	@Override
@@ -133,14 +112,35 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	@Override
+	public Object[] getElements() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	public Set<Function> getFunctions() {
+		return this.functions;
+	}
+
+	@Override
+	public String getIdentifier() {
+		return HybridizeFunctionRefactoringDescriptor.REFACTORING_ID;
+	}
+
+	@Override
+	public String getProcessorName() {
+		return Messages.Name;
+	}
+
+	@Override
+	public boolean isApplicable() throws CoreException {
+		// TODO Auto-generated method stub
+		return true;
+	}
+
+	@Override
 	public RefactoringParticipant[] loadParticipants(RefactoringStatus status, SharableParticipants sharedParticipants)
 			throws CoreException {
 		// TODO Auto-generated method stub
 		return new RefactoringParticipant[0];
-	}
-
-	@Override
-	protected void clearCaches() {
-		// NOTE: Nothing right now.
 	}
 }

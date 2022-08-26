@@ -17,14 +17,14 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 
 	public static final String REFACTORING_ID = "edu.cuny.hunter.refactoring.hybridize.function"; // $NON-NLS-1$
 
-	public HybridizeFunctionRefactoringDescriptor(String refactoringID, String project, String description,
-			String comment, @SuppressWarnings("rawtypes") Map arguments) {
-		super(refactoringID, project, description, comment, arguments);
-	}
-
 	public HybridizeFunctionRefactoringDescriptor(String project, @SuppressWarnings("rawtypes") Map arguments) {
 		super(REFACTORING_ID, project, "Hybridize a TensforFlow client function.",
 				"Improves efficiency in imperatives style TensorFlow client code.", arguments);
+	}
+
+	public HybridizeFunctionRefactoringDescriptor(String refactoringID, String project, String description,
+			String comment, @SuppressWarnings("rawtypes") Map arguments) {
+		super(refactoringID, project, description, comment, arguments);
 	}
 
 	@Override
@@ -33,13 +33,9 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 		return new Refactoring() {
 
 			@Override
-			public String getName() {
-				return processor.getProcessorName();
-			}
-
-			@Override
-			public Change createChange(IProgressMonitor pm) throws CoreException, OperationCanceledException {
-				return processor.createChange(pm);
+			public RefactoringStatus checkFinalConditions(IProgressMonitor pm)
+					throws CoreException, OperationCanceledException {
+				return processor.checkFinalConditions(pm, null);
 			}
 
 			@Override
@@ -49,9 +45,13 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 			}
 
 			@Override
-			public RefactoringStatus checkFinalConditions(IProgressMonitor pm)
-					throws CoreException, OperationCanceledException {
-				return processor.checkFinalConditions(pm, null);
+			public Change createChange(IProgressMonitor pm) throws CoreException, OperationCanceledException {
+				return processor.createChange(pm);
+			}
+
+			@Override
+			public String getName() {
+				return processor.getProcessorName();
 			}
 		};
 	}

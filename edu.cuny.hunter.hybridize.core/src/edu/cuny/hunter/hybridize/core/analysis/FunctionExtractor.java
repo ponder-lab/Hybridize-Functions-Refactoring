@@ -16,10 +16,13 @@ public class FunctionExtractor extends VisitorBase {
 
 	private Set<FunctionDef> definitions = new HashSet<>();
 
+	public Set<FunctionDef> getDefinitions() {
+		return this.definitions;
+	}
+
 	@Override
-	public Object visitFunctionDef(FunctionDef node) throws Exception {
-		this.getDefinitions().add(node);
-		return super.visitFunctionDef(node);
+	public void traverse(SimpleNode node) throws Exception {
+		node.traverse(this);
 	}
 
 	@Override
@@ -28,11 +31,8 @@ public class FunctionExtractor extends VisitorBase {
 	}
 
 	@Override
-	public void traverse(SimpleNode node) throws Exception {
-		node.traverse(this);
-	}
-
-	public Set<FunctionDef> getDefinitions() {
-		return this.definitions;
+	public Object visitFunctionDef(FunctionDef node) throws Exception {
+		this.getDefinitions().add(node);
+		return super.visitFunctionDef(node);
 	}
 }
