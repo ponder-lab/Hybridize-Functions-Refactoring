@@ -98,7 +98,7 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
 	}
-  
+
 	private void computeIsHybrid() {
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH.
@@ -121,6 +121,7 @@ public class Function extends RefactorableProgramEntity {
 								this.isHybrid = true;
 								LOG.info(this + " is hybrid.");
 							}
+						}
 					}
 				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
 					Call decoratorFunction = (Call) decorator.func;
@@ -136,6 +137,7 @@ public class Function extends RefactorableProgramEntity {
 									this.isHybrid = true;
 									LOG.info(this + " is hybrid.");
 								}
+							}
 						}
 					}
 				}
@@ -289,8 +291,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable isHybrid.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter
-	 *         input_signature
+	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
 		return this.isHybrid;
@@ -298,6 +299,9 @@ public class Function extends RefactorableProgramEntity {
 	
 	/**
 	 * Accessor for private member variable input_signature
+	 *
+	 * @return Boolean that states if this {@link Function} has parameter
+	 *         input_signature
 	 */
 	public boolean getInputSignatureParam() {
 		return input_signature;
