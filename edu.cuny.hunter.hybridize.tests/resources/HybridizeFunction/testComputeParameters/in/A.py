@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.python.data.ops.structured_function import autograph
 
 @tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.int32),), autograph= False)
 def func(x):
@@ -44,3 +43,12 @@ def func6(self, I):
      grid = tf.meshgrid(x, y)
      
      return grid
+ 
+if __name__ == '__main__':
+    func()
+    func1()
+    func2()
+    func3()
+    func4()
+    func5()
+    func6()

@@ -208,6 +208,74 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function arguments
+	 */
+	@Test
+	public void testComputeParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(7, functions.size());
+
+		// Needs to be an ArrayList because a decorator can have multiple
+		// parameters
+		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
+
+		ArrayList<String> values_func = new ArrayList<>();
+		ArrayList<String> values_func1 = new ArrayList<>();
+		ArrayList<String> values_func2 = new ArrayList<>();
+		ArrayList<String> values_func3 = new ArrayList<>();
+		ArrayList<String> values_func4 = new ArrayList<>();
+		ArrayList<String> values_func5 = new ArrayList<>();
+		ArrayList<String> values_func6 = new ArrayList<>();
+
+		System.out.println("ENTREEE");
+
+		values_func.add("input_signature");
+		values_func.add("autograph");
+		funcParameters.put("func", values_func);
+
+		values_func1.add("experimental_autograph_options");
+		funcParameters.put("func1", values_func1);
+
+		values_func2.add("experimental_follow_type_hints");
+		funcParameters.put("func2", values_func2);
+
+		values_func3.add("experimental_implements");
+		funcParameters.put("func3", values_func3);
+
+		values_func4.add("jit_compile");
+		funcParameters.put("func4", values_func4);
+
+		values_func5.add("reduce_retracing");
+		funcParameters.put("func5", values_func5);
+
+		values_func6.add("experimental_compile");
+		funcParameters.put("func6", values_func6);
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+			ArrayList<String> functionParameters = funcParameters.get(actualFunctionName);
+			for (String param : functionParameters) {
+				if (param == "input_signature")
+					assertTrue(func.getInputSignatureParam());
+				if (param == "autograph")
+					assertTrue(func.getAutographParam());
+				if (param == "jit_compile" || param == "experimental_compile")
+					assertTrue(func.getJitCompileParam());
+				if (param == "reduce_retracing" || param == "experimental_relax_shapes")
+					assertTrue(func.getReduceRetracingParam());
+				if (param == "experimental_implements")
+					assertTrue(func.getExpImplementsParam());
+				if (param == "experimental_autograph_options")
+					assertTrue(func.getExpAutographOptParam());
+				if (param == "experimental_follow_type_hints")
+					assertTrue(func.getExpTypeHintsParam());
+			}
+		}
+	}
+
+	/**
 	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
@@ -288,73 +356,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.isHybrid());
-		}
-	}
-	
-	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function
-	 * arguments
-	 */
-	@Test
-	public void testComputeParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(7, functions.size());
-
-		// Needs to be an ArrayList because a decorator can have multiple
-		// parameters
-		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
-
-		ArrayList<String> values_func = new ArrayList<>();
-		ArrayList<String> values_func1 = new ArrayList<>();
-		ArrayList<String> values_func2 = new ArrayList<>();
-		ArrayList<String> values_func3 = new ArrayList<>();
-		ArrayList<String> values_func4 = new ArrayList<>();
-		ArrayList<String> values_func5 = new ArrayList<>();
-		ArrayList<String> values_func6 = new ArrayList<>();
-
-		values_func.add("input_signature");
-		values_func.add("autograph");
-		funcParameters.put("func", values_func);
-
-		values_func1.add("experimental_autograph_options");
-		funcParameters.put("func1", values_func1);
-
-		values_func2.add("experimental_follow_type_hints");
-		funcParameters.put("func2", values_func2);
-
-		values_func3.add("experimental_implements");
-		funcParameters.put("func3", values_func3);
-
-		values_func4.add("jit_compile");
-		funcParameters.put("func4", values_func4);
-
-		values_func5.add("reduce_retracing");
-		funcParameters.put("func5", values_func5);
-
-		values_func6.add("experimental_compile");
-		funcParameters.put("func6", values_func6);
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
-			ArrayList<String> functionParameters = funcParameters.get(actualFunctionName);
-			for (String param : functionParameters) {
-				if (param == "input_signature")
-					assertTrue(func.getInputSignatureParam());
-				if (param == "autograph")
-					assertTrue(func.getAutographParam());
-				if (param == "jit_compile" || param == "experimental_compile")
-					assertTrue(func.getJitCompileParam());
-				if (param == "reduce_retracing" || param == "experimental_relax_shapes")
-					assertTrue(func.getReduceRetracingParam());
-				if (param == "experimental_implements")
-					assertTrue(func.getExpImplementsParam());
-				if (param == "experimental_autograph_options")
-					assertTrue(func.getExpAutographOptParam());
-				if (param == "experimental_follow_type_hints")
-					assertTrue(func.getExpTypeHintsParam());
-			}
 		}
 	}
 
