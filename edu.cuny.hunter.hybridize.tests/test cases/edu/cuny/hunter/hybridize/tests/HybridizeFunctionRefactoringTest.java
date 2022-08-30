@@ -261,6 +261,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #47. No alias used here.
+	 */
+	@Test
+	public void testIsHybrid2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertTrue() after fixing #47.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
 	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
