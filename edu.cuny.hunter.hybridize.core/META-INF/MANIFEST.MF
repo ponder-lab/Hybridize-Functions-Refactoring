@@ -18,6 +18,7 @@ Import-Package: org.eclipse.core.runtime;version="3.7.0",
  org.python.pydev.parser.jython.ast,
  org.python.pydev.shared_core.model
 Export-Package: edu.cuny.hunter.hybridize.core.analysis,
+ edu.cuny.hunter.hybridize.core.contributions,
  edu.cuny.hunter.hybridize.core.descriptors,
  edu.cuny.hunter.hybridize.core.messages,
  edu.cuny.hunter.hybridize.core.refactorings,

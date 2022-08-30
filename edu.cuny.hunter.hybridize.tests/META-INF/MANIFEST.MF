@@ -18,3 +18,4 @@ Require-Bundle: edu.cuny.citytech.refactoring.common.tests;bundle-version="3.1.0
  org.python.pydev.core;bundle-version="9.3.0",
  edu.cuny.hunter.hybridize.core;bundle-version="1.0.0",
  edu.cuny.citytech.refactoring.common.core;bundle-version="3.0.0"
+Export-Package: edu.cuny.hunter.hybridize.tests

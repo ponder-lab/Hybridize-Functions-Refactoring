@@ -248,6 +248,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #47.
+	 */
+	@Test
+	public void testIsHybrid() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertTrue() after fixing #47.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
 	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
@@ -375,7 +389,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case:
 	 * hybrid
 	 */
 	@Test
