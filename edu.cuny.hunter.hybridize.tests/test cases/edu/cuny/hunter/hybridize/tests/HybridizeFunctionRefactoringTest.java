@@ -330,6 +330,104 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #47. No alias used here.
+	 */
+	@Test
+	public void testIsHybrid2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertTrue() after fixing #47.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size()); // one function is for the decorator.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertFalse() after fixing #47.
+		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		// NOTE: There's not much we can do about this since it has the same signature as the real TF. Even PyDev has
+		// trouble with this.
+		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow. Same as 4, but uses "from tf import function."
+	 */
+	@Test
+	public void testIsHybrid6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Same as testIsHybridTrue except that we use "from" in the import statement.
+	 */
+	@Test
+	public void testIsHybrid7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Change to assertTrue once #20 is fixed.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Same as testIsHybrid7 except that we use "from *" in the import statement.
+	 */
+	@Test
+	public void testIsHybrid8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Change to assertTrue once #20 is fixed.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
 	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
