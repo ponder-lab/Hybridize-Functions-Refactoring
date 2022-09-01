@@ -247,7 +247,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #47.
+	 * Test for #47. Here, we test using an alias.
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
