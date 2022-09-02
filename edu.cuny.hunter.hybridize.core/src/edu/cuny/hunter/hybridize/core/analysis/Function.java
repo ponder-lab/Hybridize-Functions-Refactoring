@@ -2,7 +2,10 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.util.List;
+
 import org.eclipse.core.runtime.ILog;
+import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
@@ -61,11 +64,39 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
-			for (decoratorsType decorator : decoratorArray)
+			for (decoratorsType decorator : decoratorArray) {
+
+				System.out.println(decorator.func);
+				
+				String representationString = NodeUtils.getRepresentationString(decorator.func, true);
+				System.out.println(representationString);
+				
+				String fullRepresentationString = NodeUtils.getFullRepresentationString(decorator.func, true);
+				System.out.println(fullRepresentationString);
+				
+				// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports? Is there an import scope visitor? Module name getter?
+				// Use some black magic here. Make a method called getModuleName() or something.
+				// Have a look at https://github.com/fabioz/Pydev/search?q=declared.
+				// What module is thing declared in? __module__ is the name of the module the function was defined in, or None if unavailable according to https://docs.python.org/3/reference/datamodel.html.
+
+
+
 				// If it is not an attribute then we cannot access it this way,
 				// therefore we need the if statement
 				if (decorator.func instanceof Attribute) { // e.g., tf.function
 					Attribute decoratorFunction = (Attribute) decorator.func;
+					
+					List<SimpleNode> attributeParts = NodeUtils.getAttributeParts(decoratorFunction);
+					System.out.println(attributeParts);
+					// FIXME: This code needs to change. We can use this above method call. Also, we can use isCall
+					// instance field of decorators.
+					
+					String representationString2 = NodeUtils.getRepresentationString(decoratorFunction, true);
+					System.out.println(representationString2);
+					
+					String fullRepresentationString2 = NodeUtils.getFullRepresentationString(decoratorFunction);
+					System.out.println(fullRepresentationString2);
+					
 					if (decoratorFunction.value instanceof Name) {
 						Name decoratorName = (Name) decoratorFunction.value;
 						// We have a viable prefix. Get the attribute.
@@ -96,6 +127,7 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				}
+			}
 	}
 
 	/**
