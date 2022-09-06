@@ -32,14 +32,14 @@ public class Function extends RefactorableProgramEntity {
 	private boolean autograph;
 
 	/**
-	 * True iff this {@link Function} has argument experimental_autograph_options.
-	 */
-	private boolean experimentalAutographOptions;
-
-	/**
 	 * True iff this {@link Function} has argument experimental_follow_type_hints.
 	 */
 	private boolean experimentaFollowTypeHints;
+
+	/**
+	 * True iff this {@link Function} has argument experimental_autograph_options.
+	 */
+	private boolean experimentalAutographOptions;
 
 	/**
 	 * True iff this {@link Function} has argument experimental_implements.
@@ -100,7 +100,8 @@ public class Function extends RefactorableProgramEntity {
 				if (decorator.func instanceof Call) {
 					// If tf.function has parameters it will be of instance Call
 					Call decoratorFunction = (Call) decorator.func;
-					// Get the keywords that will contain the parameters
+					// Get the keywords that will contain the parameters, we use this because we will have keywords if
+					// the parameter has an argument
 					keywordType[] keywordArray = decoratorFunction.keywords;
 					if (keywordArray != null)
 						// Traverse through the keywords
