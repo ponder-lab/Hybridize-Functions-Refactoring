@@ -24,32 +24,101 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  */
 public class Function extends RefactorableProgramEntity {
 
+	public class ExistingArguments {
+
+		/**
+		 * True iff this {@link Function} has argument autograph.
+		 */
+		private boolean autograph;
+
+		/**
+		 * True iff this {@link Function} has argument experimental_follow_type_hints.
+		 */
+		private boolean experimentaFollowTypeHints;
+
+		/**
+		 * True iff this {@link Function} has argument experimental_autograph_options.
+		 */
+		private boolean experimentalAutographOptions;
+
+		/**
+		 * True iff this {@link Function} has argument experimental_implements.
+		 */
+		private boolean experimentalImplements;
+
+		/**
+		 * True iff this {@link Function} has argument func.
+		 */
+		private boolean func;
+
+		/**
+		 * True iff this {@link Function} has argument input_signature.
+		 */
+		private boolean inputSignature;
+
+		/**
+		 * True iff this {@link Function} has argument jit_compile.
+		 */
+		private boolean jitCompile;
+
+		/**
+		 * True iff this {@link Function} has argument reduce_retracing.
+		 */
+		private boolean reduceRetracing;
+
+		private void computeExistenceOfParameters() {
+			decoratorsType[] decoratorArray = Function.this.functionDef.decs;
+
+			if (decoratorArray != null)
+				for (decoratorsType decorator : decoratorArray)
+					if (decorator.func instanceof Call) {
+						// If tf.function has parameters it will be of instance Call
+						Call decoratorFunction = (Call) decorator.func;
+						// Get the keywords that will contain the parameters, 
+						// we use this because we will have keywords if
+						// the parameter has an argument
+						keywordType[] keywordArray = decoratorFunction.keywords;
+						if (keywordArray != null)
+							// Traverse through the keywords
+							for (keywordType keyword : keywordArray)
+								if (keyword.arg instanceof NameTok) {
+									NameTok decoratorArg = (NameTok) keyword.arg;
+									if (decoratorArg.id.equals("func"))
+										// Found parameter func
+										this.func = true;
+									else if (decoratorArg.id.equals("input_signature")) {
+										// Found parameter input_signature
+										this.inputSignature = true;
+									} else if (decoratorArg.id.equals("autograph"))
+										// Found parameter autograph
+										this.autograph = true;
+									else if (decoratorArg.id.equals("jit_compile")
+											|| decoratorArg.id.equals("experimental_compile"))
+										// Found parameter jit_compile/experimental_compile
+										this.jitCompile = true;
+									else if (decoratorArg.id.equals("reduce_retracing")
+											|| decoratorArg.id.equals(
+													"experimental_relax_shapes"))
+										// Found parameter 
+										// reduce_retracing/experimental_relax_shapes
+										this.reduceRetracing = true;
+									else if (decoratorArg.id.equals("experimental_implements"))
+										// Found parameter experimental_implements
+										this.experimentalImplements = true;
+									else if (decoratorArg.id.equals("experimental_autograph_options"))
+										// Found parameter experimental_autograph_options
+										this.experimentalAutographOptions = true;
+									else if (decoratorArg.id.equals("experimental_follow_type_hints"))
+										// Found parameter experimental_follow_type_hints
+										this.experimentaFollowTypeHints = true;
+								}
+					}
+		}
+	}
+
 	private static final ILog LOG = getLog(Function.class);
 
-	/**
-	 * True iff this {@link Function} has argument autograph.
-	 */
-	private boolean autograph;
-
-	/**
-	 * True iff this {@link Function} has argument experimental_follow_type_hints.
-	 */
-	private boolean experimentaFollowTypeHints;
-
-	/**
-	 * True iff this {@link Function} has argument experimental_autograph_options.
-	 */
-	private boolean experimentalAutographOptions;
-
-	/**
-	 * True iff this {@link Function} has argument experimental_implements.
-	 */
-	private boolean experimentalImplements;
-
-	/**
-	 * True iff this {@link Function} has argument func.
-	 */
-	private boolean func;
+	private Function.ExistingArguments args = new Function.ExistingArguments();
 
 	/**
 	 * The {@link FunctionDef} representing this {@link Function}.
@@ -57,29 +126,14 @@ public class Function extends RefactorableProgramEntity {
 	private FunctionDef functionDef;
 
 	/**
-	 * True iff this {@link Function} has argument input_signature.
-	 */
-	private boolean inputSignature;
-
-	/**
 	 * True iff this {@link Function} is decorated with tf.function.
 	 */
 	private boolean isHybrid;
 
 	/**
-	 * True iff this {@link Function} has argument jit_compile.
-	 */
-	private boolean jitCompile;
-
-	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private boolean likelyHasTensorParameter;
-
-	/**
-	 * True iff this {@link Function} has argument reduce_retracing.
-	 */
-	private boolean reduceRetracing;
 
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
@@ -89,53 +143,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter();
 
 		// Parse the tf.function parameters
-		this.computeExistenceOfParameters();
-	}
-
-	private void computeExistenceOfParameters() {
-		decoratorsType[] decoratorArray = this.functionDef.decs;
-
-		if (decoratorArray != null)
-			for (decoratorsType decorator : decoratorArray)
-				if (decorator.func instanceof Call) {
-					// If tf.function has parameters it will be of instance Call
-					Call decoratorFunction = (Call) decorator.func;
-					// Get the keywords that will contain the parameters, we use this because we will have keywords if
-					// the parameter has an argument
-					keywordType[] keywordArray = decoratorFunction.keywords;
-					if (keywordArray != null)
-						// Traverse through the keywords
-						for (keywordType keyword : keywordArray)
-							if (keyword.arg instanceof NameTok) {
-								NameTok decoratorArg = (NameTok) keyword.arg;
-								if (decoratorArg.id.equals("func"))
-									// Found parameter func
-									this.func = true;
-								else if (decoratorArg.id.equals("input_signature"))
-									// Found parameter input_signature
-									this.inputSignature = true;
-								else if (decoratorArg.id.equals("autograph"))
-									// Found parameter autograph
-									this.autograph = true;
-								else if (decoratorArg.id.equals("jit_compile")
-										|| decoratorArg.id.equals("experimental_compile"))
-									// Found parameter jit_compile/experimental_compile
-									this.jitCompile = true;
-								else if (decoratorArg.id.equals("reduce_retracing")
-										|| decoratorArg.id.equals("experimental_relax_shapes"))
-									// Found parameter reduce_retracing/experimental_relax_shapes
-									this.reduceRetracing = true;
-								else if (decoratorArg.id.equals("experimental_implements"))
-									// Found parameter experimental_implements
-									this.experimentalImplements = true;
-								else if (decoratorArg.id.equals("experimental_autograph_options"))
-									// Found parameter experimental_autograph_options
-									this.experimentalAutographOptions = true;
-								else if (decoratorArg.id.equals("experimental_follow_type_hints"))
-									// Found parameter experimental_follow_type_hints
-									this.experimentaFollowTypeHints = true;
-							}
-				}
+		this.args.computeExistenceOfParameters();
 	}
 
 	private void computeHasTensorParameter() {
@@ -194,7 +202,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter autograph.
 	 */
 	public boolean getAutographParam() {
-		return this.autograph;
+		return this.args.autograph;
 	}
 
 	/**
@@ -203,7 +211,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter experimental_autograph_options.
 	 */
 	public boolean getExpAutographOptParam() {
-		return this.experimentalAutographOptions;
+		return this.args.experimentalAutographOptions;
 	}
 
 	/**
@@ -212,7 +220,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter experimental_implements.
 	 */
 	public boolean getExpImplementsParam() {
-		return this.experimentalImplements;
+		return this.args.experimentalImplements;
 	}
 
 	/**
@@ -221,7 +229,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter experimental_follow_type_hints.
 	 */
 	public boolean getExpTypeHintsParam() {
-		return this.experimentaFollowTypeHints;
+		return this.args.experimentaFollowTypeHints;
 	}
 
 	/**
@@ -230,7 +238,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter func.
 	 */
 	public boolean getFuncParam() {
-		return this.func;
+		return this.args.func;
 	}
 
 	/**
@@ -281,7 +289,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter input_signature.
 	 */
 	public boolean getInputSignatureParam() {
-		return this.inputSignature;
+		return this.args.inputSignature;
 	}
 
 	/**
@@ -290,7 +298,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter jit_compile.
 	 */
 	public boolean getJitCompileParam() {
-		return this.jitCompile;
+		return this.args.jitCompile;
 	}
 
 	/**
@@ -299,7 +307,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return True iff this {@link Function} has parameter reduce_retracing.
 	 */
 	public boolean getReduceRetracingParam() {
-		return this.reduceRetracing;
+		return this.args.reduceRetracing;
 	}
 
 	/**
