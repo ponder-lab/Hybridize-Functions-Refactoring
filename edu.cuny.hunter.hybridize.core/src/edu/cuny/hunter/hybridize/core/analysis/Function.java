@@ -24,7 +24,10 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  */
 public class Function extends RefactorableProgramEntity {
 
-	public class ExistingArguments {
+	/**
+	 * Computes the existence of arguments this {@link Function} decorator.
+	 */
+	private class ExistingArguments {
 
 		/**
 		 * True iff this {@link Function} has argument autograph.
@@ -74,7 +77,7 @@ public class Function extends RefactorableProgramEntity {
 					if (decorator.func instanceof Call) {
 						// If tf.function has parameters it will be of instance Call
 						Call decoratorFunction = (Call) decorator.func;
-						// Get the keywords that will contain the parameters, 
+						// Get the keywords that will contain the parameters,
 						// we use this because we will have keywords if
 						// the parameter has an argument
 						keywordType[] keywordArray = decoratorFunction.keywords;
@@ -86,10 +89,10 @@ public class Function extends RefactorableProgramEntity {
 									if (decoratorArg.id.equals("func"))
 										// Found parameter func
 										this.func = true;
-									else if (decoratorArg.id.equals("input_signature")) {
+									else if (decoratorArg.id.equals("input_signature"))
 										// Found parameter input_signature
 										this.inputSignature = true;
-									} else if (decoratorArg.id.equals("autograph"))
+									else if (decoratorArg.id.equals("autograph"))
 										// Found parameter autograph
 										this.autograph = true;
 									else if (decoratorArg.id.equals("jit_compile")
@@ -99,7 +102,7 @@ public class Function extends RefactorableProgramEntity {
 									else if (decoratorArg.id.equals("reduce_retracing")
 											|| decoratorArg.id.equals(
 													"experimental_relax_shapes"))
-										// Found parameter 
+										// Found parameter
 										// reduce_retracing/experimental_relax_shapes
 										this.reduceRetracing = true;
 									else if (decoratorArg.id.equals("experimental_implements"))
