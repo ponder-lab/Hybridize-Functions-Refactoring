@@ -208,7 +208,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function arguments
+	 * Test for #30. This simply tests whether we can parse the tf.function arguments.
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
@@ -217,38 +217,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(7, functions.size());
 
 		// Needs to be an ArrayList because a decorator can have multiple
-		// parameters
+		// parameters.
 		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
 
-		ArrayList<String> values_func = new ArrayList<>();
-		ArrayList<String> values_func1 = new ArrayList<>();
-		ArrayList<String> values_func2 = new ArrayList<>();
-		ArrayList<String> values_func3 = new ArrayList<>();
-		ArrayList<String> values_func4 = new ArrayList<>();
-		ArrayList<String> values_func5 = new ArrayList<>();
-		ArrayList<String> values_func6 = new ArrayList<>();
+		ArrayList<String> valuesFunc = new ArrayList<>();
+		valuesFunc.add("input_signature");
+		valuesFunc.add("autograph");
+		funcParameters.put("func", valuesFunc);
+		
+		ArrayList<String> valuesFunc1 = new ArrayList<>();
+		valuesFunc1.add("experimental_autograph_options");
+		funcParameters.put("func1", valuesFunc1);
+		
+		ArrayList<String> valuesFunc2 = new ArrayList<>();
+		valuesFunc2.add("experimental_follow_type_hints");
+		funcParameters.put("func2", valuesFunc2);
 
-		values_func.add("input_signature");
-		values_func.add("autograph");
-		funcParameters.put("func", values_func);
+		ArrayList<String> valuesFunc3 = new ArrayList<>();
+		valuesFunc3.add("experimental_implements");
+		funcParameters.put("func3", valuesFunc3);
+		
+		ArrayList<String> valuesFunc4 = new ArrayList<>();
+		valuesFunc4.add("jit_compile");
+		funcParameters.put("func4", valuesFunc4);
+		
+		ArrayList<String> valuesFunc5 = new ArrayList<>();
+		valuesFunc5.add("reduce_retracing");
+		funcParameters.put("func5", valuesFunc5);
 
-		values_func1.add("experimental_autograph_options");
-		funcParameters.put("func1", values_func1);
-
-		values_func2.add("experimental_follow_type_hints");
-		funcParameters.put("func2", values_func2);
-
-		values_func3.add("experimental_implements");
-		funcParameters.put("func3", values_func3);
-
-		values_func4.add("jit_compile");
-		funcParameters.put("func4", values_func4);
-
-		values_func5.add("reduce_retracing");
-		funcParameters.put("func5", values_func5);
-
-		values_func6.add("experimental_compile");
-		funcParameters.put("func6", values_func6);
+		ArrayList<String> valuesFunc6 = new ArrayList<>();
+		valuesFunc6.add("experimental_compile");
+		funcParameters.put("func6", valuesFunc6);
 
 		for (Function func : functions) {
 			assertNotNull(func);
@@ -274,7 +273,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can identify when there are no tf.function args
+	 * Test for #30. This simply tests whether we can identify when there are no tf.function args.
 	 */
 	@Test
 	public void testComputeParameters2() throws Exception {
@@ -283,12 +282,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		boolean noParams = false;
-		if (!function.getInputSignatureParam() && !function.getAutographParam() && !function.getJitCompileParam()
+		assertTrue(!function.getInputSignatureParam() && !function.getAutographParam() && !function.getJitCompileParam()
 				&& !function.getReduceRetracingParam() && !function.getExpImplementsParam()
-				&& !function.getExpAutographOptParam() && !function.getExpTypeHintsParam() && !function.getFuncParam())
-			noParams = true;
-		assertEquals(noParams, true);
+				&& !function.getExpAutographOptParam() && !function.getExpTypeHintsParam() && !function.getFuncParam());
 	}
 
 	/**
