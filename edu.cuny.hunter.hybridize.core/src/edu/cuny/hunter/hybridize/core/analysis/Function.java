@@ -67,17 +67,19 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 
 				System.out.println(decorator.func);
-				
+
 				String representationString = NodeUtils.getRepresentationString(decorator.func, true);
 				System.out.println(representationString);
-				
+
 				String fullRepresentationString = NodeUtils.getFullRepresentationString(decorator.func, true);
 				System.out.println(fullRepresentationString);
-				
-				// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports? Is there an import scope visitor? Module name getter?
+
+				// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports?
+				// Is there an import scope visitor? Module name getter?
 				// Use some black magic here. Make a method called getModuleName() or something.
 				// Have a look at https://github.com/fabioz/Pydev/search?q=declared.
-				// What module is thing declared in? __module__ is the name of the module the function was defined in, or None if unavailable according to https://docs.python.org/3/reference/datamodel.html.
+				// What module is thing declared in? __module__ is the name of the module the function was defined in,
+				// or None if unavailable according to https://docs.python.org/3/reference/datamodel.html.
 
 
 
