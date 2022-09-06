@@ -34,17 +34,17 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has argument experimental_autograph_options.
 	 */
-	private boolean experimental_autograph_options;
+	private boolean experimentalAutographOptions;
 
 	/**
 	 * True iff this {@link Function} has argument experimental_follow_type_hints.
 	 */
-	private boolean experimental_follow_type_hints;
+	private boolean experimentaFollowTypeHints;
 
 	/**
 	 * True iff this {@link Function} has argument experimental_implements.
 	 */
-	private boolean experimental_implements;
+	private boolean experimentalImplements;
 
 	/**
 	 * True iff this {@link Function} has argument func.
@@ -59,7 +59,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has argument input_signature.
 	 */
-	private boolean input_signature;
+	private boolean inputSignature;
 
 	/**
 	 * True iff this {@link Function} is decorated with tf.function.
@@ -69,7 +69,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has argument jit_compile.
 	 */
-	private boolean jit_compile;
+	private boolean jitCompile;
 
 	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
@@ -79,7 +79,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has argument reduce_retracing.
 	 */
-	private boolean reduce_retracing;
+	private boolean reduceRetracing;
 
 	public Function(FunctionDef functionDef) {
 		this.functionDef = functionDef;
@@ -112,27 +112,27 @@ public class Function extends RefactorableProgramEntity {
 									this.func = true;
 								else if (decoratorArg.id.equals("input_signature"))
 									// Found parameter input_signature
-									this.input_signature = true;
+									this.inputSignature = true;
 								else if (decoratorArg.id.equals("autograph"))
 									// Found parameter autograph
 									this.autograph = true;
 								else if (decoratorArg.id.equals("jit_compile")
 										|| decoratorArg.id.equals("experimental_compile"))
 									// Found parameter jit_compile/experimental_compile
-									this.jit_compile = true;
+									this.jitCompile = true;
 								else if (decoratorArg.id.equals("reduce_retracing")
 										|| decoratorArg.id.equals("experimental_relax_shapes"))
 									// Found parameter reduce_retracing/experimental_relax_shapes
-									this.reduce_retracing = true;
+									this.reduceRetracing = true;
 								else if (decoratorArg.id.equals("experimental_implements"))
 									// Found parameter experimental_implements
-									this.experimental_implements = true;
+									this.experimentalImplements = true;
 								else if (decoratorArg.id.equals("experimental_autograph_options"))
 									// Found parameter experimental_autograph_options
-									this.experimental_autograph_options = true;
+									this.experimentalAutographOptions = true;
 								else if (decoratorArg.id.equals("experimental_follow_type_hints"))
 									// Found parameter experimental_follow_type_hints
-									this.experimental_follow_type_hints = true;
+									this.experimentaFollowTypeHints = true;
 							}
 				}
 	}
@@ -190,7 +190,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable autograph.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter autograph.
+	 * @return True iff this {@link Function} has parameter autograph.
 	 */
 	public boolean getAutographParam() {
 		return this.autograph;
@@ -199,34 +199,34 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable experimental_autograph_options.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_autograph_options.
+	 * @return True iff this {@link Function} has parameter experimental_autograph_options.
 	 */
 	public boolean getExpAutographOptParam() {
-		return this.experimental_autograph_options;
+		return this.experimentalAutographOptions;
 	}
 
 	/**
 	 * Accessor for private member variable experimental_implements.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_implements.
+	 * @return True iff this {@link Function} has parameter experimental_implements.
 	 */
 	public boolean getExpImplementsParam() {
-		return this.experimental_implements;
+		return this.experimentalImplements;
 	}
 
 	/**
 	 * Accessor for private member variable experimental_follow_type_hints.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_follow_type_hints.
+	 * @return True iff this {@link Function} has parameter experimental_follow_type_hints.
 	 */
 	public boolean getExpTypeHintsParam() {
-		return this.experimental_follow_type_hints;
+		return this.experimentaFollowTypeHints;
 	}
 
 	/**
 	 * Accessor for private member variable func.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter func.
+	 * @return True iff this {@link Function} has parameter func.
 	 */
 	public boolean getFuncParam() {
 		return this.func;
@@ -277,34 +277,34 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable input_signature.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter input_signature.
+	 * @return True iff this {@link Function} has parameter input_signature.
 	 */
 	public boolean getInputSignatureParam() {
-		return this.input_signature;
+		return this.inputSignature;
 	}
 
 	/**
 	 * Accessor for private member variable jit_compile.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter jit_compile.
+	 * @return True iff this {@link Function} has parameter jit_compile.
 	 */
 	public boolean getJitCompileParam() {
-		return this.jit_compile;
+		return this.jitCompile;
 	}
 
 	/**
 	 * Accessor for private member variable reduce_retracing.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter reduce_retracing.
+	 * @return True iff this {@link Function} has parameter reduce_retracing.
 	 */
 	public boolean getReduceRetracingParam() {
-		return this.reduce_retracing;
+		return this.reduceRetracing;
 	}
 
 	/**
 	 * Accessor for private member variable isHybrid.
 	 *
-	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
+	 * @return True iff this {@link Function} is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
 		return this.isHybrid;
