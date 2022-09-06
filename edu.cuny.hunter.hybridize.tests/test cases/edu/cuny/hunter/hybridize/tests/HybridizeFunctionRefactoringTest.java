@@ -256,8 +256,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// TODO: Set to assertTrue() after fixing #47.
-		assertFalse(function.isHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -270,8 +269,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// TODO: Set to assertTrue() after fixing #47.
-		assertFalse(function.isHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -297,8 +295,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// TODO: Set to assertFalse() after fixing #47.
-		assertTrue(function.isHybrid());
+		assertFalse(function.isHybrid());
 	}
 
 	/**
@@ -340,8 +337,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// TODO: Change to assertTrue once #20 is fixed.
-		assertFalse(function.isHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -354,8 +350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// TODO: Change to assertTrue once #20 is fixed.
-		assertFalse(function.isHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -444,9 +439,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		// NOTE: This should actually be assertTrue() instead of assertFalse().
-		// TODO: Change it to assertTrue() after we fix #20.
-		assertFalse(function.isHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
