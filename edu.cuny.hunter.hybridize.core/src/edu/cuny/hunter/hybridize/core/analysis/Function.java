@@ -188,45 +188,45 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable autograph
+	 * Accessor for private member variable autograph.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter autograph
+	 * @return Boolean that states if this {@link Function} has parameter autograph.
 	 */
 	public boolean getAutographParam() {
 		return this.autograph;
 	}
 
 	/**
-	 * Accessor for private member variable experimental_autograph_options
+	 * Accessor for private member variable experimental_autograph_options.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_autograph_options
+	 * @return Boolean that states if this {@link Function} has parameter experimental_autograph_options.
 	 */
 	public boolean getExpAutographOptParam() {
 		return this.experimental_autograph_options;
 	}
 
 	/**
-	 * Accessor for private member variable experimental_implements
+	 * Accessor for private member variable experimental_implements.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_implements
+	 * @return Boolean that states if this {@link Function} has parameter experimental_implements.
 	 */
 	public boolean getExpImplementsParam() {
 		return this.experimental_implements;
 	}
 
 	/**
-	 * Accessor for private member variable experimental_follow_type_hints
+	 * Accessor for private member variable experimental_follow_type_hints.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter experimental_follow_type_hints
+	 * @return Boolean that states if this {@link Function} has parameter experimental_follow_type_hints.
 	 */
 	public boolean getExpTypeHintsParam() {
 		return this.experimental_follow_type_hints;
 	}
 
 	/**
-	 * Accessor for private member variable func
+	 * Accessor for private member variable func.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter func
+	 * @return Boolean that states if this {@link Function} has parameter func.
 	 */
 	public boolean getFuncParam() {
 		return this.func;
@@ -235,7 +235,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable functionDef.
 	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}
+	 * @return The {@link FunctionDef} representing this {@link Function}.
 	 */
 	public FunctionDef getFunctionDef() {
 		return this.functionDef;
@@ -275,27 +275,27 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable input_signature
+	 * Accessor for private member variable input_signature.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter input_signature
+	 * @return Boolean that states if this {@link Function} has parameter input_signature.
 	 */
 	public boolean getInputSignatureParam() {
 		return this.input_signature;
 	}
 
 	/**
-	 * Accessor for private member variable jit_compile
+	 * Accessor for private member variable jit_compile.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter jit_compile
+	 * @return Boolean that states if this {@link Function} has parameter jit_compile.
 	 */
 	public boolean getJitCompileParam() {
 		return this.jit_compile;
 	}
 
 	/**
-	 * Accessor for private member variable reduce_retracing
+	 * Accessor for private member variable reduce_retracing.
 	 *
-	 * @return Boolean that states if this {@link Function} has parameter reduce_retracing
+	 * @return Boolean that states if this {@link Function} has parameter reduce_retracing.
 	 */
 	public boolean getReduceRetracingParam() {
 		return this.reduce_retracing;
