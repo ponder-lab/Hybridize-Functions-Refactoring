@@ -274,6 +274,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #30. This simply tests whether we can identify when there are no tf.function args
+	 */
+	@Test
+	public void testComputeParameters2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		boolean noParams = false;
+		if (!function.getInputSignatureParam() && !function.getAutographParam() && !function.getJitCompileParam()
+				&& !function.getReduceRetracingParam() && !function.getExpImplementsParam()
+				&& !function.getExpAutographOptParam() && !function.getExpTypeHintsParam() && !function.getFuncParam())
+			noParams = true;
+		assertEquals(noParams, true);
+	}
+
+	/**
 	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
