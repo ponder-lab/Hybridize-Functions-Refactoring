@@ -228,8 +228,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		ArrayList<String> values_func5 = new ArrayList<>();
 		ArrayList<String> values_func6 = new ArrayList<>();
 
-		System.out.println("ENTREEE");
-
 		values_func.add("input_signature");
 		values_func.add("autograph");
 		funcParameters.put("func", values_func);

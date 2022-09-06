@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.int32),), autograph= False)
+@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),), autograph= False)
 def func(x):
   print('Tracing with', x)
   return x
@@ -16,40 +16,30 @@ def func2(x: tf.Tensor):
   return x
 
 @tf.function(experimental_implements="google.matmul_low_rank_matrix")
-def func3(x, y):
+def func3():
     pass
   
 @tf.function(jit_compile=True)
-def func4(images, labels):
-    images, labels = cast(images, labels)
-
-    with tf.GradientTape() as tape:
-      predicted_labels = layer(images)
-      loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-          logits=predicted_labels, labels=labels
-      ))
-    layer_variables = layer.trainable_variables
-    grads = tape.gradient(loss, layer_variables)
-    optimizer.apply_gradients(zip(grads, layer_variables))
+def func4():
+    print("Tracing")
 
 @tf.function(reduce_retracing=True)
-def func5():
+def func5(x, y):
   return x ** 2 + y
   
 @tf.function(experimental_compile=True)
-def func6(self, I):
-     shape = tf.shape(I)
-     y, x = tf.range(0, shape[1]), tf.range(0, shape[2])
-     grid = tf.meshgrid(x, y)
-     
-     return grid
+def func6():
+     print("Tracing")
  
 if __name__ == '__main__':
-    func()
-    func1()
-    func2()
+    number = tf.constant([1.0, 1.0])
+    x = tf.constant(1)
+    y = tf.constant(2)
+    func(number)
+    func1(x)
+    func2(x)
     func3()
     func4()
-    func5()
+    func5(x, y)
     func6()
     
