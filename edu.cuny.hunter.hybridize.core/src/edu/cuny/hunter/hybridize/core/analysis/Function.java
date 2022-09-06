@@ -247,7 +247,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable functionDef.
 	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}.
+	 * @return The {@link FunctionDef} representing this {@link Function}
 	 */
 	public FunctionDef getFunctionDef() {
 		return this.functionDef;
@@ -316,7 +316,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Accessor for private member variable isHybrid.
 	 *
-	 * @return True iff this {@link Function} is decorated with tf.function.
+	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
 		return this.isHybrid;
