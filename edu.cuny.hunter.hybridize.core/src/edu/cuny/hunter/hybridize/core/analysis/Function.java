@@ -25,103 +25,177 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 public class Function extends RefactorableProgramEntity {
 
 	/**
-	 * Computes the existence of arguments this {@link Function} decorator.
+	 * Computes the existence of arguments this {@link Function} decorator. Parameters can be found
+	 * https://bit.ly/3Rx3F6T
 	 */
-	private class ExistingArguments {
+	public class HybridizationParameters {
 
 		/**
 		 * True iff this {@link Function} has argument autograph.
 		 */
-		private boolean autograph;
+		private boolean autoGraphParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument experimental_follow_type_hints.
 		 */
-		private boolean experimentaFollowTypeHints;
+		private boolean experimentaFollowTypeHintsParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument experimental_autograph_options.
 		 */
-		private boolean experimentalAutographOptions;
+		private boolean experimentalAutographOptionsParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument experimental_implements.
 		 */
-		private boolean experimentalImplements;
+		private boolean experimentalImplementsParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument func.
 		 */
-		private boolean func;
+		private boolean funcParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument input_signature.
 		 */
-		private boolean inputSignature;
+		private boolean inputSignatureParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument jit_compile.
 		 */
-		private boolean jitCompile;
+		private boolean jitCompileParamExists;
 
 		/**
 		 * True iff this {@link Function} has argument reduce_retracing.
 		 */
-		private boolean reduceRetracing;
+		private boolean reduceRetracingParamExists;
 
-		private void computeExistenceOfParameters() {
+		public HybridizationParameters() {
 			decoratorsType[] decoratorArray = Function.this.functionDef.decs;
-
-			if (decoratorArray != null)
-				for (decoratorsType decorator : decoratorArray)
-					if (decorator.func instanceof Call) {
-						// If tf.function has parameters it will be of instance Call
-						Call decoratorFunction = (Call) decorator.func;
-						// Get the keywords that will contain the parameters,
-						// we use this because we will have keywords if
-						// the parameter has an argument
-						keywordType[] keywordArray = decoratorFunction.keywords;
-						if (keywordArray != null)
-							// Traverse through the keywords
-							for (keywordType keyword : keywordArray)
-								if (keyword.arg instanceof NameTok) {
-									NameTok decoratorArg = (NameTok) keyword.arg;
-									if (decoratorArg.id.equals("func"))
-										// Found parameter func
-										this.func = true;
-									else if (decoratorArg.id.equals("input_signature"))
-										// Found parameter input_signature
-										this.inputSignature = true;
-									else if (decoratorArg.id.equals("autograph"))
-										// Found parameter autograph
-										this.autograph = true;
-									else if (decoratorArg.id.equals("jit_compile")
-											|| decoratorArg.id.equals("experimental_compile"))
-										// Found parameter jit_compile/experimental_compile
-										this.jitCompile = true;
-									else if (decoratorArg.id.equals("reduce_retracing")
-											|| decoratorArg.id.equals(
+			if (Function.this.isHybrid)
+				if (decoratorArray != null)
+					for (decoratorsType decorator : decoratorArray)
+						if (decorator.func instanceof Call) {
+							// If tf.function has parameters it will be of instance Call
+							Call decoratorFunction = (Call) decorator.func;
+							// Get the keywords that will contain the parameters,
+							// we use this because we will have keywords if
+							// the parameter has an argument
+							keywordType[] keywordArray = decoratorFunction.keywords;
+							if (keywordArray != null)
+								// Traverse through the keywords
+								for (keywordType keyword : keywordArray)
+									if (keyword.arg instanceof NameTok) {
+										NameTok decoratorArg = (NameTok) keyword.arg;
+										if (decoratorArg.id.equals("func"))
+											// Found parameter func
+											this.funcParamExists = true;
+										else if (decoratorArg.id.equals("input_signature"))
+											// Found parameter input_signature
+											this.inputSignatureParamExists = true;
+										else if (decoratorArg.id.equals("autograph"))
+											// Found parameter autograph
+											this.autoGraphParamExists = true;
+										else if (decoratorArg.id.equals("jit_compile")
+												|| decoratorArg.id.equals(
+													"experimental_compile"))
+											// Found parameter jit_compile/experimental_compile
+											this.jitCompileParamExists = true;
+										else if (decoratorArg.id.equals("reduce_retracing")
+												|| decoratorArg.id.equals(
 													"experimental_relax_shapes"))
-										// Found parameter
-										// reduce_retracing/experimental_relax_shapes
-										this.reduceRetracing = true;
-									else if (decoratorArg.id.equals("experimental_implements"))
-										// Found parameter experimental_implements
-										this.experimentalImplements = true;
-									else if (decoratorArg.id.equals("experimental_autograph_options"))
-										// Found parameter experimental_autograph_options
-										this.experimentalAutographOptions = true;
-									else if (decoratorArg.id.equals("experimental_follow_type_hints"))
-										// Found parameter experimental_follow_type_hints
-										this.experimentaFollowTypeHints = true;
-								}
-					}
+											// Found parameter reduce_retracing
+											// or experimental_relax_shapes
+											this.reduceRetracingParamExists = true;
+										else if (decoratorArg.id.equals("experimental_implements"))
+											// Found parameter experimental_implements
+											this.experimentalImplementsParamExists = true;
+										else if (decoratorArg.id.equals(
+												"experimental_autograph_options"))
+											// Found parameter experimental_autograph_options
+											this.experimentalAutographOptionsParamExists = true;
+										else if (decoratorArg.id.equals(
+												"experimental_follow_type_hints"))
+											// Found parameter experimental_follow_type_hints
+											this.experimentaFollowTypeHintsParamExists = true;
+									}
+						}
+		}
+
+		/**
+		 * Accessor for private member variable autograph.
+		 *
+		 * @return True iff this {@link Function} has parameter autograph.
+		 */
+		public boolean getAutoGraphParamExists() {
+			return this.autoGraphParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable experimental_autograph_options.
+		 *
+		 * @return True iff this {@link Function} has parameter experimental_autograph_options.
+		 */
+		public boolean getExpAutographOptParamExists() {
+			return this.experimentalAutographOptionsParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable experimental_implements.
+		 *
+		 * @return True iff this {@link Function} has parameter experimental_implements.
+		 */
+		public boolean getExpImplementsParamExists() {
+			return this.experimentalImplementsParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable experimental_follow_type_hints.
+		 *
+		 * @return True iff this {@link Function} has parameter experimental_follow_type_hints.
+		 */
+		public boolean getExpTypeHintsParamExists() {
+			return this.experimentaFollowTypeHintsParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable func.
+		 *
+		 * @return True iff this {@link Function} has parameter func.
+		 */
+		public boolean getFuncParamExists() {
+			return this.funcParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable input_signature.
+		 *
+		 * @return True iff this {@link Function} has parameter input_signature.
+		 */
+		public boolean getInputSignatureParamExists() {
+			return this.inputSignatureParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable jit_compile.
+		 *
+		 * @return True iff this {@link Function} has parameter jit_compile.
+		 */
+		public boolean getJitCompileParamExists() {
+			return this.jitCompileParamExists;
+		}
+
+		/**
+		 * Accessor for private member variable reduce_retracing.
+		 *
+		 * @return True iff this {@link Function} has parameter reduce_retracing.
+		 */
+		public boolean getReduceRetracingParamExists() {
+			return this.reduceRetracingParamExists;
 		}
 	}
 
 	private static final ILog LOG = getLog(Function.class);
-
-	private Function.ExistingArguments args = new Function.ExistingArguments();
 
 	/**
 	 * The {@link FunctionDef} representing this {@link Function}.
@@ -145,8 +219,6 @@ public class Function extends RefactorableProgramEntity {
 		this.computeIsHybrid();
 		this.computeHasTensorParameter();
 
-		// Parse the tf.function parameters
-		this.args.computeExistenceOfParameters();
 	}
 
 	private void computeHasTensorParameter() {
@@ -200,51 +272,6 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable autograph.
-	 *
-	 * @return True iff this {@link Function} has parameter autograph.
-	 */
-	public boolean getAutographParam() {
-		return this.args.autograph;
-	}
-
-	/**
-	 * Accessor for private member variable experimental_autograph_options.
-	 *
-	 * @return True iff this {@link Function} has parameter experimental_autograph_options.
-	 */
-	public boolean getExpAutographOptParam() {
-		return this.args.experimentalAutographOptions;
-	}
-
-	/**
-	 * Accessor for private member variable experimental_implements.
-	 *
-	 * @return True iff this {@link Function} has parameter experimental_implements.
-	 */
-	public boolean getExpImplementsParam() {
-		return this.args.experimentalImplements;
-	}
-
-	/**
-	 * Accessor for private member variable experimental_follow_type_hints.
-	 *
-	 * @return True iff this {@link Function} has parameter experimental_follow_type_hints.
-	 */
-	public boolean getExpTypeHintsParam() {
-		return this.args.experimentaFollowTypeHints;
-	}
-
-	/**
-	 * Accessor for private member variable func.
-	 *
-	 * @return True iff this {@link Function} has parameter func.
-	 */
-	public boolean getFuncParam() {
-		return this.args.func;
-	}
-
-	/**
 	 * Accessor for private member variable functionDef.
 	 *
 	 * @return The {@link FunctionDef} representing this {@link Function}
@@ -284,33 +311,6 @@ public class Function extends RefactorableProgramEntity {
 		ret.append(identifier);
 
 		return ret.toString();
-	}
-
-	/**
-	 * Accessor for private member variable input_signature.
-	 *
-	 * @return True iff this {@link Function} has parameter input_signature.
-	 */
-	public boolean getInputSignatureParam() {
-		return this.args.inputSignature;
-	}
-
-	/**
-	 * Accessor for private member variable jit_compile.
-	 *
-	 * @return True iff this {@link Function} has parameter jit_compile.
-	 */
-	public boolean getJitCompileParam() {
-		return this.args.jitCompile;
-	}
-
-	/**
-	 * Accessor for private member variable reduce_retracing.
-	 *
-	 * @return True iff this {@link Function} has parameter reduce_retracing.
-	 */
-	public boolean getReduceRetracingParam() {
-		return this.args.reduceRetracing;
 	}
 
 	/**

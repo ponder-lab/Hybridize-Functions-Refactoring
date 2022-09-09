@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),), autograph=False)
+@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),))
 def func(x):
   print('Tracing with', x)
   return x
@@ -37,6 +37,10 @@ def func5(x, y):
 @tf.function(experimental_compile=True)
 def func6():
      print("Tracing")
+     
+@tf.function(autograph=False)
+def func7():
+    print("Testing")
 
  
 if __name__ == '__main__':
@@ -50,5 +54,6 @@ if __name__ == '__main__':
     func4()
     func5(x, y)
     func6()
+    func7()
     
     
