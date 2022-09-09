@@ -169,8 +169,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String inputTestFileName = this.getInputTestFileName("A");
 		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
 
-		// installRequirements(inputTestFileAbsolutionPath.getParent());
-		// runPython(inputTestFileAbsolutionPath);
+		installRequirements(inputTestFileAbsolutionPath.getParent());
+		runPython(inputTestFileAbsolutionPath);
 	}
 
 	/**
