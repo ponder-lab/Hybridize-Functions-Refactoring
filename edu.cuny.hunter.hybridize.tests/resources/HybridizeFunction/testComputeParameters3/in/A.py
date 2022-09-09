@@ -10,3 +10,4 @@ if __name__ == '__main__':
     number = tf.constant([1.0, 1.0])
     func(number)
     
+    
