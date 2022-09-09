@@ -96,11 +96,17 @@ public class Function extends RefactorableProgramEntity {
 										else if (decoratorArg.id.equals("autograph"))
 											// Found parameter autograph
 											this.autoGraphParamExists = true;
+										// The version of the API we are using allows
+										// parameter names jit_compile and
+										// deprecated name experimental_compile
 										else if (decoratorArg.id.equals("jit_compile")
 												|| decoratorArg.id.equals(
 													"experimental_compile"))
 											// Found parameter jit_compile/experimental_compile
 											this.jitCompileParamExists = true;
+										// The version of the API we are using allows
+										// parameter names reduce_retracing
+										// and deprecated name experimental_relax_shapes
 										else if (decoratorArg.id.equals("reduce_retracing")
 												|| decoratorArg.id.equals(
 													"experimental_relax_shapes"))
@@ -218,7 +224,6 @@ public class Function extends RefactorableProgramEntity {
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
 		this.computeHasTensorParameter();
-
 	}
 
 	private void computeHasTensorParameter() {

@@ -239,6 +239,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertTrue(args.getInputSignatureParamExists());
 			if (functionParameter == "autograph")
 				assertTrue(args.getAutoGraphParamExists());
+			// The version of the API we are using allows parameter names jit_compile and deprecated name
+			// experimental_compile
 			if (functionParameter == "jit_compile" || functionParameter == "experimental_compile")
 				assertTrue(args.getJitCompileParamExists());
 			if (functionParameter == "reduce_retracing")
@@ -282,14 +284,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		// Needs to be an ArrayList because a decorator can have multiple
+		// Needs to be an ArrayList because we are testing a tf.function with multiple
 		// parameters.
 		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
 
-		ArrayList<String> valuesFunc = new ArrayList<>();
-		valuesFunc.add("input_signature");
-		valuesFunc.add("autograph");
-		funcParameters.put("func", valuesFunc);
+		ArrayList<String> paramNames = new ArrayList<>();
+		paramNames.add("input_signature");
+		paramNames.add("autograph");
+		funcParameters.put("func", paramNames);
 
 		for (Function func : functions) {
 			assertNotNull(func);
@@ -305,7 +307,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 	}
-	
+
 	/**
 	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
 	 */
@@ -319,7 +321,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function.HybridizationParameters args = function.new HybridizationParameters();
 
-		assertTrue(!args.getInputSignatureParamExists());
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method 
+		// to return False.
+
+		assertFalse(args.getInputSignatureParamExists());
 	}
 
 	/**
