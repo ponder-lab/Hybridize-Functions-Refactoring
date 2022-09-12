@@ -33,12 +33,15 @@ import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.decoratorsType;
+import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
@@ -484,5 +487,63 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// NOTE: Both of these functions have the same qualified name.
 		assertEquals(1, functionNames.size());
+	}
+
+	/**
+	 * Test for #47. Attribute case.
+	 */
+	@Test
+	public void testGetDecoratorFQN() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		FunctionDef functionDef = function.getFunctionDef();
+		decoratorsType[] decoratorArray = functionDef.decs;
+		assertNotNull(decoratorArray);
+		assertEquals(1, decoratorArray.length);
+
+		decoratorsType decorator = decoratorArray[0];
+		assertNotNull(decorator);
+
+		exprType decoratorFunction = decorator.func;
+		assertNotNull(decoratorFunction);
+
+		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+		assertEquals("tf.function", representationString);
+
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
+		System.out.println(fullyQualifiedName);
+	}
+
+	/**
+	 * Test for #47. Call case.
+	 */
+	@Test
+	public void testGetDecoratorFQN2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		FunctionDef functionDef = function.getFunctionDef();
+		decoratorsType[] decoratorArray = functionDef.decs;
+		assertNotNull(decoratorArray);
+		assertEquals(1, decoratorArray.length);
+
+		decoratorsType decorator = decoratorArray[0];
+		assertNotNull(decorator);
+
+		exprType decoratorFunction = decorator.func;
+		assertNotNull(decoratorFunction);
+
+		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+		assertEquals("tf.function", representationString);
+
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
+		System.out.println(fullyQualifiedName);
 	}
 }

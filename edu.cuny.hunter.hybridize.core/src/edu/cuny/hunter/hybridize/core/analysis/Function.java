@@ -63,47 +63,20 @@ public class Function extends RefactorableProgramEntity {
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
-				// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports?
-				// Is there an import scope visitor? Module name getter?
-				// Use some black magic here. Make a method called getModuleName() or something.
-				// Have a look at https://github.com/fabioz/Pydev/search?q=declared.
-				// What module is thing declared in? __module__ is the name of the module the function was defined in,
-				// or None if unavailable according to https://docs.python.org/3/reference/datamodel.html.
 
-				if (decorator.func instanceof Attribute) { // e.g., tf.function
-					Attribute decoratorFunction = (Attribute) decorator.func;
+				// get the decorator's FQN.
+				String decoratorFQN = Util.getFullyQualifiedName(decorator);
 
-					if (decoratorFunction.value instanceof Name) {
-						Name decoratorName = (Name) decoratorFunction.value;
-						// We have a viable prefix. Get the attribute.
-						if (decoratorName.id.equals("tf") && decoratorFunction.attr instanceof NameTok) {
-							NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-							if (decoratorAttribute.id.equals("function")) {
-								// Found "tf.function."
-								this.isHybrid = true;
-								LOG.info(this + " is hybrid.");
-							}
-						}
-					}
-				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
-					Call decoratorFunction = (Call) decorator.func;
-					if (decoratorFunction.func instanceof Attribute) {
-						Attribute callFunction = (Attribute) decoratorFunction.func;
-						if (callFunction.value instanceof Name) {
-							Name decoratorName = (Name) callFunction.value;
-							// We have a viable prefix. Get the attribute.
-							if (decoratorName.id.equals("tf") && callFunction.attr instanceof NameTok) {
-								NameTok decoratorAttribute = (NameTok) callFunction.attr;
-								if (decoratorAttribute.id.equals("function")) {
-									// Found tf.function(...)
-									this.isHybrid = true;
-									LOG.info(this + " is hybrid.");
-								}
-							}
-						}
-					}
+				// if this function is decorated with "tf.function."
+				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
+					this.isHybrid = true;
+					LOG.info(this + " is hybrid.");
+					return;
 				}
 			}
+
+		else
+			this.isHybrid = false;
 	}
 
 	/**
