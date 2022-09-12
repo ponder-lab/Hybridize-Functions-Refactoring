@@ -235,7 +235,7 @@ public class Function extends RefactorableProgramEntity {
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH
 		// (#47).
-		// TODO: Consider mechanisms other than decorators (e.g., higher order functions). See #3.
+		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		decoratorsType[] decoratorArray = this.functionDef.decs;
 
 		if (decoratorArray != null)
