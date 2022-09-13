@@ -8,5 +8,4 @@ def func(i):
 if __name__ == '__main__':
     x = tf.constant(1)
     func(x)
-    
-    
+
