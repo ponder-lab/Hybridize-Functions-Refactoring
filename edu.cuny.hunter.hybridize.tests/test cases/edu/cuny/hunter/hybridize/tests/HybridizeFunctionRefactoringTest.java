@@ -208,57 +208,164 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function arguments.
+	 * Test for #30. This simply tests whether we can parse the tf.function argument input_signature.
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(8, functions.size());
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
 
-		// Needs to be an ArrayList because a decorator can have multiple
-		// parameters.
-		Map<String, String> funcParameters = new HashMap<>();
+		Function.HybridizationParameters args = function.new HybridizationParameters();
 
-		funcParameters.put("func", "input_signature");
-		funcParameters.put("func1", "experimental_autograph_options");
-		funcParameters.put("func2", "experimental_follow_type_hints");
-		funcParameters.put("func3", "experimental_implements");
-		funcParameters.put("func4", "jit_compile");
-		funcParameters.put("func5", "reduce_retracing");
-		funcParameters.put("func6", "experimental_compile");
-		funcParameters.put("func7", "autograph");
+		assertTrue(args.getInputSignatureParamExists());
+		assertFalse(args.getAutoGraphParamExists() && args.getJitCompileParamExists()
+				&& args.getReduceRetracingParamExists() && args.getExpImplementsParamExists()
+				&& args.getExpAutographOptParamExists() && args.getExpTypeHintsParamExists());
+	}
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			Function.HybridizationParameters args = func.new HybridizationParameters();
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
+	 */
+	@Test
+	public void testComputeParameters10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
 
-			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
-			String functionParameter = funcParameters.get(actualFunctionName);
-			if (functionParameter == "input_signature")
-				assertTrue(args.getInputSignatureParamExists());
-			if (functionParameter == "autograph")
-				assertTrue(args.getAutoGraphParamExists());
-			// The version of the API we are using allows parameter names jit_compile and deprecated name
-			// experimental_compile
-			if (functionParameter == "jit_compile" || functionParameter == "experimental_compile")
-				assertTrue(args.getJitCompileParamExists());
-			if (functionParameter == "reduce_retracing")
-				assertTrue(args.getReduceRetracingParamExists());
-			if (functionParameter == "experimental_implements")
-				assertTrue(args.getExpImplementsParamExists());
-			if (functionParameter == "experimental_autograph_options")
-				assertTrue(args.getExpAutographOptParamExists());
-			if (functionParameter == "experimental_follow_type_hints")
-				assertTrue(args.getExpTypeHintsParamExists());
-		}
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+		// to return False.
+
+		assertFalse(args.getInputSignatureParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_autograph_options
+	 */
+	@Test
+	public void testComputeParameters2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && !args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_follow_type_hints.
+	 */
+	@Test
+	public void testComputeParameters3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_implements.
+	 */
+	@Test
+	public void testComputeParameters4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && !args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument jit_compile.
+	 */
+	@Test
+	public void testComputeParameters5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && !args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument reduce_retracing.
+	 */
+	@Test
+	public void testComputeParameters6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && !args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument autograph.
+	 */
+	@Test
+	public void testComputeParameters7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.new HybridizationParameters();
+
+		assertTrue(!args.getExpAutographOptParamExists() && args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getInputSignatureParamExists() && !args.getExpTypeHintsParamExists()
+				&& !args.getFuncParamExists());
 	}
 
 	/**
 	 * Test for #30. This simply tests whether we can identify when there are no tf.function args.
 	 */
 	@Test
-	public void testComputeParameters2() throws Exception {
+	public void testComputeParameters8() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -277,7 +384,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #30. This simply tests whether we can parse tf.function arguments when we have multiple.
 	 */
 	@Test
-	public void testComputeParameters3() throws Exception {
+	public void testComputeParameters9() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -306,27 +413,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					assertTrue(args.getAutoGraphParamExists());
 			}
 		}
-	}
-
-	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
-	 */
-	@Test
-	public void testComputeParameters4() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		Function.HybridizationParameters args = function.new HybridizationParameters();
-
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
-		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method 
-		// to return False.
-
-		assertFalse(args.getInputSignatureParamExists());
 	}
 
 	/**

@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-@tf.function(experimental_follow_type_hints=True)
+@tf.function(reduce_retracing=True)
 def func():
   pass
-   
+ 
 if __name__ == '__main__':
-    func()
+    func()   

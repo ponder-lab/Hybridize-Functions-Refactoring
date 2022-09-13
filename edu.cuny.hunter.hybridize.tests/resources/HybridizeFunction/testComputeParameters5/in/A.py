@@ -1,8 +1,8 @@
 import tensorflow as tf
-
-@tf.function(experimental_follow_type_hints=True)
+  
+@tf.function(jit_compile=True)
 def func():
-  pass
-   
+    print("Tracing")
+
 if __name__ == '__main__':
     func()
