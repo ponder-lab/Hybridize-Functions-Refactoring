@@ -52,10 +52,9 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		@Override
 		protected void setProcessor(RefactoringProcessor processor) {
-			if (processor instanceof HybridizeFunctionRefactoringProcessor)
-				this.processor = (HybridizeFunctionRefactoringProcessor) processor;
-			else
+			if (!(processor instanceof HybridizeFunctionRefactoringProcessor))
 				throw new IllegalArgumentException("Expecing HybridizeFunctionRefactoringProcessor.");
+			this.processor = (HybridizeFunctionRefactoringProcessor) processor;
 		}
 	}
 

@@ -9,17 +9,20 @@ import org.python.pydev.parser.jython.ast.VisitorBase;
 
 /**
  * Extracts function definitions from a given AST node.
- * 
+ *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public class FunctionExtractor extends VisitorBase {
 
 	private Set<FunctionDef> definitions = new HashSet<>();
 
+	public Set<FunctionDef> getDefinitions() {
+		return this.definitions;
+	}
+
 	@Override
-	public Object visitFunctionDef(FunctionDef node) throws Exception {
-		this.getDefinitions().add(node);
-		return super.visitFunctionDef(node);
+	public void traverse(SimpleNode node) throws Exception {
+		node.traverse(this);
 	}
 
 	@Override
@@ -28,11 +31,8 @@ public class FunctionExtractor extends VisitorBase {
 	}
 
 	@Override
-	public void traverse(SimpleNode node) throws Exception {
-		node.traverse(this);
-	}
-
-	public Set<FunctionDef> getDefinitions() {
-		return definitions;
+	public Object visitFunctionDef(FunctionDef node) throws Exception {
+		this.getDefinitions().add(node);
+		return super.visitFunctionDef(node);
 	}
 }

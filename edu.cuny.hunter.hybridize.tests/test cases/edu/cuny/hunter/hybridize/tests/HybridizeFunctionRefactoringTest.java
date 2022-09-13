@@ -7,9 +7,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -41,52 +45,11 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 @SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
+	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
+
 	private static final String REFACTORING_PATH = "HybridizeFunction/";
 
 	private static final String TEST_FILE_EXTENION = "py";
-
-	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
-
-	@Override
-	protected String getRefactoringPath() {
-		return REFACTORING_PATH;
-	}
-
-	/**
-	 * Runs a single analysis test.
-	 * 
-	 * @return The set of {@link Function}s analyzed.
-	 */
-	private Set<Function> getFunctions() throws Exception {
-		SimpleNode pythonNode = createPythonNodeFromTestFile("A");
-
-		// extract function definitions.
-		FunctionExtractor functionExtractor = new FunctionExtractor();
-		pythonNode.accept(functionExtractor);
-		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
-				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
-
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.toArray(FunctionDef[]::new));
-		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
-
-		RefactoringStatus status = performRefactoringWithStatus(refactoring);
-		assertTrue(status.isOK());
-
-		return processor.getFunctions();
-	}
-
-	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
-		return createPythonNodeFromTestFile(fileName, true);
-	}
-
-	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
-			throws IOException, MisconfigurationException {
-		String contents = input ? getFileContents(getInputTestFileName(fileName))
-				: getFileContents(getOutputTestFileName(fileName));
-
-		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
-	}
 
 	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
 			throws MisconfigurationException {
@@ -98,13 +61,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		IGrammarVersionProvider provider = new IGrammarVersionProvider() {
 
 			@Override
-			public int getGrammarVersion() throws MisconfigurationException {
-				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
+			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
+				return null;
 			}
 
 			@Override
-			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
-				return null;
+			public int getGrammarVersion() throws MisconfigurationException {
+				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
 			}
 		};
 
@@ -122,10 +85,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				parseErr.printStackTrace();
 
 				Token token = parseErr.currentToken;
-				if (token != null) {
+				if (token != null)
 					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:"
 							+ token.beginLine + "\ncol:" + token.beginColumn);
-				}
 			}
 
 			fail("Expected no error, received:\n" + err + "\n" + s);
@@ -138,18 +100,262 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
-	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
-	 * Tensor argument. Case: Hybrid
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
+	 * given path.
+	 *
+	 * @param path The {@link Path} containing the requirements.txt file.
+	 */
+	private static void installRequirements(Path path) throws IOException, InterruptedException {
+		Path requirements = path.resolve("requirements.txt");
+
+		// install requirements.
+		runCommand("pip3", "install", "-r", requirements.toString());
+	}
+
+	private static void runCommand(String... command) throws IOException, InterruptedException {
+		ProcessBuilder processBuilder = new ProcessBuilder(command);
+
+		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
+
+		Process process = processBuilder.start();
+		int exitCode = process.waitFor();
+		String errorOutput = null;
+
+		if (exitCode != 0) { // there's a problem.
+			// retrieve the error output.
+			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+		}
+
+		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
+	}
+
+	/**
+	 * Runs python on the file presented by the given {@link Path}.
+	 *
+	 * @param path The {@link Path} of the file to interpret.
+	 */
+	private static void runPython(Path path) throws IOException, InterruptedException {
+		// run the code.
+		runCommand("python3", path.toString());
+	}
+
+	private SimpleNode createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
+		return this.createPythonNodeFromTestFile(fileName, true);
+	}
+
+	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
+			throws IOException, MisconfigurationException {
+		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
+				: this.getFileContents(this.getOutputTestFileName(fileName));
+
+		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
+	}
+
+	@Override
+	public void genericafter() throws Exception {
+	}
+
+	@Override
+	public void genericbefore() throws Exception {
+		if (this.fIsVerbose) {
+			System.out.println("\n---------------------------------------------");
+			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
+		}
+
+		RefactoringCore.getUndoManager().flush();
+
+		String inputTestFileName = this.getInputTestFileName("A");
+		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+
+		installRequirements(inputTestFileAbsolutionPath.getParent());
+		runPython(inputTestFileAbsolutionPath);
+	}
+
+	/**
+	 * Runs a single analysis test.
+	 *
+	 * @return The set of {@link Function}s analyzed.
+	 */
+	private Set<Function> getFunctions() throws Exception {
+		SimpleNode pythonNode = this.createPythonNodeFromTestFile("A");
+
+		// extract function definitions.
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+		pythonNode.accept(functionExtractor);
+		Set<FunctionDef> availableFunctions = functionExtractor.getDefinitions().stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
+				availableFunctions.toArray(FunctionDef[]::new));
+		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
+		assertTrue(status.isOK());
+
+		return processor.getFunctions();
+	}
+
+	@Override
+	protected String getRefactoringPath() {
+		return REFACTORING_PATH;
+	}
+
+	@Override
+	protected String getTestFileExtension() {
+		return TEST_FILE_EXTENION;
+	}
+
+	/**
+	 * This simply tests whether we have the correct fully qualified name.
 	 */
 	@Test
-	public void testIsHybridTrue() throws Exception {
+	public void testFQN() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(7, functions.size());
+
+		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
+
+		funcSimpleNameToExpectedSignature.put("func", "func");
+		funcSimpleNameToExpectedSignature.put("func1", "func1");
+		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
+		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
+		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
+
+		for (Function func : functions) {
+			LOG.info("Checking: " + func);
+
+			assertNotNull(func);
+
+			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+
+			LOG.info("Function simple name: " + simpleName);
+
+			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+
+			LOG.info("Expected signature: " + expectedSignature);
+
+			String actualSignature = func.getIdentifer();
+
+			LOG.info("Actual signature: " + actualSignature);
+
+			assertEquals(expectedSignature, actualSignature);
+		}
+	}
+
+	/**
+	 * Test for #47. Here, we test using an alias.
+	 */
+	@Test
+	public void testIsHybrid() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+		// TODO: Set to assertTrue() after fixing #47.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. No alias used here.
+	 */
+	@Test
+	public void testIsHybrid2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertTrue() after fixing #47.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size()); // one function is for the decorator.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Set to assertFalse() after fixing #47.
 		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow.
+	 */
+	@Test
+	public void testIsHybrid5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		// NOTE: There's not much we can do about this since it has the same signature as the real TF. Even PyDev has
+		// trouble with this.
+		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #47. This function is not from TensorFlow. Same as 4, but uses "from tf import function."
+	 */
+	@Test
+	public void testIsHybrid6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size()); // The decorator is in another file.
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Same as testIsHybridTrue except that we use "from" in the import statement.
+	 */
+	@Test
+	public void testIsHybrid7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Change to assertTrue once #20 is fixed.
+		assertFalse(function.isHybrid());
+	}
+
+	/**
+	 * Same as testIsHybrid7 except that we use "from *" in the import statement.
+	 */
+	@Test
+	public void testIsHybrid8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		// TODO: Change to assertTrue once #20 is fixed.
+		assertFalse(function.isHybrid());
 	}
 
 	/**
@@ -159,27 +365,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testIsHybridFalse() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
-		}
-	}
-
-	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: not
-	 * hybrid
-	 */
-	@Test
-	public void testIsHybridWithParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
 		assertEquals(3, functions.size());
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertTrue(func.isHybrid());
+			assertFalse(func.isHybrid());
 		}
 	}
 
@@ -199,28 +389,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether we have the correct fully qualified name.
+	 * Test #17. This simply tests whether this tool looks at multiple decorator. Case: Hybrid
 	 */
 	@Test
-	public void testFQN() throws Exception {
+	public void testIsHybridMultipleDecorators() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
-		assertEquals(5, functions.size());
-
-		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
-
-		funcSimpleNameToExpectedSignature.put("func", "func");
-		funcSimpleNameToExpectedSignature.put("func1", "func1");
-		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
-		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
-		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+		assertEquals(2, functions.size());
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			String actualFunctionDefFullRepresentationString = NodeUtils
-					.getFullRepresentationString(func.getFunctionDef());
-			assertEquals(funcSimpleNameToExpectedSignature.get(actualFunctionDefFullRepresentationString),
-					func.getIdentifer());
+			assertTrue(func.isHybrid());
+		}
+	}
+
+	/**
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
+	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
+	 * Tensor argument. Case: Hybrid
+	 */
+	@Test
+	public void testIsHybridTrue() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+	}
+
+	/**
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case:
+	 * hybrid
+	 */
+	@Test
+	public void testIsHybridWithParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			assertTrue(func.isHybrid());
 		}
 	}
 
@@ -239,57 +449,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 	}
 
-	@Override
-	protected String getName() {
-		// TODO Auto-generated method stub
-		return super.getName();
-	}
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
 
-	@Override
-	protected String getTestPath() {
-		// TODO Auto-generated method stub
-		return super.getTestPath();
-	}
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functions.size());
 
-	@Override
-	protected String getTestFileExtension() {
-		return TEST_FILE_EXTENION;
-	}
+		Set<String> functionNames = new HashSet<>();
 
-	@Override
-	protected String getInputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName);
-	}
-
-	@Override
-	protected String getInputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getInputTestFileName(cuName, subDirName);
-	}
-
-	@Override
-	protected String getOutputTestFileName(String cuName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName);
-	}
-
-	@Override
-	protected String getOutputTestFileName(String cuName, String subDirName) {
-		// TODO Auto-generated method stub
-		return super.getOutputTestFileName(cuName, subDirName);
-	}
-
-	@Override
-	public void genericbefore() throws Exception {
-		if (fIsVerbose) {
-			System.out.println("\n---------------------------------------------");
-			System.out.println("\nTest:" + getClass() + "." + getName());
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
 		}
-		RefactoringCore.getUndoManager().flush();
+
+		// TODO: Change to 2 after #41 is fixed.
+		assertEquals(1, functionNames.size());
 	}
 
-	@Override
-	public void genericafter() throws Exception {
+	/**
+	 * Test #38. This simply tests whether two functions with the same names in a file are processed individually.
+	 */
+	@Test
+	public void testSameFileSameName2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		// TODO: Change to 2 when #41 is fixed.
+		assertEquals(1, functions.size());
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		// NOTE: Both of these functions have the same qualified name.
+		assertEquals(1, functionNames.size());
 	}
 }
