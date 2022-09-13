@@ -10,7 +10,7 @@
 		sourcepath="lib/commons-csv-1.1-src.zip">
 		<attributes>
 			<attribute name="javadoc_location"
-				value="jar:platform:/resource/edu.cuny.hunter.streamrefactoring.eval/lib/commons-csv-docs-1.1.zip!/commons-csv-1.1/apidocs" />
+				value="jar:platform:/resource/edu.cuny.hunter.hybridize.eval/lib/commons-csv-docs-1.1.zip!/commons-csv-1.1/apidocs" />
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="output" path="target/classes" />

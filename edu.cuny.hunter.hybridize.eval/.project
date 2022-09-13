@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>edu.cuny.hunter.streamrefactoring.eval</name>
+	<name>edu.cuny.hunter.hybridize.eval</name>
 	<comment>A plug-in to evaluate the interface refactoring plug-in</comment>
 	<projects>
 	</projects>
