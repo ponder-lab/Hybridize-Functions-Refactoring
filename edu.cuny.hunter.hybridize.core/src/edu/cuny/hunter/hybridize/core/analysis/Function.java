@@ -72,60 +72,55 @@ public class Function extends RefactorableProgramEntity {
 
 		public HybridizationParameters() {
 			decoratorsType[] decoratorArray = Function.this.functionDef.decs;
-			if (Function.this.isHybrid)
-				if (decoratorArray != null)
-					for (decoratorsType decorator : decoratorArray)
-						if (decorator.func instanceof Call) {
-							// If tf.function has parameters it will be of instance Call
-							Call decoratorFunction = (Call) decorator.func;
-							// Get the keywords that will contain the parameters,
-							// we use this because we will have keywords if
-							// the parameter has an argument
-							keywordType[] keywordArray = decoratorFunction.keywords;
-							if (keywordArray != null)
-								// Traverse through the keywords
-								for (keywordType keyword : keywordArray)
-									if (keyword.arg instanceof NameTok) {
-										NameTok decoratorArg = (NameTok) keyword.arg;
-										if (decoratorArg.id.equals("func"))
-											// Found parameter func
-											this.funcParamExists = true;
-										else if (decoratorArg.id.equals("input_signature"))
-											// Found parameter input_signature
-											this.inputSignatureParamExists = true;
-										else if (decoratorArg.id.equals("autograph"))
-											// Found parameter autograph
-											this.autoGraphParamExists = true;
-										// The version of the API we are using allows
-										// parameter names jit_compile and
-										// deprecated name experimental_compile
-										else if (decoratorArg.id.equals("jit_compile")
-												|| decoratorArg.id.equals(
-													"experimental_compile"))
-											// Found parameter jit_compile/experimental_compile
-											this.jitCompileParamExists = true;
-										// The version of the API we are using allows
-										// parameter names reduce_retracing
-										// and deprecated name experimental_relax_shapes
-										else if (decoratorArg.id.equals("reduce_retracing")
-												|| decoratorArg.id.equals(
-													"experimental_relax_shapes"))
-											// Found parameter reduce_retracing
-											// or experimental_relax_shapes
-											this.reduceRetracingParamExists = true;
-										else if (decoratorArg.id.equals("experimental_implements"))
-											// Found parameter experimental_implements
-											this.experimentalImplementsParamExists = true;
-										else if (decoratorArg.id.equals(
-												"experimental_autograph_options"))
-											// Found parameter experimental_autograph_options
-											this.experimentalAutographOptionsParamExists = true;
-										else if (decoratorArg.id.equals(
-												"experimental_follow_type_hints"))
-											// Found parameter experimental_follow_type_hints
-											this.experimentaFollowTypeHintsParamExists = true;
-									}
-						}
+			if (decoratorArray != null)
+				for (decoratorsType decorator : decoratorArray)
+					if (decorator.func instanceof Call) {
+						// If tf.function has parameters it will be of instance Call
+						Call decoratorFunction = (Call) decorator.func;
+						// Get the keywords that will contain the parameters,
+						// we use this because we will have keywords if
+						// the parameter has an argument
+						keywordType[] keywordArray = decoratorFunction.keywords;
+						if (keywordArray != null)
+							// Traverse through the keywords
+							for (keywordType keyword : keywordArray)
+								if (keyword.arg instanceof NameTok) {
+									NameTok decoratorArg = (NameTok) keyword.arg;
+									if (decoratorArg.id.equals("func"))
+										// Found parameter func
+										this.funcParamExists = true;
+									else if (decoratorArg.id.equals("input_signature"))
+										// Found parameter input_signature
+										this.inputSignatureParamExists = true;
+									else if (decoratorArg.id.equals("autograph"))
+										// Found parameter autograph
+										this.autoGraphParamExists = true;
+									// The version of the API we are using allows
+									// parameter names jit_compile and
+									// deprecated name experimental_compile
+									else if (decoratorArg.id.equals("jit_compile")
+											|| decoratorArg.id.equals("experimental_compile"))
+										// Found parameter jit_compile/experimental_compile
+										this.jitCompileParamExists = true;
+									// The version of the API we are using allows
+									// parameter names reduce_retracing
+									// and deprecated name experimental_relax_shapes
+									else if (decoratorArg.id.equals("reduce_retracing")
+											|| decoratorArg.id.equals("experimental_relax_shapes"))
+										// Found parameter reduce_retracing
+										// or experimental_relax_shapes
+										this.reduceRetracingParamExists = true;
+									else if (decoratorArg.id.equals("experimental_implements"))
+										// Found parameter experimental_implements
+										this.experimentalImplementsParamExists = true;
+									else if (decoratorArg.id.equals("experimental_autograph_options"))
+										// Found parameter experimental_autograph_options
+										this.experimentalAutographOptionsParamExists = true;
+									else if (decoratorArg.id.equals("experimental_follow_type_hints"))
+										// Found parameter experimental_follow_type_hints
+										this.experimentaFollowTypeHintsParamExists = true;
+								}
+					}
 		}
 
 		/**
@@ -204,6 +199,11 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
+	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
+	 */
+	private Function.HybridizationParameters args = null;
+
+	/**
 	 * The {@link FunctionDef} representing this {@link Function}.
 	 */
 	private FunctionDef functionDef;
@@ -224,6 +224,10 @@ public class Function extends RefactorableProgramEntity {
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid();
 		this.computeHasTensorParameter();
+
+		// If function is hybrid, then parse the existence of the parameters
+		if (this.isHybrid)
+			this.args = this.new HybridizationParameters();
 	}
 
 	private void computeHasTensorParameter() {
@@ -274,6 +278,15 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				}
+	}
+
+	/**
+	 * Accessor for private member variable args.
+	 *
+	 * @return HybridizationParameters gives the information which arguments {@link Function} has.
+	 */
+	public HybridizationParameters getArgs() {
+		return this.args;
 	}
 
 	/**
