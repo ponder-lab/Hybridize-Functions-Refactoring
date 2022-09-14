@@ -515,7 +515,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("tf.function", representationString);
 
 		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
-		System.out.println(fullyQualifiedName);
+		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 
 	/**
@@ -544,6 +544,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("tf.function", representationString);
 
 		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
-		System.out.println(fullyQualifiedName);
+		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 }
