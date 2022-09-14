@@ -24,7 +24,7 @@ public class Util {
 		exprType decoratorFunction = decorator.func;
 		String decoratorfullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
 
-		return declaringModuleName + decoratorfullRepresentationString;
+		return declaringModuleName + "." + decoratorfullRepresentationString;
 	}
 
 }
