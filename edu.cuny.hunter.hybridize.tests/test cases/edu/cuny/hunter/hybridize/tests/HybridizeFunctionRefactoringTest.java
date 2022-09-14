@@ -222,10 +222,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(args.getInputSignatureParamExists());
-		assertFalse(args.getAutoGraphParamExists() && args.getJitCompileParamExists()
-				&& args.getReduceRetracingParamExists() && args.getExpImplementsParamExists()
-				&& args.getExpAutographOptParamExists() && args.getExpTypeHintsParamExists());
+		assertTrue(args.getInputSignatureParamExists() & !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getExpAutographOptParamExists() && !args.getExpTypeHintsParamExists());
 	}
 
 	/**
@@ -247,6 +246,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// to return False.
 
 		assertNull(args);
+	}
+
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two
+	 * decorators) and only count the parameters from the tf.function decorator.
+	 */
+	@Test
+	public void testComputeParameters11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getArgs();
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
+		assertNotNull(args);
+		
+		assertTrue(!args.getInputSignatureParamExists() & args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
+				&& !args.getExpAutographOptParamExists() && !args.getExpTypeHintsParamExists());
+		
+		
 	}
 
 	/**

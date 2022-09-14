@@ -77,49 +77,61 @@ public class Function extends RefactorableProgramEntity {
 					if (decorator.func instanceof Call) {
 						// If tf.function has parameters it will be of instance Call
 						Call decoratorFunction = (Call) decorator.func;
-						// Get the keywords that will contain the parameters,
-						// we use this because we will have keywords if
-						// the parameter has an argument
-						keywordType[] keywordArray = decoratorFunction.keywords;
-						if (keywordArray != null)
-							// Traverse through the keywords
-							for (keywordType keyword : keywordArray)
-								if (keyword.arg instanceof NameTok) {
-									NameTok decoratorArg = (NameTok) keyword.arg;
-									if (decoratorArg.id.equals("func"))
-										// Found parameter func
-										this.funcParamExists = true;
-									else if (decoratorArg.id.equals("input_signature"))
-										// Found parameter input_signature
-										this.inputSignatureParamExists = true;
-									else if (decoratorArg.id.equals("autograph"))
-										// Found parameter autograph
-										this.autoGraphParamExists = true;
-									// The version of the API we are using allows
-									// parameter names jit_compile and
-									// deprecated name experimental_compile
-									else if (decoratorArg.id.equals("jit_compile")
-											|| decoratorArg.id.equals("experimental_compile"))
-										// Found parameter jit_compile/experimental_compile
-										this.jitCompileParamExists = true;
-									// The version of the API we are using allows
-									// parameter names reduce_retracing
-									// and deprecated name experimental_relax_shapes
-									else if (decoratorArg.id.equals("reduce_retracing")
-											|| decoratorArg.id.equals("experimental_relax_shapes"))
-										// Found parameter reduce_retracing
-										// or experimental_relax_shapes
-										this.reduceRetracingParamExists = true;
-									else if (decoratorArg.id.equals("experimental_implements"))
-										// Found parameter experimental_implements
-										this.experimentalImplementsParamExists = true;
-									else if (decoratorArg.id.equals("experimental_autograph_options"))
-										// Found parameter experimental_autograph_options
-										this.experimentalAutographOptionsParamExists = true;
-									else if (decoratorArg.id.equals("experimental_follow_type_hints"))
-										// Found parameter experimental_follow_type_hints
-										this.experimentaFollowTypeHintsParamExists = true;
+						if (decoratorFunction.func instanceof Attribute) {
+							Attribute callFunction = (Attribute) decoratorFunction.func;
+							if (callFunction.value instanceof Name) {
+								Name decoratorName = (Name) callFunction.value;
+								// We have a viable prefix. Get the attribute.
+								if (decoratorName.id.equals("tf") && callFunction.attr instanceof NameTok) {
+									NameTok decoratorAttribute = (NameTok) callFunction.attr;
+									if (decoratorAttribute.id.equals("function")) {
+										// Get the keywords that will contain the parameters,
+										// we use this because we will have keywords if
+										// the parameter has an argument
+										keywordType[] keywordArray = decoratorFunction.keywords;
+										if (keywordArray != null)
+											// Traverse through the keywords
+											for (keywordType keyword : keywordArray)
+												if (keyword.arg instanceof NameTok) {
+													NameTok decoratorArg = (NameTok) keyword.arg;
+													if (decoratorArg.id.equals("func"))
+														// Found parameter func
+														this.funcParamExists = true;
+													else if (decoratorArg.id.equals("input_signature"))
+														// Found parameter input_signature
+														this.inputSignatureParamExists = true;
+													else if (decoratorArg.id.equals("autograph"))
+														// Found parameter autograph
+														this.autoGraphParamExists = true;
+													// The version of the API we are using allows
+													// parameter names jit_compile and
+													// deprecated name experimental_compile
+													else if (decoratorArg.id.equals("jit_compile")
+															|| decoratorArg.id.equals("experimental_compile"))
+														// Found parameter jit_compile/experimental_compile
+														this.jitCompileParamExists = true;
+													// The version of the API we are using allows
+													// parameter names reduce_retracing
+													// and deprecated name experimental_relax_shapes
+													else if (decoratorArg.id.equals("reduce_retracing")
+															|| decoratorArg.id.equals("experimental_relax_shapes"))
+														// Found parameter reduce_retracing
+														// or experimental_relax_shapes
+														this.reduceRetracingParamExists = true;
+													else if (decoratorArg.id.equals("experimental_implements"))
+														// Found parameter experimental_implements
+														this.experimentalImplementsParamExists = true;
+													else if (decoratorArg.id.equals("experimental_autograph_options"))
+														// Found parameter experimental_autograph_options
+														this.experimentalAutographOptionsParamExists = true;
+													else if (decoratorArg.id.equals("experimental_follow_type_hints"))
+														// Found parameter experimental_follow_type_hints
+														this.experimentaFollowTypeHintsParamExists = true;
+												}
+									}
 								}
+							}
+						}
 					}
 		}
 
