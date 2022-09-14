@@ -108,10 +108,10 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Returns the FQN of this {@link Function}.
+	 * Returns the qualified name (QN) of this {@link Function}.
 	 *
 	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
-	 * @return This {@link Function}'s FQN.
+	 * @return This {@link Function}'s QN.
 	 */
 	public String getIdentifer() {
 		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
