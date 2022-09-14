@@ -53,8 +53,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String TEST_FILE_EXTENION = "py";
 
-	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
-			throws MisconfigurationException {
+	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents) throws MisconfigurationException {
 		LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
 		LOG.info("Contents: " + contents);
 
@@ -88,8 +87,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 				Token token = parseErr.currentToken;
 				if (token != null)
-					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:"
-							+ token.beginLine + "\ncol:" + token.beginColumn);
+					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:" + token.beginLine + "\ncol:"
+							+ token.beginColumn);
 			}
 
 			fail("Expected no error, received:\n" + err + "\n" + s);
@@ -102,8 +101,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
-	 * given path.
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the given path.
 	 *
 	 * @param path The {@link Path} containing the requirements.txt file.
 	 */
@@ -146,8 +144,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return this.createPythonNodeFromTestFile(fileName, true);
 	}
 
-	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
-			throws IOException, MisconfigurationException {
+	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input) throws IOException, MisconfigurationException {
 		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
 				: this.getFileContents(this.getOutputTestFileName(fileName));
 
@@ -223,8 +220,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(args.getInputSignatureParamExists() & !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
-				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
-				&& !args.getExpAutographOptParamExists() && !args.getExpTypeHintsParamExists());
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
+				&& !args.getExpTypeHintsParamExists());
 	}
 
 	/**
@@ -249,8 +246,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two
-	 * decorators) and only count the parameters from the tf.function decorator.
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two decorators) and only
+	 * count the parameters from the tf.function decorator.
 	 */
 	@Test
 	public void testComputeParameters11() throws Exception {
@@ -264,12 +261,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
 		assertNotNull(args);
-		
+
 		assertTrue(!args.getInputSignatureParamExists() & args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
-				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists()
-				&& !args.getExpAutographOptParamExists() && !args.getExpTypeHintsParamExists());
-		
-		
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
+				&& !args.getExpTypeHintsParamExists());
+
+	}
+
+	/**
+	 * Test for #30. Tests two different tf.functions. Should only count the parameters of the last one.
+	 */
+	@Test
+	public void testComputeParameters12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getArgs();
+		assertNotNull(args);
+
+		// We need put `!` on args.getAutoGraphParamExists() once we fix #55
+		assertTrue(!args.getInputSignatureParamExists() & args.getAutoGraphParamExists() && args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
+				&& !args.getExpTypeHintsParamExists());
+
 	}
 
 	/**
@@ -286,9 +303,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.new HybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -306,9 +322,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -326,9 +341,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -346,9 +360,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists()
-				&& args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -366,9 +379,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(!args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -386,9 +398,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getExpAutographOptParamExists() && args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
+		assertTrue(!args.getExpAutographOptParamExists() && args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getInputSignatureParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -406,9 +417,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.getInputSignatureParamExists() && !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists()
-				&& !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
+		assertTrue(!args.getInputSignatureParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
+				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 	}
 
@@ -646,9 +656,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
-	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
-	 * Tensor argument. Case: Hybrid
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however, since it doesn't have
+	 * a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a Tensor argument. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -661,8 +670,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case:
-	 * hybrid
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
