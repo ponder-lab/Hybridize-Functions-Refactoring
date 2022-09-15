@@ -1,5 +1,9 @@
 package edu.cuny.hunter.hybridize.core.utils;
 
+import static org.eclipse.core.runtime.Platform.getLog;
+
+import org.eclipse.core.runtime.ILog;
+
 public class LoggerNames {
-	public final static String LOGGER_NAME = "edu.cuny.hunter.hybridize";
+	private static final ILog LOG = getLog(LoggerNames.class);
 }

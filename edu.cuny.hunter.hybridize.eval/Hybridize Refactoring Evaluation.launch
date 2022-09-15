@@ -52,11 +52,11 @@
 		<setEntry
 			value="edu.cuny.citytech.refactoring.common.ui:1.2.0.qualifier:default:true" />
 		<setEntry
-			value="edu.cuny.hunter.streamrefactoring.core:1.0.0:default:true" />
+			value="edu.cuny.hunter.hybridize.core:1.0.0:default:true" />
 		<setEntry
-			value="edu.cuny.hunter.streamrefactoring.eval:1.0.0:default:true" />
+			value="edu.cuny.hunter.hybridize.eval:1.0.0:default:true" />
 		<setEntry
-			value="edu.cuny.hunter.streamrefactoring.ui:1.0.0:default:true" />
+			value="edu.cuny.hunter.hybridize.ui:1.0.0:default:true" />
 		<setEntry
 			value="org.eclipse.e4.core.commands.source:0.12.100.v20170513-0428:default:false" />
 		<setEntry
@@ -186,7 +186,7 @@
 	<booleanAttribute key="clearws" value="false" />
 	<booleanAttribute key="clearwslog" value="false" />
 	<stringAttribute key="configLocation"
-		value="${workspace_loc}/.metadata/.plugins/org.eclipse.pde.core/Stream Refactoring Evaluation" />
+		value="${workspace_loc}/.metadata/.plugins/org.eclipse.pde.core/Hybridize Refactoring Evaluation" />
 	<booleanAttribute key="default" value="true" />
 	<stringAttribute key="deselected_workspace_plugins"
 		value="com.ibm.safe,com.ibm.safe.core,com.ibm.safe.core.tests,com.ibm.safe.lightweight,com.ibm.safe.lightweight.testdata,com.ibm.safe.lightweight.tests,com.ibm.safe.typestate,com.ibm.safe.typestate.testdata,com.ibm.safe.typestate.tests,com.ibm.wala.cast,com.ibm.wala.cast.java,com.ibm.wala.cast.java.ecj,com.ibm.wala.cast.java.test,com.ibm.wala.cast.java.test.data,com.ibm.wala.cast.js,com.ibm.wala.cast.js.html.nu_validator,com.ibm.wala.cast.js.rhino,com.ibm.wala.cast.js.rhino.test,com.ibm.wala.cast.js.test,com.ibm.wala.cast.js.test.data,com.ibm.wala.cast.test,com.ibm.wala.core,com.ibm.wala.core.testdata,com.ibm.wala.core.tests,com.ibm.wala.dalvik,com.ibm.wala.dalvik.test,com.ibm.wala.ide,com.ibm.wala.ide.jdt,com.ibm.wala.ide.jdt.test,com.ibm.wala.ide.jsdt,com.ibm.wala.ide.jsdt.tests,com.ibm.wala.ide.tests,com.ibm.wala.scandroid,com.ibm.wala.shrike,com.ibm.wala.util,edu.cuny.citytech.defaultrefactoring.core,edu.cuny.citytech.defaultrefactoring.eval,edu.cuny.citytech.defaultrefactoring.tests,edu.cuny.citytech.defaultrefactoring.ui,edu.cuny.citytech.refactoring.common.core,edu.cuny.citytech.refactoring.common.tests,edu.cuny.citytech.refactoring.common.ui,edu.cuny.hunter.streamrefactoring.core,edu.cuny.hunter.streamrefactoring.eval,edu.cuny.hunter.streamrefactoring.tests,edu.cuny.hunter.streamrefactoring.ui,edu.illinois.jflow.core.transformations.ui,edu.illinois.jflow.core.transformations.ui.tests,edu.illinois.jflow.editor.enhancements,edu.illinois.jflow.shapeanalysis.srw,edu.illinois.jflow.wala.core.ui,edu.illinois.jflow.wala.core.ui.tests,edu.illinois.jflow.wala.ui.tools" />
