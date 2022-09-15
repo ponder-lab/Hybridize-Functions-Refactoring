@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
@@ -176,7 +177,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Runs a single analysis test.
+	 * Returns the {@link Function}s in the test file.
+	 * @param monitor 
 	 *
 	 * @return The set of {@link Function}s analyzed.
 	 */
@@ -190,7 +192,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.toArray(FunctionDef[]::new));
+				availableFunctions.toArray(FunctionDef[]::new), new NullProgressMonitor());
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
 		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
@@ -514,7 +516,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, new NullProgressMonitor());
 		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 
@@ -543,7 +545,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator);
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, new NullProgressMonitor());
 		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 }

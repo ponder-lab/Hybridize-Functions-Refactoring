@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.ui.wizards;
 
 import static edu.cuny.hunter.hybridize.core.messages.Messages.Name;
 
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.refactoring.actions.RefactoringStarter;
 import org.eclipse.jdt.ui.refactoring.RefactoringSaveHelper;
@@ -58,8 +59,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		}
 	}
 
-	public static void startRefactoring(FunctionDef[] functions, Shell shell) {
-		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functions);
+	public static void startRefactoring(FunctionDef[] functions, Shell shell, IProgressMonitor monitor) {
+		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functions, monitor);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 
 		new RefactoringStarter().activate(wizard, shell, RefactoringMessages.OpenRefactoringWizardAction_refactoring,

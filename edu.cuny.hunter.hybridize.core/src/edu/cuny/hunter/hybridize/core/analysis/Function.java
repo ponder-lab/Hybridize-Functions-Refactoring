@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
@@ -40,11 +41,11 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	public Function(FunctionDef functionDef) {
+	public Function(FunctionDef functionDef, IProgressMonitor monitor) {
 		this.functionDef = functionDef;
 
 		// Find out if it's hybrid via the tf.function decorator.
-		this.computeIsHybrid();
+		this.computeIsHybrid(monitor);
 		this.computeHasTensorParameter();
 	}
 
@@ -53,7 +54,7 @@ public class Function extends RefactorableProgramEntity {
 		// type hints are used.
 	}
 
-	private void computeIsHybrid() {
+	private void computeIsHybrid(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
@@ -65,7 +66,7 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 
 				// get the decorator's FQN.
-				String decoratorFQN = Util.getFullyQualifiedName(decorator);
+				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
 
 				// if this function is decorated with "tf.function."
 				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {

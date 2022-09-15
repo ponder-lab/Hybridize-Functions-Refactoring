@@ -119,7 +119,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		Shell shell = getActiveShellChecked(event);
 
 		HybridizeFunctionRefactoringWizard
-				.startRefactoring(availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell);
+				.startRefactoring(availableFunctions.toArray(new FunctionDef[availableFunctions.size()]), shell, null);
 
 		return null;
 	}

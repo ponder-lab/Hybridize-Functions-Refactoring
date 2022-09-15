@@ -18,6 +18,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
+import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
@@ -52,9 +53,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
-	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions) {
+	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions, IProgressMonitor monitor) {
+		// Force the use of typeshed. It's an experimental feature of PyDev.
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+
 		// Convert the FunctionDefs to Functions.
-		Function[] functionArray = Arrays.stream(functions).map(Function::new).toArray(Function[]::new);
+		Function[] functionArray = Arrays.stream(functions).map(f -> new Function(f, monitor)).toArray(Function[]::new);
 
 		// Add all of the Functions to the Function set.
 		Collections.addAll(this.getFunctions(), functionArray);
