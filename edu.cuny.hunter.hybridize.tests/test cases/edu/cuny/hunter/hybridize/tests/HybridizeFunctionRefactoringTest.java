@@ -149,7 +149,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
 				: this.getFileContents(this.getOutputTestFileName(fileName));
 
-		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
+		return createPythonNode(fileName, fileName + '.' + this.getTestFileExtension(), contents);
 	}
 
 	@Override
