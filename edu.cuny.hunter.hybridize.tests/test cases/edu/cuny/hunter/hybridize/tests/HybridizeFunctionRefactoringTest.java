@@ -51,9 +51,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String TEST_FILE_EXTENION = "py";
 
-	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
+	private static SimpleNode createPythonNode(String moduleName, File file, String contents)
 			throws MisconfigurationException {
-		LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
+		LOG.info("Creating PythonNode for " + moduleName + " in " + file);
 		LOG.info("Contents: " + contents);
 
 		IDocument document = new Document(contents);
@@ -71,7 +71,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		};
 
-		ParserInfo parserInfo = new ParserInfo(document, provider, moduleName, new File(fileName));
+		assertTrue("Test file: " + file + " must exist.", file.exists());
+		ParserInfo parserInfo = new ParserInfo(document, provider, moduleName, file);
 
 		// Parsing.
 		ParseOutput parseOutput = PyParser.reparseDocument(parserInfo);
@@ -146,10 +147,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
 			throws IOException, MisconfigurationException {
-		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
+		String inputTestFileName = this.getInputTestFileName(fileName);
+
+		String contents = input ? this.getFileContents(inputTestFileName)
 				: this.getFileContents(this.getOutputTestFileName(fileName));
 
-		return createPythonNode(fileName, fileName + '.' + this.getTestFileExtension(), contents);
+		Path path = getAbsolutionPath(inputTestFileName);
+		File file = path.toFile();
+
+		return createPythonNode(fileName, file, contents);
 	}
 
 	@Override
