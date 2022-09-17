@@ -66,14 +66,14 @@ public class Function extends RefactorableProgramEntity {
 			for (decoratorsType decorator : decoratorArray) {
 
 				// get the decorator's FQN.
-				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
+//				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
 
 				// if this function is decorated with "tf.function."
-				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
-					this.isHybrid = true;
-					LOG.info(this + " is hybrid.");
-					return;
-				}
+//				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
+//					this.isHybrid = true;
+//					LOG.info(this + " is hybrid.");
+//					return;
+//				}
 			}
 
 		else

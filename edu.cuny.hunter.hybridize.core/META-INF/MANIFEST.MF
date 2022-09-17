@@ -13,7 +13,8 @@ Require-Bundle: org.eclipse.ltk.core.refactoring;bundle-version="3.12.200",
  org.eclipse.osgi;bundle-version="3.18.0",
  org.python.pydev.parser;bundle-version="9.3.0",
  org.python.pydev.core;bundle-version="9.3.0",
- org.python.pydev.ast;bundle-version="9.3.0"
+ org.python.pydev.ast;bundle-version="9.3.0",
+ com.python.pydev.refactoring
 Import-Package: org.eclipse.core.runtime;version="3.7.0",
  org.eclipse.jface.text,
  org.python.pydev.ast.refactoring,

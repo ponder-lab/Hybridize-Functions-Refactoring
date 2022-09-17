@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.Document;
@@ -26,7 +27,8 @@ import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.Test;
-import org.python.pydev.core.IGrammarVersionProvider;
+import org.python.pydev.core.IInterpreterManager;
+import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.MisconfigurationException;
 import org.python.pydev.parser.PyParser;
 import org.python.pydev.parser.PyParser.ParserInfo;
@@ -37,6 +39,7 @@ import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.plugin.nature.PythonNature;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
@@ -55,27 +58,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String TEST_FILE_EXTENION = "py";
 
-	private static SimpleNode createPythonNode(String moduleName, String fileName, String contents)
+	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IPythonNature.LATEST_GRAMMAR_PY3_VERSION;
+
+	/**
+	 * The {@link PythonNature} to be used for the tests.
+	 */
+	private static PythonNature nature = new PythonNature() {
+		@Override
+		public int getInterpreterType() throws CoreException {
+			return IInterpreterManager.INTERPRETER_TYPE_PYTHON;
+		}
+
+		@Override
+		public int getGrammarVersion() {
+			return GRAMMAR_TO_USE_FOR_PARSING;
+		}
+	};
+
+	private static SimpleNode createPythonNode(String moduleName, File file, String contents)
 			throws MisconfigurationException {
-		LOG.info("Creating PythonNode for " + fileName + " in " + fileName);
+		LOG.info("Creating PythonNode for " + moduleName + " in " + file);
 		LOG.info("Contents: " + contents);
 
 		IDocument document = new Document(contents);
 
-		IGrammarVersionProvider provider = new IGrammarVersionProvider() {
-
-			@Override
-			public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
-				return null;
-			}
-
-			@Override
-			public int getGrammarVersion() throws MisconfigurationException {
-				return IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
-			}
-		};
-
-		ParserInfo parserInfo = new ParserInfo(document, provider, moduleName, new File(fileName));
+		assertTrue("Test file must exist.", file.exists());
+		ParserInfo parserInfo = new ParserInfo(document, nature, moduleName, file);
 
 		// Parsing.
 		ParseOutput parseOutput = PyParser.reparseDocument(parserInfo);
@@ -150,10 +158,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private SimpleNode createPythonNodeFromTestFile(String fileName, boolean input)
 			throws IOException, MisconfigurationException {
-		String contents = input ? this.getFileContents(this.getInputTestFileName(fileName))
+		String inputTestFileName = this.getInputTestFileName(fileName);
+
+		String contents = input ? this.getFileContents(inputTestFileName)
 				: this.getFileContents(this.getOutputTestFileName(fileName));
 
-		return createPythonNode(fileName, fileName + '.' + TEST_FILE_EXTENION, contents);
+		Path path = getAbsolutionPath(inputTestFileName);
+		File file = path.toFile();
+
+		return createPythonNode(fileName, file, contents);
+	}
+
+	private File getInputTestFile() {
+		String fileName = this.getInputTestFileName("A");
+		Path path = getAbsolutionPath(fileName);
+		File file = path.toFile();
+		assertTrue("Test file must exist.", file.exists());
+		return file;
 	}
 
 	@Override
@@ -178,8 +199,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Returns the {@link Function}s in the test file.
-	 * @param monitor 
-	 *
+	 * 
+	 * @param monitor
 	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
@@ -516,7 +537,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, new NullProgressMonitor());
+		File inputTestFille = this.getInputTestFile();
+
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, inputTestFille, nature,
+				new NullProgressMonitor());
 		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 
@@ -545,7 +569,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, new NullProgressMonitor());
+		File inputTestFile = this.getInputTestFile();
+
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, inputTestFile, nature,
+				new NullProgressMonitor());
 		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 }
