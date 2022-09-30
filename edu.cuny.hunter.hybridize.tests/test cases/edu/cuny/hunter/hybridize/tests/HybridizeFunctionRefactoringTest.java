@@ -70,6 +70,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		@Override
+		public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
+			return null;
+		}
+
+		@Override
 		public int getGrammarVersion() {
 			return GRAMMAR_TO_USE_FOR_PARSING;
 		}
