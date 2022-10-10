@@ -19,6 +19,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -30,7 +31,9 @@ import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.python.pydev.ast.codecompletion.revisited.ASTManager;
 import org.python.pydev.ast.codecompletion.revisited.ProjectModulesManager;
+import org.python.pydev.ast.codecompletion.revisited.ProjectStub;
 import org.python.pydev.ast.codecompletion.revisited.PythonPathHelper;
 import org.python.pydev.ast.codecompletion.revisited.modules.CompiledModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
@@ -220,10 +223,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		RefactoringCore.getUndoManager().flush();
-		
+
 		String inputTestFileName = this.getInputTestFileName("A");
 		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
-		
+
 		boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
 		assertTrue("Source file must be valid.", validSourceFile);
 
@@ -596,11 +599,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		int offset = NodeUtils.getOffset(document, decoratorFunction);
 		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
-		
+
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
-		
+
 		PySelection selection = new PySelection(document, coreTextSelection);
-		
+
 		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature,
 				new NullProgressMonitor());
 
@@ -642,27 +645,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@BeforeClass
 	public static void setUp() {
 		CompiledModule.COMPILED_MODULES_ENABLED = true;
-        SourceModule.TESTING = true;
-        CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
-        PydevPlugin.setBundleInfo(new BundleInfoStub());
-        CorePlugin.setBundleInfo(new BundleInfoStub());
-        ProjectModulesManager.IN_TESTS = true;
-        FileUtils.IN_TESTS = true;
-        PydevTestUtils.setTestPlatformStateLocation();
-        AbstractAdditionalDependencyInfo.TESTING = true;
-        InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+		SourceModule.TESTING = true;
+		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
+		PydevPlugin.setBundleInfo(new BundleInfoStub());
+		CorePlugin.setBundleInfo(new BundleInfoStub());
+		ProjectModulesManager.IN_TESTS = true;
+		FileUtils.IN_TESTS = true;
+		PydevTestUtils.setTestPlatformStateLocation();
+		AbstractAdditionalDependencyInfo.TESTING = true;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+
+		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
+
+		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0],
+				new IProject[0]);
+		
+		setAstManager(refactoringPath, projectStub, nature);
 	}
 	
+	/**
+     * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
+     * 
+     * @param path the pythonpath that should be set for this nature
+     * @param projectStub the project where the nature should be set
+     * @param pNature the nature we're interested in
+     */
+    protected static void setAstManager(String path, ProjectStub projectStub, PythonNature pNature) {
+        pNature.setProject(projectStub); //references the project 1
+        projectStub.setNature(pNature);
+        pNature.setAstManager(new ASTManager());
+
+        ASTManager astManager = ((ASTManager) pNature.getAstManager());
+        astManager.setNature(pNature);
+        astManager.setProject(projectStub, pNature, false);
+        astManager.changePythonPath(path, projectStub, null);
+    }
+
 	@AfterClass
 	public static void tearDown() {
 		CompletionProposalFactory.set(null);
-        PydevPlugin.setBundleInfo(null);
-        CorePlugin.setBundleInfo(null);
-        ProjectModulesManager.IN_TESTS = false;
-        FileUtils.IN_TESTS = false;
-        AbstractAdditionalDependencyInfo.TESTING = false;
-        CompiledModule.COMPILED_MODULES_ENABLED = false;
-        SourceModule.TESTING = false;
-        InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
+		PydevPlugin.setBundleInfo(null);
+		CorePlugin.setBundleInfo(null);
+		ProjectModulesManager.IN_TESTS = false;
+		FileUtils.IN_TESTS = false;
+		AbstractAdditionalDependencyInfo.TESTING = false;
+		CompiledModule.COMPILED_MODULES_ENABLED = false;
+		SourceModule.TESTING = false;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
 	}
 }
