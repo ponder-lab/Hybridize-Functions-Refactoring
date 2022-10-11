@@ -12,8 +12,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -37,10 +39,12 @@ import org.python.pydev.ast.codecompletion.revisited.ProjectStub;
 import org.python.pydev.ast.codecompletion.revisited.PythonPathHelper;
 import org.python.pydev.ast.codecompletion.revisited.modules.CompiledModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
+import org.python.pydev.ast.interpreter_managers.InterpreterInfo;
 import org.python.pydev.core.CorePlugin;
 import org.python.pydev.core.IInterpreterManager;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.MisconfigurationException;
+import org.python.pydev.core.TestDependent;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 import org.python.pydev.core.proposals.CompletionProposalFactory;
@@ -57,9 +61,12 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
 import org.python.pydev.plugin.nature.PythonNature;
+import org.python.pydev.shared_core.callbacks.ICallback;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.string.CoreTextSelection;
+import org.python.pydev.shared_core.string.StringUtils;
+import org.python.pydev.shared_core.structure.Tuple;
 import org.python.pydev.ui.BundleInfoStub;
 
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
@@ -643,7 +650,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@BeforeClass
-	public static void setUp() {
+	public void setUp() {
 		CompiledModule.COMPILED_MODULES_ENABLED = true;
 		SourceModule.TESTING = true;
 		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
@@ -654,32 +661,69 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		PydevTestUtils.setTestPlatformStateLocation();
 		AbstractAdditionalDependencyInfo.TESTING = true;
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+		PythonNature.IN_TESTS = true;
+
+		final String paths = getSystemPythonpathPaths();
+		String lower = paths.toLowerCase();
+		lower = StringUtils.replaceAllSlashes(lower);
+		final Set<String> s = new HashSet<String>(Arrays.asList(lower.split("\\|")));
+		InterpreterInfo.configurePathsCallback = new ICallback<Boolean, Tuple<List<String>, List<String>>>() {
+
+			@Override
+			public Boolean call(Tuple<List<String>, List<String>> arg) {
+				List<String> toAsk = arg.o1;
+				List<String> l = arg.o2;
+
+				for (String t : toAsk) {
+					if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase()))) {
+						l.add(t);
+						// System.out.println("Added:"+t);
+					}
+				}
+				return Boolean.TRUE;
+			}
+
+		};
+
+		restorePythonPath(paths, false);
 
 		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
 
-		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0],
-				new IProject[0]);
-		
+		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
+
 		setAstManager(refactoringPath, projectStub, nature);
 	}
-	
-	/**
-     * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
-     * 
-     * @param path the pythonpath that should be set for this nature
-     * @param projectStub the project where the nature should be set
-     * @param pNature the nature we're interested in
-     */
-    protected static void setAstManager(String path, ProjectStub projectStub, PythonNature pNature) {
-        pNature.setProject(projectStub); //references the project 1
-        projectStub.setNature(pNature);
-        pNature.setAstManager(new ASTManager());
 
-        ASTManager astManager = ((ASTManager) pNature.getAstManager());
-        astManager.setNature(pNature);
-        astManager.setProject(projectStub, pNature, false);
-        astManager.changePythonPath(path, projectStub, null);
-    }
+	protected String getSystemPythonpathPaths() {
+		String paths;
+		paths = TestDependent.getCompletePythonLib(true, isPython3Test());
+		if (TestDependent.PYTHON38_QT5_PACKAGES != null) {
+			paths += "|" + TestDependent.PYTHON38_QT5_PACKAGES;
+		}
+		return paths;
+	}
+
+	protected boolean isPython3Test() {
+		return true;
+	}
+
+	/**
+	 * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
+	 * 
+	 * @param path the pythonpath that should be set for this nature
+	 * @param projectStub the project where the nature should be set
+	 * @param pNature the nature we're interested in
+	 */
+	protected static void setAstManager(String path, ProjectStub projectStub, PythonNature pNature) {
+		pNature.setProject(projectStub); // references the project 1
+		projectStub.setNature(pNature);
+		pNature.setAstManager(new ASTManager());
+
+		ASTManager astManager = ((ASTManager) pNature.getAstManager());
+		astManager.setNature(pNature);
+		astManager.setProject(projectStub, pNature, false);
+		astManager.changePythonPath(path, projectStub, null);
+	}
 
 	@AfterClass
 	public static void tearDown() {
@@ -692,5 +736,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		CompiledModule.COMPILED_MODULES_ENABLED = false;
 		SourceModule.TESTING = false;
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
+		PythonNature.IN_TESTS = false;
 	}
 }
