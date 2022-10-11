@@ -104,5 +104,4 @@ public class Util {
 		SourceModule mod = (SourceModule) AbstractModule.createModule(ast, f, modName, natureToAdd);
 		modulesManager.doAddSingleModule(new ModulesKey(modName, f), mod);
 	}
-
 }
