@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,7 +41,10 @@ import org.python.pydev.ast.codecompletion.revisited.PythonPathHelper;
 import org.python.pydev.ast.codecompletion.revisited.modules.CompiledModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
 import org.python.pydev.ast.interpreter_managers.InterpreterInfo;
+import org.python.pydev.ast.interpreter_managers.InterpreterManagersAPI;
+import org.python.pydev.ast.interpreter_managers.PythonInterpreterManager;
 import org.python.pydev.core.CorePlugin;
+import org.python.pydev.core.IInterpreterInfo;
 import org.python.pydev.core.IInterpreterManager;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.MisconfigurationException;
@@ -64,12 +68,14 @@ import org.python.pydev.plugin.nature.PythonNature;
 import org.python.pydev.shared_core.callbacks.ICallback;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
+import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.shared_core.structure.Tuple;
 import org.python.pydev.ui.BundleInfoStub;
 
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
+import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
@@ -88,6 +94,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String TEST_FILE_EXTENION = "py";
 
 	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IPythonNature.LATEST_GRAMMAR_PY3_VERSION;
+
+	protected static final boolean ADD_MX_TO_FORCED_BUILTINS = true;
+
+	protected static final boolean ADD_NUMPY_TO_FORCED_BUILTINS = true;
 
 	/**
 	 * The {@link PythonNature} to be used for the tests.
@@ -650,7 +660,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@BeforeClass
-	public void setUp() {
+	public static void setUp() {
 		CompiledModule.COMPILED_MODULES_ENABLED = true;
 		SourceModule.TESTING = true;
 		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
@@ -685,16 +695,85 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		};
 
-//		restorePythonPath(paths, false);
+		// System Python paths.
+
+		setInterpreterManager(paths);
+
+		InterpreterInfo info = getDefaultInterpreterInfo();
+		info.restoreCompiledLibs(null);
+
+		if (ADD_MX_TO_FORCED_BUILTINS) {
+			info.addForcedLib("mx");
+		}
+
+		if (ADD_NUMPY_TO_FORCED_BUILTINS) {
+			info.addForcedLib("numpy");
+		}
+
+		// Project Python path.
 
 		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
 
 		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
 
 		setAstManager(refactoringPath, projectStub, nature);
+
+		try {
+			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
-	protected String getSystemPythonpathPaths() {
+	/**
+	 * @return the default interpreter info for the current manager
+	 */
+	protected static InterpreterInfo getDefaultInterpreterInfo() {
+		IInterpreterManager iMan = getInterpreterManager();
+		InterpreterInfo info;
+		try {
+			info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+		return info;
+	}
+
+	/**
+	 * @return the pydev interpreter manager we are testing
+	 */
+	protected static IInterpreterManager getInterpreterManager() {
+		return InterpreterManagersAPI.getPythonInterpreterManager();
+	}
+
+	/**
+	 * Sets the interpreter manager we should use
+	 *
+	 * @param path
+	 */
+	protected static void setInterpreterManager(String path) {
+		PythonInterpreterManager interpreterManager = new PythonInterpreterManager(new InMemoryEclipsePreferences());
+
+		InterpreterInfo info;
+		if (isPython3Test()) {
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON_30_EXE,
+					new NullProgressMonitor(), false);
+			TestDependent.PYTHON_30_EXE = info.executableOrJar;
+		} else {
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON2_EXE,
+					new NullProgressMonitor(), false);
+			TestDependent.PYTHON2_EXE = info.executableOrJar;
+		}
+		if (path != null) {
+			info = new InterpreterInfo(info.getVersion(), info.executableOrJar,
+					PythonPathHelper.parsePythonPathFromStr(path, new ArrayList<String>()));
+		}
+
+		interpreterManager.setInfos(new IInterpreterInfo[] { info }, null, null);
+		InterpreterManagersAPI.setPythonInterpreterManager(interpreterManager);
+	}
+
+	protected static String getSystemPythonpathPaths() {
 		String paths;
 		paths = TestDependent.getCompletePythonLib(true, isPython3Test());
 		if (TestDependent.PYTHON38_QT5_PACKAGES != null) {
@@ -703,7 +782,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return paths;
 	}
 
-	protected boolean isPython3Test() {
+	protected static boolean isPython3Test() {
 		return true;
 	}
 
