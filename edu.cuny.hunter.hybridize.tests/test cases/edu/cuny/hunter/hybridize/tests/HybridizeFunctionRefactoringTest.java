@@ -685,7 +685,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		};
 
-		restorePythonPath(paths, false);
+//		restorePythonPath(paths, false);
 
 		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
 
