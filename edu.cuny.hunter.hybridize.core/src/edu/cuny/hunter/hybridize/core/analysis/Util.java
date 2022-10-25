@@ -8,11 +8,13 @@ import org.eclipse.jface.text.BadLocationException;
 import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
 import org.python.pydev.ast.codecompletion.revisited.modules.AbstractModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
+import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.MisconfigurationException;
 import org.python.pydev.core.ModulesKey;
@@ -34,7 +36,8 @@ public class Util {
 	}
 
 	public static String getDeclaringModuleName(decoratorsType decorator, String modName, File file,
-			PySelection selection, IPythonNature nature, IProgressMonitor monitor) {
+			PySelection selection, IPythonNature nature, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
 		// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports?
 		// Is there an import scope visitor? Module name getter?
 		// Have a look at https://github.com/fabioz/Pydev/search?q=declared.
@@ -48,34 +51,27 @@ public class Util {
 		request.moduleName = modName;
 		request.pushMonitor(monitor);
 
-		SimpleNode ast = request.getAST();
-
 		// FIXME: I don't think this belongs here. We should have the nature set at this point.
-		addModuleToNature(ast, modName, nature, file);
+		// NOTE: I think this already done anyway.
+//		SimpleNode ast = request.getAST();
+//		addModuleToNature(ast, modName, nature, file);
 
-		Refactorer refactorer = new Refactorer();
+		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
 
-		try {
-			ItemPointer[] pointers = refactorer.findDefinition(request);
-			System.out.println(pointers);
-		} catch (TooManyMatchesException | BadLocationException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		}
+		if (pointers.length == 0)
+			throw new IllegalArgumentException("Can't find declaring module for " + decorator + ".");
+		else if (pointers.length > 1)
+			throw new TooManyMatchesException("Ambigious definitions found for " + decorator + ".", pointers.length);
 
-		try {
-			ItemPointer[] pointers = pyRefactoring.findDefinition(request);
-			System.out.println(pointers);
-		} catch (TooManyMatchesException | BadLocationException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-		return null;
+		ItemPointer itemPointer = pointers[0];
+		Definition definition = itemPointer.definition;
+		IModule module = definition.module;
+		return module.getName();
 	}
 
 	public static String getFullyQualifiedName(decoratorsType decorator, String modName, File file,
-			PySelection selection, IPythonNature nature, IProgressMonitor monitor) {
+			PySelection selection, IPythonNature nature, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
 		String declaringModuleName = getDeclaringModuleName(decorator, modName, file, selection, nature, monitor);
 
 		exprType decoratorFunction = decorator.func;

@@ -65,6 +65,7 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
 import org.python.pydev.plugin.nature.PythonNature;
+import org.python.pydev.refactoring.ast.PythonModuleManager;
 import org.python.pydev.shared_core.callbacks.ICallback;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
@@ -672,11 +673,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		AbstractAdditionalDependencyInfo.TESTING = true;
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
 		PythonNature.IN_TESTS = true;
+		PythonModuleManager.setTesting(true);
 
-		final String paths = getSystemPythonpathPaths();
-		String lower = paths.toLowerCase();
-		lower = StringUtils.replaceAllSlashes(lower);
-		final Set<String> s = new HashSet<String>(Arrays.asList(lower.split("\\|")));
+		String paths = getSystemPythonpathPaths();
+		paths = StringUtils.replaceAllSlashes(paths);
+		final Set<String> s = new HashSet<String>(Arrays.asList(paths.split("\\|")));
 		InterpreterInfo.configurePathsCallback = new ICallback<Boolean, Tuple<List<String>, List<String>>>() {
 
 			@Override
@@ -716,10 +717,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
 
-		setAstManager(refactoringPath, projectStub, nature);
+		setAstManager(refactoringPath, projectStub);
 
 		try {
 			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+
+		checkSize();
+	}
+
+	/**
+	 * checks if the size of the system modules manager and the project moule manager are coherent (we must have more
+	 * modules in the system than in the project)
+	 */
+	protected static void checkSize() {
+		try {
+			IInterpreterManager iMan = getInterpreterManager();
+			InterpreterInfo info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+			assertTrue(info.getModulesManager().getSize(true) > 0);
+
+			int size = ((ASTManager) nature.getAstManager()).getSize();
+			assertTrue(
+					"Interpreter size:" + info.getModulesManager().getSize(true)
+							+ " should be smaller than project size:" + size + " "
+							+ "(because it contains system+project info)",
+					info.getModulesManager().getSize(true) < size);
+
 		} catch (MisconfigurationException e) {
 			throw new RuntimeException(e);
 		}
@@ -774,16 +799,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	protected static String getSystemPythonpathPaths() {
-		String paths;
-		paths = TestDependent.getCompletePythonLib(true, isPython3Test());
+		StringBuilder ret = new StringBuilder();
+
+		String completePythonLib = getCompletePythonLib(true, isPython3Test());
+		ret.append(completePythonLib);
+
 		if (TestDependent.PYTHON38_QT5_PACKAGES != null) {
-			paths += "|" + TestDependent.PYTHON38_QT5_PACKAGES;
+			String str = "|" + TestDependent.PYTHON38_QT5_PACKAGES;
+			ret.append(str);
 		}
-		return paths;
+
+		if (TestDependent.PYTHON3_DIST_PACKAGES != null) {
+			String str = "|" + TestDependent.PYTHON3_DIST_PACKAGES;
+			ret.append(str);
+		}
+
+		return ret.toString();
 	}
 
 	protected static boolean isPython3Test() {
 		return true;
+	}
+
+	protected static String getCompletePythonLib(boolean addSitePackages, boolean isPython3) {
+		StringBuilder ret = new StringBuilder();
+
+		if (isPython3) {
+			ret.append(TestDependent.PYTHON_30_LIB);
+
+			if (TestDependent.PYTHON3_LIB_DYNLOAD != null)
+				ret.append("|" + TestDependent.PYTHON3_LIB_DYNLOAD);
+		} else { // Python 2.
+			ret.append(TestDependent.PYTHON2_LIB);
+
+			if (TestDependent.PYTHON2_LIB_DYNLOAD != null)
+				ret.append("|" + TestDependent.PYTHON2_LIB_DYNLOAD);
+		}
+
+		if (addSitePackages)
+			if (isPython3)
+				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES);
+			else
+				ret.append("|" + TestDependent.PYTHON2_SITE_PACKAGES);
+
+		if (TestDependent.isWindows() && !isPython3) // NOTE: No DLLs for Python 3.
+			ret.append("|" + TestDependent.PYTHON2_DLLS);
+
+		return ret.toString();
 	}
 
 	/**
@@ -791,16 +853,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * 
 	 * @param path the pythonpath that should be set for this nature
 	 * @param projectStub the project where the nature should be set
-	 * @param pNature the nature we're interested in
 	 */
-	protected static void setAstManager(String path, ProjectStub projectStub, PythonNature pNature) {
-		pNature.setProject(projectStub); // references the project 1
-		projectStub.setNature(pNature);
-		pNature.setAstManager(new ASTManager());
+	protected static void setAstManager(String path, ProjectStub projectStub) {
+		nature.setProject(projectStub);
+		projectStub.setNature(nature);
+		ASTManager astManager = new ASTManager();
+		nature.setAstManager(astManager);
 
-		ASTManager astManager = ((ASTManager) pNature.getAstManager());
-		astManager.setNature(pNature);
-		astManager.setProject(projectStub, pNature, false);
+		astManager.setNature(nature);
+		astManager.setProject(projectStub, nature, false);
 		astManager.changePythonPath(path, projectStub, null);
 	}
 
@@ -816,5 +877,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		SourceModule.TESTING = false;
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
 		PythonNature.IN_TESTS = false;
+		PythonModuleManager.setTesting(false);
 	}
 }
