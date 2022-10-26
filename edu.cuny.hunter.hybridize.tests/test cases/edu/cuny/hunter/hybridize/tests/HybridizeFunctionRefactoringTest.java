@@ -35,9 +35,11 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.python.pydev.ast.codecompletion.revisited.ASTManager;
-import org.python.pydev.ast.codecompletion.revisited.ProjectModulesManager;
+import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
+import org.python.pydev.ast.codecompletion.revisited.ModulesManagerWithBuild;
 import org.python.pydev.ast.codecompletion.revisited.ProjectStub;
 import org.python.pydev.ast.codecompletion.revisited.PythonPathHelper;
+import org.python.pydev.ast.codecompletion.revisited.modules.AbstractModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.CompiledModule;
 import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
 import org.python.pydev.ast.interpreter_managers.InterpreterInfo;
@@ -48,6 +50,7 @@ import org.python.pydev.core.IInterpreterInfo;
 import org.python.pydev.core.IInterpreterManager;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.MisconfigurationException;
+import org.python.pydev.core.ModulesKey;
 import org.python.pydev.core.TestDependent;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
@@ -66,13 +69,11 @@ import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
 import org.python.pydev.plugin.nature.PythonNature;
 import org.python.pydev.refactoring.ast.PythonModuleManager;
-import org.python.pydev.shared_core.callbacks.ICallback;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
-import org.python.pydev.shared_core.structure.Tuple;
 import org.python.pydev.ui.BundleInfoStub;
 
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
@@ -88,27 +89,18 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 @SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
-	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
-
-	private static final String REFACTORING_PATH = "HybridizeFunction/";
-
-	private static final String TEST_FILE_EXTENION = "py";
-
-	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IPythonNature.LATEST_GRAMMAR_PY3_VERSION;
-
 	protected static final boolean ADD_MX_TO_FORCED_BUILTINS = true;
 
 	protected static final boolean ADD_NUMPY_TO_FORCED_BUILTINS = true;
+
+	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IPythonNature.LATEST_GRAMMAR_PY3_VERSION;
+
+	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
 
 	/**
 	 * The {@link PythonNature} to be used for the tests.
 	 */
 	private static PythonNature nature = new PythonNature() {
-		@Override
-		public int getInterpreterType() throws CoreException {
-			return IInterpreterManager.INTERPRETER_TYPE_PYTHON;
-		}
-
 		@Override
 		public AdditionalGrammarVersionsToCheck getAdditionalGrammarVersions() throws MisconfigurationException {
 			return null;
@@ -118,7 +110,60 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		public int getGrammarVersion() {
 			return GRAMMAR_TO_USE_FOR_PARSING;
 		}
+
+		@Override
+		public int getInterpreterType() throws CoreException {
+			return IInterpreterManager.INTERPRETER_TYPE_PYTHON;
+		}
 	};
+
+	private static final String REFACTORING_PATH = "HybridizeFunction/";
+
+	private static final String TEST_FILE_EXTENION = "py";
+
+	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
+
+	/**
+	 * @param ast the ast that defines the module
+	 * @param modName the module name
+	 * @param natureToAdd the nature where the module should be added
+	 */
+	@SuppressWarnings("unused")
+	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f) {
+		// this is to add the info from the module that we just created...
+		AbstractAdditionalDependencyInfo additionalInfo;
+		try {
+			additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+		additionalInfo.addAstInfo(ast, new ModulesKey(modName, f), false);
+		ModulesManager modulesManager = (ModulesManager) natureToAdd.getAstManager().getModulesManager();
+		SourceModule mod = (SourceModule) AbstractModule.createModule(ast, f, modName, natureToAdd);
+		modulesManager.doAddSingleModule(new ModulesKey(modName, f), mod);
+	}
+
+	/**
+	 * checks if the size of the system modules manager and the project module manager are coherent (we must have more
+	 * modules in the system than in the project)
+	 */
+	protected static void checkSize() {
+		try {
+			IInterpreterManager iMan = getInterpreterManager();
+			InterpreterInfo info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+			assertTrue(info.getModulesManager().getSize(true) > 0);
+
+			int size = ((ASTManager) nature.getAstManager()).getSize();
+			assertTrue(
+					"Interpreter size:" + info.getModulesManager().getSize(true)
+							+ " should be smaller than project size:" + size + " "
+							+ "(because it contains system+project info)",
+					info.getModulesManager().getSize(true) < size);
+
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+	}
 
 	private static Entry<SimpleNode, IDocument> createPythonNode(String moduleName, File file, String contents)
 			throws MisconfigurationException {
@@ -157,6 +202,73 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return Map.entry(simpleNode, document);
 	}
 
+	protected static String getCompletePythonLib(boolean addSitePackages, boolean isPython3) {
+		StringBuilder ret = new StringBuilder();
+
+		if (isPython3) {
+			ret.append(TestDependent.PYTHON_30_LIB);
+
+			if (TestDependent.PYTHON3_LIB_DYNLOAD != null)
+				ret.append("|" + TestDependent.PYTHON3_LIB_DYNLOAD);
+		} else { // Python 2.
+			ret.append(TestDependent.PYTHON2_LIB);
+
+			if (TestDependent.PYTHON2_LIB_DYNLOAD != null)
+				ret.append("|" + TestDependent.PYTHON2_LIB_DYNLOAD);
+		}
+
+		if (addSitePackages)
+			if (isPython3)
+				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES);
+			else
+				ret.append("|" + TestDependent.PYTHON2_SITE_PACKAGES);
+
+		if (TestDependent.isWindows() && !isPython3) // NOTE: No DLLs for Python 3.
+			ret.append("|" + TestDependent.PYTHON2_DLLS);
+
+		return ret.toString();
+	}
+
+	/**
+	 * @return the default interpreter info for the current manager
+	 */
+	protected static InterpreterInfo getDefaultInterpreterInfo() {
+		IInterpreterManager iMan = getInterpreterManager();
+		InterpreterInfo info;
+		try {
+			info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+		return info;
+	}
+
+	/**
+	 * @return the PyDev interpreter manager we are testing
+	 */
+	protected static IInterpreterManager getInterpreterManager() {
+		return InterpreterManagersAPI.getPythonInterpreterManager();
+	}
+
+	protected static String getSystemPythonpathPaths() {
+		StringBuilder ret = new StringBuilder();
+
+		String completePythonLib = getCompletePythonLib(true, isPython3Test());
+		ret.append(completePythonLib);
+
+		if (TestDependent.PYTHON38_QT5_PACKAGES != null) {
+			String str = "|" + TestDependent.PYTHON38_QT5_PACKAGES;
+			ret.append(str);
+		}
+
+		if (TestDependent.PYTHON3_DIST_PACKAGES != null) {
+			String str = "|" + TestDependent.PYTHON3_DIST_PACKAGES;
+			ret.append(str);
+		}
+
+		return ret.toString();
+	}
+
 	/**
 	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
 	 * given path.
@@ -168,6 +280,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// install requirements.
 		runCommand("pip3", "install", "-r", requirements.toString());
+	}
+
+	protected static boolean isPython3Test() {
+		return true;
 	}
 
 	private static void runCommand(String... command) throws IOException, InterruptedException {
@@ -198,6 +314,128 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		runCommand("python3", path.toString());
 	}
 
+	/**
+	 * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
+	 *
+	 * @param path the pythonpath that should be set for this nature
+	 * @param projectStub the project where the nature should be set
+	 */
+	protected static void setAstManager(String path, ProjectStub projectStub) {
+		nature.setProject(projectStub);
+		projectStub.setNature(nature);
+		ASTManager astManager = new ASTManager();
+		nature.setAstManager(astManager);
+
+		astManager.setNature(nature);
+		astManager.setProject(projectStub, nature, false);
+		astManager.changePythonPath(path, projectStub, null);
+	}
+
+	/**
+	 * Sets the interpreter manager we should use
+	 *
+	 * @param path
+	 */
+	protected static void setInterpreterManager(String path) {
+		PythonInterpreterManager interpreterManager = new PythonInterpreterManager(new InMemoryEclipsePreferences());
+
+		InterpreterInfo info;
+		if (isPython3Test()) {
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON_30_EXE,
+					new NullProgressMonitor(), false);
+			TestDependent.PYTHON_30_EXE = info.executableOrJar;
+		} else {
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON2_EXE,
+					new NullProgressMonitor(), false);
+			TestDependent.PYTHON2_EXE = info.executableOrJar;
+		}
+		if (path != null)
+			info = new InterpreterInfo(info.getVersion(), info.executableOrJar,
+					PythonPathHelper.parsePythonPathFromStr(path, new ArrayList<String>()));
+
+		interpreterManager.setInfos(new IInterpreterInfo[] { info }, null, null);
+		InterpreterManagersAPI.setPythonInterpreterManager(interpreterManager);
+	}
+
+	@BeforeClass
+	public static void setUp() {
+		CompiledModule.COMPILED_MODULES_ENABLED = true;
+		SourceModule.TESTING = true;
+		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
+		PydevPlugin.setBundleInfo(new BundleInfoStub());
+		CorePlugin.setBundleInfo(new BundleInfoStub());
+		ModulesManagerWithBuild.IN_TESTS = true;
+		FileUtils.IN_TESTS = true;
+		PydevTestUtils.setTestPlatformStateLocation();
+		AbstractAdditionalDependencyInfo.TESTING = true;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+		PythonNature.IN_TESTS = true;
+		PythonModuleManager.setTesting(true);
+
+		String paths = getSystemPythonpathPaths();
+		paths = StringUtils.replaceAllSlashes(paths);
+		final Set<String> s = new HashSet<>(Arrays.asList(paths.split("\\|")));
+		InterpreterInfo.configurePathsCallback = arg -> {
+			List<String> toAsk = arg.o1;
+			List<String> l = arg.o2;
+
+			for (String t : toAsk)
+				if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase())))
+					l.add(t);
+			// System.out.println("Added:"+t);
+			return Boolean.TRUE;
+		};
+
+		// System Python paths.
+
+		setInterpreterManager(paths);
+
+		InterpreterInfo info = getDefaultInterpreterInfo();
+		info.restoreCompiledLibs(null);
+
+		if (ADD_MX_TO_FORCED_BUILTINS)
+			info.addForcedLib("mx");
+
+		if (ADD_NUMPY_TO_FORCED_BUILTINS)
+			info.addForcedLib("numpy");
+
+		// Project Python path.
+
+		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
+
+		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
+
+		setAstManager(refactoringPath, projectStub);
+
+		try {
+			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+
+		checkSize();
+
+		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
+		// above.
+		// SimpleNode ast = request.getAST();
+		// addModuleToNature(ast, modName, nature, file);
+	}
+
+	@AfterClass
+	public static void tearDown() {
+		CompletionProposalFactory.set(null);
+		PydevPlugin.setBundleInfo(null);
+		CorePlugin.setBundleInfo(null);
+		ModulesManagerWithBuild.IN_TESTS = false;
+		FileUtils.IN_TESTS = false;
+		AbstractAdditionalDependencyInfo.TESTING = false;
+		CompiledModule.COMPILED_MODULES_ENABLED = false;
+		SourceModule.TESTING = false;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
+		PythonNature.IN_TESTS = false;
+		PythonModuleManager.setTesting(false);
+	}
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileName)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileName, true);
@@ -214,19 +452,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		File file = path.toFile();
 
 		return createPythonNode(fileName, file, contents);
-	}
-
-	/**
-	 * Return the {@link File} representing A.py.
-	 * 
-	 * @return The {@link File} representing A.py.
-	 */
-	private File getInputTestFile() {
-		String fileName = this.getInputTestFileName("A");
-		Path path = getAbsolutionPath(fileName);
-		File file = path.toFile();
-		assertTrue("Test file must exist.", file.exists());
-		return file;
 	}
 
 	@Override
@@ -254,29 +479,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the {@link Function}s in the test file.
-	 * 
-	 * @param monitor
-	 * @return The set of {@link Function}s analyzed.
-	 */
-	private Set<Function> getFunctions() throws Exception {
-		Set<FunctionDef> availableFunctions = getAvailableFunctionDefinitions().getValue();
-
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.toArray(FunctionDef[]::new), new NullProgressMonitor());
-
-		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
-
-		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
-		assertTrue(status.isOK());
-
-		return processor.getFunctions();
-	}
-
-	/**
 	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument}
 	 * represents the contents of A.py.
-	 * 
+	 *
 	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
 	 */
 	private Entry<IDocument, Set<FunctionDef>> getAvailableFunctionDefinitions() throws Exception {
@@ -291,6 +496,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
 
 		return Map.entry(pythonNodeToDocument.getValue(), availableFunctionDefinitions);
+	}
+
+	/**
+	 * Returns the {@link Function}s in the test file.
+	 *
+	 * @param monitor
+	 * @return The set of {@link Function}s analyzed.
+	 */
+	private Set<Function> getFunctions() throws Exception {
+		Set<FunctionDef> availableFunctions = this.getAvailableFunctionDefinitions().getValue();
+
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
+				availableFunctions.toArray(FunctionDef[]::new), new NullProgressMonitor());
+
+		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
+		assertTrue(status.isOK());
+
+		return processor.getFunctions();
+	}
+
+	/**
+	 * Return the {@link File} representing A.py.
+	 *
+	 * @return The {@link File} representing A.py.
+	 */
+	private File getInputTestFile() {
+		String fileName = this.getInputTestFileName("A");
+		Path path = getAbsolutionPath(fileName);
+		File file = path.toFile();
+		assertTrue("Test file must exist.", file.exists());
+		return file;
 	}
 
 	@Override
@@ -341,6 +579,83 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertEquals(expectedSignature, actualSignature);
 		}
+	}
+
+	/**
+	 * Test for #47. Attribute case.
+	 */
+	@Test
+	public void testGetDecoratorFQN() throws Exception {
+		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this
+				.getAvailableFunctionDefinitions();
+
+		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
+		assertNotNull(functionDefinitions);
+		assertEquals(1, functionDefinitions.size());
+
+		FunctionDef functionDef = functionDefinitions.iterator().next();
+		assertNotNull(functionDef);
+
+		decoratorsType[] decoratorArray = functionDef.decs;
+		assertNotNull(decoratorArray);
+		assertEquals(1, decoratorArray.length);
+
+		decoratorsType decorator = decoratorArray[0];
+		assertNotNull(decorator);
+
+		exprType decoratorFunction = decorator.func;
+		assertNotNull(decoratorFunction);
+
+		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+		assertEquals("tf.function", representationString);
+
+		File inputTestFile = this.getInputTestFile();
+
+		IDocument document = documentToAvailableFunctionDefinitions.getKey();
+
+		int offset = NodeUtils.getOffset(document, decoratorFunction);
+		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
+
+		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
+
+		PySelection selection = new PySelection(document, coreTextSelection);
+
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature,
+				new NullProgressMonitor());
+
+		assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
+	}
+
+	/**
+	 * Test for #47. Call case.
+	 */
+	@Test
+	public void testGetDecoratorFQN2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		FunctionDef functionDef = function.getFunctionDef();
+		decoratorsType[] decoratorArray = functionDef.decs;
+		assertNotNull(decoratorArray);
+		assertEquals(1, decoratorArray.length);
+
+		decoratorsType decorator = decoratorArray[0];
+		assertNotNull(decorator);
+
+		exprType decoratorFunction = decorator.func;
+		assertNotNull(decoratorFunction);
+
+		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+		assertEquals("tf.function", representationString);
+
+		File inputTestFile = this.getInputTestFile();
+
+//		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, inputTestFile, nature,
+//				new NullProgressMonitor());
+//		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 
 	/**
@@ -581,302 +896,5 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// NOTE: Both of these functions have the same qualified name.
 		assertEquals(1, functionNames.size());
-	}
-
-	/**
-	 * Test for #47. Attribute case.
-	 */
-	@Test
-	public void testGetDecoratorFQN() throws Exception {
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this
-				.getAvailableFunctionDefinitions();
-
-		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
-		assertNotNull(functionDefinitions);
-		assertEquals(1, functionDefinitions.size());
-
-		FunctionDef functionDef = functionDefinitions.iterator().next();
-		assertNotNull(functionDef);
-
-		decoratorsType[] decoratorArray = functionDef.decs;
-		assertNotNull(decoratorArray);
-		assertEquals(1, decoratorArray.length);
-
-		decoratorsType decorator = decoratorArray[0];
-		assertNotNull(decorator);
-
-		exprType decoratorFunction = decorator.func;
-		assertNotNull(decoratorFunction);
-
-		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
-		assertEquals("tf.function", representationString);
-
-		File inputTestFile = this.getInputTestFile();
-
-		IDocument document = documentToAvailableFunctionDefinitions.getKey();
-
-		int offset = NodeUtils.getOffset(document, decoratorFunction);
-		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
-
-		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
-
-		PySelection selection = new PySelection(document, coreTextSelection);
-
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature,
-				new NullProgressMonitor());
-
-		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
-	}
-
-	/**
-	 * Test for #47. Call case.
-	 */
-	@Test
-	public void testGetDecoratorFQN2() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		FunctionDef functionDef = function.getFunctionDef();
-		decoratorsType[] decoratorArray = functionDef.decs;
-		assertNotNull(decoratorArray);
-		assertEquals(1, decoratorArray.length);
-
-		decoratorsType decorator = decoratorArray[0];
-		assertNotNull(decorator);
-
-		exprType decoratorFunction = decorator.func;
-		assertNotNull(decoratorFunction);
-
-		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
-		assertEquals("tf.function", representationString);
-
-		File inputTestFile = this.getInputTestFile();
-
-//		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, inputTestFile, nature,
-//				new NullProgressMonitor());
-//		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
-	}
-
-	@BeforeClass
-	public static void setUp() {
-		CompiledModule.COMPILED_MODULES_ENABLED = true;
-		SourceModule.TESTING = true;
-		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
-		PydevPlugin.setBundleInfo(new BundleInfoStub());
-		CorePlugin.setBundleInfo(new BundleInfoStub());
-		ProjectModulesManager.IN_TESTS = true;
-		FileUtils.IN_TESTS = true;
-		PydevTestUtils.setTestPlatformStateLocation();
-		AbstractAdditionalDependencyInfo.TESTING = true;
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
-		PythonNature.IN_TESTS = true;
-		PythonModuleManager.setTesting(true);
-
-		String paths = getSystemPythonpathPaths();
-		paths = StringUtils.replaceAllSlashes(paths);
-		final Set<String> s = new HashSet<String>(Arrays.asList(paths.split("\\|")));
-		InterpreterInfo.configurePathsCallback = new ICallback<Boolean, Tuple<List<String>, List<String>>>() {
-
-			@Override
-			public Boolean call(Tuple<List<String>, List<String>> arg) {
-				List<String> toAsk = arg.o1;
-				List<String> l = arg.o2;
-
-				for (String t : toAsk) {
-					if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase()))) {
-						l.add(t);
-						// System.out.println("Added:"+t);
-					}
-				}
-				return Boolean.TRUE;
-			}
-
-		};
-
-		// System Python paths.
-
-		setInterpreterManager(paths);
-
-		InterpreterInfo info = getDefaultInterpreterInfo();
-		info.restoreCompiledLibs(null);
-
-		if (ADD_MX_TO_FORCED_BUILTINS) {
-			info.addForcedLib("mx");
-		}
-
-		if (ADD_NUMPY_TO_FORCED_BUILTINS) {
-			info.addForcedLib("numpy");
-		}
-
-		// Project Python path.
-
-		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
-
-		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
-
-		setAstManager(refactoringPath, projectStub);
-
-		try {
-			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
-
-		checkSize();
-	}
-
-	/**
-	 * checks if the size of the system modules manager and the project moule manager are coherent (we must have more
-	 * modules in the system than in the project)
-	 */
-	protected static void checkSize() {
-		try {
-			IInterpreterManager iMan = getInterpreterManager();
-			InterpreterInfo info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
-			assertTrue(info.getModulesManager().getSize(true) > 0);
-
-			int size = ((ASTManager) nature.getAstManager()).getSize();
-			assertTrue(
-					"Interpreter size:" + info.getModulesManager().getSize(true)
-							+ " should be smaller than project size:" + size + " "
-							+ "(because it contains system+project info)",
-					info.getModulesManager().getSize(true) < size);
-
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	/**
-	 * @return the default interpreter info for the current manager
-	 */
-	protected static InterpreterInfo getDefaultInterpreterInfo() {
-		IInterpreterManager iMan = getInterpreterManager();
-		InterpreterInfo info;
-		try {
-			info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
-		return info;
-	}
-
-	/**
-	 * @return the pydev interpreter manager we are testing
-	 */
-	protected static IInterpreterManager getInterpreterManager() {
-		return InterpreterManagersAPI.getPythonInterpreterManager();
-	}
-
-	/**
-	 * Sets the interpreter manager we should use
-	 *
-	 * @param path
-	 */
-	protected static void setInterpreterManager(String path) {
-		PythonInterpreterManager interpreterManager = new PythonInterpreterManager(new InMemoryEclipsePreferences());
-
-		InterpreterInfo info;
-		if (isPython3Test()) {
-			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON_30_EXE,
-					new NullProgressMonitor(), false);
-			TestDependent.PYTHON_30_EXE = info.executableOrJar;
-		} else {
-			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON2_EXE,
-					new NullProgressMonitor(), false);
-			TestDependent.PYTHON2_EXE = info.executableOrJar;
-		}
-		if (path != null) {
-			info = new InterpreterInfo(info.getVersion(), info.executableOrJar,
-					PythonPathHelper.parsePythonPathFromStr(path, new ArrayList<String>()));
-		}
-
-		interpreterManager.setInfos(new IInterpreterInfo[] { info }, null, null);
-		InterpreterManagersAPI.setPythonInterpreterManager(interpreterManager);
-	}
-
-	protected static String getSystemPythonpathPaths() {
-		StringBuilder ret = new StringBuilder();
-
-		String completePythonLib = getCompletePythonLib(true, isPython3Test());
-		ret.append(completePythonLib);
-
-		if (TestDependent.PYTHON38_QT5_PACKAGES != null) {
-			String str = "|" + TestDependent.PYTHON38_QT5_PACKAGES;
-			ret.append(str);
-		}
-
-		if (TestDependent.PYTHON3_DIST_PACKAGES != null) {
-			String str = "|" + TestDependent.PYTHON3_DIST_PACKAGES;
-			ret.append(str);
-		}
-
-		return ret.toString();
-	}
-
-	protected static boolean isPython3Test() {
-		return true;
-	}
-
-	protected static String getCompletePythonLib(boolean addSitePackages, boolean isPython3) {
-		StringBuilder ret = new StringBuilder();
-
-		if (isPython3) {
-			ret.append(TestDependent.PYTHON_30_LIB);
-
-			if (TestDependent.PYTHON3_LIB_DYNLOAD != null)
-				ret.append("|" + TestDependent.PYTHON3_LIB_DYNLOAD);
-		} else { // Python 2.
-			ret.append(TestDependent.PYTHON2_LIB);
-
-			if (TestDependent.PYTHON2_LIB_DYNLOAD != null)
-				ret.append("|" + TestDependent.PYTHON2_LIB_DYNLOAD);
-		}
-
-		if (addSitePackages)
-			if (isPython3)
-				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES);
-			else
-				ret.append("|" + TestDependent.PYTHON2_SITE_PACKAGES);
-
-		if (TestDependent.isWindows() && !isPython3) // NOTE: No DLLs for Python 3.
-			ret.append("|" + TestDependent.PYTHON2_DLLS);
-
-		return ret.toString();
-	}
-
-	/**
-	 * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
-	 * 
-	 * @param path the pythonpath that should be set for this nature
-	 * @param projectStub the project where the nature should be set
-	 */
-	protected static void setAstManager(String path, ProjectStub projectStub) {
-		nature.setProject(projectStub);
-		projectStub.setNature(nature);
-		ASTManager astManager = new ASTManager();
-		nature.setAstManager(astManager);
-
-		astManager.setNature(nature);
-		astManager.setProject(projectStub, nature, false);
-		astManager.changePythonPath(path, projectStub, null);
-	}
-
-	@AfterClass
-	public static void tearDown() {
-		CompletionProposalFactory.set(null);
-		PydevPlugin.setBundleInfo(null);
-		CorePlugin.setBundleInfo(null);
-		ProjectModulesManager.IN_TESTS = false;
-		FileUtils.IN_TESTS = false;
-		AbstractAdditionalDependencyInfo.TESTING = false;
-		CompiledModule.COMPILED_MODULES_ENABLED = false;
-		SourceModule.TESTING = false;
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = null;
-		PythonNature.IN_TESTS = false;
-		PythonModuleManager.setTesting(false);
 	}
 }

@@ -1,13 +1,12 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.io.File;
-import java.util.List;
+import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
+
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
-import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
-import org.python.pydev.ast.codecompletion.revisited.modules.AbstractModule;
-import org.python.pydev.ast.codecompletion.revisited.modules.SourceModule;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -16,88 +15,86 @@ import org.python.pydev.ast.refactoring.RefactoringRequest;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
-import org.python.pydev.core.MisconfigurationException;
-import org.python.pydev.core.ModulesKey;
 import org.python.pydev.core.docutils.PySelection;
-import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.plugin.nature.PythonNature;
-
-import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
-import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
-import com.python.pydev.analysis.refactoring.refactorer.Refactorer;
-import com.python.pydev.refactoring.actions.PyGoToDefinition;
 
 public class Util {
 
-	private Util() {
-	}
+	private static final ILog LOG = getLog(Util.class);
 
-	public static String getDeclaringModuleName(decoratorsType decorator, String modName, File file,
-			PySelection selection, IPythonNature nature, IProgressMonitor monitor)
+	/**
+	 * Get the name of the module defining the entity described in the given {@link PySelection}.
+	 *
+	 * @param selection The {@link PySelection} in question.
+	 * @param containingModName The name of the module containing the {@link PySelection}.
+	 * @param containingFile The {@link File} containing the module.
+	 * @param nature The {@link IPythonNature} to use.
+	 * @param monitor The IProgressMonitor to use.
+	 * @return The name of the module defining the given {@link PySelection}.
+	 * @throws TooManyMatchesException On ambiguous definitions found.
+	 * @throws BadLocationException On parsing error.
+	 */
+	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
-		// NOTE: __module__ gives us what we need. Either use dynamic analysis to get it or analyze imports?
-		// Is there an import scope visitor? Module name getter?
-		// Have a look at https://github.com/fabioz/Pydev/search?q=declared.
-		// What module is thing declared in? __module__ is the name of the module the function was defined in,
-
-		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
-
-		RefactoringRequest request = new RefactoringRequest(file, selection, nature);
+		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
 		request.acceptTypeshed = true;
-		request.moduleName = modName;
+		request.moduleName = containingModName;
 		request.pushMonitor(monitor);
 
-		// FIXME: I don't think this belongs here. We should have the nature set at this point.
-		// NOTE: I think this already done anyway.
-//		SimpleNode ast = request.getAST();
-//		addModuleToNature(ast, modName, nature, file);
-
+		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
+		LOG.info(String.format("Found %s \"pointer(s).\"", pointers.length));
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + decorator + ".");
-		else if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + decorator + ".", pointers.length);
+			throw new IllegalArgumentException("Can't find declaring module for " + selection + ".");
+
+		if (pointers.length > 1)
+			throw new TooManyMatchesException("Ambigious definitions found for " + selection + ".", pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
 		Definition definition = itemPointer.definition;
+
+		LOG.info("Found definition: " + definition + ".");
+
 		IModule module = definition.module;
+
+		LOG.info(String.format("Found module: %s.", module));
+
 		return module.getName();
 	}
 
-	public static String getFullyQualifiedName(decoratorsType decorator, String modName, File file,
-			PySelection selection, IPythonNature nature, IProgressMonitor monitor)
+	/**
+	 * Get the FQN of the given decorator.
+	 *
+	 * @param decorator The {@link decoratorsType} in question.
+	 * @param containingModName The name of the module where the decorator is used.
+	 * @param containingFile The {@link File} where the containingModName is defined.
+	 * @param containingSelection The {@link PySelection} containing the decorator.
+	 * @param nature The {@link IPythonNature} to use.
+	 * @param monitor The IProgressMonitor to use.
+	 * @return The FQN of the given {@link decoratorsType}.
+	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
+	 * @throws BadLocationException When the containing entities cannot be parsed.
+	 */
+	public static String getFullyQualifiedName(decoratorsType decorator, String containingModName, File containingFile,
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
-		String declaringModuleName = getDeclaringModuleName(decorator, modName, file, selection, nature, monitor);
+		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
+		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
 
 		exprType decoratorFunction = decorator.func;
-		String decoratorfullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
+		String decoratorFullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
+		LOG.info(String.format("The \"full representation\" of %s is %s.", decoratorFunction, decoratorFullRepresentationString));
+		
+		String fqn = declaringModuleName + "." + decoratorFullRepresentationString;
+		LOG.info(String.format("FQN is: %s.",  fqn));
 
-		return declaringModuleName + "." + decoratorfullRepresentationString;
+		return fqn;
 	}
 
-	/**
-	 * FIXME: This probably belongs in the test code.
-	 * 
-	 * @param ast the ast that defines the module
-	 * @param modName the module name
-	 * @param natureToAdd the nature where the module should be added
-	 */
-	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f) {
-		// this is to add the info from the module that we just created...
-		AbstractAdditionalDependencyInfo additionalInfo;
-		try {
-			additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
-		additionalInfo.addAstInfo(ast, new ModulesKey(modName, f), false);
-		ModulesManager modulesManager = (ModulesManager) natureToAdd.getAstManager().getModulesManager();
-		SourceModule mod = (SourceModule) AbstractModule.createModule(ast, f, modName, natureToAdd);
-		modulesManager.doAddSingleModule(new ModulesKey(modName, f), mod);
+	private Util() {
 	}
 }
