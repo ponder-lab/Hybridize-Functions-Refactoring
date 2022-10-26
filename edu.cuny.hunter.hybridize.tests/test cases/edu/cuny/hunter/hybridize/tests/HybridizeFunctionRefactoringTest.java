@@ -400,27 +400,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		if (ADD_NUMPY_TO_FORCED_BUILTINS)
 			info.addForcedLib("numpy");
-
-		// Project Python path.
-
-		String refactoringPath = "/home/rk1424/Hybridize-Function-Refactoring/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/testGetDecoratorFQN/in";
-
-		ProjectStub projectStub = new ProjectStub("TestProject", refactoringPath, new IProject[0], new IProject[0]);
-
-		setAstManager(refactoringPath, projectStub);
-
-		try {
-			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
-
-		checkSize();
-
-		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
-		// above.
-		// SimpleNode ast = request.getAST();
-		// addModuleToNature(ast, modName, nature, file);
 	}
 
 	@AfterClass
@@ -473,9 +452,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
 		assertTrue("Source file must be valid.", validSourceFile);
 
+		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
+
 		// Run the Python test file.
-		installRequirements(inputTestFileAbsolutionPath.getParent());
+		installRequirements(inputTestFileDirectoryAbsolutePath);
 		runPython(inputTestFileAbsolutionPath);
+
+		// Project Python path.
+		String projectPath = inputTestFileDirectoryAbsolutePath.toString();
+
+		ProjectStub projectStub = new ProjectStub("TestProject", projectPath, new IProject[0], new IProject[0]);
+
+		setAstManager(projectPath, projectStub);
+
+		try {
+			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+		} catch (MisconfigurationException e) {
+			throw new RuntimeException(e);
+		}
+
+		checkSize();
+
+		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
+		// above.
+		// SimpleNode ast = request.getAST();
+		// addModuleToNature(ast, modName, nature, file);
 	}
 
 	/**
