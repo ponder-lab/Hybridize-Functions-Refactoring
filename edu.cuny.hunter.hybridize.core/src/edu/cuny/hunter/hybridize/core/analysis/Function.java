@@ -5,12 +5,8 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.Attribute;
-import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.Name;
-import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
