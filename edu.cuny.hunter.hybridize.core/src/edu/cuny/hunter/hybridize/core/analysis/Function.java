@@ -52,6 +52,7 @@ public class Function extends RefactorableProgramEntity {
 
 	private void computeIsHybrid(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
+		monitor.setTaskName("Computing hybridization ...");
 
 		// FIXME: This is fragile. What we really want to know is whether the decorator is
 		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH

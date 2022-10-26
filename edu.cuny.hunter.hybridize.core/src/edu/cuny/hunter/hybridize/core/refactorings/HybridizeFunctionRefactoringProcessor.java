@@ -55,7 +55,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions, IProgressMonitor monitor) {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 
 		// Convert the FunctionDefs to Functions.
 		Function[] functionArray = Arrays.stream(functions).map(f -> new Function(f, monitor)).toArray(Function[]::new);
