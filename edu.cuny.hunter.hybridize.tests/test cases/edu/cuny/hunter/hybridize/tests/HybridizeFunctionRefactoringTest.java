@@ -154,11 +154,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(info.getModulesManager().getSize(true) > 0);
 
 			int size = ((ASTManager) nature.getAstManager()).getSize();
-			assertTrue(
-					"Interpreter size:" + info.getModulesManager().getSize(true)
-							+ " should be smaller than project size:" + size + " "
-							+ "(because it contains system+project info)",
-					info.getModulesManager().getSize(true) < size);
+			assertTrue("Interpreter size:" + info.getModulesManager().getSize(true) + " should be smaller than project size:" + size + " "
+					+ "(because it contains system+project info)", info.getModulesManager().getSize(true) < size);
 
 		} catch (MisconfigurationException e) {
 			throw new RuntimeException(e);
@@ -188,8 +185,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 				Token token = parseErr.currentToken;
 				if (token != null)
-					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:"
-							+ token.beginLine + "\ncol:" + token.beginColumn);
+					fail("Expected no error, received: " + parseErr.getMessage() + "\n" + s + "\nline:" + token.beginLine + "\ncol:"
+							+ token.beginColumn);
 			}
 
 			fail("Expected no error, received:\n" + err + "\n" + s);
@@ -341,12 +338,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		InterpreterInfo info;
 		if (isPython3Test()) {
-			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON_30_EXE,
-					new NullProgressMonitor(), false);
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON_30_EXE, new NullProgressMonitor(),
+					false);
 			TestDependent.PYTHON_30_EXE = info.executableOrJar;
 		} else {
-			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON2_EXE,
-					new NullProgressMonitor(), false);
+			info = (InterpreterInfo) interpreterManager.createInterpreterInfo(TestDependent.PYTHON2_EXE, new NullProgressMonitor(), false);
 			TestDependent.PYTHON2_EXE = info.executableOrJar;
 		}
 		if (path != null)
@@ -436,8 +432,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		PythonModuleManager.setTesting(false);
 	}
 
-	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileName)
-			throws IOException, MisconfigurationException {
+	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileName, true);
 	}
 
@@ -445,8 +440,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			throws IOException, MisconfigurationException {
 		String inputTestFileName = this.getInputTestFileName(fileName);
 
-		String contents = input ? this.getFileContents(inputTestFileName)
-				: this.getFileContents(this.getOutputTestFileName(fileName));
+		String contents = input ? this.getFileContents(inputTestFileName) : this.getFileContents(this.getOutputTestFileName(fileName));
 
 		Path path = getAbsolutionPath(inputTestFileName);
 		File file = path.toFile();
@@ -596,10 +590,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testGetDecoratorFQN2() throws Exception {
 		this.testGetDecoratorFQNInternal();
 	}
-	
+
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this
-				.getAvailableFunctionDefinitions();
+		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this.getAvailableFunctionDefinitions();
 
 		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
@@ -632,8 +625,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		PySelection selection = new PySelection(document, coreTextSelection);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature,
-				new NullProgressMonitor());
+		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature, new NullProgressMonitor());
 
 		assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
 	}

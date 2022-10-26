@@ -36,8 +36,8 @@ public class Util {
 	 * @throws TooManyMatchesException On ambiguous definitions found.
 	 * @throws BadLocationException On parsing error.
 	 */
-	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
+			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
 		request.acceptTypeshed = true;
@@ -88,9 +88,9 @@ public class Util {
 		exprType decoratorFunction = decorator.func;
 		String decoratorFullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
 		LOG.info(String.format("The \"full representation\" of %s is %s.", decoratorFunction, decoratorFullRepresentationString));
-		
+
 		String fqn = declaringModuleName + "." + decoratorFullRepresentationString;
-		LOG.info(String.format("FQN is: %s.",  fqn));
+		LOG.info(String.format("FQN is: %s.", fqn));
 
 		return fqn;
 	}
