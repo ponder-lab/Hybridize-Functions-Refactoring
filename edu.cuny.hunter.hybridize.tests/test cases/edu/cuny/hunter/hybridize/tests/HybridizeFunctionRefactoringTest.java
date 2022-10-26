@@ -586,6 +586,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testGetDecoratorFQN() throws Exception {
+		this.testGetDecoratorFQNInternal();
+	}
+
+	/**
+	 * Test for #47. Call case.
+	 */
+	@Test
+	public void testGetDecoratorFQN2() throws Exception {
+		this.testGetDecoratorFQNInternal();
+	}
+	
+	private void testGetDecoratorFQNInternal() throws Exception {
 		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this
 				.getAvailableFunctionDefinitions();
 
@@ -624,38 +636,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				new NullProgressMonitor());
 
 		assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
-	}
-
-	/**
-	 * Test for #47. Call case.
-	 */
-	@Test
-	public void testGetDecoratorFQN2() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		FunctionDef functionDef = function.getFunctionDef();
-		decoratorsType[] decoratorArray = functionDef.decs;
-		assertNotNull(decoratorArray);
-		assertEquals(1, decoratorArray.length);
-
-		decoratorsType decorator = decoratorArray[0];
-		assertNotNull(decorator);
-
-		exprType decoratorFunction = decorator.func;
-		assertNotNull(decoratorFunction);
-
-		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
-		assertEquals("tf.function", representationString);
-
-		File inputTestFile = this.getInputTestFile();
-
-//		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, inputTestFile, nature,
-//				new NullProgressMonitor());
-//		assertEquals("tensorflow.python.eager.def_function.function", fullyQualifiedName);
 	}
 
 	/**
