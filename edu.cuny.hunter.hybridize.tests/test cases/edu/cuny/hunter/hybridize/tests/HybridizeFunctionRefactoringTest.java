@@ -124,6 +124,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
+	 * Add a module to the given {@link IPythonNature}.
+	 *
 	 * @param ast the ast that defines the module
 	 * @param modName the module name
 	 * @param natureToAdd the nature where the module should be added
@@ -144,13 +146,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * checks if the size of the system modules manager and the project module manager are coherent (we must have more
-	 * modules in the system than in the project)
+	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more
+	 * modules in the system than in the project).
 	 */
 	protected static void checkSize() {
 		try {
-			IInterpreterManager iMan = getInterpreterManager();
-			InterpreterInfo info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+			IInterpreterManager interpreterManager = getInterpreterManager();
+			InterpreterInfo info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
 			assertTrue(info.getModulesManager().getSize(true) > 0);
 
 			int size = ((ASTManager) nature.getAstManager()).getSize();
@@ -227,13 +229,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * @return the default interpreter info for the current manager
+	 * Get the default {@link InterpreterInfo}.
+	 *
+	 * @return The default interpreter info for the current manager.
 	 */
 	protected static InterpreterInfo getDefaultInterpreterInfo() {
-		IInterpreterManager iMan = getInterpreterManager();
+		IInterpreterManager interpreterManager = getInterpreterManager();
 		InterpreterInfo info;
 		try {
-			info = (InterpreterInfo) iMan.getDefaultInterpreterInfo(false);
+			info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
 		} catch (MisconfigurationException e) {
 			throw new RuntimeException(e);
 		}
@@ -241,7 +245,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * @return the PyDev interpreter manager we are testing
+	 * Get the {@link IInterpreterManager} we are testing.
+	 *
+	 * @return The PyDev interpreter manager we are testing.
 	 */
 	protected static IInterpreterManager getInterpreterManager() {
 		return InterpreterManagersAPI.getPythonInterpreterManager();
@@ -314,8 +320,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * This method sets the ast manager for a nature and restores the pythonpath with the path passed.
 	 *
-	 * @param path the pythonpath that should be set for this nature
-	 * @param projectStub the project where the nature should be set
+	 * @param path the pythonpath that should be set for this nature.
+	 * @param projectStub the project where the nature should be set.
 	 */
 	protected static void setAstManager(String path, ProjectStub projectStub) {
 		nature.setProject(projectStub);
@@ -329,9 +335,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Sets the interpreter manager we should use
+	 * Sets the interpreter manager we should use.
 	 *
-	 * @param path
+	 * @param path The path to use.
 	 */
 	protected static void setInterpreterManager(String path) {
 		PythonInterpreterManager interpreterManager = new PythonInterpreterManager(new InMemoryEclipsePreferences());
@@ -495,7 +501,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Returns the {@link Function}s in the test file.
 	 *
-	 * @param monitor
 	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
