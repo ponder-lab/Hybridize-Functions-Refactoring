@@ -38,6 +38,8 @@ public class Util {
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		monitor.beginTask("Getting declaring module name.", 1);
+		
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
 		request.acceptTypeshed = true;
@@ -63,6 +65,7 @@ public class Util {
 
 		LOG.info(String.format("Found module: %s.", module));
 
+		monitor.done();
 		return module.getName();
 	}
 
@@ -82,16 +85,23 @@ public class Util {
 	public static String getFullyQualifiedName(decoratorsType decorator, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
+		monitor.beginTask("Getting decorator FQN.", 3);
+
+		monitor.subTask("Getting declaring module name.");
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
+		monitor.worked(1);
 
 		exprType decoratorFunction = decorator.func;
 		String decoratorFullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
 		LOG.info(String.format("The \"full representation\" of %s is %s.", decoratorFunction, decoratorFullRepresentationString));
+		monitor.worked(1);
 
 		String fqn = declaringModuleName + "." + decoratorFullRepresentationString;
 		LOG.info(String.format("FQN is: %s.", fqn));
+		monitor.worked(1);
 
+		monitor.done();
 		return fqn;
 	}
 

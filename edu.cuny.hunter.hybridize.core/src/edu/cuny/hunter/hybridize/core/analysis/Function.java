@@ -7,6 +7,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
@@ -45,6 +46,20 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter();
 	}
 
+	/**
+	 * Returns the containing {@link Module} of this {@link Function}.
+	 *
+	 * @return The {@link Function}'s containing module.
+	 */
+	public Module getModule() {
+		SimpleNode node = this.getFunctionDef();
+
+		while (!(node instanceof Module))
+			node = node.parent;
+
+		return (Module) node;
+	}
+
 	private void computeHasTensorParameter() {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
@@ -54,25 +69,22 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.setTaskName("Computing hybridization ...");
 
-		// FIXME: This is fragile. What we really want to know is whether the decorator is
-		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH
-		// (#47).
-		decoratorsType[] decoratorArray = this.functionDef.decs;
+		FunctionDef functionDef = this.getFunctionDef();
+		decoratorsType[] decoratorArray = functionDef.decs;
+		Module module = this.getModule();
+		System.out.println(module);
 
 		if (decoratorArray != null)
 			for (decoratorsType decorator : decoratorArray) {
 
-				/* TODO: Use HybridizeFunctionRefactoringTest to change this.
-				// get the decorator's FQN.
-				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
-
-				// if this function is decorated with "tf.function."
-				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
-					this.isHybrid = true;
-					LOG.info(this + " is hybrid.");
-					return;
-				}
-				*/
+//				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
+//
+//				// if this function is decorated with "tf.function."
+//				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
+//					this.isHybrid = true;
+//					LOG.info(this + " is hybrid.");
+//					return;
+//				}
 			}
 
 		else
@@ -95,9 +107,10 @@ public class Function extends RefactorableProgramEntity {
 	 * @return This {@link Function}'s FQN.
 	 */
 	public String getIdentifer() {
-		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
+		FunctionDef functionDef = this.getFunctionDef();
+		String identifier = NodeUtils.getFullRepresentationString(functionDef);
 		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = this.functionDef.parent;
+		SimpleNode parentNode = functionDef.parent;
 
 		int count = 0;
 
