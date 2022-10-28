@@ -218,11 +218,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		if (addSitePackages)
-			if (isPython3)
-				// replace ~ with the actual directory. See https://bit.ly/3gPN8O4.
-				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES.replaceFirst("^~",
-						Matcher.quoteReplacement(System.getProperty("user.home"))));
-			else
+			if (isPython3) {
+				String sitePackages = TestDependent.PYTHON3_SITE_PACKAGES;
+
+				if (!TestDependent.isWindows())
+					// replace ~ with the actual directory. See https://bit.ly/3gPN8O4.
+					sitePackages = sitePackages.replaceFirst("^~", Matcher.quoteReplacement(System.getProperty("user.home")));
+
+				ret.append("|" + sitePackages);
+			} else
 				ret.append("|" + TestDependent.PYTHON2_SITE_PACKAGES);
 
 		if (TestDependent.isWindows() && !isPython3) // NOTE: No DLLs for Python 3.
