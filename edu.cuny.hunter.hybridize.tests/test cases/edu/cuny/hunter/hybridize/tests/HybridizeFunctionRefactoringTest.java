@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
@@ -218,7 +219,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		if (addSitePackages)
 			if (isPython3)
-				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES);
+				// replace ~ with the actual directory. See https://bit.ly/3gPN8O4.
+				ret.append("|" + TestDependent.PYTHON3_SITE_PACKAGES.replaceFirst("^~",
+						Matcher.quoteReplacement(System.getProperty("user.home"))));
 			else
 				ret.append("|" + TestDependent.PYTHON2_SITE_PACKAGES);
 
