@@ -39,7 +39,7 @@ public class Util {
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting declaring module name.", 1);
-		
+
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
 		request.acceptTypeshed = true;

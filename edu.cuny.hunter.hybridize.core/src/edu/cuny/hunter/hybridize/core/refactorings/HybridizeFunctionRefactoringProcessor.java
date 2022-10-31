@@ -2,9 +2,9 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.io.File;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.core.runtime.CoreException;
@@ -12,12 +12,15 @@ import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 
@@ -53,15 +56,55 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
-	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions, IProgressMonitor monitor) {
+	public static class FunctionDefinition {
+		private FunctionDef functionDef;
+		private String containingModuleName;
+		private File containingFile;
+
+		public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile) {
+			this.functionDef = functionDef;
+			this.containingModuleName = containingModuleName;
+			this.containingFile = containingFile;
+		}
+
+		@Override
+		public int hashCode() {
+			return functionDef.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj)
+				return true;
+
+			if (obj == null)
+				return false;
+
+			if (getClass() != obj.getClass())
+				return false;
+
+			FunctionDefinition other = (FunctionDefinition) obj;
+
+			return Objects.equals(functionDef, other.functionDef);
+		}
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IPythonNature nature,
+			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 
 		// Convert the FunctionDefs to Functions.
-		Function[] functionArray = Arrays.stream(functions).map(f -> new Function(f, monitor)).toArray(Function[]::new);
+		if (functions != null) {
+			Set<Function> functionSet = this.getFunctions();
 
-		// Add all of the Functions to the Function set.
-		Collections.addAll(this.getFunctions(), functionArray);
+			for (FunctionDefinition fd : functionDefinitions) {
+				Function function = new Function(fd.functionDef, fd.containingModuleName, fd.containingFile, nature, monitor);
+
+				// Add the Function to the Function set.
+				functionSet.add(function);
+			}
+		}
 	}
 
 	@Override
@@ -99,8 +142,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	@Override
-	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
-			throws CoreException, OperationCanceledException {
+	public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
 		return super.checkInitialConditions(pm);
 	}
 

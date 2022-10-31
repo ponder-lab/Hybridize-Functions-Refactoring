@@ -2,12 +2,17 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
+
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jface.text.BadLocationException;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.core.IPythonNature;
+import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
@@ -20,6 +25,8 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
+
+	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	private static final ILog LOG = getLog(Function.class);
 
@@ -38,26 +45,22 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	public Function(FunctionDef functionDef, IProgressMonitor monitor) {
+	private String containingModuleName;
+
+	private File containingFile;
+
+	private IPythonNature nature;
+
+	public Function(FunctionDef functionDef, String containingModuleName, File containingFile, IPythonNature nature,
+			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDef = functionDef;
+		this.containingModuleName = containingModuleName;
+		this.containingFile = containingFile;
+		this.nature = nature;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid(monitor);
 		this.computeHasTensorParameter();
-	}
-
-	/**
-	 * Returns the containing {@link Module} of this {@link Function}.
-	 *
-	 * @return The {@link Function}'s containing module.
-	 */
-	public Module getModule() {
-		SimpleNode node = this.getFunctionDef();
-
-		while (!(node instanceof Module))
-			node = node.parent;
-
-		return (Module) node;
 	}
 
 	private void computeHasTensorParameter() {
@@ -65,30 +68,50 @@ public class Function extends RefactorableProgramEntity {
 		// type hints are used.
 	}
 
-	private void computeIsHybrid(IProgressMonitor monitor) {
+	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.setTaskName("Computing hybridization ...");
 
 		FunctionDef functionDef = this.getFunctionDef();
 		decoratorsType[] decoratorArray = functionDef.decs;
-		Module module = this.getModule();
-		System.out.println(module);
 
-		if (decoratorArray != null)
+		if (decoratorArray != null) {
+			String containingModuleName = this.getContainingModuleName();
+			File containingFile = this.getContainingFile();
+			IPythonNature nature = this.getNature();
+
 			for (decoratorsType decorator : decoratorArray) {
+				PySelection selection = this.getSelection(decorator);
 
-//				String decoratorFQN = Util.getFullyQualifiedName(decorator, monitor);
-//
+				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
+						monitor);
+
 //				// if this function is decorated with "tf.function."
-//				if (decoratorFQN.equals("tensorflow.python.eager.def_function.function")) {
-//					this.isHybrid = true;
-//					LOG.info(this + " is hybrid.");
-//					return;
-//				}
+				if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
+					this.isHybrid = true;
+					LOG.info(this + " is hybrid.");
+					return;
+				}
 			}
-
-		else
+		} else
 			this.isHybrid = false;
+	}
+
+	private IPythonNature getNature() {
+		return this.nature;
+	}
+
+	private PySelection getSelection(decoratorsType decorator) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	private File getContainingFile() {
+		return this.containingFile;
+	}
+
+	private String getContainingModuleName() {
+		return this.containingModuleName;
 	}
 
 	/**

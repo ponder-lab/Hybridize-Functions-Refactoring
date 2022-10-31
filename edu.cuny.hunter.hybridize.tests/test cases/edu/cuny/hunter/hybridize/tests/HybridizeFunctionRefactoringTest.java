@@ -85,6 +85,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
+import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 @SuppressWarnings("restriction")
@@ -492,7 +493,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
 	 */
-	private Entry<IDocument, Set<FunctionDef>> getAvailableFunctionDefinitions() throws Exception {
+	private Entry<IDocument, Set<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
 		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile("A");
 
 		// extract function definitions.
@@ -512,10 +513,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
-		Set<FunctionDef> availableFunctions = this.getAvailableFunctionDefinitions().getValue();
+		NullProgressMonitor monitor = new NullProgressMonitor();
+		File inputTestFile = this.getInputTestFile();
+
+		Entry<IDocument, Set<FunctionDef>> availableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
+		Set<FunctionDef> availableFunctions = availableFunctionDefs.getValue();
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.toArray(FunctionDef[]::new), new NullProgressMonitor());
+				availableFunctions.stream().map(f -> new FunctionDefinition(f, "A", inputTestFile)).collect(Collectors.toSet()), nature,
+				monitor);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -605,7 +611,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this.getAvailableFunctionDefinitions();
+		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
 
 		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
