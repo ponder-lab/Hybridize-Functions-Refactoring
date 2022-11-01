@@ -133,7 +133,7 @@ public class Function extends RefactorableProgramEntity {
 	 * Returns the FQN of this {@link Function}.
 	 *
 	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>.
-	 * @return This {@link Function}'s FQN.
+	 * @return This {@link Function}'s FQN
 	 */
 	public String getIdentifer() {
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
