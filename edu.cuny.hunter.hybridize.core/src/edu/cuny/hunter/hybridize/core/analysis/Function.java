@@ -121,11 +121,11 @@ public class Function extends RefactorableProgramEntity {
 		return new PySelection(document, coreTextSelection);
 	}
 
-	private File getContainingFile() {
+	public File getContainingFile() {
 		return this.containingFile;
 	}
 
-	private String getContainingModuleName() {
+	public String getContainingModuleName() {
 		return this.containingModuleName;
 	}
 
