@@ -7,6 +7,7 @@ import java.io.File;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -14,7 +15,9 @@ import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
+import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -49,13 +52,16 @@ public class Function extends RefactorableProgramEntity {
 
 	private File containingFile;
 
+	private IDocument containingDocument;
+
 	private IPythonNature nature;
 
-	public Function(FunctionDef functionDef, String containingModuleName, File containingFile, IPythonNature nature,
-			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	public Function(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument,
+			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDef = functionDef;
 		this.containingModuleName = containingModuleName;
 		this.containingFile = containingFile;
+		this.containingDocument = containingDocument;
 		this.nature = nature;
 
 		// Find out if it's hybrid via the tf.function decorator.
@@ -81,7 +87,8 @@ public class Function extends RefactorableProgramEntity {
 			IPythonNature nature = this.getNature();
 
 			for (decoratorsType decorator : decoratorArray) {
-				PySelection selection = this.getSelection(decorator);
+				IDocument document = this.getContainingDocument();
+				PySelection selection = this.getSelection(decorator, document);
 
 				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
 						monitor);
@@ -97,13 +104,21 @@ public class Function extends RefactorableProgramEntity {
 			this.isHybrid = false;
 	}
 
-	private IPythonNature getNature() {
+	public IDocument getContainingDocument() {
+		return this.containingDocument;
+	}
+
+	public IPythonNature getNature() {
 		return this.nature;
 	}
 
-	private PySelection getSelection(decoratorsType decorator) {
-		// TODO Auto-generated method stub
-		return null;
+	private PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType decoratorFunction = decorator.func;
+		int offset = NodeUtils.getOffset(document, decoratorFunction);
+		String representationString = NodeUtils.getRepresentationString(decoratorFunction);
+		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
+
+		return new PySelection(document, coreTextSelection);
 	}
 
 	private File getContainingFile() {

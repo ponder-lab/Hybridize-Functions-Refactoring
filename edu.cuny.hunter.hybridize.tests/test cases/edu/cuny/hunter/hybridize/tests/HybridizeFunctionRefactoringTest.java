@@ -519,11 +519,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile();
 
-		Entry<IDocument, Set<FunctionDef>> availableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
-		Set<FunctionDef> availableFunctions = availableFunctionDefs.getValue();
+		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(
-				availableFunctions.stream().map(f -> new FunctionDefinition(f, "A", inputTestFile)).collect(Collectors.toSet()), nature,
+		IDocument document = documentToAvailableFunctionDefs.getKey();
+		Set<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
+
+		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
+				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document)).collect(Collectors.toSet());
+
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, nature,
 				monitor);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);

@@ -13,6 +13,8 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
+import org.eclipse.jface.text.IDocumentAdapter;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
@@ -60,11 +62,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		private FunctionDef functionDef;
 		private String containingModuleName;
 		private File containingFile;
+		private IDocument containingDocument;
 
-		public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile) {
+		public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument) {
 			this.functionDef = functionDef;
 			this.containingModuleName = containingModuleName;
 			this.containingFile = containingFile;
+			this.containingDocument = containingDocument;
 		}
 
 		@Override
@@ -99,7 +103,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitions) {
-				Function function = new Function(fd.functionDef, fd.containingModuleName, fd.containingFile, nature, monitor);
+				Function function = new Function(fd.functionDef, fd.containingModuleName, fd.containingFile, fd.containingDocument, nature,
+						monitor);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
