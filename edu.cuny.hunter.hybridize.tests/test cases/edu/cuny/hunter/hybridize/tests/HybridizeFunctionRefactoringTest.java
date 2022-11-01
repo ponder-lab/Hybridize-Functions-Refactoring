@@ -82,10 +82,10 @@ import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
-import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 @SuppressWarnings("restriction")

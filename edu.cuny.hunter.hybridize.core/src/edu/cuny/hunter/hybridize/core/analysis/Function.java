@@ -56,12 +56,12 @@ public class Function extends RefactorableProgramEntity {
 
 	private IPythonNature nature;
 
-	public Function(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument,
-			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
-		this.functionDef = functionDef;
-		this.containingModuleName = containingModuleName;
-		this.containingFile = containingFile;
-		this.containingDocument = containingDocument;
+	public Function(FunctionDefinition fd, IPythonNature nature, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
+		this.functionDef = fd.functionDef;
+		this.containingModuleName = fd.containingModuleName;
+		this.containingFile = fd.containingFile;
+		this.containingDocument = fd.containingDocument;
 		this.nature = nature;
 
 		// Find out if it's hybrid via the tf.function decorator.
