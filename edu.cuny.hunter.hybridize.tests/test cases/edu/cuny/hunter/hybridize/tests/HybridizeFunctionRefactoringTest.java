@@ -498,13 +498,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
-		pythonNodeToDocument.getKey().accept(functionExtractor);
+		SimpleNode node = pythonNodeToDocument.getKey();
+		node.accept(functionExtractor);
 
 		// filter out the unavailable ones.
 		Set<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
 
-		return Map.entry(pythonNodeToDocument.getValue(), availableFunctionDefinitions);
+		IDocument document = pythonNodeToDocument.getValue();
+
+		return Map.entry(document, availableFunctionDefinitions);
 	}
 
 	/**
