@@ -34,9 +34,9 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
-	 * The {@link FunctionDef} representing this {@link Function}.
+	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	private FunctionDef functionDef;
+	private FunctionDefinition functionDefinition;
 
 	/**
 	 * True iff this {@link Function} is decorated with tf.function.
@@ -48,20 +48,11 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	private String containingModuleName;
-
-	private File containingFile;
-
-	private IDocument containingDocument;
-
 	private IPythonNature nature;
 
 	public Function(FunctionDefinition fd, IPythonNature nature, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
-		this.functionDef = fd.functionDef;
-		this.containingModuleName = fd.containingModuleName;
-		this.containingFile = fd.containingFile;
-		this.containingDocument = fd.containingDocument;
+		this.functionDefinition = fd;
 		this.nature = nature;
 
 		// Find out if it's hybrid via the tf.function decorator.
@@ -78,8 +69,8 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.setTaskName("Computing hybridization ...");
 
-		FunctionDef functionDef = this.getFunctionDef();
-		decoratorsType[] decoratorArray = functionDef.decs;
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
 			String containingModuleName = this.getContainingModuleName();
@@ -105,7 +96,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public IDocument getContainingDocument() {
-		return this.containingDocument;
+		return this.getFunctionDefinition().containingDocument;
 	}
 
 	public IPythonNature getNature() {
@@ -122,33 +113,33 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public File getContainingFile() {
-		return this.containingFile;
+		return this.getFunctionDefinition().containingFile;
 	}
 
 	public String getContainingModuleName() {
-		return this.containingModuleName;
+		return this.getFunctionDefinition().containingModuleName;
 	}
 
 	/**
-	 * Accessor for private member variable functionDef.
+	 * This {@link Function}'s {@link FunctionDefinition}.
 	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}
+	 * @return The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	public FunctionDef getFunctionDef() {
-		return this.functionDef;
+	public FunctionDefinition getFunctionDefinition() {
+		return this.functionDefinition;
 	}
 
 	/**
 	 * Returns the FQN of this {@link Function}.
 	 *
-	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
+	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>.
 	 * @return This {@link Function}'s FQN.
 	 */
 	public String getIdentifer() {
-		FunctionDef functionDef = this.getFunctionDef();
-		String identifier = NodeUtils.getFullRepresentationString(functionDef);
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		String identifier = NodeUtils.getFullRepresentationString(functionDefinition.getFunctionDef());
 		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = functionDef.parent;
+		SimpleNode parentNode = functionDefinition.getFunctionDef().parent;
 
 		int count = 0;
 

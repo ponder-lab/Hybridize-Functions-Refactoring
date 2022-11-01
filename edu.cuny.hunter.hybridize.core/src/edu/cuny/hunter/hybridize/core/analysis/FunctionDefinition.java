@@ -7,9 +7,13 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 
 public class FunctionDefinition {
+
 	FunctionDef functionDef;
+
 	String containingModuleName;
+
 	File containingFile;
+
 	IDocument containingDocument;
 
 	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument) {
@@ -21,7 +25,7 @@ public class FunctionDefinition {
 
 	@Override
 	public int hashCode() {
-		return functionDef.hashCode();
+		return getFunctionDef().hashCode();
 	}
 
 	@Override
@@ -37,6 +41,10 @@ public class FunctionDefinition {
 
 		FunctionDefinition other = (FunctionDefinition) obj;
 
-		return Objects.equals(functionDef, other.functionDef);
+		return Objects.equals(getFunctionDef(), other.getFunctionDef());
+	}
+
+	public FunctionDef getFunctionDef() {
+		return functionDef;
 	}
 }
