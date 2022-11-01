@@ -718,10 +718,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-
-		// NOTE: There's not much we can do about this since it has the same signature as the real TF. Even PyDev has
-		// trouble with this.
-		assertTrue(function.isHybrid());
+		assertFalse(function.isHybrid());
 	}
 
 	/**
