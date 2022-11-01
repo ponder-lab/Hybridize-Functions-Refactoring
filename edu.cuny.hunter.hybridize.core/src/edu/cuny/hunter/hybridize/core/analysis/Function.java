@@ -137,9 +137,11 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public String getIdentifer() {
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
-		String identifier = NodeUtils.getFullRepresentationString(functionDefinition.getFunctionDef());
+		FunctionDef functionDef = functionDefinition.getFunctionDef();
+
+		String identifier = NodeUtils.getFullRepresentationString(functionDef);
 		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = functionDefinition.getFunctionDef().parent;
+		SimpleNode parentNode = functionDef.parent;
 
 		int count = 0;
 
