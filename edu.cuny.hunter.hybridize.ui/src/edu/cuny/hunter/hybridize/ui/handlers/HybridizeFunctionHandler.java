@@ -21,8 +21,6 @@ import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.argumentsType;
-import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
