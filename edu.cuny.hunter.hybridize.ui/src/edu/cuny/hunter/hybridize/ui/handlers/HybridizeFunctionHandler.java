@@ -63,30 +63,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			throw new ExecutionException("Failed to start refactoring.", e);
 		}
 
-		// ---------------------------------------------------------------------------------
-
-		if (simpleNode instanceof FunctionDef) {
-			FunctionDef function = (FunctionDef) simpleNode;
-			System.out.println(function);
-
-			argumentsType args = function.args;
-			System.out.println(args);
-			exprType[] annotation = args.annotation;
-
-			if (annotation != null)
-				for (exprType annot : annotation)
-					if (annot != null)
-						System.out.println(annot);
-
-			exprType[] args2 = args.args;
-
-			if (args2 != null)
-				for (exprType argType : args2)
-					System.out.println(argType);
-		}
-
-		// ---------------------------------------------------------------------------------
-
 		return functionExtractor.getDefinitions();
 	}
 
