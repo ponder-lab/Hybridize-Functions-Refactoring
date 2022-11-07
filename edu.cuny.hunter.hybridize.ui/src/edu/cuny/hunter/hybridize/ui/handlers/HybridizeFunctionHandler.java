@@ -21,8 +21,6 @@ import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.argumentsType;
-import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
@@ -62,30 +60,6 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			LOG.error("Failed to start refactoring.", e);
 			throw new ExecutionException("Failed to start refactoring.", e);
 		}
-
-		// ---------------------------------------------------------------------------------
-
-		if (simpleNode instanceof FunctionDef) {
-			FunctionDef function = (FunctionDef) simpleNode;
-			System.out.println(function);
-
-			argumentsType args = function.args;
-			System.out.println(args);
-			exprType[] annotation = args.annotation;
-
-			if (annotation != null)
-				for (exprType annot : annotation)
-					if (annot != null)
-						System.out.println(annot);
-
-			exprType[] args2 = args.args;
-
-			if (args2 != null)
-				for (exprType argType : args2)
-					System.out.println(argType);
-		}
-
-		// ---------------------------------------------------------------------------------
 
 		return functionExtractor.getDefinitions();
 	}
