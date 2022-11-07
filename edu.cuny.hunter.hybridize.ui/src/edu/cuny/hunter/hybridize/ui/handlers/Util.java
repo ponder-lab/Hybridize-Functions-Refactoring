@@ -26,9 +26,9 @@ public class Util {
 	}
 
 	static IDocument getDocument(PythonNode pythonNode) throws CoreException, IOException {
-		IFile iFile = getActualFile(pythonNode);
+		IFile file = getActualFile(pythonNode);
 
-		try (InputStream contentStream = iFile.getContents()) {
+		try (InputStream contentStream = file.getContents()) {
 			byte[] bytes = contentStream.readAllBytes();
 			String content = new String(bytes, UTF_8);
 			return new Document(content);
@@ -36,8 +36,8 @@ public class Util {
 	}
 
 	static File getFile(PythonNode pythonNode) {
-		IFile iFile = getActualFile(pythonNode);
-		URI uri = iFile.getRawLocationURI();
+		IFile file = getActualFile(pythonNode);
+		URI uri = file.getRawLocationURI();
 		return new File(uri);
 	}
 
