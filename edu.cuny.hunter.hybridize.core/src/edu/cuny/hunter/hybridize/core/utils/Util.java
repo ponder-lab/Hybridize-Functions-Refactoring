@@ -7,15 +7,14 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
-import org.python.pydev.core.IPythonNature;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 
 public class Util {
 
-	public static Refactoring createRefactoring(Set<FunctionDefinition> functionDefinitions, IPythonNature nature, IProgressMonitor monitor)
+	public static Refactoring createRefactoring(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(functionDefinitions, nature, monitor);
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(functionDefinitions, monitor);
 		return new ProcessorBasedRefactoring(processor);
 	}
 

@@ -11,7 +11,6 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
-import org.eclipse.jface.text.IDocumentAdapter;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
@@ -19,7 +18,6 @@ import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
-import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
@@ -55,8 +53,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IPythonNature nature,
-			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 
@@ -65,7 +63,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitions) {
-				Function function = new Function(fd, nature, monitor);
+				Function function = new Function(fd, monitor);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);

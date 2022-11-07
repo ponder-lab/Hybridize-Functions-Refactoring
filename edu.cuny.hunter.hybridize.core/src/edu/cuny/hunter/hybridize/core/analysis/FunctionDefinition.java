@@ -4,9 +4,11 @@ import java.io.File;
 import java.util.Objects;
 
 import org.eclipse.jface.text.IDocument;
+import org.python.pydev.core.IPythonNature;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.visitors.NodeUtils;
 
-public class FunctionDefinition {
+public final class FunctionDefinition {
 
 	FunctionDef functionDef;
 
@@ -16,11 +18,15 @@ public class FunctionDefinition {
 
 	IDocument containingDocument;
 
-	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument) {
+	IPythonNature nature;
+
+	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument,
+			IPythonNature nature) {
 		this.functionDef = functionDef;
 		this.containingModuleName = containingModuleName;
 		this.containingFile = containingFile;
 		this.containingDocument = containingDocument;
+		this.nature = nature;
 	}
 
 	@Override
@@ -42,6 +48,12 @@ public class FunctionDefinition {
 		FunctionDefinition other = (FunctionDefinition) obj;
 
 		return Objects.equals(getFunctionDef(), other.getFunctionDef());
+	}
+
+	@Override
+	public String toString() {
+		String fullRepresentationString = NodeUtils.getFullRepresentationString(functionDef);
+		return fullRepresentationString + "() in " + containingModuleName;
 	}
 
 	public FunctionDef getFunctionDef() {

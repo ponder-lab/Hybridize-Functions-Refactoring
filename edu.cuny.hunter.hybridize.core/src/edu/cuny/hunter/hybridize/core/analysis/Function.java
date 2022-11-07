@@ -48,12 +48,9 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	private IPythonNature nature;
-
-	public Function(FunctionDefinition fd, IPythonNature nature, IProgressMonitor monitor)
+	public Function(FunctionDefinition fd, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
 		this.functionDefinition = fd;
-		this.nature = nature;
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid(monitor);
@@ -91,8 +88,10 @@ public class Function extends RefactorableProgramEntity {
 					return;
 				}
 			}
-		} else
+		} else {
 			this.isHybrid = false;
+			LOG.info(this + " is not hybrid.");
+		}
 	}
 
 	public IDocument getContainingDocument() {
@@ -100,7 +99,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public IPythonNature getNature() {
-		return this.nature;
+		return this.functionDefinition.nature;
 	}
 
 	private PySelection getSelection(decoratorsType decorator, IDocument document) {

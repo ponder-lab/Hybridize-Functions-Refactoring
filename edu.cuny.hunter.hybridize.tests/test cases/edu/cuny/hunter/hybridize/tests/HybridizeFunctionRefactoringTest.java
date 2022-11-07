@@ -525,10 +525,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document)).collect(Collectors.toSet());
+				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, nature,
-				monitor);
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, monitor);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 

@@ -14,8 +14,6 @@ import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.ui.refactoring.RefactoringWizard;
 import org.eclipse.swt.widgets.Shell;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
-import org.python.pydev.core.IPythonNature;
-
 import edu.cuny.citytech.refactoring.common.ui.InputPage;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
@@ -64,8 +62,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		}
 	}
 
-	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, IPythonNature nature, Shell shell, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
-		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functionDefinitions, nature, monitor);
+	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functionDefinitions, monitor);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 
 		new RefactoringStarter().activate(wizard, shell, RefactoringMessages.OpenRefactoringWizardAction_refactoring,
