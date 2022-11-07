@@ -48,8 +48,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	public Function(FunctionDefinition fd, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDefinition = fd;
 
 		// Find out if it's hybrid via the tf.function decorator.
@@ -174,8 +173,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
-	 * sure.
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100% sure.
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
