@@ -76,7 +76,7 @@ public class Function extends RefactorableProgramEntity {
 
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
-				PySelection selection = this.getSelection(decorator, document);
+				PySelection selection = getSelection(decorator, document);
 
 				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
 						monitor);
@@ -102,7 +102,7 @@ public class Function extends RefactorableProgramEntity {
 		return this.functionDefinition.nature;
 	}
 
-	private PySelection getSelection(decoratorsType decorator, IDocument document) {
+	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType decoratorFunction = decorator.func;
 		int offset = NodeUtils.getOffset(document, decoratorFunction);
 		String representationString = NodeUtils.getRepresentationString(decoratorFunction);
