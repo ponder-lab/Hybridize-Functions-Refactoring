@@ -126,7 +126,7 @@
         <repository>
             <id>PyDev</id>
             <layout>p2</layout>
-            <url>http://www.pydev.org/updates</url>
+            <url>https://raw.githubusercontent.com/tatianacv/Pydev/pydev_9_3_1/org.python.pydev.updatesite</url>
         </repository>
     </repositories>
     <build>
