@@ -47,6 +47,7 @@ import org.python.pydev.ast.interpreter_managers.InterpreterInfo;
 import org.python.pydev.ast.interpreter_managers.InterpreterManagersAPI;
 import org.python.pydev.ast.interpreter_managers.PythonInterpreterManager;
 import org.python.pydev.core.CorePlugin;
+import org.python.pydev.core.IGrammarVersionProvider;
 import org.python.pydev.core.IInterpreterInfo;
 import org.python.pydev.core.IInterpreterManager;
 import org.python.pydev.core.IPythonNature;
@@ -94,8 +95,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected static final boolean ADD_MX_TO_FORCED_BUILTINS = true;
 
 	protected static final boolean ADD_NUMPY_TO_FORCED_BUILTINS = true;
-
-	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IPythonNature.LATEST_GRAMMAR_PY3_VERSION;
+	
+	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
 
@@ -378,7 +379,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		FileUtils.IN_TESTS = true;
 		PydevTestUtils.setTestPlatformStateLocation();
 		AbstractAdditionalDependencyInfo.TESTING = true;
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = true;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 		PythonNature.IN_TESTS = true;
 		PythonModuleManager.setTesting(true);
 
