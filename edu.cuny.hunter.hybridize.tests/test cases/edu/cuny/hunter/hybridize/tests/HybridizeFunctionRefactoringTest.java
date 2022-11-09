@@ -95,7 +95,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected static final boolean ADD_MX_TO_FORCED_BUILTINS = true;
 
 	protected static final boolean ADD_NUMPY_TO_FORCED_BUILTINS = true;
-	
+
 	protected static final int GRAMMAR_TO_USE_FOR_PARSING = IGrammarVersionProvider.LATEST_GRAMMAR_PY3_VERSION;
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
