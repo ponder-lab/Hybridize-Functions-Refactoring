@@ -7,7 +7,6 @@ cache:
   pip: true
   directories:
   - "$HOME/.m2"
-  - "$HOME/git"
 addons:
   apt:
     packages: python3
@@ -16,10 +15,11 @@ services:
 install: skip # The below script command already does the installation.
 before_script: python3 --version
 script:
-- mkdir git
-- cd git
+- mkdir "$HOME/git"
+- pushd .
+- cd "$HOME/git"
 - git clone --depth=50 --branch=pydev_9_3_1 https://github.com/ponder-lab/Pydev.git # Clone our fork of PyDev.
-- cd ..
+- pushd
 - mvn clean verify -Pjacoco coveralls:report
 notifications:
   slack:
