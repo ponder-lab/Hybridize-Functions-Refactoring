@@ -19,7 +19,7 @@ script:
 - pushd .
 - cd "$HOME/git"
 - pwd
-- git clone --depth=50 --branch=pydev_9_3_1 https://github.com/ponder-lab/Pydev.git # Clone our fork of PyDev.
+- git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git # Clone our fork of PyDev.
 - popd
 - mvn clean verify -Pjacoco coveralls:report
 notifications:
