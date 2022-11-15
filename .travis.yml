@@ -18,7 +18,8 @@ services:
 install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
 before_script:
-  - pyenv install -v 3.10.7
+  - pyenv install --list
+  - pyenv install -v 3.10.0
   - pyenv versions
   - pyenv global 3.10.8
 script:
