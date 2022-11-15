@@ -14,9 +14,9 @@ services:
 before_install:
   - pyenv install 3.10.0
   - pyenv global 3.10.0
+  - python3 --version
 install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
-before_script: python3 --version
 script:
 - mkdir "$HOME/git"
 - pushd .
