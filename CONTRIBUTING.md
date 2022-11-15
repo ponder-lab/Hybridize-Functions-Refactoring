@@ -23,7 +23,7 @@ You may use the following update sites to install some of the appropriate plugin
 Dependency | Update Site
 --- | ---
 [Common Eclipse Java Refactoring Framework](https://github.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework) | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
-<!-- [PyDev] | https://www.pydev.org/updates -->
+[PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [PyDev]: https://github.com/fabioz/Pydev
