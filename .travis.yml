@@ -11,11 +11,11 @@ cache:
   - $HOME/.cache/pip
 services:
 - xvfb
-install:
-  - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
-before_script:
+before_install:
   - pyenv install -v 3.10.0
   - pyenv global 3.10.0
+install:
+  - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
 script:
 - mkdir "$HOME/git"
 - pushd .
