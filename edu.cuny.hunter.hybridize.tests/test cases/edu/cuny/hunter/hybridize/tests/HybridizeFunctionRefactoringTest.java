@@ -174,7 +174,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		IDocument document = new Document(contents);
 
-		assertTrue("Test file must exist.", file.exists());
+		assertTrue("Test file: " + file + " must exist.", file.exists());
 		ParserInfo parserInfo = new ParserInfo(document, nature, moduleName, file);
 
 		// Parsing.
