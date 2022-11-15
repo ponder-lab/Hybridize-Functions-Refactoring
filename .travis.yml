@@ -9,13 +9,19 @@ cache:
   - "$HOME/.m2"
   - "$HOME/.p2"
   - $HOME/.cache/pip
+before_install:
+  - sudo apt install software-properties-common -y
+  - sudo add-apt-repository ppa:deadsnakes/ppa -y
+  - sudo apt install python3.10
 addons:
   apt:
     packages: python3
 services:
 - xvfb
 install: skip # The below script command already does the installation.
-before_script: python3 --version
+before_script: 
+  - python3 --version
+  - python3.10 --version
 script: mvn clean verify -Pjacoco coveralls:report
 notifications:
   slack:
