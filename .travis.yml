@@ -7,6 +7,7 @@ cache:
   pip: true
   directories:
   - "$HOME/.m2"
+  - "$HOME/.p2"
   - $HOME/.cache/pip
 addons:
   apt:
