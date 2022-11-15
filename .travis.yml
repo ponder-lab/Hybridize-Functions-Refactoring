@@ -1,4 +1,4 @@
-os: linux
+os: jammy
 dist: focal
 language: java
 jdk: openjdk11
