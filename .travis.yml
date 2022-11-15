@@ -9,14 +9,17 @@ cache:
   - "$HOME/.m2"
   - "$HOME/.p2"
   - $HOME/.cache/pip
+before_install:
+  - sudo apt install software-properties-common -y
+  - sudo add-apt-repository ppa:deadsnakes/ppa -y
+  - sudo apt install python3.10
 services:
 - xvfb
-before_install:
-  - pyenv install 3.10.0
-  - pyenv global 3.10.0
-  - python3 --version
 install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
+before_script:
+  - python3 --version
+  - python3.10 --version
 script:
 - mkdir "$HOME/git"
 - pushd .
