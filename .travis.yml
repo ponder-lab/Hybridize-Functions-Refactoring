@@ -1,5 +1,5 @@
-os: jammy
-dist: focal
+os: linux
+dist: jammy
 language: java
 jdk: openjdk11
 cache:
