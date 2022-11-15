@@ -16,7 +16,7 @@ before_install:
 services:
 - xvfb
 install: skip # The below script command already does the installation.
-before_script: python3.10 --version
+before_script: python3 --version
 script: mvn clean verify -Pjacoco coveralls:report
 notifications:
   slack:
