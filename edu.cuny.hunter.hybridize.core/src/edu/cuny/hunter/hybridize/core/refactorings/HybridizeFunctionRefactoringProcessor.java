@@ -2,8 +2,6 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -12,16 +10,19 @@ import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
-import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 
@@ -52,12 +53,22 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
-	public HybridizeFunctionRefactoringProcessor(FunctionDef[] functions) {
-		// Convert the FunctionDefs to Functions.
-		Function[] functionArray = Arrays.stream(functions).map(Function::new).toArray(Function[]::new);
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
+		// Force the use of typeshed. It's an experimental feature of PyDev.
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 
-		// Add all of the Functions to the Function set.
-		Collections.addAll(this.getFunctions(), functionArray);
+		// Convert the FunctionDefs to Functions.
+		if (functions != null) {
+			Set<Function> functionSet = this.getFunctions();
+
+			for (FunctionDefinition fd : functionDefinitions) {
+				Function function = new Function(fd, monitor);
+
+				// Add the Function to the Function set.
+				functionSet.add(function);
+			}
+		}
 	}
 
 	@Override
@@ -95,8 +106,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	@Override
-	public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
-			throws CoreException, OperationCanceledException {
+	public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
 		return super.checkInitialConditions(pm);
 	}
 

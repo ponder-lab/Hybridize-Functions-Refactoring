@@ -2,17 +2,23 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
+
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.core.IPythonNature;
+import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.Attribute;
-import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.Name;
-import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.keywordType;
+import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -207,6 +213,8 @@ public class Function extends RefactorableProgramEntity {
 			return this.reduceRetracingParamExists;
 		}
 	}
+  
+	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	private static final ILog LOG = getLog(Function.class);
 
@@ -215,10 +223,9 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Function.HybridizationParameters args = null;
 
-	/**
-	 * The {@link FunctionDef} representing this {@link Function}.
+	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	private FunctionDef functionDef;
+	private FunctionDefinition functionDefinition;
 
 	/**
 	 * True iff this {@link Function} is decorated with tf.function.
@@ -230,11 +237,11 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean likelyHasTensorParameter;
 
-	public Function(FunctionDef functionDef) {
-		this.functionDef = functionDef;
+	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		this.functionDefinition = fd;
 
 		// Find out if it's hybrid via the tf.function decorator.
-		this.computeIsHybrid();
+		this.computeIsHybrid(monitor);
 		this.computeHasTensorParameter();
 
 		// If function is hybrid, then parse the existence of the parameters
@@ -247,49 +254,61 @@ public class Function extends RefactorableProgramEntity {
 		// type hints are used.
 	}
 
-	private void computeIsHybrid() {
-		// FIXME: This is fragile. What we really want to know is whether the decorator is
-		// tensorflow.python.eager.def_function.function, which is "exported" as "function." See https://bit.ly/3O5xpFH
-		// (#47).
+	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
-		decoratorsType[] decoratorArray = this.functionDef.decs;
+		monitor.setTaskName("Computing hybridization ...");
 
-		if (decoratorArray != null)
-			for (decoratorsType decorator : decoratorArray)
-				// If it is not an attribute then we cannot access it this way,
-				// therefore we need the if statement
-				if (decorator.func instanceof Attribute) { // e.g., tf.function
-					Attribute decoratorFunction = (Attribute) decorator.func;
-					if (decoratorFunction.value instanceof Name) {
-						Name decoratorName = (Name) decoratorFunction.value;
-						// We have a viable prefix. Get the attribute.
-						if (decoratorName.id.equals("tf") && decoratorFunction.attr instanceof NameTok) {
-							NameTok decoratorAttribute = (NameTok) decoratorFunction.attr;
-							if (decoratorAttribute.id.equals("function")) {
-								// Found "tf.function."
-								this.isHybrid = true;
-								LOG.info(this + " is hybrid.");
-							}
-						}
-					}
-				} else if (decorator.func instanceof Call) { // e.g., tf.function(...)
-					Call decoratorFunction = (Call) decorator.func;
-					if (decoratorFunction.func instanceof Attribute) {
-						Attribute callFunction = (Attribute) decoratorFunction.func;
-						if (callFunction.value instanceof Name) {
-							Name decoratorName = (Name) callFunction.value;
-							// We have a viable prefix. Get the attribute.
-							if (decoratorName.id.equals("tf") && callFunction.attr instanceof NameTok) {
-								NameTok decoratorAttribute = (NameTok) callFunction.attr;
-								if (decoratorAttribute.id.equals("function")) {
-									// Found tf.function(...)
-									this.isHybrid = true;
-									LOG.info(this + " is hybrid.");
-								}
-							}
-						}
-					}
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
+
+		if (decoratorArray != null) {
+			String containingModuleName = this.getContainingModuleName();
+			File containingFile = this.getContainingFile();
+			IPythonNature nature = this.getNature();
+
+			for (decoratorsType decorator : decoratorArray) {
+				IDocument document = this.getContainingDocument();
+				PySelection selection = getSelection(decorator, document);
+
+				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
+						monitor);
+
+				// if this function is decorated with "tf.function."
+				if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
+					this.isHybrid = true;
+					LOG.info(this + " is hybrid.");
+					return;
 				}
+			}
+		} else {
+			this.isHybrid = false;
+			LOG.info(this + " is not hybrid.");
+		}
+	}
+
+	public IDocument getContainingDocument() {
+		return this.getFunctionDefinition().containingDocument;
+	}
+
+	public IPythonNature getNature() {
+		return this.functionDefinition.nature;
+	}
+
+	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType decoratorFunction = decorator.func;
+		int offset = NodeUtils.getOffset(document, decoratorFunction);
+		String representationString = NodeUtils.getRepresentationString(decoratorFunction);
+		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
+
+		return new PySelection(document, coreTextSelection);
+	}
+
+	public File getContainingFile() {
+		return this.getFunctionDefinition().containingFile;
+	}
+
+	public String getContainingModuleName() {
+		return this.getFunctionDefinition().containingModuleName;
 	}
 
 	/**
@@ -302,24 +321,27 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable functionDef.
+	 * This {@link Function}'s {@link FunctionDefinition}.
 	 *
-	 * @return The {@link FunctionDef} representing this {@link Function}
+	 * @return The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	public FunctionDef getFunctionDef() {
-		return this.functionDef;
+	public FunctionDefinition getFunctionDefinition() {
+		return this.functionDefinition;
 	}
 
 	/**
-	 * Returns the FQN of this {@link Function}.
+	 * Returns the qualified name (QN) of this {@link Function}.
 	 *
 	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
-	 * @return This {@link Function}'s FQN.
+	 * @return This {@link Function}'s QN.
 	 */
 	public String getIdentifer() {
-		String identifier = NodeUtils.getFullRepresentationString(this.functionDef);
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		FunctionDef functionDef = functionDefinition.getFunctionDef();
+
+		String identifier = NodeUtils.getFullRepresentationString(functionDef);
 		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = this.functionDef.parent;
+		SimpleNode parentNode = functionDef.parent;
 
 		int count = 0;
 
@@ -353,8 +375,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100%
-	 * sure.
+	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100% sure.
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
