@@ -2,16 +2,21 @@ package edu.cuny.hunter.hybridize.ui.wizards;
 
 import static edu.cuny.hunter.hybridize.core.messages.Messages.Name;
 
+import java.util.Set;
+
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.internal.ui.refactoring.RefactoringMessages;
 import org.eclipse.jdt.internal.ui.refactoring.actions.RefactoringStarter;
 import org.eclipse.jdt.ui.refactoring.RefactoringSaveHelper;
+import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.ui.refactoring.RefactoringWizard;
 import org.eclipse.swt.widgets.Shell;
-import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
 
 import edu.cuny.citytech.refactoring.common.ui.InputPage;
+import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 
@@ -58,8 +63,9 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		}
 	}
 
-	public static void startRefactoring(FunctionDef[] functions, Shell shell) {
-		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functions);
+	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
+		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functionDefinitions, monitor);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 
 		new RefactoringStarter().activate(wizard, shell, RefactoringMessages.OpenRefactoringWizardAction_refactoring,
