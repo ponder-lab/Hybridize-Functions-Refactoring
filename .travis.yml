@@ -22,7 +22,9 @@ services:
 - xvfb
 install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
-before_script: python3 --version
+before_script: 
+  - python3 --version
+  - python3.10 --version
 script:
 - mkdir "$HOME/git"
 - pushd .
