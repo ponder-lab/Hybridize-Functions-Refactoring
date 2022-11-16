@@ -562,10 +562,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether we have the correct fully qualified name.
+	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
-	public void testFQN() throws Exception {
+	public void testQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(7, functions.size());
