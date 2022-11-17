@@ -26,4 +26,4 @@ Dependency | Update Site
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
-[PyDev]: https://github.com/fabioz/Pydev
+[PyDev]: https://github.com/ponder-lab/Pydev
