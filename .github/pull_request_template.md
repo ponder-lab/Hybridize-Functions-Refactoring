@@ -31,6 +31,7 @@ Fixes # .
 
 ## Final Checks
 
+- [ ] The changes I am proposing meet the expectations I have described above.
 - [ ] I have performed a self-review of my code.
 - [ ] I have commented my code, particularly in hard-to-understand areas.
 - [ ] I have made corresponding changes to the documentation if applicable.
