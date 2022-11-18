@@ -16,6 +16,9 @@ import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.ClassDef;
+import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -106,5 +109,39 @@ public class Util {
 	}
 
 	private Util() {
+	}
+
+	/**
+	 * Returns the qualified name corresponding to the given {@link FunctionDef}.
+	 *
+	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
+	 * @param functionDef The {@link FunctionDef} in question.
+	 * @return The corresponding qualified name per PEP 3155.
+	 */
+	public static String getQualifiedName(FunctionDef functionDef) {
+		String identifier = NodeUtils.getFullRepresentationString(functionDef);
+		StringBuilder ret = new StringBuilder();
+		SimpleNode parentNode = functionDef.parent;
+
+		int count = 0;
+
+		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
+
+			if (count == 0) {
+				ret.append(identifierParent);
+				ret.append(".");
+			} else {
+				ret.insert(0, ".");
+				ret.insert(0, identifierParent);
+			}
+			count++;
+
+			parentNode = parentNode.parent;
+		}
+
+		ret.append(identifier);
+
+		return ret.toString();
 	}
 }

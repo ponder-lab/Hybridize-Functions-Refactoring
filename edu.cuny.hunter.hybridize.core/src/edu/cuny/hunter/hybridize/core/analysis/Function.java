@@ -11,8 +11,6 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
-import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -137,31 +135,7 @@ public class Function extends RefactorableProgramEntity {
 	public String getIdentifer() {
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
-
-		String identifier = NodeUtils.getFullRepresentationString(functionDef);
-		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = functionDef.parent;
-
-		int count = 0;
-
-		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
-			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
-
-			if (count == 0) {
-				ret.append(identifierParent);
-				ret.append(".");
-			} else {
-				ret.insert(0, ".");
-				ret.insert(0, identifierParent);
-			}
-			count++;
-
-			parentNode = parentNode.parent;
-		}
-
-		ret.append(identifier);
-
-		return ret.toString();
+		return Util.getQualifiedName(functionDef);
 	}
 
 	/**
