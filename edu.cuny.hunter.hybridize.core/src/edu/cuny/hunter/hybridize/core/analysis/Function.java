@@ -27,6 +27,7 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
+// TODO: Should override equals() and hashCode().
 public class Function extends RefactorableProgramEntity {
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";

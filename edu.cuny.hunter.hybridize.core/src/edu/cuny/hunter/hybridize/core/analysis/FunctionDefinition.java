@@ -8,6 +8,7 @@ import org.python.pydev.core.IPythonNature;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.visitors.NodeUtils;
 
+// TODO: This class needs documentation.
 public final class FunctionDefinition {
 
 	FunctionDef functionDef;
@@ -47,6 +48,7 @@ public final class FunctionDefinition {
 
 		FunctionDefinition other = (FunctionDefinition) obj;
 
+		// FIXME: I would think we need other members.
 		return Objects.equals(getFunctionDef(), other.getFunctionDef());
 	}
 
