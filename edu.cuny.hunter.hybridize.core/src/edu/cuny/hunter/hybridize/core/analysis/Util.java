@@ -7,6 +7,7 @@ import java.io.File;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -22,6 +23,7 @@ import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.shared_core.string.CoreTextSelection;
 
 public class Util {
 
@@ -143,5 +145,12 @@ public class Util {
 		ret.append(identifier);
 
 		return ret.toString();
+	}
+
+	public static CoreTextSelection getCoreTextSelection(IDocument document, exprType expression) {
+		int offset = NodeUtils.getOffset(document, expression);
+		String representationString = NodeUtils.getRepresentationString(expression);
+		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
+		return coreTextSelection;
 	}
 }

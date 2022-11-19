@@ -14,7 +14,6 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
-import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -102,10 +101,7 @@ public class Function extends RefactorableProgramEntity {
 
 	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType decoratorFunction = decorator.func;
-		int offset = NodeUtils.getOffset(document, decoratorFunction);
-		String representationString = NodeUtils.getRepresentationString(decoratorFunction);
-		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
-
+		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, decoratorFunction);
 		return new PySelection(document, coreTextSelection);
 	}
 
