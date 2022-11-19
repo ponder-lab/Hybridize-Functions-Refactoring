@@ -53,7 +53,7 @@ public class Util {
 
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
-		LOG.info("Found " + pointers.length + "\"pointer(s).\"");
+		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
 			throw new IllegalArgumentException("Can't find declaring module for " + selection + ".");
