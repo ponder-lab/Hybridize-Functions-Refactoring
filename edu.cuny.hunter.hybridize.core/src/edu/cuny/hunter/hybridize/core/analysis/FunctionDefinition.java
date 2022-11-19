@@ -32,7 +32,10 @@ public final class FunctionDefinition {
 
 	@Override
 	public int hashCode() {
-		return getFunctionDef().hashCode();
+		FunctionDef functionDef = this.getFunctionDef();
+
+		return Objects.hash(functionDef, Util.getQualifiedName(functionDef), this.containingModuleName, this.containingFile,
+				this.containingDocument, functionDef.beginColumn, functionDef.beginLine, functionDef.getId());
 	}
 
 	@Override
@@ -48,8 +51,32 @@ public final class FunctionDefinition {
 
 		FunctionDefinition other = (FunctionDefinition) obj;
 
-		// FIXME: I would think we need other members.
-		return Objects.equals(getFunctionDef(), other.getFunctionDef());
+		// first, check if the FunctionDefs are the same.
+		FunctionDef lhsFunctionDef = getFunctionDef();
+		FunctionDef rhsFunctionDef = other.getFunctionDef();
+
+		boolean functionDefsEqual = Objects.equals(lhsFunctionDef, rhsFunctionDef);
+
+		if (functionDefsEqual) {
+			// now, check their qualified names.
+			String lhsQualifiedName = Util.getQualifiedName(lhsFunctionDef);
+			String rhsQualifiedName = Util.getQualifiedName(rhsFunctionDef);
+
+			boolean qualifiedNamesEqual = lhsQualifiedName.equals(rhsQualifiedName);
+
+			// if the qualified names equal.
+			if (qualifiedNamesEqual) {
+				// check other attributes.
+				return Objects.equals(this.containingModuleName, other.containingModuleName)
+						&& Objects.equals(this.containingFile, other.containingFile)
+						&& Objects.equals(this.containingDocument, other.containingDocument)
+						&& Objects.equals(lhsFunctionDef.beginColumn, rhsFunctionDef.beginColumn)
+						&& Objects.equals(lhsFunctionDef.beginLine, rhsFunctionDef.beginColumn)
+						&& Objects.equals(lhsFunctionDef.getId(), rhsFunctionDef.getId());
+			}
+		}
+
+		return false;
 	}
 
 	@Override

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -149,8 +150,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more
-	 * modules in the system than in the project).
+	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more modules in the system
+	 * than in the project).
 	 */
 	protected static void checkSize() {
 		try {
@@ -282,8 +283,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
-	 * given path.
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the given path.
 	 *
 	 * @param path The {@link Path} containing the requirements.txt file.
 	 */
@@ -489,8 +489,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument}
-	 * represents the contents of A.py.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument} represents the contents of
+	 * A.py.
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
 	 */
@@ -806,9 +806,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
-	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
-	 * Tensor argument. Case: Hybrid
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however, since it doesn't have
+	 * a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a Tensor argument. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -821,8 +820,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case:
-	 * hybrid
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
@@ -891,5 +889,104 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// NOTE: Both of these functions have the same qualified name.
 		assertEquals(1, functionNames.size());
+	}
+
+	@Test
+	public void testFunctionEquality() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a") || id.equals("b"));
+		}
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func1 = iterator.next();
+		assertNotNull(func1);
+
+		String identifer1 = func1.getIdentifer();
+		assertNotNull(identifer1);
+
+		assertTrue(iterator.hasNext());
+
+		Function func2 = iterator.next();
+		assertNotNull(func2);
+
+		String identifer2 = func2.getIdentifer();
+		assertNotNull(identifer2);
+
+		assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
+		assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
+
+		assertTrue(!func1.equals(func2));
+		assertTrue(func1.hashCode() != func2.hashCode());
+
+		assertTrue(!func2.equals(func1));
+		assertTrue(func2.hashCode() != func1.hashCode());
+	}
+
+	@Test
+	public void testFunctionEquality2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a"));
+		}
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func1 = iterator.next();
+		assertNotNull(func1);
+
+		String identifer1 = func1.getIdentifer();
+		assertNotNull(identifer1);
+
+		assertTrue(iterator.hasNext());
+
+		Function func2 = iterator.next();
+		assertNotNull(func2);
+
+		String identifer2 = func2.getIdentifer();
+		assertNotNull(identifer2);
+
+		assertTrue(!func1.equals(func2));
+		assertTrue(func1.hashCode() != func2.hashCode());
+
+		assertTrue(!func2.equals(func1));
+		assertTrue(func2.hashCode() != func1.hashCode());
+	}
+
+	@Test
+	public void testFunctionEquality3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func = iterator.next();
+		assertNotNull(func);
+
+		String id = func.getIdentifer();
+		assertNotNull(id);
+		assertTrue(id.equals("a"));
+
+		assertTrue(func.equals(func));
 	}
 }
