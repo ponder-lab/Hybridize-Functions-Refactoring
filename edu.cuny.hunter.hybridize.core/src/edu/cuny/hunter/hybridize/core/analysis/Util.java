@@ -7,6 +7,7 @@ import java.io.File;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -16,9 +17,13 @@ import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.ClassDef;
+import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.shared_core.string.CoreTextSelection;
 
 public class Util {
 
@@ -48,13 +53,13 @@ public class Util {
 
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
-		LOG.info("Found " + pointers.length + "\"pointer(s).\"");
+		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + selection + ".");
+			throw new IllegalArgumentException("Can't find declaring module for " + selection.getSelectedText() + ".");
 
 		if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + selection + ".", pointers.length);
+			throw new TooManyMatchesException("Ambigious definitions found for " + selection.getSelectedText() + ".", pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
 		Definition definition = itemPointer.definition;
@@ -106,5 +111,46 @@ public class Util {
 	}
 
 	private Util() {
+	}
+
+	/**
+	 * Returns the qualified name corresponding to the given {@link FunctionDef}.
+	 *
+	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
+	 * @param functionDef The {@link FunctionDef} in question.
+	 * @return The corresponding qualified name per PEP 3155.
+	 */
+	public static String getQualifiedName(FunctionDef functionDef) {
+		String identifier = NodeUtils.getFullRepresentationString(functionDef);
+		StringBuilder ret = new StringBuilder();
+		SimpleNode parentNode = functionDef.parent;
+
+		int count = 0;
+
+		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
+
+			if (count == 0) {
+				ret.append(identifierParent);
+				ret.append(".");
+			} else {
+				ret.insert(0, ".");
+				ret.insert(0, identifierParent);
+			}
+			count++;
+
+			parentNode = parentNode.parent;
+		}
+
+		ret.append(identifier);
+
+		return ret.toString();
+	}
+
+	public static CoreTextSelection getCoreTextSelection(IDocument document, exprType expression) {
+		int offset = NodeUtils.getOffset(document, expression);
+		String representationString = NodeUtils.getRepresentationString(expression);
+		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
+		return coreTextSelection;
 	}
 }

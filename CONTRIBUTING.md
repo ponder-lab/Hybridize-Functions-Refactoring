@@ -4,7 +4,7 @@ Please see [the wiki][wiki] for more information regarding development.
 
 ## Building
 
-The project includes a maven configuration file using the Tycho plug-in, which is part of the [maven eclipse plugin](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using maven, this plugin depends on https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework, the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse. Others need to be obtained from their respective update sites (see below).
+The project includes a maven configuration file using the Tycho plug-in, which is part of the [maven eclipse plugin](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using maven, this plugin depends on https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework, the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse (choose to "work with" "The Eclipse Project Updates"). Others may need to be obtained from their respective update sites (see below).
 
 ## Dependencies
 
@@ -26,4 +26,4 @@ Dependency | Update Site
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
-[PyDev]: https://github.com/fabioz/Pydev
+[PyDev]: https://github.com/ponder-lab/Pydev

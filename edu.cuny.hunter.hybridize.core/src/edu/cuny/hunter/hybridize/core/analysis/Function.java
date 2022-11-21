@@ -11,13 +11,10 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
-import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.exprType;
-import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -28,6 +25,7 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
+// TODO: Should override equals() and hashCode().
 public class Function extends RefactorableProgramEntity {
 
 	/**
@@ -273,17 +271,21 @@ public class Function extends RefactorableProgramEntity {
 				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
 						monitor);
 
+				LOG.info("Found decorator: " + decoratorFQN + ".");
+
 				// if this function is decorated with "tf.function."
 				if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
 				}
+
+				LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 			}
-		} else {
-			this.isHybrid = false;
-			LOG.info(this + " is not hybrid.");
 		}
+
+		this.isHybrid = false;
+		LOG.info(this + " is not hybrid.");
 	}
 
 	public IDocument getContainingDocument() {
@@ -296,10 +298,7 @@ public class Function extends RefactorableProgramEntity {
 
 	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType decoratorFunction = decorator.func;
-		int offset = NodeUtils.getOffset(document, decoratorFunction);
-		String representationString = NodeUtils.getRepresentationString(decoratorFunction);
-		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
-
+		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, decoratorFunction);
 		return new PySelection(document, coreTextSelection);
 	}
 
@@ -338,31 +337,7 @@ public class Function extends RefactorableProgramEntity {
 	public String getIdentifer() {
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
-
-		String identifier = NodeUtils.getFullRepresentationString(functionDef);
-		StringBuilder ret = new StringBuilder();
-		SimpleNode parentNode = functionDef.parent;
-
-		int count = 0;
-
-		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
-			String identifierParent = NodeUtils.getFullRepresentationString(parentNode);
-
-			if (count == 0) {
-				ret.append(identifierParent);
-				ret.append(".");
-			} else {
-				ret.insert(0, ".");
-				ret.insert(0, identifierParent);
-			}
-			count++;
-
-			parentNode = parentNode.parent;
-		}
-
-		ret.append(identifier);
-
-		return ret.toString();
+		return Util.getQualifiedName(functionDef);
 	}
 
 	/**
