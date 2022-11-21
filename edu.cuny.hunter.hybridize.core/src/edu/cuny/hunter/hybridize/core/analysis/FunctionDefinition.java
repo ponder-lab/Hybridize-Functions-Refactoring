@@ -75,9 +75,9 @@ public final class FunctionDefinition {
 				return Objects.equals(this.containingModuleName, other.containingModuleName)
 						&& Objects.equals(this.containingFile, other.containingFile)
 						&& Objects.equals(this.containingDocument, other.containingDocument)
-						&& Objects.equals(lhsFunctionDef.beginColumn, rhsFunctionDef.beginColumn)
-						&& Objects.equals(lhsFunctionDef.beginLine, rhsFunctionDef.beginLine)
-						&& Objects.equals(lhsId, rhsId);
+						&& lhsFunctionDef.beginColumn == rhsFunctionDef.beginColumn
+						&& lhsFunctionDef.beginLine == rhsFunctionDef.beginLine
+						&& lhsId == rhsId;
 			}
 		}
 
