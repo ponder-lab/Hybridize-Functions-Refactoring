@@ -56,10 +56,10 @@ public class Util {
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + selection + ".");
+			throw new IllegalArgumentException("Can't find declaring module for " + selection.getLineWithoutCommentsOrLiterals() + ".");
 
 		if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + selection + ".", pointers.length);
+			throw new TooManyMatchesException("Ambigious definitions found for " + selection.getLineWithoutCommentsOrLiterals() + ".", pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
 		Definition definition = itemPointer.definition;
