@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -494,7 +495,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
 	 */
-	private Entry<IDocument, Set<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
+	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
 		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile("A");
 
 		// extract function definitions.
@@ -503,8 +504,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		node.accept(functionExtractor);
 
 		// filter out the unavailable ones.
-		Set<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
-				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+		Collection<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toList());
 
 		IDocument document = pythonNodeToDocument.getValue();
 
@@ -520,10 +521,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile();
 
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
-		Set<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
+		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
@@ -618,9 +619,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
 
-		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
+		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
 		assertEquals(1, functionDefinitions.size());
 
@@ -855,8 +856,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 
-		// TODO: Change to 2 after #41 is fixed.
-		assertEquals(1, functions.size());
+		assertEquals(2, functions.size());
 
 		Set<String> functionNames = new HashSet<>();
 
@@ -865,8 +865,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			functionNames.add(func.getIdentifer());
 		}
 
-		// TODO: Change to 2 after #41 is fixed.
-		assertEquals(1, functionNames.size());
+		assertEquals(2, functionNames.size());
 	}
 
 	/**
@@ -877,8 +876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 
-		// TODO: Change to 2 when #41 is fixed.
-		assertEquals(1, functions.size());
+		assertEquals(2, functions.size());
 
 		Set<String> functionNames = new HashSet<>();
 

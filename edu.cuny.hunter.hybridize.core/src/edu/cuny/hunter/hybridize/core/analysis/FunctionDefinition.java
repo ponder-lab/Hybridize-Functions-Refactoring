@@ -33,9 +33,11 @@ public final class FunctionDefinition {
 	@Override
 	public int hashCode() {
 		FunctionDef functionDef = this.getFunctionDef();
+		String qualifiedName = Util.getQualifiedName(functionDef);
+		int id = functionDef.getId();
 
-		return Objects.hash(functionDef, Util.getQualifiedName(functionDef), this.containingModuleName, this.containingFile,
-				this.containingDocument, functionDef.beginColumn, functionDef.beginLine, functionDef.getId());
+		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile, this.containingDocument,
+				functionDef.beginColumn, functionDef.beginLine, id);
 	}
 
 	@Override
@@ -67,12 +69,15 @@ public final class FunctionDefinition {
 			// if the qualified names equal.
 			if (qualifiedNamesEqual) {
 				// check other attributes.
+				int lhsId = lhsFunctionDef.getId();
+				int rhsId = rhsFunctionDef.getId();
+
 				return Objects.equals(this.containingModuleName, other.containingModuleName)
 						&& Objects.equals(this.containingFile, other.containingFile)
 						&& Objects.equals(this.containingDocument, other.containingDocument)
 						&& Objects.equals(lhsFunctionDef.beginColumn, rhsFunctionDef.beginColumn)
-						&& Objects.equals(lhsFunctionDef.beginLine, rhsFunctionDef.beginColumn)
-						&& Objects.equals(lhsFunctionDef.getId(), rhsFunctionDef.getId());
+						&& Objects.equals(lhsFunctionDef.beginLine, rhsFunctionDef.beginLine)
+						&& Objects.equals(lhsId, rhsId);
 			}
 		}
 
