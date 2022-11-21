@@ -437,7 +437,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Override
-	public void genericbefore() throws Exception, MisconfigurationException {
+	public void genericbefore() throws Exception {
 		if (this.fIsVerbose) {
 			System.out.println("\n---------------------------------------------");
 			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
