@@ -85,8 +85,9 @@ public class Function extends RefactorableProgramEntity {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
-				} else
-					LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
+				}
+
+				LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 			}
 		}
 
