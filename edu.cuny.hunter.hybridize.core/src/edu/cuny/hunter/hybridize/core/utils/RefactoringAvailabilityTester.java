@@ -12,7 +12,7 @@ public class RefactoringAvailabilityTester {
 	private static final ILog LOG = getLog(RefactoringAvailabilityTester.class);
 
 	public static boolean isHybridizationAvailable(FunctionDef function) {
-		LOG.info("Testing hybridization availability for: " + Util.getQualifiedName(function));
+		LOG.info("Testing hybridization availability for: " + Util.getQualifiedName(function)) + "()";
 		// TODO
 		return true;
 	}
