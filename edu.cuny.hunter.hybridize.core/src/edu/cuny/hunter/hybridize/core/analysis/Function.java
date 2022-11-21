@@ -78,17 +78,20 @@ public class Function extends RefactorableProgramEntity {
 				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
 						monitor);
 
+				LOG.info("Found decorator: " + decoratorFQN + ".");
+
 				// if this function is decorated with "tf.function."
 				if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
-				}
+				} else
+					LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 			}
-		} else {
-			this.isHybrid = false;
-			LOG.info(this + " is not hybrid.");
 		}
+
+		this.isHybrid = false;
+		LOG.info(this + " is not hybrid.");
 	}
 
 	public IDocument getContainingDocument() {
