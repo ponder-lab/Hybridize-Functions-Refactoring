@@ -132,16 +132,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param ast the ast that defines the module
 	 * @param modName the module name
 	 * @param natureToAdd the nature where the module should be added
+	 * @throws MisconfigurationException on project's misconfiguration.
 	 */
 	@SuppressWarnings("unused")
-	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f) {
+	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f)
+			throws MisconfigurationException {
 		// this is to add the info from the module that we just created...
 		AbstractAdditionalDependencyInfo additionalInfo;
-		try {
-			additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
 		additionalInfo.addAstInfo(ast, new ModulesKey(modName, f), false);
 		ModulesManager modulesManager = (ModulesManager) natureToAdd.getAstManager().getModulesManager();
 		SourceModule mod = (SourceModule) AbstractModule.createModule(ast, f, modName, natureToAdd);
