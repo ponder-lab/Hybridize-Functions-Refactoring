@@ -150,19 +150,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more
 	 * modules in the system than in the project).
 	 */
-	protected static void checkSize() {
-		try {
-			IInterpreterManager interpreterManager = getInterpreterManager();
-			InterpreterInfo info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
-			assertTrue(info.getModulesManager().getSize(true) > 0);
+	protected static void checkSize() throws MisconfigurationException {
+		IInterpreterManager interpreterManager = getInterpreterManager();
+		InterpreterInfo info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
+		assertTrue(info.getModulesManager().getSize(true) > 0);
 
-			int size = ((ASTManager) nature.getAstManager()).getSize();
-			assertTrue("Interpreter size:" + info.getModulesManager().getSize(true) + " should be smaller than project size:" + size + " "
-					+ "(because it contains system+project info)", info.getModulesManager().getSize(true) < size);
-
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		int size = ((ASTManager) nature.getAstManager()).getSize();
+		assertTrue("Interpreter size:" + info.getModulesManager().getSize(true) + " should be smaller than project size:" + size + " "
+				+ "(because it contains system+project info)", info.getModulesManager().getSize(true) < size);
 	}
 
 	private static Entry<SimpleNode, IDocument> createPythonNode(String moduleName, File file, String contents)
@@ -239,15 +234,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Get the default {@link InterpreterInfo}.
 	 *
 	 * @return The default interpreter info for the current manager.
+	 * @throws MisconfigurationException when the interpreter has a misconfiguration.
 	 */
-	protected static InterpreterInfo getDefaultInterpreterInfo() {
+	protected static InterpreterInfo getDefaultInterpreterInfo() throws MisconfigurationException {
 		IInterpreterManager interpreterManager = getInterpreterManager();
 		InterpreterInfo info;
-		try {
-			info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
 		return info;
 	}
 
@@ -367,7 +359,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@BeforeClass
-	public static void setUp() {
+	public static void setUp() throws MisconfigurationException {
 		CompiledModule.COMPILED_MODULES_ENABLED = true;
 		SourceModule.TESTING = true;
 		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
@@ -445,7 +437,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Override
-	public void genericbefore() throws Exception {
+	public void genericbefore() throws Exception, MisconfigurationException {
 		if (this.fIsVerbose) {
 			System.out.println("\n---------------------------------------------");
 			System.out.println("\nTest:" + this.getClass() + "." + this.getName());
@@ -472,11 +464,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		setAstManager(projectPath, projectStub);
 
-		try {
-			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
 
 		checkSize();
 
