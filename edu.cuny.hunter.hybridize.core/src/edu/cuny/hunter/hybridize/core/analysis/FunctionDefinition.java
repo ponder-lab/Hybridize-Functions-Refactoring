@@ -34,10 +34,10 @@ public final class FunctionDefinition {
 	public int hashCode() {
 		FunctionDef functionDef = this.getFunctionDef();
 		String qualifiedName = Util.getQualifiedName(functionDef);
-		int id = functionDef.getId();
+		Integer id = Integer.valueOf(functionDef.getId());
 
 		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile, this.containingDocument,
-				functionDef.beginColumn, functionDef.beginLine, id);
+				Integer.valueOf(functionDef.beginColumn), Integer.valueOf(functionDef.beginLine), id);
 	}
 
 	@Override
