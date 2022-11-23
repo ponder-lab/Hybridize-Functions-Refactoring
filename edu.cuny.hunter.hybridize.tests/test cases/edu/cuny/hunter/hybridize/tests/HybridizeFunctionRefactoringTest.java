@@ -803,7 +803,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function.HybridizationParameters args = func.getArgs();
 			assertNotNull(args);
 
-			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDef());
+			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
 			ArrayList<String> functionParameters = funcParameters.get(actualFunctionName);
 			for (String param : functionParameters) {
 				if (param == "input_signature")

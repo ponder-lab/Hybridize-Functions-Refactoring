@@ -6,12 +6,15 @@ import java.io.File;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -74,69 +77,65 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
-		public HybridizationParameters() {
-			decoratorsType[] decoratorArray = Function.this.functionDef.decs;
-			if (decoratorArray != null)
-				for (decoratorsType decorator : decoratorArray)
-					if (decorator.func instanceof Call) {
-						// If tf.function has parameters it will be of instance Call
-						Call decoratorFunction = (Call) decorator.func;
-						if (decoratorFunction.func instanceof Attribute) {
-							Attribute callFunction = (Attribute) decoratorFunction.func;
-							if (callFunction.value instanceof Name) {
-								Name decoratorName = (Name) callFunction.value;
-								// We have a viable prefix. Get the attribute.
-								if (decoratorName.id.equals("tf") && callFunction.attr instanceof NameTok) {
-									NameTok decoratorAttribute = (NameTok) callFunction.attr;
-									if (decoratorAttribute.id.equals("function")) {
-										// Get the keywords that will contain the parameters,
-										// we use this because we will have keywords if
-										// the parameter has an argument
-										keywordType[] keywordArray = decoratorFunction.keywords;
-										if (keywordArray != null)
-											// Traverse through the keywords
-											for (keywordType keyword : keywordArray)
-												if (keyword.arg instanceof NameTok) {
-													NameTok decoratorArg = (NameTok) keyword.arg;
-													if (decoratorArg.id.equals("func"))
-														// Found parameter func
-														this.funcParamExists = true;
-													else if (decoratorArg.id.equals("input_signature"))
-														// Found parameter input_signature
-														this.inputSignatureParamExists = true;
-													else if (decoratorArg.id.equals("autograph"))
-														// Found parameter autograph
-														this.autoGraphParamExists = true;
-													// The version of the API we are using allows
-													// parameter names jit_compile and
-													// deprecated name experimental_compile
-													else if (decoratorArg.id.equals("jit_compile")
-															|| decoratorArg.id.equals("experimental_compile"))
-														// Found parameter jit_compile/experimental_compile
-														this.jitCompileParamExists = true;
-													// The version of the API we are using allows
-													// parameter names reduce_retracing
-													// and deprecated name experimental_relax_shapes
-													else if (decoratorArg.id.equals("reduce_retracing")
-															|| decoratorArg.id.equals("experimental_relax_shapes"))
-														// Found parameter reduce_retracing
-														// or experimental_relax_shapes
-														this.reduceRetracingParamExists = true;
-													else if (decoratorArg.id.equals("experimental_implements"))
-														// Found parameter experimental_implements
-														this.experimentalImplementsParamExists = true;
-													else if (decoratorArg.id.equals("experimental_autograph_options"))
-														// Found parameter experimental_autograph_options
-														this.experimentalAutographOptionsParamExists = true;
-													else if (decoratorArg.id.equals("experimental_follow_type_hints"))
-														// Found parameter experimental_follow_type_hints
-														this.experimentaFollowTypeHintsParamExists = true;
-												}
-									}
+		public HybridizationParameters() throws TooManyMatchesException, BadLocationException {
+
+			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
+			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
+			if (decoratorArray != null) {
+				NullProgressMonitor monitor = new NullProgressMonitor();
+				String containingModuleName = Function.this.getContainingModuleName();
+				File containingFile = Function.this.getContainingFile();
+				IPythonNature nature = Function.this.getNature();
+
+				for (decoratorsType decorator : decoratorArray) {
+					IDocument document = Function.this.getContainingDocument();
+					PySelection selection = getSelection(decorator, document);
+
+					if (Function.this.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
+
+						if (decorator.func instanceof Call) {
+							Call callFunction = (Call) decorator.func;
+							keywordType[] keywords = callFunction.keywords;
+							for (keywordType keyword : keywords) {
+								if (keyword.arg instanceof NameTok) {
+									NameTok name = (NameTok) keyword.arg;
+									if (name.id.equals("func"))
+										// Found parameter func
+										this.funcParamExists = true;
+									else if (name.id.equals("input_signature"))
+										// Found parameter input_signature
+										this.inputSignatureParamExists = true;
+									else if (name.id.equals("autograph"))
+										// Found parameter autograph
+										this.autoGraphParamExists = true;
+									// The version of the API we are using allows
+									// parameter names jit_compile and
+									// deprecated name experimental_compile
+									else if (name.id.equals("jit_compile") || name.id.equals("experimental_compile"))
+										// Found parameter jit_compile/experimental_compile
+										this.jitCompileParamExists = true;
+									// The version of the API we are using allows
+									// parameter names reduce_retracing
+									// and deprecated name experimental_relax_shapes
+									else if (name.id.equals("reduce_retracing") || name.id.equals("experimental_relax_shapes"))
+										// Found parameter reduce_retracing
+										// or experimental_relax_shapes
+										this.reduceRetracingParamExists = true;
+									else if (name.id.equals("experimental_implements"))
+										// Found parameter experimental_implements
+										this.experimentalImplementsParamExists = true;
+									else if (name.id.equals("experimental_autograph_options"))
+										// Found parameter experimental_autograph_options
+										this.experimentalAutographOptionsParamExists = true;
+									else if (name.id.equals("experimental_follow_type_hints"))
+										// Found parameter experimental_follow_type_hints
+										this.experimentaFollowTypeHintsParamExists = true;
 								}
 							}
 						}
 					}
+				}
+			}
 		}
 
 		/**
@@ -210,7 +209,7 @@ public class Function extends RefactorableProgramEntity {
 		public boolean getReduceRetracingParamExists() {
 			return this.reduceRetracingParamExists;
 		}
-	}
+	};
   
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -221,6 +220,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Function.HybridizationParameters args = null;
 
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -243,15 +243,17 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter();
 
 		// If function is hybrid, then parse the existence of the parameters
-		if (this.isHybrid)
+		if (this.isHybrid) {
+			LOG.info("Checking the hybridization parameters ...");
 			this.args = this.new HybridizationParameters();
+		}
 	}
 
 	private void computeHasTensorParameter() {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
 	}
-
+	
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.setTaskName("Computing hybridization ...");
@@ -286,6 +288,19 @@ public class Function extends RefactorableProgramEntity {
 
 		this.isHybrid = false;
 		LOG.info(this + " is not hybrid.");
+	}
+
+	private boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection, IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
+						monitor);
+
+		LOG.info("Found decorator: " + decoratorFQN + ".");
+
+		// if this function is decorated with "tf.function."
+		if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
+			return true;
+		}
+		return false;
 	}
 
 	public IDocument getContainingDocument() {
