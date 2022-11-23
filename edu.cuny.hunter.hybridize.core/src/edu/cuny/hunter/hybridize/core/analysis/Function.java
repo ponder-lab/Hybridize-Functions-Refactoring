@@ -16,8 +16,8 @@ import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
-import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.exprType;
+import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -209,7 +209,7 @@ public class Function extends RefactorableProgramEntity {
 		public boolean getReduceRetracingParamExists() {
 			return this.reduceRetracingParamExists;
 		}
-	};
+	}
   
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -290,7 +290,8 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info(this + " is not hybrid.");
 	}
 
-	private boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection, IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private static boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
+			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
 						monitor);
 
