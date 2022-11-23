@@ -270,19 +270,14 @@ public class Function extends RefactorableProgramEntity {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
 
-				String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
-						monitor);
-
-				LOG.info("Found decorator: " + decoratorFQN + ".");
 
 				// if this function is decorated with "tf.function."
-				if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
+				if (computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature,
+						monitor)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
 				}
-
-				LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 			}
 		}
 
@@ -290,6 +285,9 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info(this + " is not hybrid.");
 	}
 
+	/**
+	 * True iff this {@link decorator} is a hybridization decorator.
+	 */
 	private static boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
 			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
@@ -301,6 +299,8 @@ public class Function extends RefactorableProgramEntity {
 		if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
 			return true;
 		}
+		
+		LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 		return false;
 	}
 
