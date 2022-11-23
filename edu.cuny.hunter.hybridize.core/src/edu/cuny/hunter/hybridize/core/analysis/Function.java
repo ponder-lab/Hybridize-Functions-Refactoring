@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.Objects;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -28,7 +29,6 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
-// TODO: Should override equals() and hashCode().
 public class Function extends RefactorableProgramEntity {
 
 	/**
@@ -377,5 +377,22 @@ public class Function extends RefactorableProgramEntity {
 	@Override
 	public String toString() {
 		return this.getIdentifer();
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(functionDefinition);
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		Function other = (Function) obj;
+		return Objects.equals(functionDefinition, other.functionDefinition);
 	}
 }

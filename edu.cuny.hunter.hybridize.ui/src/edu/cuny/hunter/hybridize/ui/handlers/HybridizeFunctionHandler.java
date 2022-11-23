@@ -8,6 +8,7 @@ import static org.eclipse.ui.handlers.HandlerUtil.getActiveShellChecked;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -80,7 +81,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 			throw new ExecutionException("Failed to start refactoring.", e);
 		}
 
-		Set<FunctionDef> definitions = functionExtractor.getDefinitions();
+		Collection<FunctionDef> definitions = functionExtractor.getDefinitions();
 
 		for (FunctionDef def : definitions) {
 			FunctionDefinition function = new FunctionDefinition(def, moduleName, file, document, nature);

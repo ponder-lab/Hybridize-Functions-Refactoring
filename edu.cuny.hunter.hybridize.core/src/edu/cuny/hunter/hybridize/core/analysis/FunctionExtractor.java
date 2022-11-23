@@ -1,7 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.Collection;
 
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -14,9 +14,9 @@ import org.python.pydev.parser.jython.ast.VisitorBase;
  */
 public class FunctionExtractor extends VisitorBase {
 
-	private Set<FunctionDef> definitions = new HashSet<>();
+	private Collection<FunctionDef> definitions = new ArrayList<>();
 
-	public Set<FunctionDef> getDefinitions() {
+	public Collection<FunctionDef> getDefinitions() {
 		return this.definitions;
 	}
 
