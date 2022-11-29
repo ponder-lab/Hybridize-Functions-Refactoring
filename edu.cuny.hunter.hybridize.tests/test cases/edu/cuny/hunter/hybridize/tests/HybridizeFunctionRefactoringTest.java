@@ -626,8 +626,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		// TODO: We need put `!` on args.getAutoGraphParamExists() once we fix #55
-		assertTrue(!args.getInputSignatureParamExists() & args.getAutoGraphParamExists() && args.getJitCompileParamExists()
+		assertTrue(!args.getInputSignatureParamExists() & !args.getAutoGraphParamExists() && args.getJitCompileParamExists()
 				&& !args.getReduceRetracingParamExists() && !args.getExpImplementsParamExists() && !args.getExpAutographOptParamExists()
 				&& !args.getExpTypeHintsParamExists() && !args.getFuncParamExists());
 

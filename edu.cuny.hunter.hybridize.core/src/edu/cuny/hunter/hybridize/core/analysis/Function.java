@@ -80,60 +80,63 @@ public class Function extends RefactorableProgramEntity {
 
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
-			if (decoratorArray != null) {
-				String containingModuleName = Function.this.getContainingModuleName();
-				File containingFile = Function.this.getContainingFile();
-				IPythonNature nature = Function.this.getNature();
 
-				for (decoratorsType decorator : decoratorArray) {
-					IDocument document = Function.this.getContainingDocument();
-					PySelection selection = getSelection(decorator, document);
+			String containingModuleName = Function.this.getContainingModuleName();
+			File containingFile = Function.this.getContainingFile();
+			IPythonNature nature = Function.this.getNature();
 
-					if (Function.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
+			decoratorsType tfFunctionDecorator = null;
 
-						if (decorator.func instanceof Call) {
-							Call callFunction = (Call) decorator.func;
-							keywordType[] keywords = callFunction.keywords;
-							for (keywordType keyword : keywords) {
-								if (keyword.arg instanceof NameTok) {
-									NameTok name = (NameTok) keyword.arg;
-									if (name.id.equals("func"))
-										// Found parameter func
-										this.funcParamExists = true;
-									else if (name.id.equals("input_signature"))
-										// Found parameter input_signature
-										this.inputSignatureParamExists = true;
-									else if (name.id.equals("autograph"))
-										// Found parameter autograph
-										this.autoGraphParamExists = true;
-									// The version of the API we are using allows
-									// parameter names jit_compile and
-									// deprecated name experimental_compile
-									else if (name.id.equals("jit_compile") || name.id.equals("experimental_compile"))
-										// Found parameter jit_compile/experimental_compile
-										this.jitCompileParamExists = true;
-									// The version of the API we are using allows
-									// parameter names reduce_retracing
-									// and deprecated name experimental_relax_shapes
-									else if (name.id.equals("reduce_retracing") || name.id.equals("experimental_relax_shapes"))
-										// Found parameter reduce_retracing
-										// or experimental_relax_shapes
-										this.reduceRetracingParamExists = true;
-									else if (name.id.equals("experimental_implements"))
-										// Found parameter experimental_implements
-										this.experimentalImplementsParamExists = true;
-									else if (name.id.equals("experimental_autograph_options"))
-										// Found parameter experimental_autograph_options
-										this.experimentalAutographOptionsParamExists = true;
-									else if (name.id.equals("experimental_follow_type_hints"))
-										// Found parameter experimental_follow_type_hints
-										this.experimentaFollowTypeHintsParamExists = true;
-								}
-							}
+			for (decoratorsType decorator : decoratorArray) {
+				IDocument document = Function.this.getContainingDocument();
+				PySelection selection = getSelection(decorator, document);
+
+				if (Function.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor))
+					tfFunctionDecorator = decorator;
+
+			}
+
+			if (tfFunctionDecorator != null)
+				if (tfFunctionDecorator.func instanceof Call) {
+					Call callFunction = (Call) tfFunctionDecorator.func;
+					keywordType[] keywords = callFunction.keywords;
+					for (keywordType keyword : keywords) {
+						if (keyword.arg instanceof NameTok) {
+							NameTok name = (NameTok) keyword.arg;
+							if (name.id.equals("func"))
+								// Found parameter func
+								this.funcParamExists = true;
+							else if (name.id.equals("input_signature"))
+								// Found parameter input_signature
+								this.inputSignatureParamExists = true;
+							else if (name.id.equals("autograph"))
+								// Found parameter autograph
+								this.autoGraphParamExists = true;
+							// The version of the API we are using allows
+							// parameter names jit_compile and
+							// deprecated name experimental_compile
+							else if (name.id.equals("jit_compile") || name.id.equals("experimental_compile"))
+								// Found parameter jit_compile/experimental_compile
+								this.jitCompileParamExists = true;
+							// The version of the API we are using allows
+							// parameter names reduce_retracing
+							// and deprecated name experimental_relax_shapes
+							else if (name.id.equals("reduce_retracing") || name.id.equals("experimental_relax_shapes"))
+								// Found parameter reduce_retracing
+								// or experimental_relax_shapes
+								this.reduceRetracingParamExists = true;
+							else if (name.id.equals("experimental_implements"))
+								// Found parameter experimental_implements
+								this.experimentalImplementsParamExists = true;
+							else if (name.id.equals("experimental_autograph_options"))
+								// Found parameter experimental_autograph_options
+								this.experimentalAutographOptionsParamExists = true;
+							else if (name.id.equals("experimental_follow_type_hints"))
+								// Found parameter experimental_follow_type_hints
+								this.experimentaFollowTypeHintsParamExists = true;
 						}
 					}
 				}
-			}
 		}
 
 		/**
