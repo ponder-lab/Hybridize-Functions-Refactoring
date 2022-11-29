@@ -639,12 +639,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testComputeParameters2() throws Exception {
 		Set<Function> functions = this.getFunctions();
+		
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-
-		Function.HybridizationParameters args = function.new HybridizationParameters();
+		
+		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
 		assertTrue(args.getExpAutographOptParamExists() && !args.getAutoGraphParamExists() && !args.getJitCompileParamExists()

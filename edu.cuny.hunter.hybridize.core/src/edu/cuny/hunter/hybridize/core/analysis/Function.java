@@ -7,7 +7,6 @@ import java.util.Objects;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
@@ -77,12 +76,11 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
-		public HybridizationParameters() throws TooManyMatchesException, BadLocationException {
+		public HybridizationParameters(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 			if (decoratorArray != null) {
-				NullProgressMonitor monitor = new NullProgressMonitor();
 				String containingModuleName = Function.this.getContainingModuleName();
 				File containingFile = Function.this.getContainingFile();
 				IPythonNature nature = Function.this.getNature();
@@ -91,7 +89,7 @@ public class Function extends RefactorableProgramEntity {
 					IDocument document = Function.this.getContainingDocument();
 					PySelection selection = getSelection(decorator, document);
 
-					if (Function.this.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
+					if (Function.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
 
 						if (decorator.func instanceof Call) {
 							Call callFunction = (Call) decorator.func;
@@ -210,7 +208,7 @@ public class Function extends RefactorableProgramEntity {
 			return this.reduceRetracingParamExists;
 		}
 	}
-  
+
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	private static final ILog LOG = getLog(Function.class);
@@ -218,7 +216,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
-	private Function.HybridizationParameters args = null;
+	private Function.HybridizationParameters args;
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -245,7 +243,7 @@ public class Function extends RefactorableProgramEntity {
 		// If function is hybrid, then parse the existence of the parameters
 		if (this.isHybrid) {
 			LOG.info("Checking the hybridization parameters ...");
-			this.args = this.new HybridizationParameters();
+			this.args = this.new HybridizationParameters(monitor);
 		}
 	}
 
@@ -253,7 +251,7 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
 	}
-	
+
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.setTaskName("Computing hybridization ...");
@@ -270,10 +268,8 @@ public class Function extends RefactorableProgramEntity {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
 
-
 				// if this function is decorated with "tf.function."
-				if (computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature,
-						monitor)) {
+				if (computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
@@ -288,10 +284,9 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link decorator} is a hybridization decorator.
 	 */
-	private static boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
-			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
-		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature,
-						monitor);
+	private static boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile,
+			PySelection selection, IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature, monitor);
 
 		LOG.info("Found decorator: " + decoratorFQN + ".");
 
@@ -299,7 +294,7 @@ public class Function extends RefactorableProgramEntity {
 		if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
 			return true;
 		}
-		
+
 		LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 		return false;
 	}
