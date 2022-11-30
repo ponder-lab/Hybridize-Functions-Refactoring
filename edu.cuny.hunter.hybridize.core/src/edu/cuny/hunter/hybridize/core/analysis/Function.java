@@ -15,6 +15,8 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
+import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -57,6 +59,12 @@ public class Function extends RefactorableProgramEntity {
 	private void computeHasTensorParameter() {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		
+		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
+
+		TypeInfo typeInfo = NodeUtils.getTypeForParameterFromAST("x", functionDef);
+		System.out.println(typeInfo);
 	}
 
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
