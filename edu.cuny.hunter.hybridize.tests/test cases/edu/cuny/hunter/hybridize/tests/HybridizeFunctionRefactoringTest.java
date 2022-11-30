@@ -476,13 +476,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument} represents the contents of
-	 * A.py.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file. The {@link IDocument} represents the contents of the test file.
 	 *
-	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
+	 * @return The refactoring available {@link FunctionDef}s in the test file represented by the {@link IDocument}.
 	 */
-	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
-		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile("A");
+	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(String filename) throws Exception {
+		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile(filename);
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
@@ -503,17 +502,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @return The set of {@link Function}s analyzed.
 	 */
-	private Set<Function> getFunctions() throws Exception {
+	private Set<Function> getFunctions(String filename) throws Exception {
 		NullProgressMonitor monitor = new NullProgressMonitor();
-		File inputTestFile = this.getInputTestFile();
-
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
+		File inputTestFile = this.getInputTestFile(filename);
+		
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions(filename);
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
+				.map(f -> new FunctionDefinition(f, filename, inputTestFile, document, nature)).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, monitor);
 
@@ -526,12 +525,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Return the {@link File} representing A.py.
+	 * Return the {@link File} representing test file.
 	 *
-	 * @return The {@link File} representing A.py.
+	 * @return The {@link File} representing test file.
 	 */
-	private File getInputTestFile() {
-		String fileName = this.getInputTestFileName("A");
+	private File getInputTestFile(String filename) {
+		String fileName = this.getInputTestFileName(filename);
 		Path path = getAbsolutionPath(fileName);
 		File file = path.toFile();
 		assertTrue("Test file must exist.", file.exists());
@@ -553,7 +552,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testQN() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(7, functions.size());
 
@@ -605,7 +604,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions("A");
 
 		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
@@ -627,7 +626,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		File inputTestFile = this.getInputTestFile();
+		File inputTestFile = this.getInputTestFile("A");
 
 		IDocument document = documentToAvailableFunctionDefinitions.getKey();
 
@@ -648,7 +647,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -661,7 +660,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid2() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -674,7 +673,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid3() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(2, functions.size()); // one function is for the decorator.
 		Function function = functions.iterator().next();
@@ -687,7 +686,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid4() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
@@ -700,7 +699,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid5() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
@@ -713,7 +712,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid6() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
@@ -726,7 +725,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid7() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -739,7 +738,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid8() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -752,7 +751,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
 
@@ -767,7 +766,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleAttributes() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
 
@@ -782,7 +781,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleDecorators() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
 
@@ -798,7 +797,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -811,7 +810,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(3, functions.size());
 
@@ -826,7 +825,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -839,7 +838,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 
 		assertEquals(2, functions.size());
@@ -859,7 +858,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName2() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 
 		assertEquals(2, functions.size());
@@ -877,7 +876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Test
 	public void testFunctionEquality() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
 
@@ -918,7 +917,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Test
 	public void testFunctionEquality2() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
 
@@ -956,7 +955,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Test
 	public void testFunctionEquality3() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 
