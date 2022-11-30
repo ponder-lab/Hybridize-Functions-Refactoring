@@ -81,20 +81,19 @@ public class Function extends RefactorableProgramEntity {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
-			String containingModuleName = Function.this.getContainingModuleName();
-			File containingFile = Function.this.getContainingFile();
-			IPythonNature nature = Function.this.getNature();
-
+			// Will contain the last tf.function decorator
 			decoratorsType tfFunctionDecorator = null;
-
+			
+			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
 
-				if (Function.computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor))
+				// Save the hybrid decorator
+				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile,
+						selection, Function.this.nature, monitor))
 					tfFunctionDecorator = decorator;
-
-			}
+			} // We expect to have the last tf.function decorator in {@link tfFunctionDecorator}
 
 			if (tfFunctionDecorator != null)
 				if (tfFunctionDecorator.func instanceof Call) {
@@ -140,70 +139,70 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * Accessor for private member variable autograph.
+		 * True iff this {@link decoratorType} has parameter autograph. 
 		 *
-		 * @return True iff this {@link Function} has parameter autograph.
+		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
 		public boolean getAutoGraphParamExists() {
 			return this.autoGraphParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable experimental_autograph_options.
+		 * True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 *
-		 * @return True iff this {@link Function} has parameter experimental_autograph_options.
+		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
 		public boolean getExpAutographOptParamExists() {
 			return this.experimentalAutographOptionsParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable experimental_implements.
+		 * True iff this {@link decoratorType} has parameter experimental_implements.
 		 *
-		 * @return True iff this {@link Function} has parameter experimental_implements.
+		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
 		public boolean getExpImplementsParamExists() {
 			return this.experimentalImplementsParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable experimental_follow_type_hints.
+		 * True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 *
-		 * @return True iff this {@link Function} has parameter experimental_follow_type_hints.
+		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean getExpTypeHintsParamExists() {
 			return this.experimentaFollowTypeHintsParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable func.
+		 * True iff this {@link decoratorType} has parameter func.
 		 *
-		 * @return True iff this {@link Function} has parameter func.
+		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
 		public boolean getFuncParamExists() {
 			return this.funcParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable input_signature.
+		 * True iff this {@link decoratorType} has parameter input_signature.
 		 *
-		 * @return True iff this {@link Function} has parameter input_signature.
+		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
 		public boolean getInputSignatureParamExists() {
 			return this.inputSignatureParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable jit_compile.
+		 * True iff this {@link decoratorType} has parameter jit_compile.
 		 *
-		 * @return True iff this {@link Function} has parameter jit_compile.
+		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
 		public boolean getJitCompileParamExists() {
 			return this.jitCompileParamExists;
 		}
 
 		/**
-		 * Accessor for private member variable reduce_retracing.
+		 * True iff this {@link decoratorType} has parameter reduce_retracing.
 		 *
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
@@ -217,7 +216,7 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
-	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
+	 * Contains the information about {@link Function} tf.function's parameters.
 	 */
 	private Function.HybridizationParameters args;
 
@@ -235,6 +234,21 @@ public class Function extends RefactorableProgramEntity {
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private boolean likelyHasTensorParameter;
+	
+	/**
+	 * Contains the module name of {@link FunctionDefinition}.
+	 */
+	private String containingModuleName;
+	
+	/**
+	 * Contains the file of {@link FunctionDefinition}.
+	 */
+	private File containingFile;
+	
+	/**
+	 * Contains the nature of {@link FunctionDefinition}.
+	 */
+	private IPythonNature nature;
 
 	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDefinition = fd;
@@ -263,16 +277,16 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
-			String containingModuleName = this.getContainingModuleName();
-			File containingFile = this.getContainingFile();
-			IPythonNature nature = this.getNature();
+			this.containingModuleName = this.getContainingModuleName();
+			this.containingFile = this.getContainingFile();
+			this.nature = this.getNature();
 
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
 
 				// if this function is decorated with "tf.function."
-				if (computeIsHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor)) {
+				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					return;
@@ -285,9 +299,19 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * True iff this {@link decorator} is a hybridization decorator.
+	 * True iff the given decorator is a hybridization decorator.
+	 *
+	 * @param decorator The {@link decoratorsType} in question.
+	 * @param containingModName The name of the module where the decorator is used.
+	 * @param containingFile The {@link File} where the containingModName is defined.
+	 * @param containingSelection The {@link PySelection} containing the decorator.
+	 * @param nature The {@link IPythonNature} to use.
+	 * @param monitor The IProgressMonitor to use.
+	 * @return The FQN of the given {@link decoratorsType}.
+	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
+	 * @throws BadLocationException When the containing entities cannot be parsed.
 	 */
-	private static boolean computeIsHybrid(decoratorsType decorator, String containingModuleName, File containingFile,
+	private static boolean isHybrid(decoratorsType decorator, String containingModuleName, File containingFile,
 			PySelection selection, IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature, monitor);
 
