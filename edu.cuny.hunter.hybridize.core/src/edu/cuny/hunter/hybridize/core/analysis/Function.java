@@ -13,6 +13,7 @@ import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -59,12 +60,32 @@ public class Function extends RefactorableProgramEntity {
 	private void computeHasTensorParameter() {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
-		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
-		
 		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
 
-		TypeInfo typeInfo = NodeUtils.getTypeForParameterFromAST("x", functionDef);
-		System.out.println(typeInfo);
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		argumentsType args = functionDef.args;
+
+		if (args != null) {
+			exprType[] actualArgs = args.args;
+
+			if (actualArgs != null) {
+				// for each parameter.
+				for (exprType argType : actualArgs) {
+					// try to get its "type."
+					String representationString = NodeUtils.getRepresentationString(argType);
+					TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(representationString, functionDef);
+					exprType typeExpr = argTypeInfo.getNode();
+
+					// TODO: Look up the definition of typeExpr.
+					// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
+					// if that's set, then, set likelyHasTensorParameter to true.
+					// this is a special case.
+				}
+			}
+		}
+
+		this.likelyHasTensorParameter = false;
+		LOG.info(this + " does not likely have a tensor parameter.");
 	}
 
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
