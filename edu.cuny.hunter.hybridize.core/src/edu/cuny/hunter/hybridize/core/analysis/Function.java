@@ -37,42 +37,42 @@ public class Function extends RefactorableProgramEntity {
 	public class HybridizationParameters {
 
 		/**
-		 * True iff this {@link Function} has argument autograph.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 */
 		private boolean autoGraphParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument experimental_follow_type_hints.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 */
 		private boolean experimentaFollowTypeHintsParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument experimental_autograph_options.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
 		 */
 		private boolean experimentalAutographOptionsParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument experimental_implements.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
 		 */
 		private boolean experimentalImplementsParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument func.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
 		 */
 		private boolean funcParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument input_signature.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
 		 */
 		private boolean inputSignatureParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument jit_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
-		 * True iff this {@link Function} has argument reduce_retracing.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
 		 */
 		private boolean reduceRetracingParamExists;
 
@@ -93,7 +93,7 @@ public class Function extends RefactorableProgramEntity {
 				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile,
 						selection, Function.this.nature, monitor))
 					tfFunctionDecorator = decorator;
-			} // We expect to have the last tf.function decorator in {@link tfFunctionDecorator}
+			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
 			if (tfFunctionDecorator != null)
 				if (tfFunctionDecorator.func instanceof Call) {
@@ -139,7 +139,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter autograph. 
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
@@ -148,7 +148,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter experimental_autograph_options.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
@@ -157,7 +157,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter experimental_implements.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
@@ -166,7 +166,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
@@ -175,7 +175,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter func.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter has parameter func.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
@@ -184,7 +184,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter input_signature.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
@@ -193,7 +193,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter jit_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
@@ -202,7 +202,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link decoratorType} has parameter reduce_retracing.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
 		 *
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
@@ -216,7 +216,7 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
-	 * Contains the information about {@link Function} tf.function's parameters.
+	 * Information about this {@link Function} tf.function's parameters.
 	 */
 	private Function.HybridizationParameters args;
 
@@ -236,17 +236,17 @@ public class Function extends RefactorableProgramEntity {
 	private boolean likelyHasTensorParameter;
 	
 	/**
-	 * Contains the module name of {@link FunctionDefinition}.
+	 * Module name of {@link FunctionDefinition}.
 	 */
 	private String containingModuleName;
 	
 	/**
-	 * Contains the file of {@link FunctionDefinition}.
+	 * File of {@link FunctionDefinition}.
 	 */
 	private File containingFile;
 	
 	/**
-	 * Contains the nature of {@link FunctionDefinition}.
+	 * Nature of {@link FunctionDefinition}.
 	 */
 	private IPythonNature nature;
 
