@@ -258,7 +258,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter();
 
 		// If function is hybrid, then parse the existence of the parameters
-		if (this.isHybrid) {
+		if (this.isHybrid()) {
 			LOG.info("Checking the hybridization parameters ...");
 			this.args = this.new HybridizationParameters(monitor);
 		}
