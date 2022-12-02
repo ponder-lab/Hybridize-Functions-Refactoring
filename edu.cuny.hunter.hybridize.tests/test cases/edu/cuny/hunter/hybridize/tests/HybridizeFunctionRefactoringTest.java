@@ -638,12 +638,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testComputeParameters2() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		
+
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		
+
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
@@ -777,29 +777,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		// Needs to be an ArrayList because we are testing a tf.function with multiple
-		// parameters.
-		Map<String, ArrayList<String>> funcParameters = new HashMap<>();
+		Function.HybridizationParameters args = function.getArgs();
+		assertNotNull(args);
 
-		ArrayList<String> paramNames = new ArrayList<>();
-		paramNames.add("input_signature");
-		paramNames.add("autograph");
-		funcParameters.put("func", paramNames);
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			Function.HybridizationParameters args = func.getArgs();
-			assertNotNull(args);
-
-			String actualFunctionName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
-			ArrayList<String> functionParameters = funcParameters.get(actualFunctionName);
-			for (String param : functionParameters) {
-				if (param == "input_signature")
-					assertTrue(args.inputSignatureParamExists());
-				if (param == "autograph")
-					assertTrue(args.autoGraphParamExists());
-			}
-		}
+		assertTrue(args.inputSignatureParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
+				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
 	}
 
 	/**
