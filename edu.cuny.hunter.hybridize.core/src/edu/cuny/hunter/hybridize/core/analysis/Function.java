@@ -36,6 +36,26 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public class HybridizationParameters {
 
+		private static final String EXPERIMENTAL_FOLLOW_TYPE_HINTS = "experimental_follow_type_hints";
+
+		private static final String EXPERIMENTAL_AUTOGRAPH_OPTIONS = "experimental_autograph_options";
+
+		private static final String EXPERIMENTAL_IMPLEMENTS = "experimental_implements";
+
+		private static final String REDUCE_RETRACING = "reduce_retracing";
+
+		private static final String EXPERIMENTAL_RELAX_SHAPES = "experimental_relax_shapes";
+
+		private static final String EXPERIMENTAL_COMPILE = "experimental_compile";
+
+		private static final String JIT_COMPILE = "jit_compile";
+
+		private static final String AUTOGRAPH = "autograph";
+
+		private static final String INPUT_SIGNATURE = "input_signature";
+
+		private static final String FUNC = "func";
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 */
@@ -77,65 +97,67 @@ public class Function extends RefactorableProgramEntity {
 		private boolean reduceRetracingParamExists;
 
 		public HybridizationParameters(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
-
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 			// Will contain the last tf.function decorator
 			decoratorsType tfFunctionDecorator = null;
-			
+
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
 
 				// Save the hybrid decorator
-				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile,
-						selection, Function.this.nature, monitor))
+				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
+						Function.this.nature, monitor))
 					tfFunctionDecorator = decorator;
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
 			if (tfFunctionDecorator != null)
+				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
+					// We only care about the actual keywords for now.
+					// TODO: Parse positional arguments (#108).
 					keywordType[] keywords = callFunction.keywords;
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
 							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals("func"))
+							if (name.id.equals(FUNC))
 								// Found parameter func
 								this.funcParamExists = true;
-							else if (name.id.equals("input_signature"))
+							else if (name.id.equals(INPUT_SIGNATURE))
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
-							else if (name.id.equals("autograph"))
+							else if (name.id.equals(AUTOGRAPH))
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
 							// The version of the API we are using allows
 							// parameter names jit_compile and
 							// deprecated name experimental_compile
-							else if (name.id.equals("jit_compile") || name.id.equals("experimental_compile"))
+							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 							// The version of the API we are using allows
 							// parameter names reduce_retracing
 							// and deprecated name experimental_relax_shapes
-							else if (name.id.equals("reduce_retracing") || name.id.equals("experimental_relax_shapes"))
+							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-							else if (name.id.equals("experimental_implements"))
+							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals("experimental_autograph_options"))
+							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals("experimental_follow_type_hints"))
+							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
 						}
 					}
-				}
+				} // else, tf.function is used without parameters.
 		}
 
 		/**
@@ -143,7 +165,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
-		public boolean getAutoGraphParamExists() {
+		public boolean autoGraphParamExists() {
 			return this.autoGraphParamExists;
 		}
 
@@ -152,7 +174,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
-		public boolean getExpAutographOptParamExists() {
+		public boolean experimentalAutographOptParamExists() {
 			return this.experimentalAutographOptionsParamExists;
 		}
 
@@ -161,7 +183,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
-		public boolean getExpImplementsParamExists() {
+		public boolean experimentalImplementsParamExists() {
 			return this.experimentalImplementsParamExists;
 		}
 
@@ -170,7 +192,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
-		public boolean getExpTypeHintsParamExists() {
+		public boolean experimentalTypeHintsParamExists() {
 			return this.experimentaFollowTypeHintsParamExists;
 		}
 
@@ -179,7 +201,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
-		public boolean getFuncParamExists() {
+		public boolean funcParamExists() {
 			return this.funcParamExists;
 		}
 
@@ -188,7 +210,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
-		public boolean getInputSignatureParamExists() {
+		public boolean inputSignatureParamExists() {
 			return this.inputSignatureParamExists;
 		}
 
@@ -197,7 +219,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
-		public boolean getJitCompileParamExists() {
+		public boolean jitCompileParamExists() {
 			return this.jitCompileParamExists;
 		}
 
@@ -206,7 +228,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
-		public boolean getReduceRetracingParamExists() {
+		public boolean reduceRetracingParamExists() {
 			return this.reduceRetracingParamExists;
 		}
 	}
@@ -234,21 +256,21 @@ public class Function extends RefactorableProgramEntity {
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private boolean likelyHasTensorParameter;
-	
+
 	/**
 	 * Module name of {@link FunctionDefinition}.
 	 */
-	private String containingModuleName;
-	
+	private String containingModuleName = this.getContainingModuleName();
+
 	/**
 	 * File of {@link FunctionDefinition}.
 	 */
-	private File containingFile;
-	
+	private File containingFile = this.getContainingFile();
+
 	/**
 	 * Nature of {@link FunctionDefinition}.
 	 */
-	private IPythonNature nature;
+	private IPythonNature nature = this.getNature();
 
 	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDefinition = fd;
@@ -277,10 +299,6 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
-			this.containingModuleName = this.getContainingModuleName();
-			this.containingFile = this.getContainingFile();
-			this.nature = this.getNature();
-
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
@@ -311,8 +329,8 @@ public class Function extends RefactorableProgramEntity {
 	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
 	 */
-	private static boolean isHybrid(decoratorsType decorator, String containingModuleName, File containingFile,
-			PySelection selection, IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private static boolean isHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
+			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature, monitor);
 
 		LOG.info("Found decorator: " + decoratorFQN + ".");
