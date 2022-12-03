@@ -302,7 +302,7 @@ public class Function extends RefactorableProgramEntity {
 			this.containingModuleName = this.getContainingModuleName();
 			this.containingFile = this.getContainingFile();
 			this.nature = this.getNature();
-			
+
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
@@ -340,9 +340,8 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info("Found decorator: " + decoratorFQN + ".");
 
 		// if this function is decorated with "tf.function."
-		if (decoratorFQN.equals(TF_FUNCTION_FQN)) {
+		if (decoratorFQN.equals(TF_FUNCTION_FQN))
 			return true;
-		}
 
 		LOG.info(decoratorFQN + " does not equal " + TF_FUNCTION_FQN + ".");
 		return false;
