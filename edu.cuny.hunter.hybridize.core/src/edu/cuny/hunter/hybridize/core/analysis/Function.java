@@ -260,17 +260,17 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Module name of {@link FunctionDefinition}.
 	 */
-	private String containingModuleName = this.getContainingModuleName();
+	private String containingModuleName;
 
 	/**
 	 * File of {@link FunctionDefinition}.
 	 */
-	private File containingFile = this.getContainingFile();
+	private File containingFile;
 
 	/**
 	 * Nature of {@link FunctionDefinition}.
 	 */
-	private IPythonNature nature = this.getNature();
+	private IPythonNature nature;
 
 	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		this.functionDefinition = fd;
@@ -299,6 +299,10 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
+			this.containingModuleName = this.getContainingModuleName();
+			this.containingFile = this.getContainingFile();
+			this.nature = this.getNature();
+			
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
 				PySelection selection = getSelection(decorator, document);
