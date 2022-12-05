@@ -307,8 +307,11 @@ public class Function extends RefactorableProgramEntity {
 					String representationString = NodeUtils.getRepresentationString(argType);
 					TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(representationString, functionDef);
 					exprType typeExpr = argTypeInfo.getNode();
+					System.out.println(typeExpr);
 
-					// TODO: Look up the definition of typeExpr.
+					// Look up the definition of typeExpr.
+//					Util.getFullyQualifiedName(null, representationString, containingFile, null, nature, null)
+
 					// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
 					// if that's set, then, set likelyHasTensorParameter to true.
 					// this is a special case.
