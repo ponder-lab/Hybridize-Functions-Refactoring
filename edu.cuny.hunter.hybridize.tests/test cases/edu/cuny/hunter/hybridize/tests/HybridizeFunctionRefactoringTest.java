@@ -449,28 +449,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringCore.getUndoManager().flush();
 
-		String inputTestFileName = this.getInputTestFileName("A");
-		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+		// Using the A as a base to get the directory and have the information of all the files.
+		File file = this.getInputTestFile("A");
+		File parent = file.getParentFile();
 
-		boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
-		assertTrue("Source file must be valid.", validSourceFile);
+		// Iterate over the files in the directory
+		for (File p : parent.listFiles()) {
+			String fileNameWithExtension = p.getName();
+			String fileName = ((fileNameWithExtension.contains("."))
+					? fileNameWithExtension.substring(0, fileNameWithExtension.indexOf(".")).trim()
+					: fileNameWithExtension);
+			if (fileName.matches("[A-Z]")) {
+				String inputTestFileName = this.getInputTestFileName(fileName);
 
-		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
+				Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
 
-		// Run the Python test file.
-		installRequirements(inputTestFileDirectoryAbsolutePath);
-		runPython(inputTestFileAbsolutionPath);
+				boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
+				assertTrue("Source file must be valid.", validSourceFile);
 
-		// Project Python path.
-		String projectPath = inputTestFileDirectoryAbsolutePath.toString();
+				Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
 
-		ProjectStub projectStub = new ProjectStub("TestProject", projectPath, new IProject[0], new IProject[0]);
+				// Run the Python test file.
+				installRequirements(inputTestFileDirectoryAbsolutePath);
+				runPython(inputTestFileAbsolutionPath);
 
-		setAstManager(projectPath, projectStub);
+				// Project Python path.
+				String projectPath = inputTestFileDirectoryAbsolutePath.toString();
 
-		AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+				ProjectStub projectStub = new ProjectStub("TestProject", projectPath, new IProject[0], new IProject[0]);
 
-		checkSize();
+				setAstManager(projectPath, projectStub);
+
+				AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+
+				checkSize();
+			}
+		}
 
 		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
 		// above.
@@ -479,7 +493,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file. The {@link IDocument} represents the contents of the test file.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file. The {@link IDocument} represents the contents of the
+	 * test file.
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in the test file represented by the {@link IDocument}.
 	 */
@@ -508,8 +523,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private Set<Function> getFunctions(String filename) throws Exception {
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile(filename);
-		
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions(filename);
+
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+				.getDocumentToAvailableFunctionDefinitions(filename);
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
@@ -555,15 +571,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testAmbiguousDefinition() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function function : functions) {
-			assertNotNull(function);
-			assertFalse(function.isHybrid());
-			assertFalse(function.likelyHasTensorParameter());
-
+			for (Function function : functions) {
+				assertNotNull(function);
+				assertFalse(function.isHybrid());
+				assertFalse(function.likelyHasTensorParameter());
+			}
 		}
 	}
 
@@ -572,18 +590,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -591,19 +612,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters2() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
 
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -611,18 +635,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters3() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -630,18 +657,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters4() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -649,18 +679,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters5() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -668,18 +701,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters6() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -687,18 +723,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters7() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -706,18 +745,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters8() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -725,18 +767,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters9() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 	}
 
 	/**
@@ -744,20 +789,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters10() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
+			Function.HybridizationParameters args = function.getHybridizationParameters();
 
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
-		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
-		// to return False.
+			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+			// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+			// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+			// to return False.
 
-		assertNull(args);
+			assertNull(args);
+		}
 	}
 
 	/**
@@ -766,20 +814,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters11() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+			// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
+			assertNotNull(args);
 
-		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 
 	}
 
@@ -788,58 +839,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters12() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+			assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		}
 
 	}
 
 	/**
-	 * This simply tests whether we have the correct qualified name.
+	 * >>>>>>> e14b4ea (update for the merge) This simply tests whether we have the correct qualified name.
 	 */
 	@Test
 	public void testQN() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(7, functions.size());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(7, functions.size());
 
-		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
+			Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
-		funcSimpleNameToExpectedSignature.put("func", "func");
-		funcSimpleNameToExpectedSignature.put("func1", "func1");
-		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
-		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
-		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
-		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
-		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
+			funcSimpleNameToExpectedSignature.put("func", "func");
+			funcSimpleNameToExpectedSignature.put("func1", "func1");
+			funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
+			funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
+			funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+			funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+			funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
-		for (Function func : functions) {
-			LOG.info("Checking: " + func);
+			for (Function func : functions) {
+				LOG.info("Checking: " + func);
 
-			assertNotNull(func);
+				assertNotNull(func);
 
-			String simpleName = func.getSimpleName();
+				String simpleName = func.getSimpleName();
 
-			LOG.info("Function simple name: " + simpleName);
+				LOG.info("Function simple name: " + simpleName);
 
-			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+				String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
 
-			LOG.info("Expected signature: " + expectedSignature);
+				LOG.info("Expected signature: " + expectedSignature);
 
-			String actualSignature = func.getIdentifer();
+				String actualSignature = func.getIdentifer();
 
-			LOG.info("Actual signature: " + actualSignature);
+				LOG.info("Actual signature: " + actualSignature);
 
-			assertEquals(expectedSignature, actualSignature);
+				assertEquals(expectedSignature, actualSignature);
+			}
 		}
 	}
 
@@ -860,42 +917,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions("A");
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+					.getDocumentToAvailableFunctionDefinitions(fileName);
 
-		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
-		assertNotNull(functionDefinitions);
-		assertEquals(1, functionDefinitions.size());
+			Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
+			assertNotNull(functionDefinitions);
+			assertEquals(1, functionDefinitions.size());
 
-		FunctionDef functionDef = functionDefinitions.iterator().next();
-		assertNotNull(functionDef);
+			FunctionDef functionDef = functionDefinitions.iterator().next();
+			assertNotNull(functionDef);
 
-		decoratorsType[] decoratorArray = functionDef.decs;
-		assertNotNull(decoratorArray);
-		assertEquals(1, decoratorArray.length);
+			decoratorsType[] decoratorArray = functionDef.decs;
+			assertNotNull(decoratorArray);
+			assertEquals(1, decoratorArray.length);
 
-		decoratorsType decorator = decoratorArray[0];
-		assertNotNull(decorator);
+			decoratorsType decorator = decoratorArray[0];
+			assertNotNull(decorator);
 
-		exprType decoratorFunction = decorator.func;
-		assertNotNull(decoratorFunction);
+			exprType decoratorFunction = decorator.func;
+			assertNotNull(decoratorFunction);
 
-		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
-		assertEquals("tf.function", representationString);
+			String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+			assertEquals("tf.function", representationString);
 
-		File inputTestFile = this.getInputTestFile("A");
+			File inputTestFile = this.getInputTestFile(fileName);
 
-		IDocument document = documentToAvailableFunctionDefinitions.getKey();
+			IDocument document = documentToAvailableFunctionDefinitions.getKey();
 
-		int offset = NodeUtils.getOffset(document, decoratorFunction);
-		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
+			int offset = NodeUtils.getOffset(document, decoratorFunction);
+			String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
 
-		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
+			CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
 
-		PySelection selection = new PySelection(document, coreTextSelection);
+			PySelection selection = new PySelection(document, coreTextSelection);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature, new NullProgressMonitor());
+			String fullyQualifiedName = Util.getFullyQualifiedName(decorator, fileName, inputTestFile, selection, nature,
+					new NullProgressMonitor());
 
-		assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
+			assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
+		}
 	}
 
 	/**
@@ -903,12 +965,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -916,12 +981,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -929,12 +997,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid3() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size()); // one function is for the decorator.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(2, functions.size()); // one function is for the decorator.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -942,12 +1013,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid4() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -955,12 +1029,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid5() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -968,12 +1045,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid6() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -981,12 +1061,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid7() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -994,12 +1077,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid8() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1007,12 +1093,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid9() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1020,13 +1109,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertFalse(func.isHybrid());
+			}
 		}
 	}
 
@@ -1035,13 +1127,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleAttributes() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertFalse(func.isHybrid());
+			}
 		}
 	}
 
@@ -1050,13 +1145,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleDecorators() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertTrue(func.isHybrid());
+			}
 		}
 	}
 
@@ -1066,12 +1164,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = { "A" };
+		for (String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1079,13 +1180,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
+	
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertTrue(func.isHybrid());
+			}
 		}
 	}
 
@@ -1094,12 +1198,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1107,19 +1214,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-
-		assertEquals(2, functions.size());
-
-		Set<String> functionNames = new HashSet<>();
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+	
+			assertEquals(2, functions.size());
+	
+			Set<String> functionNames = new HashSet<>();
+	
+			for (Function func : functions) {
+				assertNotNull(func);
+				functionNames.add(func.getIdentifer());
+			}
+	
+			assertEquals(2, functionNames.size());
 		}
-
-		assertEquals(2, functionNames.size());
 	}
 
 	/**
@@ -1127,119 +1237,169 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-
-		assertEquals(2, functions.size());
-
-		Set<String> functionNames = new HashSet<>();
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+	
+			assertEquals(2, functions.size());
+	
+			Set<String> functionNames = new HashSet<>();
+	
+			for (Function func : functions) {
+				assertNotNull(func);
+				functionNames.add(func.getIdentifer());
+			}
+	
+			// NOTE: Both of these functions have the same qualified name.
+			assertEquals(1, functionNames.size());
+		}
+	}
+	
+	/**
+	 * Test #104. This simply tests whether we can recognize functions with the same names across files.
+	 */
+	@Test
+	public void testSameFileSameName3() throws Exception {
+		int count = 0;
+		String[] files = {"A", "B"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			count += functions.size();
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
 		}
 
-		// NOTE: Both of these functions have the same qualified name.
-		assertEquals(1, functionNames.size());
+		assertEquals(2, count);
+	}
+	
+	/**
+	 * Test #104. This simply tests whether we can recognize functions with the same names across files.
+	 */
+	@Test
+	public void testSameFileSameName4() throws Exception {
+		int count = 0;
+		String[] files = {"A", "B"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			count += functions.size();
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
+
+		assertEquals(2, count);
 	}
 
 	@Test
 	public void testFunctionEquality() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			String id = func.getIdentifer();
-			assertNotNull(id);
-			assertTrue(id.equals("a") || id.equals("b"));
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
+	
+			for (Function func : functions) {
+				assertNotNull(func);
+				String id = func.getIdentifer();
+				assertNotNull(id);
+				assertTrue(id.equals("a") || id.equals("b"));
+			}
+	
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
+	
+			Function func1 = iterator.next();
+			assertNotNull(func1);
+	
+			String identifer1 = func1.getIdentifer();
+			assertNotNull(identifer1);
+	
+			assertTrue(iterator.hasNext());
+	
+			Function func2 = iterator.next();
+			assertNotNull(func2);
+	
+			String identifer2 = func2.getIdentifer();
+			assertNotNull(identifer2);
+	
+			assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
+			assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
+	
+			assertTrue(!func1.equals(func2));
+			assertTrue(func1.hashCode() != func2.hashCode());
+	
+			assertTrue(!func2.equals(func1));
+			assertTrue(func2.hashCode() != func1.hashCode());
 		}
-
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
-
-		Function func1 = iterator.next();
-		assertNotNull(func1);
-
-		String identifer1 = func1.getIdentifer();
-		assertNotNull(identifer1);
-
-		assertTrue(iterator.hasNext());
-
-		Function func2 = iterator.next();
-		assertNotNull(func2);
-
-		String identifer2 = func2.getIdentifer();
-		assertNotNull(identifer2);
-
-		assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
-		assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
-
-		assertTrue(!func1.equals(func2));
-		assertTrue(func1.hashCode() != func2.hashCode());
-
-		assertTrue(!func2.equals(func1));
-		assertTrue(func2.hashCode() != func1.hashCode());
 	}
 
 	@Test
 	public void testFunctionEquality2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		for (Function func : functions) {
-			assertNotNull(func);
-			String id = func.getIdentifer();
-			assertNotNull(id);
-			assertTrue(id.equals("a"));
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
+	
+			for (Function func : functions) {
+				assertNotNull(func);
+				String id = func.getIdentifer();
+				assertNotNull(id);
+				assertTrue(id.equals("a"));
+			}
+	
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
+	
+			Function func1 = iterator.next();
+			assertNotNull(func1);
+	
+			String identifer1 = func1.getIdentifer();
+			assertNotNull(identifer1);
+	
+			assertTrue(iterator.hasNext());
+	
+			Function func2 = iterator.next();
+			assertNotNull(func2);
+	
+			String identifer2 = func2.getIdentifer();
+			assertNotNull(identifer2);
+	
+			assertTrue(!func1.equals(func2));
+			assertTrue(func1.hashCode() != func2.hashCode());
+	
+			assertTrue(!func2.equals(func1));
+			assertTrue(func2.hashCode() != func1.hashCode());
 		}
-
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
-
-		Function func1 = iterator.next();
-		assertNotNull(func1);
-
-		String identifer1 = func1.getIdentifer();
-		assertNotNull(identifer1);
-
-		assertTrue(iterator.hasNext());
-
-		Function func2 = iterator.next();
-		assertNotNull(func2);
-
-		String identifer2 = func2.getIdentifer();
-		assertNotNull(identifer2);
-
-		assertTrue(!func1.equals(func2));
-		assertTrue(func1.hashCode() != func2.hashCode());
-
-		assertTrue(!func2.equals(func1));
-		assertTrue(func2.hashCode() != func1.hashCode());
 	}
 
 	@Test
 	public void testFunctionEquality3() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
-
-		Function func = iterator.next();
-		assertNotNull(func);
-
-		String id = func.getIdentifer();
-		assertNotNull(id);
-		assertTrue(id.equals("a"));
-
-		assertTrue(func.equals(func));
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+	
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
+	
+			Function func = iterator.next();
+			assertNotNull(func);
+	
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a"));
+	
+			assertTrue(func.equals(func));
+		}
 	}
 
 	/**
@@ -1247,19 +1407,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// no params.
-		assertEquals(0, params.args.length);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+	
+			argumentsType params = function.getParameters();
+	
+			// no params.
+			assertEquals(0, params.args.length);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1267,26 +1430,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter2() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1295,26 +1461,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter3() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1323,26 +1492,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter4() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1350,19 +1522,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter5() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// no params.
-		assertEquals(0, params.args.length);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+	
+			argumentsType params = function.getParameters();
+	
+			// no params.
+			assertEquals(0, params.args.length);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1371,22 +1546,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter6() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-
-		// TODO: Need to check the value (#111).
-		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
-
-		argumentsType params = function.getParameters();
-
-		// no params.
-		assertEquals(0, params.args.length);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+	
+			// TODO: Need to check the value (#111).
+			assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+	
+			argumentsType params = function.getParameters();
+	
+			// no params.
+			assertEquals(0, params.args.length);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1395,37 +1573,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter7() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
-		// TODO: And the value is true (#111).
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
-
-		// no type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNull(annotationExpr);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+			assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+			// TODO: And the value is true (#111).
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			// get the type hint.
+			exprType[] annotations = params.annotation;
+			assertNotNull(annotations);
+	
+			// no type hint.
+			assertEquals(1, annotations.length);
+			exprType annotationExpr = annotations[0];
+			assertNull(annotationExpr);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1434,42 +1615,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter8() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-		assertFalse(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
-
-		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
-
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
-
-		assertFalse(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+			assertFalse(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			// get the type hint.
+			exprType[] annotations = params.annotation;
+			assertNotNull(annotations);
+	
+			// Tensor type hint.
+			assertEquals(1, annotations.length);
+			exprType annotationExpr = annotations[0];
+			assertNotNull(annotationExpr);
+	
+			assertTrue(annotationExpr instanceof Attribute);
+			Attribute typeHint = (Attribute) annotationExpr;
+	
+			String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+			assertEquals("tf.Tensor", attributeName);
+	
+			assertFalse(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1478,44 +1662,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter9() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-
-		// TODO: Need to check the value (#111).
-		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
-
-		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
-
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
-
-		assertTrue(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+	
+			// TODO: Need to check the value (#111).
+			assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			// get the type hint.
+			exprType[] annotations = params.annotation;
+			assertNotNull(annotations);
+	
+			// Tensor type hint.
+			assertEquals(1, annotations.length);
+			exprType annotationExpr = annotations[0];
+			assertNotNull(annotationExpr);
+	
+			assertTrue(annotationExpr instanceof Attribute);
+			Attribute typeHint = (Attribute) annotationExpr;
+	
+			String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+			assertEquals("tf.Tensor", attributeName);
+	
+			assertTrue(function.likelyHasTensorParameter());
+		}
 	}
 
 	/**
@@ -1524,48 +1711,51 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter10() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-
-		// The flag is there.
-		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
-
-		// But, it's set to False.
-		// TODO: assert that the experimental type hints param is set to false (#111).
-
-		argumentsType params = function.getParameters();
-
-		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-
-		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
-
-		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
-
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
-
-		// TODO: Set to assertFalse() when #111 is fixed.
-		assertTrue(function.likelyHasTensorParameter());
+		String[] files = {"A"};
+		for(String fileName : files) {
+			Set<Function> functions = this.getFunctions(fileName);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+	
+			// The flag is there.
+			assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+	
+			// But, it's set to False.
+			// TODO: assert that the experimental type hints param is set to false (#111).
+	
+			argumentsType params = function.getParameters();
+	
+			// one param.
+			exprType[] actualParams = params.args;
+			assertEquals(1, actualParams.length);
+	
+			exprType actualParameter = actualParams[0];
+			assertNotNull(actualParameter);
+	
+			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			assertEquals("x", paramName);
+	
+			// get the type hint.
+			exprType[] annotations = params.annotation;
+			assertNotNull(annotations);
+	
+			// Tensor type hint.
+			assertEquals(1, annotations.length);
+			exprType annotationExpr = annotations[0];
+			assertNotNull(annotationExpr);
+	
+			assertTrue(annotationExpr instanceof Attribute);
+			Attribute typeHint = (Attribute) annotationExpr;
+	
+			String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+			assertEquals("tf.Tensor", attributeName);
+	
+			// TODO: Set to assertFalse() when #111 is fixed.
+			assertTrue(function.likelyHasTensorParameter());
+		}
 	}
 
 	// TODO: Test arbitrary expression.
