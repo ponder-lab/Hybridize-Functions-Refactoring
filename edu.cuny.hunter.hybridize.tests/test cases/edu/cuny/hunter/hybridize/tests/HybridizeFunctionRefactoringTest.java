@@ -553,7 +553,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -572,7 +572,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters10() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -594,7 +594,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters11() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -616,7 +616,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters12() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -636,7 +636,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters2() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -656,7 +656,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters3() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -675,7 +675,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters4() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -694,7 +694,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters5() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -713,7 +713,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters6() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -732,7 +732,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters7() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -751,7 +751,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters8() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -770,7 +770,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters9() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		Set<Function> functions = this.getFunctions("A");
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
