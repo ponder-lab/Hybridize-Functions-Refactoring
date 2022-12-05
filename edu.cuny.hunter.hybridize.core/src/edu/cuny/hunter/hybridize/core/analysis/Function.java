@@ -12,9 +12,12 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.NameTokType;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -280,21 +283,21 @@ public class Function extends RefactorableProgramEntity {
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid(monitor);
-		this.computeHasTensorParameter();
 
-		// If function is hybrid, then parse the existence of the parameters
+		// If function is hybrid, then parse the existence of the parameters.
 		if (this.isHybrid()) {
 			LOG.info("Checking the hybridization parameters ...");
 			this.hybridizationParameters = this.new HybridizationParameters(monitor);
 		}
+
+		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter() {
+	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
 		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
 		// TODO: Use cast/assert statements?
-
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
 
@@ -309,16 +312,24 @@ public class Function extends RefactorableProgramEntity {
 					// if hybridization parameters are specified.
 					if (this.getHybridizationParameters() != null) {
 						// if we are considering type hints.
+						// TODO: Actually get the value here (#111).
 						if (this.getHybridizationParameters().hasExperimentalTypeHintsParam()) {
 							// try to get its type from the AST.
 							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
 							if (argTypeInfo != null) {
-								exprType typeExpr = argTypeInfo.getNode();
-								System.out.println(typeExpr);
+								exprType node = argTypeInfo.getNode();
+								Attribute typeHint = (Attribute) node;
+								NameTokType attr = typeHint.attr;
 
-								// Look up the definition of typeExpr.
-								// Util.getFullyQualifiedName(null, representationString, containingFile, null, nature, null)
+								// Look up the definition.
+								IDocument document = this.getContainingDocument();
+								PySelection selection = getSelection(attr, document);
+
+								String fqn = Util.getFullyQualifiedName(attr, this.containingModuleName, containingFile, selection,
+										this.nature, monitor);
+								System.out.println(fqn);
+								// tensorflow.python.framework.ops.Tensor
 
 								// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
 								// if that's set, then, set likelyHasTensorParameter to true.
@@ -400,7 +411,11 @@ public class Function extends RefactorableProgramEntity {
 
 	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType decoratorFunction = decorator.func;
-		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, decoratorFunction);
+		return getSelection(decoratorFunction, document);
+	}
+
+	private static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, node);
 		return new PySelection(document, coreTextSelection);
 	}
 
