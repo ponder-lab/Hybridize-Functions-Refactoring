@@ -563,9 +563,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(args.inputSignatureParamExists() & !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -606,9 +606,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
 		assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() & args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -626,9 +626,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() & !args.autoGraphParamExists() && args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -647,9 +647,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -666,9 +666,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -685,9 +685,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -704,9 +704,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -723,9 +723,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -742,9 +742,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -761,9 +761,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -780,9 +780,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getArgs();
 		assertNotNull(args);
 
-		assertTrue(args.inputSignatureParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam()
+				&& !args.hasExperimentalAutographOptParam() && !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
