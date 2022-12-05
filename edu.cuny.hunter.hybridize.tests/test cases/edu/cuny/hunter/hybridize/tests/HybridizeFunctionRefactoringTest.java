@@ -1347,6 +1347,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
 		assertTrue(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
 
 		argumentsType params = function.getParameters();

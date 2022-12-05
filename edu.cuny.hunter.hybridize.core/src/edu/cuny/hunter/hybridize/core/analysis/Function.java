@@ -293,6 +293,7 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
 		// type hints are used.
 		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
+		// TODO: Use cast/assert statements?
 
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
