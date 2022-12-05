@@ -67,6 +67,7 @@ import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -1212,7 +1213,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. Here, the function has no parameters. Thus, it's not likely to have a tensor parameter.
+	 * Test for #2. Here, the function has no parameters and is not hybrid. Thus, it's not likely to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter() throws Exception {
@@ -1221,6 +1222,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+		// no params.
+		assertEquals(params.args.length, 0);
+		assertNull(params.kwarg);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter and is not hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] args = params.args;
+		assertEquals(args.length, 1);
+
+		String paramName = NodeUtils.getRepresentationString(args[0]);
+		assertEquals(paramName, "x");
+
+		assertFalse(function.likelyHasTensorParameter());
 	}
 }

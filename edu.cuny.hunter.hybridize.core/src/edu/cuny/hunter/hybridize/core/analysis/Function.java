@@ -295,26 +295,35 @@ public class Function extends RefactorableProgramEntity {
 		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
 
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
-		argumentsType args = functionDef.args;
+		argumentsType params = functionDef.args;
 
-		if (args != null) {
-			exprType[] actualArgs = args.args;
+		if (params != null) {
+			exprType[] actualParams = params.args;
 
-			if (actualArgs != null) {
+			if (actualParams != null) {
 				// for each parameter.
-				for (exprType argType : actualArgs) {
-					// try to get its "type."
-					String representationString = NodeUtils.getRepresentationString(argType);
-					TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(representationString, functionDef);
-					exprType typeExpr = argTypeInfo.getNode();
-					System.out.println(typeExpr);
+				for (exprType paramExpr : actualParams) {
+					// if hybridization parameters are specified.
+					if (this.getHybridizationParameters() != null) {
+						// if we are considering type hints.
+						if (this.getHybridizationParameters().hasExperimentalTypeHintsParam()) {
+							// try to get its type from the AST.
+							String paramName = NodeUtils.getRepresentationString(paramExpr);
+							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
-					// Look up the definition of typeExpr.
+							if (argTypeInfo != null) {
+								exprType typeExpr = argTypeInfo.getNode();
+								System.out.println(typeExpr);
+
+								// Look up the definition of typeExpr.
 //					Util.getFullyQualifiedName(null, representationString, containingFile, null, nature, null)
 
-					// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
-					// if that's set, then, set likelyHasTensorParameter to true.
-					// this is a special case.
+								// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
+								// if that's set, then, set likelyHasTensorParameter to true.
+								// this is a special case.
+							}
+						}
+					}
 				}
 			}
 		}
@@ -473,5 +482,9 @@ public class Function extends RefactorableProgramEntity {
 
 	public String getSimpleName() {
 		return NodeUtils.getFullRepresentationString(this.getFunctionDefinition().getFunctionDef());
+	}
+
+	public argumentsType getParameters() {
+		return getFunctionDefinition().getFunctionDef().args;
 	}
 }
