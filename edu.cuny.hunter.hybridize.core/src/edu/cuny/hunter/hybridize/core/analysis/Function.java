@@ -240,7 +240,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Information about this {@link Function} tf.function's parameters.
 	 */
-	private Function.HybridizationParameters args;
+	private Function.HybridizationParameters hybridizationParameters;
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -282,7 +282,7 @@ public class Function extends RefactorableProgramEntity {
 		// If function is hybrid, then parse the existence of the parameters
 		if (this.isHybrid()) {
 			LOG.info("Checking the hybridization parameters ...");
-			this.args = this.new HybridizationParameters(monitor);
+			this.hybridizationParameters = this.new HybridizationParameters(monitor);
 		}
 	}
 
@@ -374,8 +374,8 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return HybridizationParameters gives the information which arguments {@link Function} has.
 	 */
-	public HybridizationParameters getArgs() {
-		return this.args;
+	public HybridizationParameters getHybridizationParameters() {
+		return this.hybridizationParameters;
 	}
 
 	/**
