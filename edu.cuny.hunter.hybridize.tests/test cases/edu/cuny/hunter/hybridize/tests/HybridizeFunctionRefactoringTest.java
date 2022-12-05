@@ -1227,7 +1227,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// no params.
-		assertEquals(params.args.length, 0);
+		assertEquals(0, params.args.length);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1248,13 +1248,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// one param.
 		exprType[] actualParams = params.args;
-		assertEquals(actualParams.length, 1);
+		assertEquals(1, actualParams.length);
 
 		exprType actualParameter = actualParams[0];
 		assertNotNull(actualParameter);
 
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals(paramName, "x");
+		assertEquals("x", paramName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1276,13 +1276,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// one param.
 		exprType[] actualParams = params.args;
-		assertEquals(actualParams.length, 1);
+		assertEquals(1, actualParams.length);
 
 		exprType actualParameter = actualParams[0];
 		assertNotNull(actualParameter);
 
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals(paramName, "x");
+		assertEquals("x", paramName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1304,13 +1304,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// one param.
 		exprType[] actualParams = params.args;
-		assertEquals(actualParams.length, 1);
+		assertEquals(1, actualParams.length);
 
 		exprType actualParameter = actualParams[0];
 		assertNotNull(actualParameter);
 
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals(paramName, "x");
+		assertEquals("x", paramName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1330,7 +1330,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// no params.
-		assertEquals(params.args.length, 0);
+		assertEquals(0, params.args.length);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1351,7 +1351,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// no params.
-		assertEquals(params.args.length, 0);
+		assertEquals(0, params.args.length);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
