@@ -370,9 +370,9 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable args.
+	 * This {@link Function}'s {@link HybridizationParameters}.
 	 *
-	 * @return HybridizationParameters gives the information which arguments {@link Function} has.
+	 * @return This {@link Function}'s {@link HybridizationParameters}. 
 	 */
 	public HybridizationParameters getHybridizationParameters() {
 		return this.hybridizationParameters;
