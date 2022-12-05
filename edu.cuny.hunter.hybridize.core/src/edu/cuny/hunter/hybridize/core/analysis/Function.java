@@ -243,7 +243,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * Information about this {@link Function} tf.function's parameters.
 	 */
-	private Function.HybridizationParameters args;
+	private Function.HybridizationParameters hybridizationParameters;
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -285,7 +285,7 @@ public class Function extends RefactorableProgramEntity {
 		// If function is hybrid, then parse the existence of the parameters
 		if (this.isHybrid()) {
 			LOG.info("Checking the hybridization parameters ...");
-			this.args = this.new HybridizationParameters(monitor);
+			this.hybridizationParameters = this.new HybridizationParameters(monitor);
 		}
 	}
 
@@ -402,12 +402,12 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable args.
+	 * This {@link Function}'s {@link HybridizationParameters}.
 	 *
-	 * @return HybridizationParameters gives the information which arguments {@link Function} has.
+	 * @return This {@link Function}'s {@link HybridizationParameters}.
 	 */
-	public HybridizationParameters getArgs() {
-		return this.args;
+	public HybridizationParameters getHybridizationParameters() {
+		return this.hybridizationParameters;
 	}
 
 	/**
@@ -415,7 +415,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	public FunctionDefinition getFunctionDefinition() {
+	protected FunctionDefinition getFunctionDefinition() {
 		return this.functionDefinition;
 	}
 
@@ -469,5 +469,9 @@ public class Function extends RefactorableProgramEntity {
 			return false;
 		Function other = (Function) obj;
 		return Objects.equals(functionDefinition, other.functionDefinition);
+	}
+
+	public String getSimpleName() {
+		return NodeUtils.getFullRepresentationString(this.getFunctionDefinition().getFunctionDef());
 	}
 }

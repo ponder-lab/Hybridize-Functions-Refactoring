@@ -560,7 +560,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -579,7 +579,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 
 		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
@@ -601,7 +601,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
 		assertNotNull(args);
@@ -623,7 +623,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
@@ -644,7 +644,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -663,7 +663,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -682,7 +682,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -701,7 +701,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
@@ -720,7 +720,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -739,7 +739,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -758,7 +758,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -777,7 +777,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -809,7 +809,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertNotNull(func);
 
-			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
+			String simpleName = func.getSimpleName();
 
 			LOG.info("Function simple name: " + simpleName);
 
