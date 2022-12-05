@@ -373,7 +373,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * This {@link Function}'s {@link HybridizationParameters}.
 	 *
-	 * @return This {@link Function}'s {@link HybridizationParameters}. 
+	 * @return This {@link Function}'s {@link HybridizationParameters}.
 	 */
 	public HybridizationParameters getHybridizationParameters() {
 		return this.hybridizationParameters;
