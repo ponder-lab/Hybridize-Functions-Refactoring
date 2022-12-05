@@ -809,7 +809,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertNotNull(func);
 
-			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
+			String simpleName = func.getSimpleName();
 
 			LOG.info("Function simple name: " + simpleName);
 

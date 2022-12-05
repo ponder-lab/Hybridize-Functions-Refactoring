@@ -18,6 +18,7 @@ import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
+import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -383,7 +384,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return The {@link FunctionDefinition} representing this {@link Function}.
 	 */
-	public FunctionDefinition getFunctionDefinition() {
+	protected FunctionDefinition getFunctionDefinition() {
 		return this.functionDefinition;
 	}
 
@@ -437,5 +438,9 @@ public class Function extends RefactorableProgramEntity {
 			return false;
 		Function other = (Function) obj;
 		return Objects.equals(functionDefinition, other.functionDefinition);
+	}
+
+	public String getSimpleName() {
+		return NodeUtils.getFullRepresentationString(this.getFunctionDefinition().getFunctionDef());
 	}
 }
