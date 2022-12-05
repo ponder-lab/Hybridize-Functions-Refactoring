@@ -1441,4 +1441,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and uses type hints. And, a tf.Tensor type hint is supplied. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertTrue(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEqualLines("tf.Tensor", attributeName);
+
+		assertTrue(function.likelyHasTensorParameter());
+	}
+
+	// TODO: Test arbitrary expression.
+	// TODO: Test cast/assert statements?
+	// TODO: Test tf.Tensor-like things?
 }
