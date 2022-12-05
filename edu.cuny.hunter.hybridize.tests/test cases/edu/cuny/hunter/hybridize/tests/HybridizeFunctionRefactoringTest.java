@@ -1247,10 +1247,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// one param.
-		exprType[] args = params.args;
-		assertEquals(args.length, 1);
+		exprType[] actualParams = params.args;
+		assertEquals(actualParams.length, 1);
 
-		String paramName = NodeUtils.getRepresentationString(args[0]);
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals(paramName, "x");
 
 		assertFalse(function.likelyHasTensorParameter());
@@ -1272,10 +1275,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// one param.
-		exprType[] args = params.args;
-		assertEquals(args.length, 1);
+		exprType[] actualParams = params.args;
+		assertEquals(actualParams.length, 1);
 
-		String paramName = NodeUtils.getRepresentationString(args[0]);
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals(paramName, "x");
 
 		assertFalse(function.likelyHasTensorParameter());
@@ -1297,10 +1303,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		argumentsType params = function.getParameters();
 
 		// one param.
-		exprType[] args = params.args;
-		assertEquals(args.length, 1);
+		exprType[] actualParams = params.args;
+		assertEquals(actualParams.length, 1);
 
-		String paramName = NodeUtils.getRepresentationString(args[0]);
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals(paramName, "x");
 
 		assertFalse(function.likelyHasTensorParameter());
@@ -1325,7 +1334,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2. Here, the function has no parameters, is hybrid, and uses type hints. Thus, it's not likely to have a tensor parameter.
 	 */
