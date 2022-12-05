@@ -1225,9 +1225,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
+
 		// no params.
 		assertEquals(params.args.length, 0);
-		assertNull(params.kwarg);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1305,4 +1305,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters and is hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(params.args.length, 0);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
 }
