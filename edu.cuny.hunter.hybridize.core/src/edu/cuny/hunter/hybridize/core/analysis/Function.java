@@ -317,7 +317,7 @@ public class Function extends RefactorableProgramEntity {
 								System.out.println(typeExpr);
 
 								// Look up the definition of typeExpr.
-//					Util.getFullyQualifiedName(null, representationString, containingFile, null, nature, null)
+								// Util.getFullyQualifiedName(null, representationString, containingFile, null, nature, null)
 
 								// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
 								// if that's set, then, set likelyHasTensorParameter to true.
