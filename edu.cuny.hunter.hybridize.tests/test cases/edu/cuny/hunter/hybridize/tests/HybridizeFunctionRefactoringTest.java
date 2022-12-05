@@ -1255,4 +1255,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is not being used. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] args = params.args;
+		assertEquals(args.length, 1);
+
+		String paramName = NodeUtils.getRepresentationString(args[0]);
+		assertEquals(paramName, "x");
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is being used. Thus, it's
+	 * not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] args = params.args;
+		assertEquals(args.length, 1);
+
+		String paramName = NodeUtils.getRepresentationString(args[0]);
+		assertEquals(paramName, "x");
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
 }

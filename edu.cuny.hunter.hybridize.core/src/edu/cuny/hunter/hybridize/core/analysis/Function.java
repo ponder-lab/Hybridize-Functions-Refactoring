@@ -303,12 +303,13 @@ public class Function extends RefactorableProgramEntity {
 			if (actualParams != null) {
 				// for each parameter.
 				for (exprType paramExpr : actualParams) {
+					String paramName = NodeUtils.getRepresentationString(paramExpr);
+
 					// if hybridization parameters are specified.
 					if (this.getHybridizationParameters() != null) {
 						// if we are considering type hints.
 						if (this.getHybridizationParameters().hasExperimentalTypeHintsParam()) {
 							// try to get its type from the AST.
-							String paramName = NodeUtils.getRepresentationString(paramExpr);
 							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
 							if (argTypeInfo != null) {
