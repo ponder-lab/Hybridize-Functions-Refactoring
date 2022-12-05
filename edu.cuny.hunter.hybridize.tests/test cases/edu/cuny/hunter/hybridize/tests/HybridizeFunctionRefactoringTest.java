@@ -66,6 +66,7 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
@@ -1352,6 +1353,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// no params.
 		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and uses type hints. But, no type hint is supplied. Thus, it's not
+	 * likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertTrue(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
+		// TODO: And the value is true (#111).
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// no type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNull(annotationExpr);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and does not use type hints. But, a type hint is supplied. In other
+	 * words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertFalse(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEqualLines("tf.Tensor", attributeName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
