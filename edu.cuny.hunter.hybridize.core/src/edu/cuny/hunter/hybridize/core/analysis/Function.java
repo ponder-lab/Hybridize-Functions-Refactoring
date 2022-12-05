@@ -31,7 +31,7 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 public class Function extends RefactorableProgramEntity {
 
 	/**
-	 * Computes the existence of arguments this {@link Function} decorator. Parameters can be found
+	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
 	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function
 	 */
 	public class HybridizationParameters {
