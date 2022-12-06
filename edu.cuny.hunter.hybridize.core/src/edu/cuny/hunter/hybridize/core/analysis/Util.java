@@ -106,11 +106,11 @@ public class Util {
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
 		monitor.worked(1);
 
-		String decoratorFullRepresentationString = NodeUtils.getRepresentationString(node);
-		LOG.info(String.format("The \"full representation\" of %s is %s.", node, decoratorFullRepresentationString));
+		String representationString = NodeUtils.getRepresentationString(node);
+		LOG.info(String.format("\"Representation\" of %s: %s.", node, representationString));
 		monitor.worked(1);
 
-		String fqn = declaringModuleName + "." + decoratorFullRepresentationString;
+		String fqn = declaringModuleName + "." + representationString;
 		LOG.info(String.format("FQN is: %s.", fqn));
 		monitor.worked(1);
 		return fqn;
