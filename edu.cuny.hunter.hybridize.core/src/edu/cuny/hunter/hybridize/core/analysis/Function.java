@@ -17,7 +17,6 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
-import org.python.pydev.parser.jython.ast.NameTokType;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -241,6 +240,8 @@ public class Function extends RefactorableProgramEntity {
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
+	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
+
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
@@ -294,9 +295,8 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
-		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
-		// type hints are used.
-		// TODO: What if there are no current calls to the function? How will we determine its type? Maybe from type hints? Or docstring?
+		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
+		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
@@ -309,45 +309,56 @@ public class Function extends RefactorableProgramEntity {
 				for (exprType paramExpr : actualParams) {
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
+					// check a special case where we consider type hints.
+
 					// if hybridization parameters are specified.
 					if (this.getHybridizationParameters() != null) {
 						// if we are considering type hints.
 						// TODO: Actually get the value here (#111).
-						if (this.getHybridizationParameters().hasExperimentalTypeHintsParam()) {
+						if (this.getHybridizationParameters().hasExperimentalFollowTypeHintsParam()) {
+							LOG.info("Following type hints for: " + this + ".");
+
 							// try to get its type from the AST.
 							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
 							if (argTypeInfo != null) {
+								LOG.info("Found type for parameter " + paramName + " in "
+										+ NodeUtils.getFullRepresentationString(functionDef) + "(): " + argTypeInfo.getActTok() + ".");
+
 								exprType node = argTypeInfo.getNode();
-								Attribute typeHint = (Attribute) node;
-								NameTokType attr = typeHint.attr;
+								Attribute typeHintExpr = (Attribute) node;
 
 								// Look up the definition.
 								IDocument document = this.getContainingDocument();
-								PySelection selection = getSelection(attr, document);
+								PySelection selection = getSelection(typeHintExpr.attr, document);
 
-								String fqn = Util.getFullyQualifiedName(attr, this.containingModuleName, containingFile, selection,
+								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
 										this.nature, monitor);
-								System.out.println(fqn);
-								// tensorflow.python.framework.ops.Tensor
 
-								// TODO: If it's a Tensor or tf.Variable, then check for experimental_type_hints.
-								// if that's set, then, set likelyHasTensorParameter to true.
-								// this is a special case.
+								LOG.info("Found FQN: " + fqn + ".");
+
+								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+									this.likelyHasTensorParameter = true;
+									LOG.info(this + " likely has a tensor parameter.");
+									monitor.done();
+									return;
+								}
 							}
 						}
 					}
+					monitor.worked(1);
 				}
 			}
 		}
 
 		this.likelyHasTensorParameter = false;
 		LOG.info(this + " does not likely have a tensor parameter.");
+		monitor.done();
 	}
 
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
-		monitor.setTaskName("Computing hybridization ...");
+		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -365,6 +376,7 @@ public class Function extends RefactorableProgramEntity {
 				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
+					monitor.done();
 					return;
 				}
 				monitor.worked(1);
@@ -373,6 +385,7 @@ public class Function extends RefactorableProgramEntity {
 
 		this.isHybrid = false;
 		LOG.info(this + " is not hybrid.");
+		monitor.done();
 	}
 
 	/**
@@ -478,7 +491,7 @@ public class Function extends RefactorableProgramEntity {
 
 	@Override
 	public String toString() {
-		return this.getIdentifer();
+		return this.getIdentifer() + "()";
 	}
 
 	@Override
