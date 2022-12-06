@@ -367,6 +367,7 @@ public class Function extends RefactorableProgramEntity {
 					LOG.info(this + " is hybrid.");
 					return;
 				}
+				monitor.worked(1);
 			}
 		}
 
