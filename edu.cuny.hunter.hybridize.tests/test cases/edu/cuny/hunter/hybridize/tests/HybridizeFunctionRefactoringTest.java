@@ -1438,7 +1438,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Attribute typeHint = (Attribute) annotationExpr;
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEqualLines("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", attributeName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
@@ -1484,7 +1484,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Attribute typeHint = (Attribute) annotationExpr;
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEqualLines("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", attributeName);
 
 		assertTrue(function.likelyHasTensorParameter());
 	}
@@ -1533,7 +1533,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Attribute typeHint = (Attribute) annotationExpr;
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEqualLines("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", attributeName);
 
 		assertFalse(function.likelyHasTensorParameter());
 	}
