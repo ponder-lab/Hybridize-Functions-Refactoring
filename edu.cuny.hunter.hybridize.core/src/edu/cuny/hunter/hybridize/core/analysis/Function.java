@@ -12,13 +12,17 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
@@ -193,7 +197,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
-		public boolean hasExperimentalTypeHintsParam() {
+		public boolean hasExperimentalFollowTypeHintsParam() {
 			return this.experimentaFollowTypeHintsParamExists;
 		}
 
@@ -235,6 +239,8 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
+
+	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
 
 	private static final ILog LOG = getLog(Function.class);
 
@@ -278,23 +284,80 @@ public class Function extends RefactorableProgramEntity {
 
 		// Find out if it's hybrid via the tf.function decorator.
 		this.computeIsHybrid(monitor);
-		this.computeHasTensorParameter();
 
-		// If function is hybrid, then parse the existence of the parameters
+		// If function is hybrid, then parse the existence of the parameters.
 		if (this.isHybrid()) {
 			LOG.info("Checking the hybridization parameters ...");
 			this.hybridizationParameters = this.new HybridizationParameters(monitor);
 		}
+
+		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter() {
-		// TODO: Use type info API. If that gets info from type hints, then we'll need another field indicating whether
-		// type hints are used.
+	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
+		// TODO: What if there are no current calls to the function? How will we determine its type?
+		// TODO: Use cast/assert statements?
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		argumentsType params = functionDef.args;
+
+		if (params != null) {
+			exprType[] actualParams = params.args;
+
+			if (actualParams != null) {
+				// for each parameter.
+				for (exprType paramExpr : actualParams) {
+					String paramName = NodeUtils.getRepresentationString(paramExpr);
+
+					// check a special case where we consider type hints.
+
+					// if hybridization parameters are specified.
+					if (this.getHybridizationParameters() != null) {
+						// if we are considering type hints.
+						// TODO: Actually get the value here (#111).
+						if (this.getHybridizationParameters().hasExperimentalFollowTypeHintsParam()) {
+							LOG.info("Following type hints for: " + this + ".");
+
+							// try to get its type from the AST.
+							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
+
+							if (argTypeInfo != null) {
+								LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
+
+								exprType node = argTypeInfo.getNode();
+								Attribute typeHintExpr = (Attribute) node;
+
+								// Look up the definition.
+								IDocument document = this.getContainingDocument();
+								PySelection selection = getSelection(typeHintExpr.attr, document);
+
+								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
+										this.nature, monitor);
+
+								LOG.info("Found FQN: " + fqn + ".");
+
+								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+									this.likelyHasTensorParameter = true;
+									LOG.info(this + " likely has a tensor parameter.");
+									monitor.done();
+									return;
+								}
+							}
+						}
+					}
+					monitor.worked(1);
+				}
+			}
+		}
+
+		this.likelyHasTensorParameter = false;
+		LOG.info(this + " does not likely have a tensor parameter.");
+		monitor.done();
 	}
 
 	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
-		monitor.setTaskName("Computing hybridization ...");
+		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -312,13 +375,16 @@ public class Function extends RefactorableProgramEntity {
 				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
+					monitor.done();
 					return;
 				}
+				monitor.worked(1);
 			}
 		}
 
 		this.isHybrid = false;
 		LOG.info(this + " is not hybrid.");
+		monitor.done();
 	}
 
 	/**
@@ -358,7 +424,11 @@ public class Function extends RefactorableProgramEntity {
 
 	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType decoratorFunction = decorator.func;
-		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, decoratorFunction);
+		return getSelection(decoratorFunction, document);
+	}
+
+	private static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, node);
 		return new PySelection(document, coreTextSelection);
 	}
 
@@ -420,7 +490,7 @@ public class Function extends RefactorableProgramEntity {
 
 	@Override
 	public String toString() {
-		return this.getIdentifer();
+		return this.getIdentifer() + "()";
 	}
 
 	@Override
@@ -442,5 +512,9 @@ public class Function extends RefactorableProgramEntity {
 
 	public String getSimpleName() {
 		return NodeUtils.getFullRepresentationString(this.getFunctionDefinition().getFunctionDef());
+	}
+
+	public argumentsType getParameters() {
+		return getFunctionDefinition().getFunctionDef().args;
 	}
 }

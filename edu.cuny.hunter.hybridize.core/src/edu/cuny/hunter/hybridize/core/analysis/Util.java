@@ -92,21 +92,29 @@ public class Util {
 			throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
+		exprType decoratorFunction = decorator.func;
+		String fqn = getFullyQualifiedName(decoratorFunction, containingModName, containingFile, containingSelection, nature, monitor);
+
+		monitor.done();
+		return fqn;
+	}
+
+	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
 		monitor.subTask("Getting declaring module name.");
+
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
 		monitor.worked(1);
 
-		exprType decoratorFunction = decorator.func;
-		String decoratorFullRepresentationString = NodeUtils.getRepresentationString(decoratorFunction);
-		LOG.info(String.format("The \"full representation\" of %s is %s.", decoratorFunction, decoratorFullRepresentationString));
+		String representationString = NodeUtils.getRepresentationString(node);
+		LOG.info(String.format("\"Representation\" of %s: %s.", node, representationString));
 		monitor.worked(1);
 
-		String fqn = declaringModuleName + "." + decoratorFullRepresentationString;
+		String fqn = declaringModuleName + "." + representationString;
 		LOG.info(String.format("FQN is: %s.", fqn));
-		monitor.worked(1);
 
-		monitor.done();
+		monitor.worked(1);
 		return fqn;
 	}
 
@@ -147,7 +155,7 @@ public class Util {
 		return ret.toString();
 	}
 
-	public static CoreTextSelection getCoreTextSelection(IDocument document, exprType expression) {
+	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
 		int offset = NodeUtils.getOffset(document, expression);
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());

@@ -66,7 +66,9 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -565,7 +567,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -608,7 +610,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -628,7 +630,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -649,7 +651,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -668,7 +670,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -687,7 +689,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -706,7 +708,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -725,7 +727,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -744,7 +746,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -763,7 +765,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -781,8 +783,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam()
-				&& !args.hasExperimentalAutographOptParam() && !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -1210,4 +1212,334 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(func.equals(func));
 	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters and is not hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter and is not hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is not being used. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is being used. Thus, it's
+	 * not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters and is hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters, is hybrid, and considers type hints. Thus, it's not likely to have a tensor
+	 * parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and considers type hints. But, no type hint is supplied. Thus, it's
+	 * not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+		// TODO: And the value is true (#111).
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// no type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNull(annotationExpr);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and does not consider type hints. But, a type hint is supplied. In
+	 * other words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertFalse(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter, is hybrid and considers type hints. And, a tf.Tensor type hint is supplied. Thus,
+	 * is likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		assertTrue(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter, is hybrid, but does not consider type hints by setting the flag to False. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// The flag is there.
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		// But, it's set to False.
+		// TODO: assert that the experimental type hints param is set to false (#111).
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		// TODO: Set to assertFalse() when #111 is fixed.
+		assertTrue(function.likelyHasTensorParameter());
+	}
+
+	// TODO: Test arbitrary expression.
+	// TODO: Test cast/assert statements?
+	// TODO: Test tf.Tensor-like things?
 }
