@@ -198,7 +198,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
-		public boolean hasExperimentalTypeHintsParam() {
+		public boolean hasExperimentalFollowTypeHintsParam() {
 			return this.experimentaFollowTypeHintsParamExists;
 		}
 

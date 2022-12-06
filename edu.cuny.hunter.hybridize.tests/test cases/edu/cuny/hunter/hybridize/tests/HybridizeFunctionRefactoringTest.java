@@ -567,7 +567,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -610,7 +610,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -630,7 +630,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 
 	}
 
@@ -651,7 +651,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& !args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -670,7 +670,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
-				&& args.hasExperimentalTypeHintsParam() && !args.hasFuncParam());
+				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
 	/**
@@ -1503,7 +1503,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.isHybrid());
 
 		// The flag is there.
-		assertTrue(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
 
 		// But, it's set to False.
 		// TODO: assert that the experimental type hints param is set to false (#111).
