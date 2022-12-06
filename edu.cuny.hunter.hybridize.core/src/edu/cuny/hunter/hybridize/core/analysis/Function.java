@@ -322,8 +322,7 @@ public class Function extends RefactorableProgramEntity {
 							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
 							if (argTypeInfo != null) {
-								LOG.info("Found type for parameter " + paramName + " in "
-										+ NodeUtils.getFullRepresentationString(functionDef) + "(): " + argTypeInfo.getActTok() + ".");
+								LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
 
 								exprType node = argTypeInfo.getNode();
 								Attribute typeHintExpr = (Attribute) node;
