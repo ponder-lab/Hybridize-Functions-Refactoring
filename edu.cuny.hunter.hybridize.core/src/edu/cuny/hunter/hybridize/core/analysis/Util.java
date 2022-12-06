@@ -91,8 +91,8 @@ public class Util {
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting decorator FQN.", 3);
-		exprType decoratorFunction = decorator.func;
 
+		exprType decoratorFunction = decorator.func;
 		String fqn = getFullyQualifiedName(decoratorFunction, containingModName, containingFile, containingSelection, nature, monitor);
 
 		monitor.done();
