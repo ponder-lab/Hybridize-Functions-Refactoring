@@ -1337,7 +1337,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. Here, the function has no parameters, is hybrid, and uses type hints. Thus, it's not likely to have a tensor parameter.
+	 * Test for #2. Here, the function has no parameters, is hybrid, and considers type hints. Thus, it's not likely to have a tensor
+	 * parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter6() throws Exception {
@@ -1360,8 +1361,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. Here, the function has one parameters, is hybrid, and uses type hints. But, no type hint is supplied. Thus, it's not
-	 * likely to have a tensor parameter.
+	 * Test for #2. Here, the function has one parameters, is hybrid, and considers type hints. But, no type hint is supplied. Thus, it's
+	 * not likely to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter7() throws Exception {
@@ -1399,8 +1400,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. Here, the function has one parameters, is hybrid, and does not use type hints. But, a type hint is supplied. In other
-	 * words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 * Test for #2. Here, the function has one parameters, is hybrid, and does not consider type hints. But, a type hint is supplied. In
+	 * other words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter8() throws Exception {
@@ -1443,8 +1444,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. Here, the function has one parameters, is hybrid, and uses type hints. And, a tf.Tensor type hint is supplied. Thus,
-	 * it's not likely to have a tensor parameter.
+	 * Test for #2. Here, the function has one parameter, is hybrid and considers type hints. And, a tf.Tensor type hint is supplied. Thus,
+	 * is likely to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter9() throws Exception {
@@ -1454,6 +1455,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
 		assertTrue(function.getHybridizationParameters().hasExperimentalTypeHintsParam());
 
 		argumentsType params = function.getParameters();
