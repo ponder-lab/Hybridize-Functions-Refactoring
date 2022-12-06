@@ -102,6 +102,7 @@ public class Util {
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
 		monitor.subTask("Getting declaring module name.");
+
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
 		monitor.worked(1);
@@ -112,6 +113,7 @@ public class Util {
 
 		String fqn = declaringModuleName + "." + representationString;
 		LOG.info(String.format("FQN is: %s.", fqn));
+
 		monitor.worked(1);
 		return fqn;
 	}
