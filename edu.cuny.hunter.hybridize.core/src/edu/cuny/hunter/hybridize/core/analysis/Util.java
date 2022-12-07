@@ -59,10 +59,15 @@ public class Util {
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + selection.getSelectedText() + ".");
+			throw new IllegalArgumentException(
+					String.format("Can't find declaring module for selection: %s in module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()));
 
 		if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + selection.getSelectedText() + ".", pointers.length);
+			throw new TooManyMatchesException(
+					String.format("Ambigious definitions found for selection: %s in module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()),
+					pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
 		Definition definition = itemPointer.definition;
