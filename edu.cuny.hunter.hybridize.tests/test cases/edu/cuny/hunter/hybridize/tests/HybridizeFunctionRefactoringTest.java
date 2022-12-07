@@ -560,6 +560,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// TODO: Fix #106 to pass test.
 		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function function : functions) {
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+			assertFalse(function.likelyHasTensorParameter());
+
+		}
 	}
 
 	/**
