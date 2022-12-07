@@ -45,6 +45,9 @@ public class Util {
 			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting declaring module name.", 1);
 
+		LOG.info(String.format("Getting declaring module name for selection: %s in module: %s, file: %s, and project: %s.",
+				selection.getSelectedText(), containingModName, containingFile, nature.getProject()));
+
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
 		request.acceptTypeshed = true;
