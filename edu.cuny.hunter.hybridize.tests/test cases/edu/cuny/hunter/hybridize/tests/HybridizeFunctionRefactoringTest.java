@@ -555,7 +555,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #106. Contains ambiguous definition, using property decorator for methods getter and setter, which currently gives an error.
 	 */
 	@Test
-	public void testAmbiguousDefintion() throws Exception {
+	public void testAmbiguousDefinition() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		// TODO: Fix #106 to pass test.
