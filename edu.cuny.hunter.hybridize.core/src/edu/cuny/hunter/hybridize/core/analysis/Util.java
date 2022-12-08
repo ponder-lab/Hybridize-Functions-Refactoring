@@ -114,7 +114,8 @@ public class Util {
 	}
 
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
-			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
 		monitor.subTask("Getting declaring module name.");
 
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);

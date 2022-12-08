@@ -329,8 +329,21 @@ public class Function extends RefactorableProgramEntity {
 								IDocument document = this.getContainingDocument();
 								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
-								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
-										this.nature, monitor);
+								String fqn;
+								try {
+									fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
+											this.nature, monitor);
+								} catch (TooManyMatchesException e) {
+									LOG.warn(String.format(
+											"Ambigous FQN for type hint expression: %s in module: %s, file: %s, selection: %s, and project: %s.",
+											typeHintExpr, containingModuleName, containingFile.getName(), selection.getTextSelection(),
+											nature.getProject()), e);
+
+									this.likelyHasTensorParameter = true;
+									LOG.info("Conservatively marked " + this + " as not likely having a tensor parameter.", e);
+									monitor.done();
+									return;
+								}
 
 								LOG.info("Found FQN: " + fqn + ".");
 
