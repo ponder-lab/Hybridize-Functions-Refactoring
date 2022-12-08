@@ -292,7 +292,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private void computeHasTensorParameter(IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -335,14 +335,11 @@ public class Function extends RefactorableProgramEntity {
 											this.nature, monitor);
 								} catch (TooManyMatchesException e) {
 									LOG.warn(String.format(
-											"Ambigous FQN for type hint expression: %s in module: %s, file: %s, selection: %s, and project: %s.",
-											typeHintExpr, containingModuleName, containingFile.getName(), selection.getTextSelection(),
+											"Ambigious FQN for type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
 											nature.getProject()), e);
 
-									this.likelyHasTensorParameter = true;
-									LOG.info("Conservatively marked " + this + " as not likely having a tensor parameter.", e);
-									monitor.done();
-									return;
+									continue; // next parameter.
 								}
 
 								LOG.info("Found FQN: " + fqn + ".");
@@ -383,7 +380,20 @@ public class Function extends RefactorableProgramEntity {
 				PySelection selection = Util.getSelection(decorator, document);
 
 				// if this function is decorated with "tf.function."
-				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
+				boolean hybrid;
+
+				try {
+					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
+				} catch (TooManyMatchesException e) {
+					LOG.warn(String.format(
+							"Ambigious FQN for decorator: %s in selection: %s, module: %s, file: %s, and project; %s. This may mean that the decorator is generated.",
+							NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(), this.containingModuleName,
+							this.containingFile.getName(), this.nature.getProject()), e);
+
+					continue; // next decorator.
+				}
+
+				if (hybrid) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					monitor.done();
