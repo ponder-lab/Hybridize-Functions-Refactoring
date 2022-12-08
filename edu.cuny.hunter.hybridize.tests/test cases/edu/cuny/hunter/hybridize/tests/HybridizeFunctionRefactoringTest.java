@@ -985,7 +985,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
 	}
-	
+
 	/**
 	 * Call case.
 	 */

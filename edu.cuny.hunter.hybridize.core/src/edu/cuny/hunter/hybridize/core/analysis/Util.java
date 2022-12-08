@@ -18,6 +18,8 @@ import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
@@ -168,5 +170,29 @@ public class Util {
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;
+	}
+
+	/**
+	 * Returns the {@link Attribute} associated with the given {@link decoratorsType}.
+	 *
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link Attribute}.
+	 * @return The {@link Attribute} associated with the given {@link decoratorsType}.
+	 */
+	public static Attribute getAttribute(decoratorsType decorator) {
+		exprType func = decorator.func;
+		return getAttribute(func);
+	}
+
+	private static Attribute getAttribute(exprType expr) {
+		if (expr instanceof Attribute)
+			return (Attribute) expr;
+
+		if (expr instanceof Call) {
+			Call call = (Call) expr;
+			exprType func = call.func;
+			return getAttribute(func);
+		}
+
+		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
 	}
 }

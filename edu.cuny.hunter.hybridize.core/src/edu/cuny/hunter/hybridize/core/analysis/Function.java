@@ -423,8 +423,8 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
-		exprType decoratorFunction = decorator.func;
-		return getSelection(decoratorFunction, document);
+		Attribute attribute = Util.getAttribute(decorator);
+		return getSelection(attribute, document);
 	}
 
 	private static PySelection getSelection(SimpleNode node, IDocument document) {
