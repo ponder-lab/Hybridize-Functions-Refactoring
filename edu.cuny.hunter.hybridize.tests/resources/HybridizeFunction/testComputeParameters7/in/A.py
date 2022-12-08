@@ -1,4 +1,5 @@
 import tensorflow as tf
+
      
 @tf.function(autograph=False)
 def func():
@@ -7,5 +8,4 @@ def func():
  
 if __name__ == '__main__':
     func()
-    
     
