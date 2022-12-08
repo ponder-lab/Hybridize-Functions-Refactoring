@@ -49,7 +49,7 @@ public class Util {
 		monitor.beginTask("Getting declaring module name.", 1);
 
 		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
-				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().trim(), containingModName, containingFile,
+				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
 				nature.getProject()));
 
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
@@ -64,13 +64,15 @@ public class Util {
 
 		if (pointers.length == 0)
 			throw new IllegalArgumentException(
-					String.format("Can't find declaring module for selection: %s in module: %s, file: %s, and project: %s.",
-							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()));
+					String.format("Can't find declaring module for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()));
 
 		if (pointers.length > 1)
 			throw new TooManyMatchesException(
-					String.format("Ambigious definitions found for selection: %s in module: %s, file: %s, and project: %s.",
-							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()),
+					String.format("Ambigious definitions found for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()),
 					pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
