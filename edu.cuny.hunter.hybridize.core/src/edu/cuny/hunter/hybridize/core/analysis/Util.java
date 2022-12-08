@@ -165,6 +165,16 @@ public class Util {
 		return ret.toString();
 	}
 
+	public static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
+		return new PySelection(document, coreTextSelection);
+	}
+
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		Attribute attribute = getAttribute(decorator);
+		return getSelection(attribute, document);
+	}
+
 	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
 		int offset = NodeUtils.getOffset(document, expression);
 		String representationString = NodeUtils.getRepresentationString(expression);

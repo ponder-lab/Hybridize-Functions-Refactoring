@@ -12,7 +12,6 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
-import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -23,7 +22,6 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
-import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -111,7 +109,7 @@ public class Function extends RefactorableProgramEntity {
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
-				PySelection selection = getSelection(decorator, document);
+				PySelection selection = Util.getSelection(decorator, document);
 
 				// Save the hybrid decorator
 				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
@@ -329,7 +327,7 @@ public class Function extends RefactorableProgramEntity {
 
 								// Look up the definition.
 								IDocument document = this.getContainingDocument();
-								PySelection selection = getSelection(typeHintExpr.attr, document);
+								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
 								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
 										this.nature, monitor);
@@ -369,7 +367,7 @@ public class Function extends RefactorableProgramEntity {
 
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
-				PySelection selection = getSelection(decorator, document);
+				PySelection selection = Util.getSelection(decorator, document);
 
 				// if this function is decorated with "tf.function."
 				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
@@ -420,16 +418,6 @@ public class Function extends RefactorableProgramEntity {
 
 	public IPythonNature getNature() {
 		return this.functionDefinition.nature;
-	}
-
-	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
-		Attribute attribute = Util.getAttribute(decorator);
-		return getSelection(attribute, document);
-	}
-
-	private static PySelection getSelection(SimpleNode node, IDocument document) {
-		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, node);
-		return new PySelection(document, coreTextSelection);
 	}
 
 	public File getContainingFile() {
