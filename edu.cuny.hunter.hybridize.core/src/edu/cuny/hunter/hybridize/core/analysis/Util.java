@@ -22,6 +22,7 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -165,14 +166,14 @@ public class Util {
 		return ret.toString();
 	}
 
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType expression = getExpressionFromFunction(decorator);
+		return getSelection(expression, document);
+	}
+
 	public static PySelection getSelection(SimpleNode node, IDocument document) {
 		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
 		return new PySelection(document, coreTextSelection);
-	}
-
-	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
-		Attribute attribute = getAttribute(decorator);
-		return getSelection(attribute, document);
 	}
 
 	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
@@ -183,24 +184,24 @@ public class Util {
 	}
 
 	/**
-	 * Returns the {@link Attribute} associated with the given {@link decoratorsType}.
+	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s "function."
 	 *
-	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link Attribute}.
-	 * @return The {@link Attribute} associated with the given {@link decoratorsType}.
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its "function."
+	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s "function."
 	 */
-	public static Attribute getAttribute(decoratorsType decorator) {
+	public static exprType getExpressionFromFunction(decoratorsType decorator) {
 		exprType func = decorator.func;
-		return getAttribute(func);
+		return getInnerExpression(func);
 	}
 
-	private static Attribute getAttribute(exprType expr) {
-		if (expr instanceof Attribute)
-			return (Attribute) expr;
+	private static exprType getInnerExpression(exprType expr) {
+		if (expr instanceof Attribute || expr instanceof Name)
+			return expr;
 
 		if (expr instanceof Call) {
 			Call call = (Call) expr;
 			exprType func = call.func;
-			return getAttribute(func);
+			return getInnerExpression(func);
 		}
 
 		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
