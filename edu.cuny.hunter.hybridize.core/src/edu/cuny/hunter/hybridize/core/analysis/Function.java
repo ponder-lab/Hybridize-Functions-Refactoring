@@ -115,7 +115,7 @@ public class Function extends RefactorableProgramEntity {
 
 				// Save the hybrid decorator
 				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-						Function.this.nature, monitor))
+						Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
 					tfFunctionDecorator = decorator;
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
