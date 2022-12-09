@@ -30,6 +30,7 @@ tmp/
 *.bak
 *.swp
 *.swo
+*.swn
 *~.nib
 local.properties
 # .settings/
