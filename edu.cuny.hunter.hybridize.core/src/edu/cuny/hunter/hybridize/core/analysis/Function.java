@@ -12,7 +12,6 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
-import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -23,7 +22,6 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
-import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -111,11 +109,11 @@ public class Function extends RefactorableProgramEntity {
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
-				PySelection selection = getSelection(decorator, document);
+				PySelection selection = Util.getSelection(decorator, document);
 
 				// Save the hybrid decorator
 				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-						Function.this.nature, monitor))
+						Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
 					tfFunctionDecorator = decorator;
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
@@ -294,7 +292,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private void computeHasTensorParameter(IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -329,10 +327,21 @@ public class Function extends RefactorableProgramEntity {
 
 								// Look up the definition.
 								IDocument document = this.getContainingDocument();
-								PySelection selection = getSelection(typeHintExpr.attr, document);
+								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
-								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
-										this.nature, monitor);
+								String fqn;
+								try {
+									fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
+											this.nature, monitor);
+								} catch (TooManyMatchesException e) {
+									LOG.warn(String.format(
+											"Ambigious FQN for type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
+											nature.getProject()), e);
+
+									monitor.worked(1);
+									continue; // next parameter.
+								}
 
 								LOG.info("Found FQN: " + fqn + ".");
 
@@ -369,10 +378,32 @@ public class Function extends RefactorableProgramEntity {
 
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = this.getContainingDocument();
-				PySelection selection = getSelection(decorator, document);
+				PySelection selection = Util.getSelection(decorator, document);
 
 				// if this function is decorated with "tf.function."
-				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
+				boolean hybrid = false;
+
+				try {
+					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
+				} catch (TooManyMatchesException e) {
+					if (Util.isGenerated(decorator)) {
+						// Since tf.function isn't generated, skip generated decorators.
+						LOG.info(String.format(
+								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
+								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()));
+					} else {
+						LOG.warn(String.format(
+								"Ambigious FQN found for decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
+								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()), e);
+
+						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
+						// status entry would fail the entire function.
+					}
+				}
+
+				if (hybrid) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					monitor.done();
@@ -420,16 +451,6 @@ public class Function extends RefactorableProgramEntity {
 
 	public IPythonNature getNature() {
 		return this.functionDefinition.nature;
-	}
-
-	private static PySelection getSelection(decoratorsType decorator, IDocument document) {
-		exprType decoratorFunction = decorator.func;
-		return getSelection(decoratorFunction, document);
-	}
-
-	private static PySelection getSelection(SimpleNode node, IDocument document) {
-		CoreTextSelection coreTextSelection = Util.getCoreTextSelection(document, node);
-		return new PySelection(document, coreTextSelection);
 	}
 
 	public File getContainingFile() {

@@ -18,8 +18,11 @@ import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -45,8 +48,9 @@ public class Util {
 			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting declaring module name.", 1);
 
-		LOG.info(String.format("Getting declaring module name for selection: %s in module: %s, file: %s, and project: %s.",
-				selection.getSelectedText(), containingModName, containingFile, nature.getProject()));
+		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
+				nature.getProject()));
 
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
@@ -60,13 +64,15 @@ public class Util {
 
 		if (pointers.length == 0)
 			throw new IllegalArgumentException(
-					String.format("Can't find declaring module for selection: %s in module: %s, file: %s, and project: %s.",
-							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()));
+					String.format("Can't find declaring module for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()));
 
 		if (pointers.length > 1)
 			throw new TooManyMatchesException(
-					String.format("Ambigious definitions found for selection: %s in module: %s, file: %s, and project: %s.",
-							selection.getSelectedText(), containingModName, containingFile.getName(), nature.getProject()),
+					String.format("Ambigious definitions found for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()),
 					pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
@@ -108,7 +114,8 @@ public class Util {
 	}
 
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
-			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
+			throws TooManyMatchesException, BadLocationException {
 		monitor.subTask("Getting declaring module name.");
 
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
@@ -163,10 +170,54 @@ public class Util {
 		return ret.toString();
 	}
 
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType expression = getExpressionFromFunction(decorator);
+		return getSelection(expression, document);
+	}
+
+	public static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
+		return new PySelection(document, coreTextSelection);
+	}
+
 	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
 		int offset = NodeUtils.getOffset(document, expression);
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;
+	}
+
+	/**
+	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 *
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its "function."
+	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 */
+	public static exprType getExpressionFromFunction(decoratorsType decorator) {
+		exprType func = decorator.func;
+		return getInnerExpression(func);
+	}
+
+	private static exprType getInnerExpression(exprType expr) {
+		if (expr instanceof Attribute || expr instanceof Name)
+			return expr;
+
+		if (expr instanceof Call) {
+			Call call = (Call) expr;
+			exprType func = call.func;
+			return getInnerExpression(func);
+		}
+
+		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
+	}
+
+	/**
+	 * Returns true iff the given {@link decoratorsType} corresponds to a Python generated decorator (e.g., "setter" for properties).
+	 * @param decorator The {@link decoratorsType} in question.
+	 * @return True iff the given {@link decoratorsType} is generated by the run-time (e.g., a property).
+	 */
+	public static boolean isGenerated(decoratorsType decorator) {
+		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
+		return decoratorRepresentation.equals("setter");
 	}
 }
