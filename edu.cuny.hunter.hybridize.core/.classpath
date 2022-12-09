@@ -6,6 +6,6 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.pde.core.requiredPlugins"/>
-	<classpathentry excluding="edu/cuny/hunter/hybridize/core/analysis/Scratch.java" kind="src" path="src"/>
+	<classpathentry kind="src" path="src/"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>
