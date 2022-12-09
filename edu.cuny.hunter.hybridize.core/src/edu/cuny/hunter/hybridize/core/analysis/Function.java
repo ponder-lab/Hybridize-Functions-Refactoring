@@ -339,6 +339,7 @@ public class Function extends RefactorableProgramEntity {
 											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
 											nature.getProject()), e);
 
+									monitor.worked(1);
 									continue; // next parameter.
 								}
 
@@ -380,17 +381,26 @@ public class Function extends RefactorableProgramEntity {
 				PySelection selection = Util.getSelection(decorator, document);
 
 				// if this function is decorated with "tf.function."
-				boolean hybrid;
+				boolean hybrid = false;
 
 				try {
 					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
 				} catch (TooManyMatchesException e) {
-					LOG.warn(String.format(
-							"Ambigious FQN for decorator: %s in selection: %s, module: %s, file: %s, and project; %s. This may mean that the decorator is generated.",
-							NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(), this.containingModuleName,
-							this.containingFile.getName(), this.nature.getProject()), e);
+					if (Util.isGenerated(decorator)) {
+						// Since tf.function isn't generated, skip generated decorators.
+						LOG.info(String.format(
+								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
+								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()));
+					} else {
+						LOG.warn(String.format(
+								"Ambigious FQN found for decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
+								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()), e);
 
-					continue; // next decorator.
+						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
+						// status entry would fail the entire function.
+					}
 				}
 
 				if (hybrid) {
