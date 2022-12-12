@@ -13,7 +13,7 @@ public class AmbiguousDeclaringModuleException extends Exception {
 	public AmbiguousDeclaringModuleException(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			int matchesFound) throws BadLocationException {
 		super(String.format("Ambigious definitions (%d) found for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
-				matchesFound, selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
-				containingFile.getName(), nature.getProject()));
+				Integer.valueOf(matchesFound), selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(),
+				containingModName, containingFile.getName(), nature.getProject()));
 	}
 }
