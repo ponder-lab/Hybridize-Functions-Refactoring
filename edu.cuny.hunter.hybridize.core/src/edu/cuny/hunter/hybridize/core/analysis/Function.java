@@ -384,14 +384,15 @@ public class Function extends RefactorableProgramEntity {
 				LOG.info("Computing whether decorator: " + decoratorFunctionRepresentation + " is hybrid.");
 
 				IDocument document = this.getContainingDocument();
-				PySelection selection = Util.getSelection(decorator, document);
+				PySelection selection = null;
 
 				// if this function is decorated with "tf.function."
 				boolean hybrid = false;
 
 				try {
+					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
-				} catch (AmbiguousDeclaringModuleException e) {
+				} catch (AmbiguousDeclaringModuleException | IllegalArgumentException | BadLocationException e) {
 					if (Util.isGenerated(decorator)) {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
