@@ -18,8 +18,11 @@ import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -39,11 +42,15 @@ public class Util {
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The name of the module defining the given {@link PySelection}.
 	 * @throws TooManyMatchesException On ambiguous definitions found.
-	 * @throws BadLocationException On parsing error.
+	 * @throws BadLocationException On a parsing error.
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
 		monitor.beginTask("Getting declaring module name.", 1);
+
+		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
+				nature.getProject()));
 
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
@@ -56,10 +63,17 @@ public class Util {
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + selection.getSelectedText() + ".");
+			throw new IllegalArgumentException(
+					String.format("Can't find declaring module for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()));
 
 		if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + selection.getSelectedText() + ".", pointers.length);
+			throw new TooManyMatchesException(
+					String.format("Ambigious definitions found for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()),
+					pointers.length);
 
 		ItemPointer itemPointer = pointers[0];
 		Definition definition = itemPointer.definition;
@@ -155,10 +169,44 @@ public class Util {
 		return ret.toString();
 	}
 
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType expression = getExpressionFromFunction(decorator);
+		return getSelection(expression, document);
+	}
+
+	public static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
+		return new PySelection(document, coreTextSelection);
+	}
+
 	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
 		int offset = NodeUtils.getOffset(document, expression);
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;
+	}
+
+	/**
+	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 *
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its "function."
+	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 */
+	public static exprType getExpressionFromFunction(decoratorsType decorator) {
+		exprType func = decorator.func;
+		return getInnerExpression(func);
+	}
+
+	private static exprType getInnerExpression(exprType expr) {
+		if (expr instanceof Attribute || expr instanceof Name)
+			return expr;
+
+		if (expr instanceof Call) {
+			Call call = (Call) expr;
+			exprType func = call.func;
+			return getInnerExpression(func);
+		}
+
+		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
 	}
 }
