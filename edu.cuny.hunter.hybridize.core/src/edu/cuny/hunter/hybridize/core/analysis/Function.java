@@ -393,16 +393,18 @@ public class Function extends RefactorableProgramEntity {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
 				} catch (AmbiguousDeclaringModuleException | IllegalArgumentException | BadLocationException e) {
+					String selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
+
 					if (Util.isGenerated(decorator)) {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selection.getSelectedText(), this.containingModuleName,
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName,
 								this.containingFile.getName(), this.nature.getProject()));
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
-								decoratorFunctionRepresentation, selection.getSelectedText(), this.containingModuleName,
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName,
 								this.containingFile.getName(), this.nature.getProject()), e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
