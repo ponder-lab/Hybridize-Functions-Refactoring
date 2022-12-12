@@ -121,44 +121,82 @@ public class Function extends RefactorableProgramEntity {
 				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
-					// We only care about the actual keywords for now.
-					// TODO: Parse positional arguments (#108).
-					keywordType[] keywords = callFunction.keywords;
-					for (keywordType keyword : keywords) {
-						if (keyword.arg instanceof NameTok) {
-							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals(FUNC))
-								// Found parameter func
-								this.funcParamExists = true;
-							else if (name.id.equals(INPUT_SIGNATURE))
-								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
-							else if (name.id.equals(AUTOGRAPH))
-								// Found parameter autograph
-								this.autoGraphParamExists = true;
-							// The version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
-							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
-								// Found parameter jit_compile/experimental_compile
-								this.jitCompileParamExists = true;
-							// The version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
-							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-								// Found parameter reduce_retracing
-								// or experimental_relax_shapes
-								this.reduceRetracingParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
-								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
+
+					// Using keywords instead of positional arguments
+					if (callFunction.args.length == 0) {
+						keywordType[] keywords = callFunction.keywords;
+						for (keywordType keyword : keywords) {
+							if (keyword.arg instanceof NameTok) {
+								NameTok name = (NameTok) keyword.arg;
+								if (name.id.equals(FUNC))
+									// Found parameter func
+									this.funcParamExists = true;
+								else if (name.id.equals(INPUT_SIGNATURE))
+									// Found parameter input_signature
+									this.inputSignatureParamExists = true;
+								else if (name.id.equals(AUTOGRAPH))
+									// Found parameter autograph
+									this.autoGraphParamExists = true;
+								// The version of the API we are using allows
+								// parameter names jit_compile and
+								// deprecated name experimental_compile
+								else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
+									// Found parameter jit_compile/experimental_compile
+									this.jitCompileParamExists = true;
+								// The version of the API we are using allows
+								// parameter names reduce_retracing
+								// and deprecated name experimental_relax_shapes
+								else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
+									// Found parameter reduce_retracing
+									// or experimental_relax_shapes
+									this.reduceRetracingParamExists = true;
+								else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
+									// Found parameter experimental_implements
+									this.experimentalImplementsParamExists = true;
+								else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+									// Found parameter experimental_autograph_options
+									this.experimentalAutographOptionsParamExists = true;
+								else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+									// Found parameter experimental_follow_type_hints
+									this.experimentaFollowTypeHintsParamExists = true;
+							}
 						}
+					} else {
+						/**
+						 * Positional arguments for tf.function as per the documentation of TF 2.9: tf.function( func=None,
+						 * input_signature=None, autograph=True, jit_compile=None, reduce_retracing=False, experimental_implements=None,
+						 * experimental_autograph_options=None, experimental_relax_shapes=None, experimental_compile=None,
+						 * experimental_follow_type_hints=None
+						 */
+						exprType[] arguments = callFunction.args;
+						if (arguments.length >= 1)
+							// Found parameter func
+							this.funcParamExists = true;
+						if (arguments.length >= 2)
+							// Found parameter input_signature
+							this.inputSignatureParamExists = true;
+						if (arguments.length >= 3)
+							// Found parameter autograph
+							this.autoGraphParamExists = true;
+						if (arguments.length >= 4)
+							// Found parameter jit_compile
+							this.jitCompileParamExists = true;
+						if (arguments.length >= 5)
+							// Found parameter experimental_implements
+							this.experimentalImplementsParamExists = true;
+						if (arguments.length >= 6)
+							// Found parameter experimental_autograph_options
+							this.experimentalAutographOptionsParamExists = true;
+						if (arguments.length >= 7)
+							// Found parameter experimental_relax_shapes (deprecated)
+							this.reduceRetracingParamExists = true;
+						if (arguments.length >= 8)
+							// Found parameter experimental_compile (deprecated)
+							this.jitCompileParamExists = true;
+						if (arguments.length >= 9)
+							// Found parameter experimental_follow_type_hints
+							this.experimentaFollowTypeHintsParamExists = true;
+
 					}
 				} // else, tf.function is used without parameters.
 		}
