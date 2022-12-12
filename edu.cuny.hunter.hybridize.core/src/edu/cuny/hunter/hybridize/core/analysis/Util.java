@@ -3,6 +3,8 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -13,7 +15,6 @@ import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -41,11 +42,11 @@ public class Util {
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The name of the module defining the given {@link PySelection}.
-	 * @throws TooManyMatchesException On ambiguous definitions found.
+	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
 	 * @throws BadLocationException On a parsing error.
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
-			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.beginTask("Getting declaring module name.", 1);
 
 		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
@@ -68,24 +69,35 @@ public class Util {
 							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
 							containingFile.getName(), nature.getProject()));
 
-		if (pointers.length > 1)
-			throw new TooManyMatchesException(
-					String.format("Ambigious definitions found for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
-							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
-							containingFile.getName(), nature.getProject()),
-					pointers.length);
+		// Collect the potential declaring module names.
+		Set<String> potentialDeclaringModuleNames = new HashSet<>();
 
-		ItemPointer itemPointer = pointers[0];
-		Definition definition = itemPointer.definition;
+		// for each match.
+		for (ItemPointer itemPointer : pointers) {
+			Definition definition = itemPointer.definition;
+			LOG.info("Found definition: " + definition + ".");
 
-		LOG.info("Found definition: " + definition + ".");
+			IModule module = definition.module;
+			LOG.info(String.format("Found module: %s.", module));
 
-		IModule module = definition.module;
+			String moduleName = module.getName();
+			LOG.info(String.format("Found module name: %s.", moduleName));
 
-		LOG.info(String.format("Found module: %s.", module));
+			// add it to the set of found module names.
+			potentialDeclaringModuleNames.add(moduleName);
+		}
 
-		monitor.done();
-		return module.getName();
+		// if we found a unique module name.
+		if (potentialDeclaringModuleNames.size() == 1) {
+			monitor.done();
+
+			// return the first one.
+			return potentialDeclaringModuleNames.iterator().next();
+		}
+
+		// otherwise, we have an ambiguous declaring module name.
+		throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature,
+				potentialDeclaringModuleNames.size());
 	}
 
 	/**
@@ -98,12 +110,12 @@ public class Util {
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The FQN of the given {@link decoratorsType}.
-	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
+	 * @throws AmbiguousDeclaringModuleException If the definition of the decorator is ambiguous.
 	 */
 	public static String getFullyQualifiedName(decoratorsType decorator, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+			throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
 		exprType decoratorFunction = decorator.func;
@@ -114,7 +126,8 @@ public class Util {
 	}
 
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
-			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
+			throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.subTask("Getting declaring module name.");
 
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
@@ -208,5 +221,16 @@ public class Util {
 		}
 
 		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
+	}
+
+	/**
+	 * Returns true iff the given {@link decoratorsType} corresponds to a Python generated decorator (e.g., "setter" for properties).
+	 *
+	 * @param decorator The {@link decoratorsType} in question.
+	 * @return True iff the given {@link decoratorsType} is generated by the run-time (e.g., a property).
+	 */
+	public static boolean isGenerated(decoratorsType decorator) {
+		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
+		return decoratorRepresentation.equals("setter");
 	}
 }
