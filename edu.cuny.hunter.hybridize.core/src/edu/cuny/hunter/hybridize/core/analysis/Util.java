@@ -184,6 +184,7 @@ public class Util {
 
 	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
 		exprType expression = getExpressionFromFunction(decorator);
+		LOG.info("Getting PySelection for exprType: " + expression + ".");
 		return getSelection(expression, document);
 	}
 

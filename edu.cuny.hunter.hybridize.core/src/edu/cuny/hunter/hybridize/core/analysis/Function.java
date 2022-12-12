@@ -380,6 +380,9 @@ public class Function extends RefactorableProgramEntity {
 			this.nature = this.getNature();
 
 			for (decoratorsType decorator : decoratorArray) {
+				String decoratorFunctionRepresentation = NodeUtils.getFullRepresentationString(decorator.func);
+				LOG.info("Computing whether decorator: " + decoratorFunctionRepresentation + " is hybrid.");
+
 				IDocument document = this.getContainingDocument();
 				PySelection selection = Util.getSelection(decorator, document);
 
@@ -393,13 +396,13 @@ public class Function extends RefactorableProgramEntity {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
-								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()));
+								decoratorFunctionRepresentation, selection.getSelectedText(), this.containingModuleName,
+								this.containingFile.getName(), this.nature.getProject()));
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
-								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
-								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()), e);
+								decoratorFunctionRepresentation, selection.getSelectedText(), this.containingModuleName,
+								this.containingFile.getName(), this.nature.getProject()), e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
 						// status entry would fail the entire function.
