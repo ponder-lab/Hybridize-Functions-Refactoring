@@ -162,12 +162,11 @@ public class Function extends RefactorableProgramEntity {
 							}
 						}
 					} else {
-						/**
-						 * Positional arguments for tf.function as per the documentation of TF 2.9: tf.function( func=None,
-						 * input_signature=None, autograph=True, jit_compile=None, reduce_retracing=False, experimental_implements=None,
-						 * experimental_autograph_options=None, experimental_relax_shapes=None, experimental_compile=None,
-						 * experimental_follow_type_hints=None
-						 */
+						// Positional arguments for tf.function as per the documentation of TF 2.9: tf.function( func=None,
+						// input_signature=None, autograph=True, jit_compile=None, reduce_retracing=False, experimental_implements=None,
+						// experimental_autograph_options=None, experimental_relax_shapes=None, experimental_compile=None,
+						// experimental_follow_type_hints=None
+
 						exprType[] arguments = callFunction.args;
 						if (arguments.length >= 1)
 							// Found parameter func
