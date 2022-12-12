@@ -129,6 +129,7 @@ public class Util {
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
 			throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.subTask("Getting declaring module name.");
+		LOG.info("Getting declaring module name for SimpleNode: " + node + ".");
 
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
