@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 @tf.function(None)
-def test(): 
+def test():
     pass
 
 if __name__ == '__main__':

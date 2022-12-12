@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 @tf.function(None, (tf.TensorSpec(shape=[None], dtype=tf.float32),), False, True, True, "google.matmul_low_rank_matrix", tf.autograph.experimental.Feature.EQUALITY_OPERATORS)
-def test(x): 
+def test(x):
     return x
 
 if __name__ == '__main__':
