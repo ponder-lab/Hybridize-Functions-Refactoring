@@ -43,7 +43,7 @@ public class Util {
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The name of the module defining the given {@link PySelection}.
 	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
-	 * @throws BadLocationException On parsing error.
+	 * @throws BadLocationException On a parsing error.
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
