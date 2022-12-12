@@ -788,6 +788,196 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #106. This tests whether we can parse one tf.function positional argument.
+	 */
+	@Test
+	public void testPositionalParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse two tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse three tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse four tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && !args.hasReduceRetracingParam()
+				&& !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse five tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse six tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse seven tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse eight tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse nine tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests whether we can parse ten tf.function positional arguments.
+	 */
+	@Test
+	public void testPositionalParameters10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test

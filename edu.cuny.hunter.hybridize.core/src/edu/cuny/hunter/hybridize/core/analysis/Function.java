@@ -170,7 +170,9 @@ public class Function extends RefactorableProgramEntity {
 						exprType[] arguments = callFunction.args;
 						if (arguments.length >= 1)
 							// Found parameter func
-							this.funcParamExists = true;
+							// Since we are parsing decorators, the first positional argument is `None`
+							// which is the default value of func, so we should not put as true
+							this.funcParamExists = false;
 						if (arguments.length >= 2)
 							// Found parameter input_signature
 							this.inputSignatureParamExists = true;
