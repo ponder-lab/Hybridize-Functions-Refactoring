@@ -397,7 +397,7 @@ public class Function extends RefactorableProgramEntity {
 								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()));
 					} else {
 						LOG.warn(String.format(
-								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybridSF.",
+								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								NodeUtils.getFullRepresentationString(decorator.func), selection.getSelectedText(),
 								this.containingModuleName, this.containingFile.getName(), this.nature.getProject()), e);
 
