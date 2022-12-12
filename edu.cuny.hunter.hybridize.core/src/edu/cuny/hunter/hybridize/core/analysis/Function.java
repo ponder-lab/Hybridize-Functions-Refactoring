@@ -168,6 +168,7 @@ public class Function extends RefactorableProgramEntity {
 						// experimental_follow_type_hints=None
 
 						exprType[] arguments = callFunction.args;
+
 						if (arguments.length >= 1)
 							// Found parameter func
 							// Since we are parsing decorators, the first positional argument is `None`
@@ -183,18 +184,21 @@ public class Function extends RefactorableProgramEntity {
 							// Found parameter jit_compile
 							this.jitCompileParamExists = true;
 						if (arguments.length >= 5)
+							// Found parameter reduce_retracing
+							this.reduceRetracingParamExists = true;
+						if (arguments.length >= 6)
 							// Found parameter experimental_implements
 							this.experimentalImplementsParamExists = true;
-						if (arguments.length >= 6)
+						if (arguments.length >= 7)
 							// Found parameter experimental_autograph_options
 							this.experimentalAutographOptionsParamExists = true;
-						if (arguments.length >= 7)
+						if (arguments.length >= 8)
 							// Found parameter experimental_relax_shapes (deprecated)
 							this.reduceRetracingParamExists = true;
-						if (arguments.length >= 8)
+						if (arguments.length >= 9)
 							// Found parameter experimental_compile (deprecated)
 							this.jitCompileParamExists = true;
-						if (arguments.length >= 9)
+						if (arguments.length >= 10)
 							// Found parameter experimental_follow_type_hints
 							this.experimentaFollowTypeHintsParamExists = true;
 
