@@ -253,7 +253,7 @@ public class Function extends RefactorableProgramEntity {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None") {
+									if (nameArgument.id != "None") {
 										// Found parameter experimental_autograph_options
 										this.experimentalAutographOptionsParamExists = true;
 									}
@@ -266,7 +266,7 @@ public class Function extends RefactorableProgramEntity {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None") {
+									if (nameArgument.id != "None") {
 										// Found parameter experimental_relax_shapes (deprecated)
 										this.reduceRetracingParamExists = true;
 									}
