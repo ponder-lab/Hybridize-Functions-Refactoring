@@ -398,6 +398,7 @@ public class Function extends RefactorableProgramEntity {
 						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
 					} catch (BadLocationException e1) {
 						// NOTE: No need to process; only for an error message.
+						LOG.info("Can't get selected text.", e);
 					}
 
 					if (Util.isGenerated(decorator)) {
