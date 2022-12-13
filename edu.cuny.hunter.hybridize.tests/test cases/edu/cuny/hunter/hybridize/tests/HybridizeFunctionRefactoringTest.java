@@ -978,6 +978,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #106. This tests that if tf.function has positional arguments set as default, we do not count them as existing.
+	 */
+	@Test
+	public void testPositionalParameters11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test

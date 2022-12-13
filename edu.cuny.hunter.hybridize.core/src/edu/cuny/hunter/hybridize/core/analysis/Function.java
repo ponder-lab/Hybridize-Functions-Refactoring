@@ -15,6 +15,7 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
@@ -168,39 +169,111 @@ public class Function extends RefactorableProgramEntity {
 						// experimental_follow_type_hints=None
 
 						exprType[] arguments = callFunction.args;
+						int position = 1;
 
-						if (arguments.length >= 1)
-							// Found parameter func
-							// Since we are parsing decorators, the first positional argument is `None`
-							// which is the default value of func, so we should not put as true
-							this.funcParamExists = false;
-						if (arguments.length >= 2)
-							// Found parameter input_signature
-							this.inputSignatureParamExists = true;
-						if (arguments.length >= 3)
-							// Found parameter autograph
-							this.autoGraphParamExists = true;
-						if (arguments.length >= 4)
-							// Found parameter jit_compile
-							this.jitCompileParamExists = true;
-						if (arguments.length >= 5)
-							// Found parameter reduce_retracing
-							this.reduceRetracingParamExists = true;
-						if (arguments.length >= 6)
-							// Found parameter experimental_implements
-							this.experimentalImplementsParamExists = true;
-						if (arguments.length >= 7)
-							// Found parameter experimental_autograph_options
-							this.experimentalAutographOptionsParamExists = true;
-						if (arguments.length >= 8)
-							// Found parameter experimental_relax_shapes (deprecated)
-							this.reduceRetracingParamExists = true;
-						if (arguments.length >= 9)
-							// Found parameter experimental_compile (deprecated)
-							this.jitCompileParamExists = true;
-						if (arguments.length >= 10)
-							// Found parameter experimental_follow_type_hints
-							this.experimentaFollowTypeHintsParamExists = true;
+						for (exprType argument : arguments) {
+							// Default value of tf.function, we don't want to classify the parameter as existing
+							if (position == 1) {
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter func
+								this.funcParamExists = true;
+							}
+							if (position == 2) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter input_signature
+								this.inputSignatureParamExists = true;
+							}
+							if (position == 3) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "True")
+										break;
+								}
+								// Found parameter autograph
+								this.autoGraphParamExists = true;
+							}
+							if (position == 4) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter jit_compile
+								this.jitCompileParamExists = true;
+							}
+							if (position == 5) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "False")
+										break;
+								}
+								// Found parameter reduce_retracing
+								this.reduceRetracingParamExists = true;
+							}
+							if (position == 6) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter experimental_implements
+								this.experimentalImplementsParamExists = true;
+							}
+							if (position == 7) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter experimental_autograph_options
+								this.experimentalAutographOptionsParamExists = true;
+							}
+							if (position == 8) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter experimental_relax_shapes (deprecated)
+								this.reduceRetracingParamExists = true;
+							}
+							if (position == 9) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter experimental_compile (deprecated)
+								this.jitCompileParamExists = true;
+							}
+							if (position == 10) {
+								// Default value of tf.function, we don't want to classify the parameter as existing
+								if (argument instanceof Name) {
+									Name nameArgument = (Name) argument;
+									if (nameArgument.id == "None")
+										break;
+								}
+								// Found parameter experimental_follow_type_hints
+								this.experimentaFollowTypeHintsParamExists = true;
+							}
+							position++;
+						}
 
 					}
 				} // else, tf.function is used without parameters.
