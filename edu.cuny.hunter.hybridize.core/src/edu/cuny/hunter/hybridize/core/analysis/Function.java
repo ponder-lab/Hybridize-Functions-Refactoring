@@ -163,7 +163,7 @@ public class Function extends RefactorableProgramEntity {
 							}
 						}
 					} else {
-						// Positional arguments for tf.function as per the documentation of TF 2.9: tf.function( func=None,
+						// Positional arguments for tf.function as per the documentation of TF 2.9: tf.function(func=None,
 						// input_signature=None, autograph=True, jit_compile=None, reduce_retracing=False, experimental_implements=None,
 						// experimental_autograph_options=None, experimental_relax_shapes=None, experimental_compile=None,
 						// experimental_follow_type_hints=None
@@ -176,101 +176,130 @@ public class Function extends RefactorableProgramEntity {
 							if (position == 1) {
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None")
+										// Found parameter func
+										this.funcParamExists = true;
+								} else {
+									// Found parameter func
+									this.funcParamExists = true;
 								}
-								// Found parameter func
-								this.funcParamExists = true;
 							}
 							if (position == 2) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None") {
+										// Found parameter input_signature
+										this.inputSignatureParamExists = true;
+									}
+								} else {
+									// Found parameter input_signature
+									this.inputSignatureParamExists = true;
 								}
-								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
 							}
 							if (position == 3) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "True")
-										break;
+									if (nameArgument.id != "True") {
+										// Found parameter autograph
+										this.autoGraphParamExists = true;
+									}
+								} else {
+									// Found parameter autograph
+									this.autoGraphParamExists = true;
 								}
-								// Found parameter autograph
-								this.autoGraphParamExists = true;
 							}
 							if (position == 4) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None") {
+										// Found parameter jit_compile
+										this.jitCompileParamExists = true;
+									}
+								} else {
+									// Found parameter jit_compile
+									this.jitCompileParamExists = true;
 								}
-								// Found parameter jit_compile
-								this.jitCompileParamExists = true;
 							}
 							if (position == 5) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "False")
-										break;
+									if (nameArgument.id != "False") {
+										// Found parameter reduce_retracing
+										this.reduceRetracingParamExists = true;
+									}
+								} else {
+									// Found parameter reduce_retracing
+									this.reduceRetracingParamExists = true;
 								}
-								// Found parameter reduce_retracing
-								this.reduceRetracingParamExists = true;
 							}
 							if (position == 6) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None") {
+										// Found parameter experimental_implements
+										this.experimentalImplementsParamExists = true;
+									}
+								} else {
+									// Found parameter experimental_implements
+									this.experimentalImplementsParamExists = true;
 								}
-								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
 							}
 							if (position == 7) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id == "None") {
+										// Found parameter experimental_autograph_options
+										this.experimentalAutographOptionsParamExists = true;
+									}
+								} else {
+									// Found parameter experimental_autograph_options
+									this.experimentalAutographOptionsParamExists = true;
 								}
-								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
 							}
 							if (position == 8) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id == "None") {
+										// Found parameter experimental_relax_shapes (deprecated)
+										this.reduceRetracingParamExists = true;
+									}
+								} else {
+									// Found parameter experimental_relax_shapes (deprecated)
+									this.reduceRetracingParamExists = true;
 								}
-								// Found parameter experimental_relax_shapes (deprecated)
-								this.reduceRetracingParamExists = true;
 							}
 							if (position == 9) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None") {
+										// Found parameter experimental_compile (deprecated)
+										this.jitCompileParamExists = true;
+									}
+								} else {
+									// Found parameter experimental_compile (deprecated)
+									this.jitCompileParamExists = true;
 								}
-								// Found parameter experimental_compile (deprecated)
-								this.jitCompileParamExists = true;
 							}
 							if (position == 10) {
 								// Default value of tf.function, we don't want to classify the parameter as existing
 								if (argument instanceof Name) {
 									Name nameArgument = (Name) argument;
-									if (nameArgument.id == "None")
-										break;
+									if (nameArgument.id != "None") {
+										// Found parameter experimental_follow_type_hints
+										this.experimentaFollowTypeHintsParamExists = true;
+									}
+								} else {
+									// Found parameter experimental_follow_type_hints
+									this.experimentaFollowTypeHintsParamExists = true;
 								}
-								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
 							}
 							position++;
 						}
