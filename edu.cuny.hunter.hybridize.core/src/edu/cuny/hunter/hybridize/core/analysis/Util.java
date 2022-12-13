@@ -15,6 +15,7 @@ import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -60,7 +61,14 @@ public class Util {
 		request.pushMonitor(monitor);
 
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
-		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
+
+		ItemPointer[] pointers;
+		try {
+			pointers = pyRefactoring.findDefinition(request);
+		} catch (TooManyMatchesException e) {
+			throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature, e);
+		}
+
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
@@ -234,5 +242,10 @@ public class Util {
 	public static boolean isGenerated(decoratorsType decorator) {
 		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
 		return decoratorRepresentation.equals("setter");
+	}
+
+	public static boolean isBuiltIn(decoratorsType decorator) {
+		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
+		return decoratorRepresentation.equals("property");
 	}
 }

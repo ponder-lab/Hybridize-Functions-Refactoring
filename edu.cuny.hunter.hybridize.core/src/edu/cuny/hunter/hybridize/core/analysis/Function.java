@@ -367,7 +367,7 @@ public class Function extends RefactorableProgramEntity {
 		monitor.done();
 	}
 
-	private void computeIsHybrid(IProgressMonitor monitor) throws BadLocationException {
+	private void computeIsHybrid(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
@@ -392,20 +392,33 @@ public class Function extends RefactorableProgramEntity {
 				try {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
-				} catch (AmbiguousDeclaringModuleException | IllegalArgumentException | BadLocationException e) {
-					String selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | RuntimeException e) {
+					String selectedText = null;
+					try {
+						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
+					} catch (BadLocationException e1) {
+						// NOTE: No need to process; only for an error message.
+					}
 
 					if (Util.isGenerated(decorator)) {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName,
-								this.containingFile.getName(), this.nature.getProject()));
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()));
+						// TODO: Add info status here (#120).
+					} else if (Util.isBuiltIn(decorator)) {
+						// Since tf.function isn't built-in, skip built-in decorators.
+						LOG.info(String.format(
+								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()));
+						// TODO: Add info status here (#120).
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName,
-								this.containingFile.getName(), this.nature.getProject()), e);
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()), e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
 						// status entry would fail the entire function.
