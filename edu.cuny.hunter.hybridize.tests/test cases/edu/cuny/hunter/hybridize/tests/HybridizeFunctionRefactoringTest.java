@@ -552,6 +552,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #106. Contains ambiguous definitions using a property decorator for methods getter and setter.
+	 */
+	@Test
+	public void testAmbiguousDefinition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function function : functions) {
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+			assertFalse(function.likelyHasTensorParameter());
+
+		}
+	}
+
+	/**
 	 * Test for #30. This simply tests whether we can parse the tf.function argument input_signature.
 	 */
 	@Test
@@ -568,70 +585,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
-	}
-
-	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
-	 */
-	@Test
-	public void testComputeParameters10() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
-		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
-		// to return False.
-
-		assertNull(args);
-	}
-
-	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two decorators) and only
-	 * count the parameters from the tf.function decorator.
-	 */
-	@Test
-	public void testComputeParameters11() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
-		assertNotNull(args);
-
-		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
-
-	}
-
-	/**
-	 * Test for #30. Tests two different tf.functions. Should only count the parameters of the last one.
-	 */
-	@Test
-	public void testComputeParameters12() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
-
-		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
-
 	}
 
 	/**
@@ -787,6 +740,70 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
+	 */
+	@Test
+	public void testComputeParameters10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+		// to return False.
+
+		assertNull(args);
+	}
+
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two decorators) and only
+	 * count the parameters from the tf.function decorator.
+	 */
+	@Test
+	public void testComputeParameters11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+
+	}
+
+	/**
+	 * Test for #30. Tests two different tf.functions. Should only count the parameters of the last one.
+	 */
+	@Test
+	public void testComputeParameters12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+
+	}
+	
 	/**
 	 * Test for #106. This tests whether we can parse one tf.function positional argument.
 	 */

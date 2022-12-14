@@ -9,7 +9,6 @@ import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -100,7 +99,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
-		public HybridizationParameters(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
@@ -113,9 +112,13 @@ public class Function extends RefactorableProgramEntity {
 				PySelection selection = Util.getSelection(decorator, document);
 
 				// Save the hybrid decorator
-				if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-						Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
-					tfFunctionDecorator = decorator;
+				try {
+					if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
+							Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
+						tfFunctionDecorator = decorator;
+				} catch (AmbiguousDeclaringModuleException e) {
+					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
+				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
 			if (tfFunctionDecorator != null)
@@ -422,7 +425,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private IPythonNature nature;
 
-	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
 		this.functionDefinition = fd;
 
 		// Find out if it's hybrid via the tf.function decorator.
@@ -437,7 +440,7 @@ public class Function extends RefactorableProgramEntity {
 		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private void computeHasTensorParameter(IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -474,8 +477,19 @@ public class Function extends RefactorableProgramEntity {
 								IDocument document = this.getContainingDocument();
 								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
-								String fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
-										this.nature, monitor);
+								String fqn;
+								try {
+									fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
+											this.nature, monitor);
+								} catch (AmbiguousDeclaringModuleException e) {
+									LOG.warn(String.format(
+											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
+											nature.getProject()), e);
+
+									monitor.worked(1);
+									continue; // next parameter.
+								}
 
 								LOG.info("Found FQN: " + fqn + ".");
 
@@ -498,7 +512,7 @@ public class Function extends RefactorableProgramEntity {
 		monitor.done();
 	}
 
-	private void computeIsHybrid(IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+	private void computeIsHybrid(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
@@ -511,11 +525,53 @@ public class Function extends RefactorableProgramEntity {
 			this.nature = this.getNature();
 
 			for (decoratorsType decorator : decoratorArray) {
+				String decoratorFunctionRepresentation = NodeUtils.getFullRepresentationString(decorator.func);
+				LOG.info("Computing whether decorator: " + decoratorFunctionRepresentation + " is hybrid.");
+
 				IDocument document = this.getContainingDocument();
-				PySelection selection = Util.getSelection(decorator, document);
+				PySelection selection = null;
 
 				// if this function is decorated with "tf.function."
-				if (isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor)) {
+				boolean hybrid = false;
+
+				try {
+					selection = Util.getSelection(decorator, document);
+					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | RuntimeException e) {
+					String selectedText = null;
+					try {
+						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
+					} catch (BadLocationException e1) {
+						// NOTE: No need to process; only for an error message.
+						LOG.info("Can't get selected text.", e1);
+					}
+
+					if (Util.isGenerated(decorator)) {
+						// Since tf.function isn't generated, skip generated decorators.
+						LOG.info(String.format(
+								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()));
+						// TODO: Add info status here (#120).
+					} else if (Util.isBuiltIn(decorator)) {
+						// Since tf.function isn't built-in, skip built-in decorators.
+						LOG.info(String.format(
+								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()));
+						// TODO: Add info status here (#120).
+					} else {
+						LOG.warn(String.format(
+								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
+								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
+								this.nature.getProject()), e);
+
+						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
+						// status entry would fail the entire function.
+					}
+				}
+
+				if (hybrid) {
 					this.isHybrid = true;
 					LOG.info(this + " is hybrid.");
 					monitor.done();
@@ -540,11 +596,11 @@ public class Function extends RefactorableProgramEntity {
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The FQN of the given {@link decoratorsType}.
-	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
+	 * @throws AmbiguousDeclaringModuleException If the definition of the decorator is ambiguous.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
 	 */
 	private static boolean isHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
-			IPythonNature nature, IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+			IPythonNature nature, IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature, monitor);
 
 		LOG.info("Found decorator: " + decoratorFQN + ".");
