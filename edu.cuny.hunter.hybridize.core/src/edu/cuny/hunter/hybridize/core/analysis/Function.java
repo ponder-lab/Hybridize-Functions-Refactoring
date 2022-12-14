@@ -34,7 +34,6 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
-
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
 	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function
@@ -113,10 +112,10 @@ public class Function extends RefactorableProgramEntity {
 
 			// Python source arguments from the declaring function
 			exprType[] declaringArguments = null;
-			
+
 			// Declaring definition of the decorator
 			Definition declaringDefinition = null;
-			
+
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
