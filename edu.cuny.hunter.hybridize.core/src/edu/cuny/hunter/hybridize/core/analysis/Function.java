@@ -4,11 +4,13 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
+import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -106,6 +108,15 @@ public class Function extends RefactorableProgramEntity {
 			// Will contain the last tf.function decorator
 			decoratorsType tfFunctionDecorator = null;
 
+			// Declaring definitions of the decorator
+			Set<Definition> declaringDefinitions = null;
+
+			// Python source arguments from the declaring function
+			exprType[] declaringArguments = null;
+			
+			// Declaring definition of the decorator
+			Definition declaringDefinition = null;
+			
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
@@ -114,12 +125,29 @@ public class Function extends RefactorableProgramEntity {
 				// Save the hybrid decorator
 				try {
 					if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-							Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
+							Function.this.nature, monitor)) { // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
+						declaringDefinitions = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
+								Function.this.containingFile, Function.this.nature, monitor);
+					}
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
+
+			// Getting the definition, there should only be one in the set.
+			if (declaringDefinitions != null) {
+				declaringDefinition = declaringDefinitions.iterator().next();
+			}
+
+			// Getting the arguments from TensorFlow source
+			if (declaringDefinition != null) {
+				if (declaringDefinition.ast instanceof FunctionDef) {
+					FunctionDef declaringFunctionDefinition = (FunctionDef) declaringDefinition.ast;
+					argumentsType declaringArgumentTypes = declaringFunctionDefinition.args;
+					declaringArguments = declaringArgumentTypes.args;
+				}
+			}
 
 			if (tfFunctionDecorator != null)
 				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
@@ -141,13 +169,13 @@ public class Function extends RefactorableProgramEntity {
 								else if (name.id.equals(AUTOGRAPH))
 									// Found parameter autograph
 									this.autoGraphParamExists = true;
-								// The version of the API we are using allows
+								// The latest version of the API we are using allows
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
 								else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 									// Found parameter jit_compile/experimental_compile
 									this.jitCompileParamExists = true;
-								// The version of the API we are using allows
+								// The latest version of the API we are using allows
 								// parameter names reduce_retracing
 								// and deprecated name experimental_relax_shapes
 								else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
@@ -172,139 +200,128 @@ public class Function extends RefactorableProgramEntity {
 						// experimental_follow_type_hints=None
 
 						exprType[] arguments = callFunction.args;
-						int position = 1;
+						Name argumentName = null;
+						String argumentId = null;
 
-						for (exprType argument : arguments) {
-							// Default value of tf.function, we don't want to classify the parameter as existing
-							if (position == 1) {
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None")
-										// Found parameter func
-										this.funcParamExists = true;
-								} else {
-									// Found parameter func
-									this.funcParamExists = true;
+						for (int i = 0; i < arguments.length; i++) {
+
+							// Getting the arguments from the definition
+							if (declaringArguments != null) {
+								if (declaringArguments[i] instanceof Name) {
+									argumentName = (Name) declaringArguments[i];
+									argumentId = argumentName.id;
 								}
 							}
-							if (position == 2) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
+
+							if (argumentId != null) {
+								// Matching the arguments from the definition and the arguments from the code being analyzed.
+								if (argumentId.equals(FUNC)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter func
+											this.funcParamExists = true;
+									} else {
+										// Found parameter func
+										this.funcParamExists = true;
+									}
+								} else if (argumentId.equals(INPUT_SIGNATURE)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter input_signature
+											this.inputSignatureParamExists = true;
+									} else {
 										// Found parameter input_signature
 										this.inputSignatureParamExists = true;
 									}
-								} else {
-									// Found parameter input_signature
-									this.inputSignatureParamExists = true;
-								}
-							}
-							if (position == 3) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "True") {
+								} else if (argumentId.equals(AUTOGRAPH)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "True")
+											// Found parameter autograph
+											this.autoGraphParamExists = true;
+									} else {
 										// Found parameter autograph
 										this.autoGraphParamExists = true;
 									}
-								} else {
-									// Found parameter autograph
-									this.autoGraphParamExists = true;
-								}
-							}
-							if (position == 4) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
-										// Found parameter jit_compile
+									// The latest version of the API we are using allows
+									// parameter names jit_compile and
+									// deprecated name experimental_compile
+								} else if (argumentId.equals(JIT_COMPILE) || argumentId.equals(EXPERIMENTAL_COMPILE)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter jit_compile/experimental_compile
+											this.jitCompileParamExists = true;
+									} else {
+										// Found parameter jit_compile/experimental_compile
 										this.jitCompileParamExists = true;
 									}
-								} else {
-									// Found parameter jit_compile
-									this.jitCompileParamExists = true;
-								}
-							}
-							if (position == 5) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "False") {
+									// The latest version of the API we are using allows
+									// parameter names reduce_retracing
+									// and deprecated name experimental_relax_shapes
+								} else if (argumentId.equals(REDUCE_RETRACING)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "False")
+											// Found parameter reduce_retracing
+											this.reduceRetracingParamExists = true;
+									} else {
 										// Found parameter reduce_retracing
 										this.reduceRetracingParamExists = true;
 									}
-								} else {
-									// Found parameter reduce_retracing
-									this.reduceRetracingParamExists = true;
-								}
-							}
-							if (position == 6) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
+								} else if (argumentId.equals(EXPERIMENTAL_RELAX_SHAPES)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter experimental_relax_shapes
+											this.reduceRetracingParamExists = true;
+									} else {
+										// Found parameter experimental_relax_shapes
+										this.reduceRetracingParamExists = true;
+									}
+								} else if (argumentId.equals(EXPERIMENTAL_IMPLEMENTS)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter experimental_implements
+											this.experimentalImplementsParamExists = true;
+									} else {
 										// Found parameter experimental_implements
 										this.experimentalImplementsParamExists = true;
 									}
-								} else {
-									// Found parameter experimental_implements
-									this.experimentalImplementsParamExists = true;
-								}
-							}
-							if (position == 7) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
+								} else if (argumentId.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter experimental_autograph_options
+											this.experimentalAutographOptionsParamExists = true;
+									} else {
 										// Found parameter experimental_autograph_options
 										this.experimentalAutographOptionsParamExists = true;
 									}
-								} else {
-									// Found parameter experimental_autograph_options
-									this.experimentalAutographOptionsParamExists = true;
-								}
-							}
-							if (position == 8) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
-										// Found parameter experimental_relax_shapes (deprecated)
-										this.reduceRetracingParamExists = true;
-									}
-								} else {
-									// Found parameter experimental_relax_shapes (deprecated)
-									this.reduceRetracingParamExists = true;
-								}
-							}
-							if (position == 9) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
-										// Found parameter experimental_compile (deprecated)
-										this.jitCompileParamExists = true;
-									}
-								} else {
-									// Found parameter experimental_compile (deprecated)
-									this.jitCompileParamExists = true;
-								}
-							}
-							if (position == 10) {
-								// Default value of tf.function, we don't want to classify the parameter as existing
-								if (argument instanceof Name) {
-									Name nameArgument = (Name) argument;
-									if (nameArgument.id != "None") {
+								} else if (argumentId.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
+									// Not considering the default values
+									if (arguments[i] instanceof Name) {
+										Name nameArgument = (Name) arguments[i];
+										if (nameArgument.id != "None")
+											// Found parameter experimental_follow_type_hints
+											this.experimentaFollowTypeHintsParamExists = true;
+									} else {
 										// Found parameter experimental_follow_type_hints
 										this.experimentaFollowTypeHintsParamExists = true;
 									}
-								} else {
-									// Found parameter experimental_follow_type_hints
-									this.experimentaFollowTypeHintsParamExists = true;
 								}
 							}
-							position++;
 						}
 
 					}

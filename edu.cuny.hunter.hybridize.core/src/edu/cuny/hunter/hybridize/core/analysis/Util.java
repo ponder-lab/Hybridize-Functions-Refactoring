@@ -33,26 +33,21 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 public class Util {
 
 	private static final ILog LOG = getLog(Util.class);
-
+	
 	/**
-	 * Get the name of the module defining the entity described in the given {@link PySelection}.
+	 * Get the name of the definition of the entity described in the given {@link PySelection}.
 	 *
 	 * @param selection The {@link PySelection} in question.
 	 * @param containingModName The name of the module containing the {@link PySelection}.
 	 * @param containingFile The {@link File} containing the module.
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
-	 * @return The name of the module defining the given {@link PySelection}.
+	 * @return The definition of {@link PySelection}.
 	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
 	 * @throws BadLocationException On a parsing error.
 	 */
-	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
-			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
-		monitor.beginTask("Getting declaring module name.", 1);
-
-		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
-				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
-				nature.getProject()));
+	public static Set<Definition> getDeclaringDefinition(PySelection selection, String containingModName, File containingFile,
+			IPythonNature nature, IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
 
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
@@ -78,12 +73,48 @@ public class Util {
 							containingFile.getName(), nature.getProject()));
 
 		// Collect the potential declaring module names.
-		Set<String> potentialDeclaringModuleNames = new HashSet<>();
+		Set<Definition> potentialDeclaringDefinitions = new HashSet<>();
 
 		// for each match.
 		for (ItemPointer itemPointer : pointers) {
 			Definition definition = itemPointer.definition;
 			LOG.info("Found definition: " + definition + ".");
+
+			// add it to the set of found module names.
+			potentialDeclaringDefinitions.add(definition);
+		}
+
+		return potentialDeclaringDefinitions;
+
+	}
+
+	/**
+	 * Get the name of the module defining the entity described in the given {@link PySelection}.
+	 *
+	 * @param selection The {@link PySelection} in question.
+	 * @param containingModName The name of the module containing the {@link PySelection}.
+	 * @param containingFile The {@link File} containing the module.
+	 * @param nature The {@link IPythonNature} to use.
+	 * @param monitor The IProgressMonitor to use.
+	 * @return The name of the module defining the given {@link PySelection}.
+	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
+	 * @throws BadLocationException On a parsing error.
+	 */
+	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
+			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
+		monitor.beginTask("Getting declaring module name.", 1);
+
+		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
+				nature.getProject()));
+
+		Set<Definition> definitions = getDeclaringDefinition(selection, containingModName, containingFile, nature, monitor);
+
+		// Collect the potential declaring module names.
+		Set<String> potentialDeclaringModuleNames = new HashSet<>();
+
+		// for each definition.
+		for (Definition definition : definitions) {
 
 			IModule module = definition.module;
 			LOG.info(String.format("Found module: %s.", module));
