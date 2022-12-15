@@ -190,6 +190,10 @@ public class Function extends RefactorableProgramEntity {
 								else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 									// Found parameter experimental_follow_type_hints
 									this.experimentaFollowTypeHintsParamExists = true;
+								else {
+									throw new IllegalArgumentException(String.format("The tf.function argument " + name.id)
+											+ " is not supported in this tool. This tool supports up to  v2.9");
+								}
 							}
 						}
 					} else {
@@ -319,6 +323,9 @@ public class Function extends RefactorableProgramEntity {
 										// Found parameter experimental_follow_type_hints
 										this.experimentaFollowTypeHintsParamExists = true;
 									}
+								} else {
+									throw new IllegalArgumentException(String.format("The tf.function argument in position " + i
+											+ " is not supported. This tool supports up to  v2.9"));
 								}
 							}
 						}
