@@ -803,7 +803,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 
 	}
-	
+
 	/**
 	 * Test for #106. This tests whether we can parse one tf.function positional argument.
 	 */
@@ -1010,6 +1010,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #106. This tests an earlier tf.function version that has different positional arguments as v2.9 (using v2.6).
+	 */
+	@Test
+	public void testPositionalParameters12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && !args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
