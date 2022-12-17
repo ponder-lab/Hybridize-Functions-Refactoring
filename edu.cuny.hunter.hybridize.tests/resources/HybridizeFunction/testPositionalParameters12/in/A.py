@@ -1,8 +1,9 @@
 import tensorflow as tf
 
 @tf.function(None, (tf.TensorSpec(shape=[None], dtype=tf.float32),), True, True, "google.matmul_low_rank_matrix")
-def test():
-    pass
+def test(x):
+    return x
 
 if __name__ == '__main__':
-    test()
+  number = tf.constant([1.0, 1.0])
+  test(number)
