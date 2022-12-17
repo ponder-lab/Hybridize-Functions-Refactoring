@@ -1014,7 +1014,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #106. This tests an earlier tf.function version that has different positional arguments as v2.9 (using v2.6).
+	 * Test for #106. This tests an earlier tf.function version that has different positional arguments as v2.9 (using v2.8).
 	 */
 	@Test
 	public void testPositionalParameters12() throws Exception {
