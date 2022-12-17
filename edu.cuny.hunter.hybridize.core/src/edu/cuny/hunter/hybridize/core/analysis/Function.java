@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Set;
 
@@ -34,6 +35,7 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function extends RefactorableProgramEntity {
+
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
 	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function
@@ -110,12 +112,6 @@ public class Function extends RefactorableProgramEntity {
 			// Declaring definitions of the decorator
 			Set<Definition> declaringDefinitions = null;
 
-			// Python source arguments from the declaring function
-			exprType[] declaringArguments = null;
-
-			// Declaring definition of the decorator
-			Definition declaringDefinition = null;
-
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
@@ -134,10 +130,16 @@ public class Function extends RefactorableProgramEntity {
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
+			// Declaring definition of the decorator
+			Definition declaringDefinition = null;
+
 			// Getting the definition, there should only be one in the set.
 			if (declaringDefinitions != null) {
 				declaringDefinition = declaringDefinitions.iterator().next();
 			}
+
+			// Python source arguments from the declaring definition
+			exprType[] declaringArguments = null;
 
 			// Getting the arguments from TensorFlow source
 			if (declaringDefinition != null) {
@@ -145,6 +147,19 @@ public class Function extends RefactorableProgramEntity {
 					FunctionDef declaringFunctionDefinition = (FunctionDef) declaringDefinition.ast;
 					argumentsType declaringArgumentTypes = declaringFunctionDefinition.args;
 					declaringArguments = declaringArgumentTypes.args;
+				}
+			}
+
+			// Python source arguments from the declaring definition
+			ArrayList<String> argumentIdDeclaringDefintion = new ArrayList<>();
+
+			// Getting the arguments from the definition
+			if (declaringArguments != null) {
+				for (exprType declaredArgument : declaringArguments) {
+					if (declaredArgument instanceof Name) {
+						Name argumentName = (Name) declaredArgument;
+						argumentIdDeclaringDefintion.add(argumentName.id);
+					}
 				}
 			}
 
@@ -159,35 +174,37 @@ public class Function extends RefactorableProgramEntity {
 						for (keywordType keyword : keywords) {
 							if (keyword.arg instanceof NameTok) {
 								NameTok name = (NameTok) keyword.arg;
-								if (name.id.equals(FUNC))
+								if (name.id.equals(FUNC) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter func
 									this.funcParamExists = true;
-								else if (name.id.equals(INPUT_SIGNATURE))
+								else if (name.id.equals(INPUT_SIGNATURE) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter input_signature
 									this.inputSignatureParamExists = true;
-								else if (name.id.equals(AUTOGRAPH))
+								else if (name.id.equals(AUTOGRAPH) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter autograph
 									this.autoGraphParamExists = true;
 								// The latest version of the API we are using allows
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
-								else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
+								else if ((name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
+										&& argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter jit_compile/experimental_compile
 									this.jitCompileParamExists = true;
 								// The latest version of the API we are using allows
 								// parameter names reduce_retracing
 								// and deprecated name experimental_relax_shapes
-								else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
+								else if ((name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
+										&& argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter reduce_retracing
 									// or experimental_relax_shapes
 									this.reduceRetracingParamExists = true;
-								else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
+								else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter experimental_implements
 									this.experimentalImplementsParamExists = true;
-								else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+								else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter experimental_autograph_options
 									this.experimentalAutographOptionsParamExists = true;
-								else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+								else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS) && argumentIdDeclaringDefintion.contains(name.id))
 									// Found parameter experimental_follow_type_hints
 									this.experimentaFollowTypeHintsParamExists = true;
 								else {
@@ -203,133 +220,123 @@ public class Function extends RefactorableProgramEntity {
 						// experimental_follow_type_hints=None
 
 						exprType[] arguments = callFunction.args;
-						Name argumentName = null;
-						String argumentId = null;
 
 						for (int i = 0; i < arguments.length; i++) {
 
-							// Getting the arguments from the definition
-							if (declaringArguments != null) {
-								if (declaringArguments[i] instanceof Name) {
-									argumentName = (Name) declaringArguments[i];
-									argumentId = argumentName.id;
-								}
-							}
+							String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
 
-							if (argumentId != null) {
-								// Matching the arguments from the definition and the arguments from the code being analyzed.
-								if (argumentId.equals(FUNC)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter func
-											this.funcParamExists = true;
-									} else {
+							// Matching the arguments from the definition and the arguments from the code being analyzed.
+							if (argumentDeclaringDefinition.equals(FUNC)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter func
 										this.funcParamExists = true;
-									}
-								} else if (argumentId.equals(INPUT_SIGNATURE)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter input_signature
-											this.inputSignatureParamExists = true;
-									} else {
+								} else {
+									// Found parameter func
+									this.funcParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(INPUT_SIGNATURE)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter input_signature
 										this.inputSignatureParamExists = true;
-									}
-								} else if (argumentId.equals(AUTOGRAPH)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "True")
-											// Found parameter autograph
-											this.autoGraphParamExists = true;
-									} else {
+								} else {
+									// Found parameter input_signature
+									this.inputSignatureParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(AUTOGRAPH)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "True")
 										// Found parameter autograph
 										this.autoGraphParamExists = true;
-									}
-									// The latest version of the API we are using allows
-									// parameter names jit_compile and
-									// deprecated name experimental_compile
-								} else if (argumentId.equals(JIT_COMPILE) || argumentId.equals(EXPERIMENTAL_COMPILE)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter jit_compile/experimental_compile
-											this.jitCompileParamExists = true;
-									} else {
+								} else {
+									// Found parameter autograph
+									this.autoGraphParamExists = true;
+								}
+								// The latest version of the API we are using allows
+								// parameter names jit_compile and
+								// deprecated name experimental_compile
+							} else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
+									|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter jit_compile/experimental_compile
 										this.jitCompileParamExists = true;
-									}
-									// The latest version of the API we are using allows
-									// parameter names reduce_retracing
-									// and deprecated name experimental_relax_shapes
-								} else if (argumentId.equals(REDUCE_RETRACING)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "False")
-											// Found parameter reduce_retracing
-											this.reduceRetracingParamExists = true;
-									} else {
+								} else {
+									// Found parameter jit_compile/experimental_compile
+									this.jitCompileParamExists = true;
+								}
+								// The latest version of the API we are using allows
+								// parameter names reduce_retracing
+								// and deprecated name experimental_relax_shapes
+							} else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "False")
 										// Found parameter reduce_retracing
 										this.reduceRetracingParamExists = true;
-									}
-								} else if (argumentId.equals(EXPERIMENTAL_RELAX_SHAPES)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter experimental_relax_shapes
-											this.reduceRetracingParamExists = true;
-									} else {
+								} else {
+									// Found parameter reduce_retracing
+									this.reduceRetracingParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_RELAX_SHAPES)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter experimental_relax_shapes
 										this.reduceRetracingParamExists = true;
-									}
-								} else if (argumentId.equals(EXPERIMENTAL_IMPLEMENTS)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter experimental_implements
-											this.experimentalImplementsParamExists = true;
-									} else {
+								} else {
+									// Found parameter experimental_relax_shapes
+									this.reduceRetracingParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_IMPLEMENTS)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter experimental_implements
 										this.experimentalImplementsParamExists = true;
-									}
-								} else if (argumentId.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter experimental_autograph_options
-											this.experimentalAutographOptionsParamExists = true;
-									} else {
+								} else {
+									// Found parameter experimental_implements
+									this.experimentalImplementsParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter experimental_autograph_options
 										this.experimentalAutographOptionsParamExists = true;
-									}
-								} else if (argumentId.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
-									// Not considering the default values
-									if (arguments[i] instanceof Name) {
-										Name nameArgument = (Name) arguments[i];
-										if (nameArgument.id != "None")
-											// Found parameter experimental_follow_type_hints
-											this.experimentaFollowTypeHintsParamExists = true;
-									} else {
+								} else {
+									// Found parameter experimental_autograph_options
+									this.experimentalAutographOptionsParamExists = true;
+								}
+							} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
+								// Not considering the default values
+								if (arguments[i] instanceof Name) {
+									Name nameArgument = (Name) arguments[i];
+									if (nameArgument.id != "None")
 										// Found parameter experimental_follow_type_hints
 										this.experimentaFollowTypeHintsParamExists = true;
-									}
 								} else {
-									throw new IllegalArgumentException(String.format("The tf.function argument in position " + i
-											+ " is not supported. This tool supports up to  v2.9"));
+									// Found parameter experimental_follow_type_hints
+									this.experimentaFollowTypeHintsParamExists = true;
 								}
+							} else {
+								throw new IllegalArgumentException(String.format(
+										"The tf.function argument in position " + i + " is not supported. This tool supports up to  v2.9"));
 							}
 						}
-
 					}
 				} // else, tf.function is used without parameters.
 		}

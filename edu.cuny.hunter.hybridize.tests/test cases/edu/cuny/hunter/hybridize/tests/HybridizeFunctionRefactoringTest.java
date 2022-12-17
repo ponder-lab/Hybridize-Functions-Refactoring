@@ -805,6 +805,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #30. Contains an incorrect/invalid parameter name.
+	 */
+	@Test(expected = IllegalArgumentException.class)
+	public void testComputeParameters13() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+	}
+
+	/**
 	 * Test for #106. This tests whether we can parse one tf.function positional argument.
 	 */
 	@Test
