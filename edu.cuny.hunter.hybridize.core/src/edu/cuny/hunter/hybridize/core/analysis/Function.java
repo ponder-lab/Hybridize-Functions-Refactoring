@@ -168,60 +168,9 @@ public class Function extends RefactorableProgramEntity {
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
 
-					// Using keywords instead of positional arguments
-					keywordType[] keywords = callFunction.keywords;
-					for (keywordType keyword : keywords) {
-						if (keyword.arg instanceof NameTok) {
-							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals(FUNC) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter func
-								this.funcParamExists = true;
-							else if (name.id.equals(INPUT_SIGNATURE) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
-							else if (name.id.equals(AUTOGRAPH) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter autograph
-								this.autoGraphParamExists = true;
-							// The latest version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
-							else if ((name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
-									&& argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter jit_compile/experimental_compile
-								this.jitCompileParamExists = true;
-							// The latest version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
-							else if ((name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-									&& argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter reduce_retracing
-								// or experimental_relax_shapes
-								this.reduceRetracingParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS) && argumentIdDeclaringDefintion.contains(name.id))
-								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
-							else {
-								throw new IllegalArgumentException(String.format("The tf.function argument " + name.id)
-										+ " is not supported in this tool. This tool supports up to  v2.9");
-							}
-						}
-					}
-
-					// Positional arguments for tf.function as per the documentation of TF 2.9: tf.function(func=None,
-					// input_signature=None, autograph=True, jit_compile=None, reduce_retracing=False, experimental_implements=None,
-					// experimental_autograph_options=None, experimental_relax_shapes=None, experimental_compile=None,
-					// experimental_follow_type_hints=None
-
+					// Processing positional arguments for tf.function a
 					exprType[] arguments = callFunction.args;
-
 					for (int i = 0; i < arguments.length; i++) {
-
 						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
@@ -335,6 +284,53 @@ public class Function extends RefactorableProgramEntity {
 							throw new IllegalArgumentException(String.format(
 									"The tf.function argument in position " + i + " is not supported. This tool supports up to  v2.9"));
 
+						}
+					}
+
+					// Processing keywords arguments
+					// If we have keyword parameter, afterwards, we cannot have positional parameters because it would result in invalid
+					// Python code.
+					keywordType[] keywords = callFunction.keywords;
+					for (keywordType keyword : keywords) {
+						if (keyword.arg instanceof NameTok) {
+							NameTok name = (NameTok) keyword.arg;
+							if (name.id.equals(FUNC) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter func
+								this.funcParamExists = true;
+							else if (name.id.equals(INPUT_SIGNATURE) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter input_signature
+								this.inputSignatureParamExists = true;
+							else if (name.id.equals(AUTOGRAPH) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter autograph
+								this.autoGraphParamExists = true;
+							// The latest version of the API we are using allows
+							// parameter names jit_compile and
+							// deprecated name experimental_compile
+							else if ((name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
+									&& argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter jit_compile/experimental_compile
+								this.jitCompileParamExists = true;
+							// The latest version of the API we are using allows
+							// parameter names reduce_retracing
+							// and deprecated name experimental_relax_shapes
+							else if ((name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
+									&& argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter reduce_retracing
+								// or experimental_relax_shapes
+								this.reduceRetracingParamExists = true;
+							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter experimental_implements
+								this.experimentalImplementsParamExists = true;
+							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter experimental_autograph_options
+								this.experimentalAutographOptionsParamExists = true;
+							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS) && argumentIdDeclaringDefintion.contains(name.id))
+								// Found parameter experimental_follow_type_hints
+								this.experimentaFollowTypeHintsParamExists = true;
+							else {
+								throw new IllegalArgumentException(String.format("The tf.function argument " + name.id)
+										+ " is not supported in this tool. This tool supports up to  v2.9");
+							}
 						}
 					}
 				} // else, tf.function is used without parameters.
