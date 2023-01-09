@@ -956,7 +956,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
-				&& args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 	}
 
