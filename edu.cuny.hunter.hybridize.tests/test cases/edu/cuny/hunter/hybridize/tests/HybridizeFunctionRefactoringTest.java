@@ -569,7 +569,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument input_signature.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument input_signature.
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
@@ -588,7 +588,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_autograph_options
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument experimental_autograph_options
 	 */
 	@Test
 	public void testComputeParameters2() throws Exception {
@@ -608,7 +608,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_follow_type_hints.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument experimental_follow_type_hints.
 	 */
 	@Test
 	public void testComputeParameters3() throws Exception {
@@ -627,7 +627,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_implements.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument experimental_implements.
 	 */
 	@Test
 	public void testComputeParameters4() throws Exception {
@@ -646,7 +646,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument jit_compile.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument jit_compile.
 	 */
 	@Test
 	public void testComputeParameters5() throws Exception {
@@ -665,7 +665,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument reduce_retracing.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument reduce_retracing.
 	 */
 	@Test
 	public void testComputeParameters6() throws Exception {
@@ -684,7 +684,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse the tf.function argument autograph.
+	 * Test for #30. This simply tests whether we can parse the tf.function keyword argument autograph.
 	 */
 	@Test
 	public void testComputeParameters7() throws Exception {
@@ -722,7 +722,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. This simply tests whether we can parse tf.function arguments when we have multiple.
+	 * Test for #30. This simply tests whether we can parse tf.function keyword arguments when we have multiple.
 	 */
 	@Test
 	public void testComputeParameters9() throws Exception {
@@ -741,7 +741,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
+	 * Test for #30. Test custom decorator with the same keyword parameter names as tf.function.
 	 */
 	@Test
 	public void testComputeParameters10() throws Exception {
@@ -762,8 +762,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two decorators) and only
-	 * count the parameters from the tf.function decorator.
+	 * Test for #30. Test custom decorator with the same keyword parameter names as tf.function and a tf.function (total: two decorators)
+	 * and only count the keyword parameters from the tf.function decorator.
 	 */
 	@Test
 	public void testComputeParameters11() throws Exception {
@@ -785,7 +785,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #30. Tests two different tf.functions. Should only count the parameters of the last one.
+	 * Test for #30. Tests two different tf.functions. Should only count the keyword parameters of the last one.
 	 */
 	@Test
 	public void testComputeParameters12() throws Exception {
