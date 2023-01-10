@@ -34,7 +34,8 @@ public class Function extends RefactorableProgramEntity {
 
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
-	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function
+	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in
+	 * the documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them.
 	 */
 	public class HybridizationParameters {
 
