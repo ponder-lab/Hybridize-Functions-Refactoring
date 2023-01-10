@@ -290,43 +290,37 @@ public class Function extends RefactorableProgramEntity {
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
 							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals(FUNC) && argumentIdDeclaringDefintion.contains(name.id))
+							if (name.id.equals(FUNC))
 								// Found parameter func
 								this.funcParamExists = true;
-							else if (name.id.equals(INPUT_SIGNATURE) && argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(INPUT_SIGNATURE))
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
-							else if (name.id.equals(AUTOGRAPH) && argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(AUTOGRAPH))
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
 							// The latest version of the API we are using allows
 							// parameter names jit_compile and
 							// deprecated name experimental_compile
-							else if ((name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
-									&& argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 							// The latest version of the API we are using allows
 							// parameter names reduce_retracing
 							// and deprecated name experimental_relax_shapes
-							else if ((name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-									&& argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS) && argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS) && argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS) && argumentIdDeclaringDefintion.contains(name.id))
+							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-							else {
-								throw new IllegalArgumentException(String.format("The tf.function argument " + name.id)
-										+ " is not supported in this tool. This tool supports up to  v2.9");
-							}
 						}
 					}
 				} // else, tf.function is used without parameters.
