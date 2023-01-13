@@ -63,42 +63,47 @@ public class Function extends RefactorableProgramEntity {
 		private static final String FUNC = "func";
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph. Available in TF version [2.0,2.11].
 		 */
 		private boolean autoGraphParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints. Available in TF version
+		 * [2.4,2.11].
 		 */
 		private boolean experimentaFollowTypeHintsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options. Available in TF version
+		 * [2.0,2.11].
 		 */
 		private boolean experimentalAutographOptionsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements. Available in TF version
+		 * [2.1,2.11].
 		 */
 		private boolean experimentalImplementsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func. Available in TF version [2.0,2.11].
 		 */
 		private boolean funcParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature. Available in TF version [2.0,2.11].
 		 */
 		private boolean inputSignatureParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile. Available in TF version [2.5,2.11].
+		 * Previously, experimental_compile which is available TF version [2.1,2.11].
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing. Available in TF version [2.9,2.11].
+		 * Previously, experimental_relax_shapes which is available TF version [2.0,2.11].
 		 */
 		private boolean reduceRetracingParamExists;
 
@@ -174,113 +179,40 @@ public class Function extends RefactorableProgramEntity {
 						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
-						if (argumentDeclaringDefinition.equals(FUNC)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter func
-									this.funcParamExists = true;
-							} else {
-								// Found parameter func
-								this.funcParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(INPUT_SIGNATURE)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter input_signature
-									this.inputSignatureParamExists = true;
-							} else {
-								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(AUTOGRAPH)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "True")
-									// Found parameter autograph
-									this.autoGraphParamExists = true;
-							} else {
-								// Found parameter autograph
-								this.autoGraphParamExists = true;
-							}
-							// The latest version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
-						} else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
-								|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter jit_compile/experimental_compile
-									this.jitCompileParamExists = true;
-							} else {
-								// Found parameter jit_compile/experimental_compile
-								this.jitCompileParamExists = true;
-							}
-							// The latest version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
-						} else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "False")
-									// Found parameter reduce_retracing
-									this.reduceRetracingParamExists = true;
-							} else {
-								// Found parameter reduce_retracing
-								this.reduceRetracingParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_RELAX_SHAPES)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter experimental_relax_shapes
-									this.reduceRetracingParamExists = true;
-							} else {
-								// Found parameter experimental_relax_shapes
-								this.reduceRetracingParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_IMPLEMENTS)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter experimental_implements
-									this.experimentalImplementsParamExists = true;
-							} else {
-								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter experimental_autograph_options
-									this.experimentalAutographOptionsParamExists = true;
-							} else {
-								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
-							}
-						} else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
-							// Not considering the default values
-							if (arguments[i] instanceof Name) {
-								Name nameArgument = (Name) arguments[i];
-								if (nameArgument.id != "None")
-									// Found parameter experimental_follow_type_hints
-									this.experimentaFollowTypeHintsParamExists = true;
-							} else {
-								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
-							}
-						}
+						if (argumentDeclaringDefinition.equals(FUNC))
+							// Found parameter func
+							this.funcParamExists = true;
+						else if (argumentDeclaringDefinition.equals(INPUT_SIGNATURE))
+							// Found parameter input_signature
+							this.inputSignatureParamExists = true;
+						else if (argumentDeclaringDefinition.equals(AUTOGRAPH))
+							// Found parameter autograph
+							this.autoGraphParamExists = true;
+						// The latest version of the API we are using allows
+						// parameter names jit_compile and
+						// deprecated name experimental_compile
+						else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
+								|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE))
+							// Found parameter jit_compile/experimental_compile
+							this.jitCompileParamExists = true;
+						// The latest version of the API we are using allows
+						// parameter names reduce_retracing
+						// and deprecated name experimental_relax_shapes
+						else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING))
+							// Found parameter reduce_retracing
+							this.reduceRetracingParamExists = true;
+						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_RELAX_SHAPES))
+							// Found parameter experimental_relax_shapes
+							this.reduceRetracingParamExists = true;
+						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_IMPLEMENTS))
+							// Found parameter experimental_implements
+							this.experimentalImplementsParamExists = true;
+						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+							// Found parameter experimental_autograph_options
+							this.experimentalAutographOptionsParamExists = true;
+						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+							// Found parameter experimental_follow_type_hints
+							this.experimentaFollowTypeHintsParamExists = true;
 					}
 
 					// Processing keywords arguments

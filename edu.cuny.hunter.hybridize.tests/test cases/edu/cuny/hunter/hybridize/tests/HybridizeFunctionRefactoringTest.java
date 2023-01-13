@@ -838,12 +838,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		// In this test, we have only the first positional argument `func`. If we want to use tf.function as a decorator, that first
-		// parameter
-		// should be None. Since we are only capturing the parameters that have non-default values, this test asserts that we don't have any
-		// of the parameters present.
+		// parameter should be None.
 		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -862,7 +860,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -881,7 +879,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -900,7 +898,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && !args.hasReduceRetracingParam()
 				&& !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -919,7 +917,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -938,7 +936,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -957,7 +955,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -976,7 +974,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -995,7 +993,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -1014,11 +1012,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
-				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
-	 * Test for #106. This tests that if tf.function has positional arguments set as default, we do not count them as existing.
+	 * Test for #106. This tests that if tf.function has positional arguments set as default, we do count them as existing.
 	 */
 	@Test
 	public void testPositionalParameters12() throws Exception {
@@ -1031,9 +1029,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && args.hasReduceRetracingParam()
+				&& args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+				&& args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
@@ -1052,9 +1050,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && args.hasJitCompileParam() && !args.hasReduceRetracingParam()
 				&& args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
-	
+
 	/**
 	 * Test for #125. This test mixing positional and keyword arguments.
 	 */
@@ -1069,9 +1067,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam() && !args.hasReduceRetracingParam()
-				&& !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && args.hasFuncParam());
 	}
 
 	/**
