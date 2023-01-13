@@ -447,6 +447,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringCore.getUndoManager().flush();
 
+		File file = this.getInputTestFile("A");
+		File parent = file.getParentFile();
+		for (File p : parent.listFiles()) {
+				System.out.println("FILES " + p);
+		}
+
 		String inputTestFileName = this.getInputTestFileName("A");
 		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
 
@@ -477,7 +483,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file. The {@link IDocument} represents the contents of the test file.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file. The {@link IDocument} represents the contents of the
+	 * test file.
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in the test file represented by the {@link IDocument}.
 	 */
@@ -506,8 +513,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private Set<Function> getFunctions(String filename) throws Exception {
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile(filename);
-		
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions(filename);
+
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+				.getDocumentToAvailableFunctionDefinitions(filename);
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
@@ -563,8 +571,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(args.inputSignatureParamExists() & !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
 	}
 
 	/**
@@ -606,8 +614,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(!args.inputSignatureParamExists() & args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
 
 	}
 
@@ -626,8 +634,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(!args.inputSignatureParamExists() & !args.autoGraphParamExists() && args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
 
 	}
 
@@ -761,8 +769,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		assertTrue(!args.inputSignatureParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.experimentalAutographOptParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
 	}
 
 	/**
@@ -841,7 +849,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions("A");
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+				.getDocumentToAvailableFunctionDefinitions("A");
 
 		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
