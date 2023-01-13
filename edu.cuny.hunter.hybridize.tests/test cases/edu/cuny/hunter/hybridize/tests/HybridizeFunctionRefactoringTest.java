@@ -447,34 +447,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringCore.getUndoManager().flush();
 
+		// Using the A as a base to get the directory and have the information of all the files.
 		File file = this.getInputTestFile("A");
 		File parent = file.getParentFile();
+
+		// Iterate over the files in the directory
 		for (File p : parent.listFiles()) {
-			System.out.println("FILES " + p);
+			String fileName = p.getName();
+			System.out.println("FILENAME " + fileName);
+			if (fileName.matches("[A-Z]")) {
+				String inputTestFileName = this.getInputTestFileName(fileName);
+
+				Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+
+				boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
+				assertTrue("Source file must be valid.", validSourceFile);
+
+				Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
+
+				// Run the Python test file.
+				installRequirements(inputTestFileDirectoryAbsolutePath);
+				runPython(inputTestFileAbsolutionPath);
+
+				// Project Python path.
+				String projectPath = inputTestFileDirectoryAbsolutePath.toString();
+
+				ProjectStub projectStub = new ProjectStub("TestProject", projectPath, new IProject[0], new IProject[0]);
+
+				setAstManager(projectPath, projectStub);
+
+				AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
+
+				checkSize();
+			}
 		}
-
-		String inputTestFileName = this.getInputTestFileName("A");
-		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
-
-		boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
-		assertTrue("Source file must be valid.", validSourceFile);
-
-		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
-
-		// Run the Python test file.
-		installRequirements(inputTestFileDirectoryAbsolutePath);
-		runPython(inputTestFileAbsolutionPath);
-
-		// Project Python path.
-		String projectPath = inputTestFileDirectoryAbsolutePath.toString();
-
-		ProjectStub projectStub = new ProjectStub("TestProject", projectPath, new IProject[0], new IProject[0]);
-
-		setAstManager(projectPath, projectStub);
-
-		AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
-
-		checkSize();
 
 		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
 		// above.
