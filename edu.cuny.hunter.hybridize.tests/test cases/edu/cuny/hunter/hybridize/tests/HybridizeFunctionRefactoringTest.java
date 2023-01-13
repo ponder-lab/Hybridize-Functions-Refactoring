@@ -454,7 +454,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Iterate over the files in the directory
 		for (File p : parent.listFiles()) {
 			String fileNameWithExtension = p.getName();
-			String fileName = p.getName().substring(0, fileNameWithExtension.indexOf(".")).trim();
+			String fileName = ((fileNameWithExtension.contains("."))
+					? fileNameWithExtension.substring(0, fileNameWithExtension.indexOf(".")).trim()
+					: fileNameWithExtension);
 			if (fileName.matches("[A-Z]")) {
 				String inputTestFileName = this.getInputTestFileName(fileName);
 
@@ -528,7 +530,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (File p : parent.listFiles()) {
 			String fileNameWithExtension = p.getName();
 			System.out.println("Extension " + fileNameWithExtension);
-			String fileName = p.getName().substring(0, fileNameWithExtension.indexOf(".")).trim();
+			String fileName = ((fileNameWithExtension.contains("."))
+					? fileNameWithExtension.substring(0, fileNameWithExtension.indexOf(".")).trim()
+					: fileNameWithExtension);
 			System.out.println("File Name " + fileName);
 			if (fileName.matches("[A-Z]")) {
 				File inputTestFile = this.getInputTestFile(fileName);
