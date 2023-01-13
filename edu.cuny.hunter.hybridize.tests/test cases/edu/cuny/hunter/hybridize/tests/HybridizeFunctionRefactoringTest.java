@@ -1293,7 +1293,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
 		}
-
+		
 		assertEquals(2, count);
 	}
 
