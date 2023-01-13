@@ -799,6 +799,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			Function.HybridizationParameters args = function.getHybridizationParameters();
 
+
 			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 			// like `tf.function`. With this test, we want to verify that we only parse through the arguments
 			// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
@@ -817,6 +818,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String[] files = { "A" };
 		for (String fileName : files) {
 			Set<Function> functions = this.getFunctions(fileName);
+
 			assertNotNull(functions);
 			assertEquals(1, functions.size());
 			Function function = functions.iterator().next();
@@ -831,7 +833,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 		}
-
 	}
 
 	/**
@@ -854,10 +855,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 					&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
 		}
-
 	}
 
 	/**
+>>>>>>> d28b6be (update)
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
@@ -1096,6 +1097,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String[] files = { "A" };
 		for (String fileName : files) {
 			Set<Function> functions = this.getFunctions(fileName);
+
 			assertNotNull(functions);
 			assertEquals(1, functions.size());
 			Function function = functions.iterator().next();
@@ -1227,7 +1229,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertNotNull(func);
 				functionNames.add(func.getIdentifer());
 			}
-	
+
 			assertEquals(2, functionNames.size());
 		}
 	}
@@ -1301,38 +1303,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Set<Function> functions = this.getFunctions(fileName);
 			assertNotNull(functions);
 			assertEquals(2, functions.size());
-	
+
 			for (Function func : functions) {
 				assertNotNull(func);
 				String id = func.getIdentifer();
 				assertNotNull(id);
 				assertTrue(id.equals("a") || id.equals("b"));
 			}
-	
+
 			Iterator<Function> iterator = functions.iterator();
 			assertNotNull(iterator);
 			assertTrue(iterator.hasNext());
-	
+
 			Function func1 = iterator.next();
 			assertNotNull(func1);
-	
+
 			String identifer1 = func1.getIdentifer();
 			assertNotNull(identifer1);
-	
+
 			assertTrue(iterator.hasNext());
-	
+
 			Function func2 = iterator.next();
 			assertNotNull(func2);
-	
+
 			String identifer2 = func2.getIdentifer();
 			assertNotNull(identifer2);
-	
+
 			assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
 			assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
-	
+
 			assertTrue(!func1.equals(func2));
 			assertTrue(func1.hashCode() != func2.hashCode());
-	
+
 			assertTrue(!func2.equals(func1));
 			assertTrue(func2.hashCode() != func1.hashCode());
 		}
@@ -1345,35 +1347,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Set<Function> functions = this.getFunctions(fileName);
 			assertNotNull(functions);
 			assertEquals(2, functions.size());
-	
+
 			for (Function func : functions) {
 				assertNotNull(func);
 				String id = func.getIdentifer();
 				assertNotNull(id);
 				assertTrue(id.equals("a"));
 			}
-	
+
 			Iterator<Function> iterator = functions.iterator();
 			assertNotNull(iterator);
 			assertTrue(iterator.hasNext());
-	
+
 			Function func1 = iterator.next();
 			assertNotNull(func1);
-	
+
 			String identifer1 = func1.getIdentifer();
 			assertNotNull(identifer1);
-	
+
 			assertTrue(iterator.hasNext());
-	
+
 			Function func2 = iterator.next();
 			assertNotNull(func2);
-	
+
 			String identifer2 = func2.getIdentifer();
 			assertNotNull(identifer2);
-	
+
 			assertTrue(!func1.equals(func2));
 			assertTrue(func1.hashCode() != func2.hashCode());
-	
+
 			assertTrue(!func2.equals(func1));
 			assertTrue(func2.hashCode() != func1.hashCode());
 		}
@@ -1381,7 +1383,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Test
 	public void testFunctionEquality3() throws Exception {
-		String[] files = {"A"};
+		String[] files  = {"A"};
 		for(String fileName : files) {
 			Set<Function> functions = this.getFunctions(fileName);
 			assertNotNull(functions);
