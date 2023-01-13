@@ -453,8 +453,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Iterate over the files in the directory
 		for (File p : parent.listFiles()) {
-			String fileName = p.getName();
-			System.out.println("FILENAME " + fileName);
+			String fileNameWithExtension = p.getName();
+			String fileName = p.getName().substring(0, fileNameWithExtension.indexOf(".")).trim();
 			if (fileName.matches("[A-Z]")) {
 				String inputTestFileName = this.getInputTestFileName(fileName);
 
@@ -516,27 +516,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @return The set of {@link Function}s analyzed.
 	 */
-	private Set<Function> getFunctions(String filename) throws Exception {
+	private List<Set<Function>> getFunctions() throws Exception {
 		NullProgressMonitor monitor = new NullProgressMonitor();
-		File inputTestFile = this.getInputTestFile(filename);
+		List<Set<Function>> functions = new ArrayList<>();
 
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
-				.getDocumentToAvailableFunctionDefinitions(filename);
+		// Using the A as a base to get the directory and have the information of all the files.
+		File file = this.getInputTestFile("A");
+		File parent = file.getParentFile();
 
-		IDocument document = documentToAvailableFunctionDefs.getKey();
-		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
+		// Iterate over the files in the directory
+		for (File p : parent.listFiles()) {
+			String fileNameWithExtension = p.getName();
+			String fileName = p.getName().substring(0, fileNameWithExtension.indexOf(".")).trim();
+			if (fileName.matches("[A-Z]")) {
+				File inputTestFile = this.getInputTestFile(fileName);
 
-		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, filename, inputTestFile, document, nature)).collect(Collectors.toSet());
+				Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+						.getDocumentToAvailableFunctionDefinitions(fileName);
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, monitor);
+				IDocument document = documentToAvailableFunctionDefs.getKey();
+				Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
-		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+				Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
+						.map(f -> new FunctionDefinition(f, fileName, inputTestFile, document, nature)).collect(Collectors.toSet());
 
-		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
-		assertTrue(status.isOK());
+				HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
+						monitor);
 
-		return processor.getFunctions();
+				ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+				RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
+				assertTrue(status.isOK());
+
+				functions.add(processor.getFunctions());
+			}
+		}
+
+		return functions;
+
 	}
 
 	/**
@@ -567,18 +584,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(args.inputSignatureParamExists() & !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(args.inputSignatureParamExists() & !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+					&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -586,20 +605,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters10() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
+			Function.HybridizationParameters args = function.getArgs();
 
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
-		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
-		// to return False.
+			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+			// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+			// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+			// to return False.
 
-		assertNull(args);
+			assertNull(args);
+		}
 	}
 
 	/**
@@ -608,21 +629,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters11() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+			// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
+			assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() & args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
-
+			assertTrue(!args.inputSignatureParamExists() & args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+					&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -630,19 +652,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters12() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() & !args.autoGraphParamExists() && args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
-
+			assertTrue(!args.inputSignatureParamExists() & !args.autoGraphParamExists() && args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+					&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -650,19 +673,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
 
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -670,18 +695,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters3() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -689,18 +716,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters4() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -708,18 +737,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters5() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -727,18 +758,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters6() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.experimentalAutographOptParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -746,18 +779,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters7() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.experimentalAutographOptParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
-				&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.experimentalAutographOptParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists() && !args.inputSignatureParamExists()
+					&& !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -765,18 +800,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters8() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(!args.inputSignatureParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(!args.inputSignatureParamExists() && !args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+					&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -784,18 +821,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters9() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		Function.HybridizationParameters args = function.getArgs();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getArgs();
+			assertNotNull(args);
 
-		assertTrue(args.inputSignatureParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
-				&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
-				&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+			assertTrue(args.inputSignatureParamExists() && args.autoGraphParamExists() && !args.jitCompileParamExists()
+					&& !args.reduceRetracingParamExists() && !args.experimentalImplementsParamExists()
+					&& !args.experimentalAutographOptParamExists() && !args.experimentalTypeHintsParamExists() && !args.funcParamExists());
+		}
 	}
 
 	/**
@@ -803,38 +842,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testQN() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(7, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(7, functions.size());
 
-		Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
+			Map<String, String> funcSimpleNameToExpectedSignature = new HashMap<>();
 
-		funcSimpleNameToExpectedSignature.put("func", "func");
-		funcSimpleNameToExpectedSignature.put("func1", "func1");
-		funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
-		funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
-		funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
-		funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
-		funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
+			funcSimpleNameToExpectedSignature.put("func", "func");
+			funcSimpleNameToExpectedSignature.put("func1", "func1");
+			funcSimpleNameToExpectedSignature.put("func2", "func1.func2");
+			funcSimpleNameToExpectedSignature.put("func_class1", "Class1.func_class1");
+			funcSimpleNameToExpectedSignature.put("func_class2", "Class1.Class2.func_class2");
+			funcSimpleNameToExpectedSignature.put("func_class3", "Class1.func_class3");
+			funcSimpleNameToExpectedSignature.put("func_class4", "Class1.Class2.func_class4");
 
-		for (Function func : functions) {
-			LOG.info("Checking: " + func);
+			for (Function func : functions) {
+				LOG.info("Checking: " + func);
 
-			assertNotNull(func);
+				assertNotNull(func);
 
-			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
+				String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
 
-			LOG.info("Function simple name: " + simpleName);
+				LOG.info("Function simple name: " + simpleName);
 
-			String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
+				String expectedSignature = funcSimpleNameToExpectedSignature.get(simpleName);
 
-			LOG.info("Expected signature: " + expectedSignature);
+				LOG.info("Expected signature: " + expectedSignature);
 
-			String actualSignature = func.getIdentifer();
+				String actualSignature = func.getIdentifer();
 
-			LOG.info("Actual signature: " + actualSignature);
+				LOG.info("Actual signature: " + actualSignature);
 
-			assertEquals(expectedSignature, actualSignature);
+				assertEquals(expectedSignature, actualSignature);
+			}
 		}
 	}
 
@@ -855,43 +896,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
-				.getDocumentToAvailableFunctionDefinitions("A");
 
-		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
-		assertNotNull(functionDefinitions);
-		assertEquals(1, functionDefinitions.size());
+		// Using the A as a base to get the directory and have the information of all the files.
+		File file = this.getInputTestFile("A");
+		File parent = file.getParentFile();
 
-		FunctionDef functionDef = functionDefinitions.iterator().next();
-		assertNotNull(functionDef);
+		// Iterate over the files in the directory
+		for (File p : parent.listFiles()) {
+			String fileNameWithExtension = p.getName();
+			String fileName = p.getName().substring(0, fileNameWithExtension.indexOf(".")).trim();
+			if (fileName.matches("[A-Z]")) {
+				Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+						.getDocumentToAvailableFunctionDefinitions(fileName);
 
-		decoratorsType[] decoratorArray = functionDef.decs;
-		assertNotNull(decoratorArray);
-		assertEquals(1, decoratorArray.length);
+				Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
+				assertNotNull(functionDefinitions);
+				assertEquals(1, functionDefinitions.size());
 
-		decoratorsType decorator = decoratorArray[0];
-		assertNotNull(decorator);
+				FunctionDef functionDef = functionDefinitions.iterator().next();
+				assertNotNull(functionDef);
 
-		exprType decoratorFunction = decorator.func;
-		assertNotNull(decoratorFunction);
+				decoratorsType[] decoratorArray = functionDef.decs;
+				assertNotNull(decoratorArray);
+				assertEquals(1, decoratorArray.length);
 
-		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
-		assertEquals("tf.function", representationString);
+				decoratorsType decorator = decoratorArray[0];
+				assertNotNull(decorator);
 
-		File inputTestFile = this.getInputTestFile("A");
+				exprType decoratorFunction = decorator.func;
+				assertNotNull(decoratorFunction);
 
-		IDocument document = documentToAvailableFunctionDefinitions.getKey();
+				String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
+				assertEquals("tf.function", representationString);
 
-		int offset = NodeUtils.getOffset(document, decoratorFunction);
-		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
+				File inputTestFile = this.getInputTestFile(fileName);
 
-		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
+				IDocument document = documentToAvailableFunctionDefinitions.getKey();
 
-		PySelection selection = new PySelection(document, coreTextSelection);
+				int offset = NodeUtils.getOffset(document, decoratorFunction);
+				String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
 
-		String fullyQualifiedName = Util.getFullyQualifiedName(decorator, "A", inputTestFile, selection, nature, new NullProgressMonitor());
+				CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString2.length());
 
-		assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
+				PySelection selection = new PySelection(document, coreTextSelection);
+
+				String fullyQualifiedName = Util.getFullyQualifiedName(decorator, fileName, inputTestFile, selection, nature,
+						new NullProgressMonitor());
+
+				assertEquals(TF_FUNCTION_FQN, fullyQualifiedName);
+			}
+		}
 	}
 
 	/**
@@ -899,12 +953,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -912,12 +968,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -925,12 +983,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid3() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size()); // one function is for the decorator.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(2, functions.size()); // one function is for the decorator.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -938,12 +998,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid4() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -951,12 +1013,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid5() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -964,12 +1028,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid6() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size()); // The decorator is in another file.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size()); // The decorator is in another file.
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+		}
 	}
 
 	/**
@@ -977,12 +1043,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid7() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -990,12 +1058,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybrid8() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1003,13 +1073,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridFalse() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertFalse(func.isHybrid());
+			}
 		}
 	}
 
@@ -1018,13 +1090,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleAttributes() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertFalse(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertFalse(func.isHybrid());
+			}
 		}
 	}
 
@@ -1033,13 +1107,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridMultipleDecorators() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertTrue(func.isHybrid());
+			}
 		}
 	}
 
@@ -1049,12 +1125,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1062,13 +1140,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(3, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(3, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			assertTrue(func.isHybrid());
+			for (Function func : functions) {
+				assertNotNull(func);
+				assertTrue(func.isHybrid());
+			}
 		}
 	}
 
@@ -1077,12 +1157,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testProcessDecorator() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertTrue(function.isHybrid());
+		}
 	}
 
 	/**
@@ -1090,19 +1172,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
 
-		assertEquals(2, functions.size());
+			assertEquals(2, functions.size());
 
-		Set<String> functionNames = new HashSet<>();
+			Set<String> functionNames = new HashSet<>();
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			for (Function func : functions) {
+				assertNotNull(func);
+				functionNames.add(func.getIdentifer());
+			}
+
+			assertEquals(2, functionNames.size());
 		}
-
-		assertEquals(2, functionNames.size());
 	}
 
 	/**
@@ -1110,118 +1194,126 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSameFileSameName2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
 
-		assertEquals(2, functions.size());
+			assertEquals(2, functions.size());
 
-		Set<String> functionNames = new HashSet<>();
+			Set<String> functionNames = new HashSet<>();
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			for (Function func : functions) {
+				assertNotNull(func);
+				functionNames.add(func.getIdentifer());
+			}
+
+			// NOTE: Both of these functions have the same qualified name.
+			assertEquals(1, functionNames.size());
 		}
-
-		// NOTE: Both of these functions have the same qualified name.
-		assertEquals(1, functionNames.size());
 	}
 
 	@Test
 	public void testFunctionEquality() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			String id = func.getIdentifer();
-			assertNotNull(id);
-			assertTrue(id.equals("a") || id.equals("b"));
+			for (Function func : functions) {
+				assertNotNull(func);
+				String id = func.getIdentifer();
+				assertNotNull(id);
+				assertTrue(id.equals("a") || id.equals("b"));
+			}
+
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
+
+			Function func1 = iterator.next();
+			assertNotNull(func1);
+
+			String identifer1 = func1.getIdentifer();
+			assertNotNull(identifer1);
+
+			assertTrue(iterator.hasNext());
+
+			Function func2 = iterator.next();
+			assertNotNull(func2);
+
+			String identifer2 = func2.getIdentifer();
+			assertNotNull(identifer2);
+
+			assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
+			assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
+
+			assertTrue(!func1.equals(func2));
+			assertTrue(func1.hashCode() != func2.hashCode());
+
+			assertTrue(!func2.equals(func1));
+			assertTrue(func2.hashCode() != func1.hashCode());
 		}
-
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
-
-		Function func1 = iterator.next();
-		assertNotNull(func1);
-
-		String identifer1 = func1.getIdentifer();
-		assertNotNull(identifer1);
-
-		assertTrue(iterator.hasNext());
-
-		Function func2 = iterator.next();
-		assertNotNull(func2);
-
-		String identifer2 = func2.getIdentifer();
-		assertNotNull(identifer2);
-
-		assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
-		assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
-
-		assertTrue(!func1.equals(func2));
-		assertTrue(func1.hashCode() != func2.hashCode());
-
-		assertTrue(!func2.equals(func1));
-		assertTrue(func2.hashCode() != func1.hashCode());
 	}
 
 	@Test
 	public void testFunctionEquality2() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(2, functions.size());
 
-		for (Function func : functions) {
-			assertNotNull(func);
-			String id = func.getIdentifer();
-			assertNotNull(id);
-			assertTrue(id.equals("a"));
+			for (Function func : functions) {
+				assertNotNull(func);
+				String id = func.getIdentifer();
+				assertNotNull(id);
+				assertTrue(id.equals("a"));
+			}
+
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
+
+			Function func1 = iterator.next();
+			assertNotNull(func1);
+
+			String identifer1 = func1.getIdentifer();
+			assertNotNull(identifer1);
+
+			assertTrue(iterator.hasNext());
+
+			Function func2 = iterator.next();
+			assertNotNull(func2);
+
+			String identifer2 = func2.getIdentifer();
+			assertNotNull(identifer2);
+
+			assertTrue(!func1.equals(func2));
+			assertTrue(func1.hashCode() != func2.hashCode());
+
+			assertTrue(!func2.equals(func1));
+			assertTrue(func2.hashCode() != func1.hashCode());
 		}
-
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
-
-		Function func1 = iterator.next();
-		assertNotNull(func1);
-
-		String identifer1 = func1.getIdentifer();
-		assertNotNull(identifer1);
-
-		assertTrue(iterator.hasNext());
-
-		Function func2 = iterator.next();
-		assertNotNull(func2);
-
-		String identifer2 = func2.getIdentifer();
-		assertNotNull(identifer2);
-
-		assertTrue(!func1.equals(func2));
-		assertTrue(func1.hashCode() != func2.hashCode());
-
-		assertTrue(!func2.equals(func1));
-		assertTrue(func2.hashCode() != func1.hashCode());
 	}
 
 	@Test
 	public void testFunctionEquality3() throws Exception {
-		Set<Function> functions = this.getFunctions("A");
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
 
-		Iterator<Function> iterator = functions.iterator();
-		assertNotNull(iterator);
-		assertTrue(iterator.hasNext());
+			Iterator<Function> iterator = functions.iterator();
+			assertNotNull(iterator);
+			assertTrue(iterator.hasNext());
 
-		Function func = iterator.next();
-		assertNotNull(func);
+			Function func = iterator.next();
+			assertNotNull(func);
 
-		String id = func.getIdentifer();
-		assertNotNull(id);
-		assertTrue(id.equals("a"));
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a"));
 
-		assertTrue(func.equals(func));
+			assertTrue(func.equals(func));
+		}
 	}
 }
