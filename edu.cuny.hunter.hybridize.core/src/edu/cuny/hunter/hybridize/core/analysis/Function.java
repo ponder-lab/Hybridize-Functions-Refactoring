@@ -173,7 +173,7 @@ public class Function extends RefactorableProgramEntity {
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
 
-					// Processing positional arguments for tf.function a
+					// Processing positional arguments for tf.function
 					exprType[] arguments = callFunction.args;
 					for (int i = 0; i < arguments.length; i++) {
 						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
