@@ -450,7 +450,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		File file = this.getInputTestFile("A");
 		File parent = file.getParentFile();
 		for (File p : parent.listFiles()) {
-				System.out.println("FILES " + p);
+			System.out.println("FILES " + p);
 		}
 
 		String inputTestFileName = this.getInputTestFileName("A");
