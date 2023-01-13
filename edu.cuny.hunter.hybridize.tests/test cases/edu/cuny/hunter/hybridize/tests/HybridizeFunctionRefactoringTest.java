@@ -530,6 +530,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
+
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, filename, inputTestFile, document, nature)).collect(Collectors.toSet());
 
