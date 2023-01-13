@@ -858,7 +858,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * >>>>>>> e14b4ea (update for the merge) This simply tests whether we have the correct qualified name.
+	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
 	public void testQN() throws Exception {
