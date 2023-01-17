@@ -1217,7 +1217,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals(1, functionNames.size());
 		}
 	}
-	
+
 	/**
 	 * Test #104. This simply tests whether we can recognize functions with the same names across files.
 	 */
@@ -1231,8 +1231,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functions.iterator().next();
 			assertNotNull(function);
 			assertTrue(function.isHybrid());
+			System.out.println("Count " + count);
+			System.out.println("Id func " + function.getIdentifer());
 		}
-		
+
 		assertEquals(2, count);
 	}
 
