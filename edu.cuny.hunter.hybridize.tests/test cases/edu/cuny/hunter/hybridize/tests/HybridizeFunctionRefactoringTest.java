@@ -529,11 +529,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Iterate over the files in the directory
 		for (File p : parent.listFiles()) {
 			String fileNameWithExtension = p.getName();
-			System.out.println("Extension " + fileNameWithExtension);
 			String fileName = ((fileNameWithExtension.contains("."))
 					? fileNameWithExtension.substring(0, fileNameWithExtension.indexOf(".")).trim()
 					: fileNameWithExtension);
-			System.out.println("File Name " + fileName);
 			if (fileName.matches("[A-Z]")) {
 				File inputTestFile = this.getInputTestFile(fileName);
 
@@ -1231,8 +1229,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functions.iterator().next();
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
-			System.out.println("Count " + count);
-			System.out.println("Id func " + function.getIdentifer());
+		}
+
+		assertEquals(2, count);
+	}
+	
+	/**
+	 * Test #104. This simply tests whether we can recognize functions with the same names across files.
+	 */
+	@Test
+	public void testSameFileSameName4() throws Exception {
+		int count = 0;
+		List<Set<Function>> listFunctions = this.getFunctions();
+		for (Set<Function> functions : listFunctions) {
+			assertNotNull(functions);
+			count += functions.size();
+			Function function = functions.iterator().next();
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
 		}
 
 		assertEquals(2, count);
