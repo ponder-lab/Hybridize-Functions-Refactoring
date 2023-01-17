@@ -1292,7 +1292,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functions.iterator().next();
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
-
 		}
 
 		assertEquals(2, count);
