@@ -1230,7 +1230,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			count += functions.size();
 			Function function = functions.iterator().next();
 			assertNotNull(function);
-			assertTrue(function.isHybrid());
+			assertFalse(function.isHybrid());
 			System.out.println("Count " + count);
 			System.out.println("Id func " + function.getIdentifer());
 		}
