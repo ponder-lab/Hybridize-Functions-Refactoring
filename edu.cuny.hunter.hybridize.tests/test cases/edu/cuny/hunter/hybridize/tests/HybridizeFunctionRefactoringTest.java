@@ -4,6 +4,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -14,8 +15,10 @@ import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -63,7 +66,9 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -132,16 +137,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param ast the ast that defines the module
 	 * @param modName the module name
 	 * @param natureToAdd the nature where the module should be added
+	 * @throws MisconfigurationException on project's misconfiguration.
 	 */
 	@SuppressWarnings("unused")
-	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f) {
+	private static void addModuleToNature(final SimpleNode ast, String modName, IPythonNature natureToAdd, File f)
+			throws MisconfigurationException {
 		// this is to add the info from the module that we just created...
 		AbstractAdditionalDependencyInfo additionalInfo;
-		try {
-			additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		additionalInfo = AdditionalProjectInterpreterInfo.getAdditionalInfoForProject(natureToAdd);
 		additionalInfo.addAstInfo(ast, new ModulesKey(modName, f), false);
 		ModulesManager modulesManager = (ModulesManager) natureToAdd.getAstManager().getModulesManager();
 		SourceModule mod = (SourceModule) AbstractModule.createModule(ast, f, modName, natureToAdd);
@@ -149,22 +152,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more
-	 * modules in the system than in the project).
+	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more modules in the system
+	 * than in the project).
 	 */
-	protected static void checkSize() {
-		try {
-			IInterpreterManager interpreterManager = getInterpreterManager();
-			InterpreterInfo info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
-			assertTrue(info.getModulesManager().getSize(true) > 0);
+	protected static void checkSize() throws MisconfigurationException {
+		IInterpreterManager interpreterManager = getInterpreterManager();
+		InterpreterInfo info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
+		assertTrue(info.getModulesManager().getSize(true) > 0);
 
-			int size = ((ASTManager) nature.getAstManager()).getSize();
-			assertTrue("Interpreter size:" + info.getModulesManager().getSize(true) + " should be smaller than project size:" + size + " "
-					+ "(because it contains system+project info)", info.getModulesManager().getSize(true) < size);
-
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		int size = ((ASTManager) nature.getAstManager()).getSize();
+		assertTrue("Interpreter size:" + info.getModulesManager().getSize(true) + " should be smaller than project size:" + size + " "
+				+ "(because it contains system+project info)", info.getModulesManager().getSize(true) < size);
 	}
 
 	private static Entry<SimpleNode, IDocument> createPythonNode(String moduleName, File file, String contents)
@@ -241,15 +239,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Get the default {@link InterpreterInfo}.
 	 *
 	 * @return The default interpreter info for the current manager.
+	 * @throws MisconfigurationException when the interpreter has a misconfiguration.
 	 */
-	protected static InterpreterInfo getDefaultInterpreterInfo() {
+	protected static InterpreterInfo getDefaultInterpreterInfo() throws MisconfigurationException {
 		IInterpreterManager interpreterManager = getInterpreterManager();
 		InterpreterInfo info;
-		try {
-			info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		info = (InterpreterInfo) interpreterManager.getDefaultInterpreterInfo(false);
 		return info;
 	}
 
@@ -282,8 +277,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the
-	 * given path.
+	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the given path.
 	 *
 	 * @param path The {@link Path} containing the requirements.txt file.
 	 */
@@ -369,7 +363,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@BeforeClass
-	public static void setUp() {
+	public static void setUp() throws MisconfigurationException {
 		CompiledModule.COMPILED_MODULES_ENABLED = true;
 		SourceModule.TESTING = true;
 		CompletionProposalFactory.set(new DefaultCompletionProposalFactory());
@@ -474,11 +468,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		setAstManager(projectPath, projectStub);
 
-		try {
-			AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
-		} catch (MisconfigurationException e) {
-			throw new RuntimeException(e);
-		}
+		AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
 
 		checkSize();
 
@@ -489,12 +479,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument}
-	 * represents the contents of A.py.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument} represents the contents of
+	 * A.py.
 	 *
 	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
 	 */
-	private Entry<IDocument, Set<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
+	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
 		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile("A");
 
 		// extract function definitions.
@@ -503,8 +493,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		node.accept(functionExtractor);
 
 		// filter out the unavailable ones.
-		Set<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
-				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toSet());
+		Collection<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
+				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toList());
 
 		IDocument document = pythonNodeToDocument.getValue();
 
@@ -520,10 +510,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile();
 
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
-		Set<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
+		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
@@ -562,10 +552,263 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * This simply tests whether we have the correct fully qualified name.
+	 * Test for #106. Contains ambiguous definitions using a property decorator for methods getter and setter.
 	 */
 	@Test
-	public void testFQN() throws Exception {
+	public void testAmbiguousDefinition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(3, functions.size());
+
+		for (Function function : functions) {
+			assertNotNull(function);
+			assertFalse(function.isHybrid());
+			assertFalse(function.likelyHasTensorParameter());
+
+		}
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument input_signature.
+	 */
+	@Test
+	public void testComputeParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_autograph_options
+	 */
+	@Test
+	public void testComputeParameters2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_follow_type_hints.
+	 */
+	@Test
+	public void testComputeParameters3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_implements.
+	 */
+	@Test
+	public void testComputeParameters4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument jit_compile.
+	 */
+	@Test
+	public void testComputeParameters5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument reduce_retracing.
+	 */
+	@Test
+	public void testComputeParameters6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasExperimentalAutographOptParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse the tf.function argument autograph.
+	 */
+	@Test
+	public void testComputeParameters7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasExperimentalAutographOptParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasInputSignatureParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can identify when there are no tf.function args.
+	 */
+	@Test
+	public void testComputeParameters8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. This simply tests whether we can parse tf.function arguments when we have multiple.
+	 */
+	@Test
+	public void testComputeParameters9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.hasInputSignatureParam() && args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+	}
+
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function.
+	 */
+	@Test
+	public void testComputeParameters10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+		// to return False.
+
+		assertNull(args);
+	}
+
+	/**
+	 * Test for #30. Test custom decorator with the same parameter names as tf.function and a tf.function (total of two decorators) and only
+	 * count the parameters from the tf.function decorator.
+	 */
+	@Test
+	public void testComputeParameters11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+
+	}
+
+	/**
+	 * Test for #30. Tests two different tf.functions. Should only count the parameters of the last one.
+	 */
+	@Test
+	public void testComputeParameters12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam() && !args.hasFuncParam());
+
+	}
+
+	/**
+	 * This simply tests whether we have the correct qualified name.
+	 */
+	@Test
+	public void testQN() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(7, functions.size());
@@ -585,7 +828,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertNotNull(func);
 
-			String simpleName = NodeUtils.getFullRepresentationString(func.getFunctionDefinition().getFunctionDef());
+			String simpleName = func.getSimpleName();
 
 			LOG.info("Function simple name: " + simpleName);
 
@@ -618,9 +861,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Set<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
 
-		Set<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
+		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
 		assertEquals(1, functionDefinitions.size());
 
@@ -761,6 +1004,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Call case.
+	 */
+	@Test
+	public void testIsHybrid9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+	}
+
+	/**
 	 * This simply tests whether the annotation is present for now. Case: not hybrid
 	 */
 	@Test
@@ -806,9 +1062,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however,
-	 * since it doesn't have a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a
-	 * Tensor argument. Case: Hybrid
+	 * Test #5. This simply tests whether the annotation is present for now. It's probably not a "candidate," however, since it doesn't have
+	 * a Tensor argument. NOTE: This may wind up failing at some point since it doesn't have a Tensor argument. Case: Hybrid
 	 */
 	@Test
 	public void testIsHybridTrue() throws Exception {
@@ -821,8 +1076,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case:
-	 * hybrid
+	 * Test for #19. This simply tests whether a decorator with parameters is correctly identified as hybrid. Case: hybrid
 	 */
 	@Test
 	public void testIsHybridWithParameters() throws Exception {
@@ -857,8 +1111,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 
-		// TODO: Change to 2 after #41 is fixed.
-		assertEquals(1, functions.size());
+		assertEquals(2, functions.size());
 
 		Set<String> functionNames = new HashSet<>();
 
@@ -867,8 +1120,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			functionNames.add(func.getIdentifer());
 		}
 
-		// TODO: Change to 2 after #41 is fixed.
-		assertEquals(1, functionNames.size());
+		assertEquals(2, functionNames.size());
 	}
 
 	/**
@@ -879,8 +1131,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 
-		// TODO: Change to 2 when #41 is fixed.
-		assertEquals(1, functions.size());
+		assertEquals(2, functions.size());
 
 		Set<String> functionNames = new HashSet<>();
 
@@ -892,4 +1143,433 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// NOTE: Both of these functions have the same qualified name.
 		assertEquals(1, functionNames.size());
 	}
+
+	@Test
+	public void testFunctionEquality() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a") || id.equals("b"));
+		}
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func1 = iterator.next();
+		assertNotNull(func1);
+
+		String identifer1 = func1.getIdentifer();
+		assertNotNull(identifer1);
+
+		assertTrue(iterator.hasNext());
+
+		Function func2 = iterator.next();
+		assertNotNull(func2);
+
+		String identifer2 = func2.getIdentifer();
+		assertNotNull(identifer2);
+
+		assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
+		assertTrue(!identifer1.equals("b") || identifer2.equals("a"));
+
+		assertTrue(!func1.equals(func2));
+		assertTrue(func1.hashCode() != func2.hashCode());
+
+		assertTrue(!func2.equals(func1));
+		assertTrue(func2.hashCode() != func1.hashCode());
+	}
+
+	@Test
+	public void testFunctionEquality2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			String id = func.getIdentifer();
+			assertNotNull(id);
+			assertTrue(id.equals("a"));
+		}
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func1 = iterator.next();
+		assertNotNull(func1);
+
+		String identifer1 = func1.getIdentifer();
+		assertNotNull(identifer1);
+
+		assertTrue(iterator.hasNext());
+
+		Function func2 = iterator.next();
+		assertNotNull(func2);
+
+		String identifer2 = func2.getIdentifer();
+		assertNotNull(identifer2);
+
+		assertTrue(!func1.equals(func2));
+		assertTrue(func1.hashCode() != func2.hashCode());
+
+		assertTrue(!func2.equals(func1));
+		assertTrue(func2.hashCode() != func1.hashCode());
+	}
+
+	@Test
+	public void testFunctionEquality3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+
+		Iterator<Function> iterator = functions.iterator();
+		assertNotNull(iterator);
+		assertTrue(iterator.hasNext());
+
+		Function func = iterator.next();
+		assertNotNull(func);
+
+		String id = func.getIdentifer();
+		assertNotNull(id);
+		assertTrue(id.equals("a"));
+
+		assertTrue(func.equals(func));
+	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters and is not hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter and is not hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is not being used. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter with a default value and is not hybrid. The default value is being used. Thus, it's
+	 * not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters and is hybrid. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has no parameters, is hybrid, and considers type hints. Thus, it's not likely to have a tensor
+	 * parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// no params.
+		assertEquals(0, params.args.length);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and considers type hints. But, no type hint is supplied. Thus, it's
+	 * not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+		// TODO: And the value is true (#111).
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// no type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNull(annotationExpr);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameters, is hybrid, and does not consider type hints. But, a type hint is supplied. In
+	 * other words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		assertFalse(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		assertFalse(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter, is hybrid and considers type hints. And, a tf.Tensor type hint is supplied. Thus,
+	 * is likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// TODO: Need to check the value (#111).
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		assertTrue(function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. Here, the function has one parameter, is hybrid, but does not consider type hints by setting the flag to False. Thus,
+	 * it's not likely to have a tensor parameter.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		// The flag is there.
+		assertTrue(function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam());
+
+		// But, it's set to False.
+		// TODO: assert that the experimental type hints param is set to false (#111).
+
+		argumentsType params = function.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+
+		// get the type hint.
+		exprType[] annotations = params.annotation;
+		assertNotNull(annotations);
+
+		// Tensor type hint.
+		assertEquals(1, annotations.length);
+		exprType annotationExpr = annotations[0];
+		assertNotNull(annotationExpr);
+
+		assertTrue(annotationExpr instanceof Attribute);
+		Attribute typeHint = (Attribute) annotationExpr;
+
+		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
+		assertEquals("tf.Tensor", attributeName);
+
+		// TODO: Set to assertFalse() when #111 is fixed.
+		assertTrue(function.likelyHasTensorParameter());
+	}
+
+	// TODO: Test arbitrary expression.
+	// TODO: Test cast/assert statements?
+	// TODO: Test tf.Tensor-like things?
 }
