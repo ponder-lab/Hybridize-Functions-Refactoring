@@ -579,6 +579,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
@@ -599,6 +601,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
@@ -617,6 +621,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
@@ -637,6 +643,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
@@ -655,6 +663,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
@@ -694,6 +704,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
@@ -712,6 +724,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
@@ -732,6 +746,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
@@ -750,6 +766,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+
+		assertFalse(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 
@@ -773,6 +791,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
+		assertTrue(function.isHybrid());
+
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
@@ -794,6 +814,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
