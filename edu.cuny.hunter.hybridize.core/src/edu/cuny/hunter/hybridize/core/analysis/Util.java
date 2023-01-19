@@ -35,7 +35,7 @@ public class Util {
 	private static final ILog LOG = getLog(Util.class);
 	
 	/**
-	 * Get the name of the definition of the entity described in the given {@link PySelection}.
+	 * Get the set of potential declaring definitions of the entity described in the given {@link PySelection}.
 	 *
 	 * @param selection The {@link PySelection} in question.
 	 * @param containingModName The name of the module containing the {@link PySelection}.

@@ -119,8 +119,9 @@ public class Function extends RefactorableProgramEntity {
 			// Will contain the last tf.function decorator
 			decoratorsType tfFunctionDecorator = null;
 
-			// Declaring definitions of the decorator
-			Set<Definition> declaringDefinitions = null;
+			// Declaring definitions of the decorator, if it contains multiple definitions there might be more than one in this set. Since
+			// we are dealing with tf.function, we expect only one.
+			Set<Definition> declaringDefinitionSet = null;
 
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
@@ -132,7 +133,8 @@ public class Function extends RefactorableProgramEntity {
 					if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
 							Function.this.nature, monitor)) { // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
-						declaringDefinitions = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
+						// Returns the set of potential declaring definitions of the selection.
+						declaringDefinitionSet = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
 								Function.this.containingFile, Function.this.nature, monitor);
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
@@ -140,12 +142,12 @@ public class Function extends RefactorableProgramEntity {
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
-			// Declaring definition of the decorator
+			// Declaring definition of the decorator. We get the single definition of tf.function. 
 			Definition declaringDefinition = null;
 
 			// Getting the definition, there should only be one in the set.
-			if (declaringDefinitions != null) {
-				declaringDefinition = declaringDefinitions.iterator().next();
+			if (declaringDefinitionSet != null) {
+				declaringDefinition = declaringDefinitionSet.iterator().next();
 			}
 
 			// Python source arguments from the declaring definition
