@@ -42,68 +42,73 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public class HybridizationParameters {
 
+		// Available in TF version [2.4,2.11].
 		private static final String EXPERIMENTAL_FOLLOW_TYPE_HINTS = "experimental_follow_type_hints";
 
+		// Available in TF version [2.0,2.11].
 		private static final String EXPERIMENTAL_AUTOGRAPH_OPTIONS = "experimental_autograph_options";
 
+		// Available in TF version [2.1,2.11].
 		private static final String EXPERIMENTAL_IMPLEMENTS = "experimental_implements";
 
+		// Available in TF version [2.9,2.11]. Previously, experimental_relax_shapes which is available TF version [2.0,2.11].
 		private static final String REDUCE_RETRACING = "reduce_retracing";
 
+		// Available in TF version [2.0,2.11].
 		private static final String EXPERIMENTAL_RELAX_SHAPES = "experimental_relax_shapes";
 
+		// Available in TF version [2.1,2.11].
 		private static final String EXPERIMENTAL_COMPILE = "experimental_compile";
 
+		// Available in TF version [2.5,2.11]. Previously, experimental_compile which is available TF version [2.1,2.11].
 		private static final String JIT_COMPILE = "jit_compile";
 
+		// Available in TF version [2.0,2.11].
 		private static final String AUTOGRAPH = "autograph";
 
+		// Available in TF version [2.0,2.11].
 		private static final String INPUT_SIGNATURE = "input_signature";
 
+		// Available in TF version [2.0,2.11].
 		private static final String FUNC = "func";
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph. Available in TF version [2.0,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 */
 		private boolean autoGraphParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints. Available in TF version
-		 * [2.4,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 */
 		private boolean experimentaFollowTypeHintsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options. Available in TF version
-		 * [2.0,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
 		 */
 		private boolean experimentalAutographOptionsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements. Available in TF version
-		 * [2.1,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
 		 */
 		private boolean experimentalImplementsParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func. Available in TF version [2.0,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
 		 */
 		private boolean funcParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature. Available in TF version [2.0,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
 		 */
 		private boolean inputSignatureParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile. Available in TF version [2.5,2.11].
-		 * Previously, experimental_compile which is available TF version [2.1,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing. Available in TF version [2.9,2.11].
-		 * Previously, experimental_relax_shapes which is available TF version [2.0,2.11].
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
 		 */
 		private boolean reduceRetracingParamExists;
 
