@@ -233,6 +233,37 @@ public class Util {
 		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
 	}
 
+	public static boolean getIsMethod(FunctionDef functionDef) {
+		SimpleNode parentNode = functionDef.parent;
+		boolean isMethod = false;
+
+		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+
+			if (parentNode instanceof ClassDef)
+				isMethod = true;
+
+			parentNode = parentNode.parent;
+		}
+
+		return isMethod;
+	}
+
+	public static boolean getIsEmbedded(FunctionDef functionDef) {
+
+		SimpleNode parentNode = functionDef.parent;
+		boolean isEmbedded = false;
+
+		while (parentNode instanceof ClassDef || parentNode instanceof FunctionDef) {
+
+			if (parentNode instanceof FunctionDef)
+				isEmbedded = true;
+
+			parentNode = parentNode.parent;
+		}
+
+		return isEmbedded;
+	}
+
 	/**
 	 * Returns true iff the given {@link decoratorsType} corresponds to a Python generated decorator (e.g., "setter" for properties).
 	 *

@@ -280,6 +280,10 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private IPythonNature nature;
 
+	private boolean isMethod;
+
+	private boolean isEmbedded;
+
 	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
 		this.functionDefinition = fd;
 
@@ -293,6 +297,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		this.computeHasTensorParameter(monitor);
+		this.hasFunctionProperties();
 	}
 
 	private void computeHasTensorParameter(IProgressMonitor monitor) throws BadLocationException {
@@ -468,6 +473,17 @@ public class Function extends RefactorableProgramEntity {
 		return false;
 	}
 
+	private void hasFunctionProperties() {
+
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		FunctionDef funcDef = functionDefinition.functionDef;
+
+		if (Util.getIsMethod(funcDef))
+			this.isMethod = true;
+		if (Util.getIsEmbedded(funcDef))
+			this.isEmbedded = true;
+	}
+
 	public IDocument getContainingDocument() {
 		return this.getFunctionDefinition().containingDocument;
 	}
@@ -521,6 +537,24 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public boolean isHybrid() {
 		return this.isHybrid;
+	}
+
+	/**
+	 * True iff this {@link Function} is embedded.
+	 *
+	 * @return True iff this {@link Function} is embedded.
+	 */
+	public boolean getIsEmbedded() {
+		return this.isEmbedded;
+	}
+
+	/**
+	 * True iff this {@link Function} is a method.
+	 *
+	 * @return True iff this {@link Function} is a method.
+	 */
+	public boolean getIsMethod() {
+		return this.isMethod;
 	}
 
 	/**
