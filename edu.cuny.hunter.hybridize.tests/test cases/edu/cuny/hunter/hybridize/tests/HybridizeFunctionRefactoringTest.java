@@ -1594,4 +1594,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: Test tf.Tensor-like things?
+
+	/**
+	 * Test a model. No tf.function in this one.
+	 */
+	@Test
+	public void testModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+	}
 }
