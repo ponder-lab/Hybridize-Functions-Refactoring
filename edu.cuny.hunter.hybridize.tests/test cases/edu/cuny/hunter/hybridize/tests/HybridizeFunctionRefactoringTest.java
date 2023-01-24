@@ -753,23 +753,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters9() throws Exception {
-		String[] files = { "A" };
-		for (String fileName : files) {
-			Set<Function> functions = this.getFunctions(fileName);
-			assertNotNull(functions);
-			assertEquals(1, functions.size());
-			Function function = functions.iterator().next();
-			assertNotNull(function);
+		Set<Function> functions = this.getFunctions("A");
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
 
-			assertTrue(function.isHybrid());
+		assertTrue(function.isHybrid());
 
-			Function.HybridizationParameters args = function.getHybridizationParameters();
-			assertNotNull(args);
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
 
-			assertTrue(!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
-					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-					&& !args.hasExperimentalFollowTypeHintsParam());
-		}
+		assertTrue(!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam());
 	}
 
 	/**
@@ -777,25 +774,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testComputeParameters10() throws Exception {
-		String[] files = { "A" };
-		for (String fileName : files) {
-			Set<Function> functions = this.getFunctions(fileName);
-			assertNotNull(functions);
-			assertEquals(1, functions.size());
-			Function function = functions.iterator().next();
-			assertNotNull(function);
+		Set<Function> functions = this.getFunctions("A");
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
 
-			assertFalse(function.isHybrid());
+		assertFalse(function.isHybrid());
 
-			Function.HybridizationParameters args = function.getHybridizationParameters();
+		Function.HybridizationParameters args = function.getHybridizationParameters();
 
-			// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
-			// like `tf.function`. With this test, we want to verify that we only parse through the arguments
-			// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
-			// to return False.
+		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
+		// like `tf.function`. With this test, we want to verify that we only parse through the arguments
+		// if the function is hybrid. Since this test is not with `tf.function` we are expecting the method
+		// to return False.
 
-			assertNull(args);
-		}
+		assertNull(args);
 	}
 
 	/**
