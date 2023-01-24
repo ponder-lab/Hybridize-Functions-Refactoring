@@ -1,13 +1,13 @@
-import custom
 import tensorflow as tf
 
 
-@custom.decorator(input_signature=None)
-@tf.function(autograph=False)
-def func():
-    pass
+@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),), autograph=False)
+def func(x):
+  print('Tracing with', x)
+  return x
 
 
 if __name__ == '__main__':
-    func()
-
+    number = tf.constant([1.0, 1.0])
+    func(number)
+    

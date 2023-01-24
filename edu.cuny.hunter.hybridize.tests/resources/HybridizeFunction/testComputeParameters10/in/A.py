@@ -1,12 +1,12 @@
-import custom
+import tensorflow as tf
 
 
-@custom.decorator(input_signature=None)
-def func(x):
-  print('Tracing with', x)
-  return x
+@tf.function
+def test(x):
+    return x
 
- 
+
 if __name__ == '__main__':
-    func(1)
+    x = tf.constant(1)
+    test(x)
     
