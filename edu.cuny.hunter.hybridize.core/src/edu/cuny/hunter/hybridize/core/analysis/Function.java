@@ -97,12 +97,12 @@ public class Function extends RefactorableProgramEntity {
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
 		 */
 		private boolean reduceRetracingParamExists;
-		
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
 		 */
 		private boolean experimentalCompileParamExists;
-		
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experminetal_relax_shapes.
 		 */
@@ -250,7 +250,7 @@ public class Function extends RefactorableProgramEntity {
 		public boolean hasReduceRetracingParam() {
 			return this.reduceRetracingParamExists;
 		}
-		
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
 		 *
@@ -259,7 +259,7 @@ public class Function extends RefactorableProgramEntity {
 		public boolean hasExperimentalCompileParam() {
 			return this.experimentalCompileParamExists;
 		}
-		
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes.
 		 *
