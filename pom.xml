@@ -156,6 +156,7 @@
                         <arg>-err:-super</arg>
                         <arg>-err:-discouraged</arg>
                         <arg>-err:-emptyBlock</arg>
+                        <arg>-err:-boxing</arg>
                     </compilerArgs>
                 </configuration>
             </plugin>
