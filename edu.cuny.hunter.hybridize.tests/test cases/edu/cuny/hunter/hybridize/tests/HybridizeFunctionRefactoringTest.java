@@ -454,6 +454,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		File parent = file.getParentFile();
 
 		// Iterate over the files in the directory
+		// Make sure that we verify that all files are valid
 		for (File p : parent.listFiles()) {
 			String fileNameWithExtension = p.getName();
 			String fileName = ((fileNameWithExtension.contains("."))
