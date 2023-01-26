@@ -5,7 +5,6 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Objects;
-import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -121,7 +120,7 @@ public class Function extends RefactorableProgramEntity {
 
 			// Declaring definitions of the decorator, if it contains multiple definitions there might be more than one in this set. Since
 			// we are dealing with tf.function, we expect only one.
-			Set<Definition> potentialDeclaringDefinitionSet = null;
+			Definition declaringDefinition = null;
 
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
@@ -134,21 +133,13 @@ public class Function extends RefactorableProgramEntity {
 							Function.this.nature, monitor)) { // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
 						// Returns the set of potential declaring definitions of the selection.
-						potentialDeclaringDefinitionSet = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
-								Function.this.containingFile, Function.this.nature, monitor);
+						declaringDefinition = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
+								Function.this.containingFile, Function.this.nature, monitor).iterator().next();
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
-
-			// Declaring definition of the decorator. We get the single definition of tf.function. 
-			Definition declaringDefinition = null;
-
-			// Getting the definition, there should only be one in the set.
-			if (potentialDeclaringDefinitionSet != null) {
-				declaringDefinition = potentialDeclaringDefinitionSet.iterator().next();
-			}
 
 			// Python source arguments from the declaring definition
 			exprType[] declaringArguments = null;
