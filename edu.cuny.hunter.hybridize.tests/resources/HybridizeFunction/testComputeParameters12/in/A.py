@@ -1,11 +1,11 @@
-import custom
+import tensorflow as tf
 
 
-@custom.decorator(input_signature=None)
+@tf.function(autograph=False)
+@tf.function(jit_compile=True)
 def func(x):
-  print('Tracing with', x)
   return x
 
 
 if __name__ == '__main__':
-    func(1)
+    func(tf.constant(1))

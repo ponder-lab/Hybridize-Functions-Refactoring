@@ -98,16 +98,6 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
-		 */
-		private boolean experimentalCompileParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experminetal_relax_shapes.
-		 */
-		private boolean experimentalRelaxShapesParamExists;
-
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -149,13 +139,16 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(AUTOGRAPH))
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-							else if (name.id.equals(JIT_COMPILE))
+							// The version of the API we are using allows
+							// parameter names jit_compile and
+							// deprecated name experimental_compile
+							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 							// The version of the API we are using allows
 							// parameter names reduce_retracing
 							// and deprecated name experimental_relax_shapes
-							else if (name.id.equals(REDUCE_RETRACING))
+							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
@@ -168,12 +161,6 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_COMPILE))
-								// Found parameter experimental_compile
-								this.experimentalCompileParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-								// Found parameter experimental_relax_shapes
-								this.experimentalRelaxShapesParamExists = true;
 						}
 					}
 				} // else, tf.function is used without parameters.
@@ -257,7 +244,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter experimental_compile.
 		 */
 		public boolean hasExperimentalCompileParam() {
-			return this.experimentalCompileParamExists;
+			return this.jitCompileParamExists;
 		}
 
 		/**
@@ -266,8 +253,9 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter experimental_relax_shapes.
 		 */
 		public boolean hasExperimentalRelaxShapesParam() {
-			return this.experimentalRelaxShapesParamExists;
+			return this.reduceRetracingParamExists;
 		}
+
 	}
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";

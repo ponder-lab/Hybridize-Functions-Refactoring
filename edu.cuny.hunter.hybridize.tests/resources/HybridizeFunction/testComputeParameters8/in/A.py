@@ -1,10 +1,12 @@
 import tensorflow as tf
 
 
-@tf.function(experimental_compile=True)
-def func():
-    print("Testing")
+@tf.function
+def test(x):
+    return x
 
 
 if __name__ == '__main__':
-    func()
+    x = tf.constant(1)
+    test(x)
+    
