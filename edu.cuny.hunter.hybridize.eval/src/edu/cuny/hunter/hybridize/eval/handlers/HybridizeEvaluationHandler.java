@@ -194,7 +194,7 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 							classesTotal.addAll(getClasses(map.getKey()));
 
 							Set<Function> functionsPerNode = processor.getFunctions();
-							
+
 							IDocument document = null;
 
 							// Iterate over the functions per Python Node
