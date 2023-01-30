@@ -15,7 +15,7 @@
     </definition>
   </extension>
   <extension point="org.eclipse.ui.handlers">
-    <handler class="edu.cuny.hunter.hybridize.analysis.handlers.HybridizeEvaluationHandler" commandId="edu.cuny.hunter.hybridize.eval.command">
+    <handler class="edu.cuny.hunter.hybridize.eval.handlers.HybridizeEvaluationHandler" commandId="edu.cuny.hunter.hybridize.eval.command">
       <activeWhen>
         <reference definitionId="edu.cuny.hunter.hybridize.eval.definitions.actionSet" />
       </activeWhen>

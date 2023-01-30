@@ -23,7 +23,6 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
-import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
@@ -37,6 +36,7 @@ import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.navigator.elements.PythonProjectSourceFolder;
 import org.python.pydev.outline.ParsedItem;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 
@@ -70,6 +70,23 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 			return iProject.getName();
 		}
 		return obj.toString();
+	}
+
+	private static Set<ClassDef> getClasses(Set<FunctionDefinition> functionDefinition) {
+		Set<ClassDef> classesSet = new HashSet<>();
+
+		for (FunctionDefinition funcDefinition : functionDefinition) {
+			FunctionDef funcDef = funcDefinition.getFunctionDef();
+			SimpleNode parentNode = funcDef.parent;
+
+			while (parentNode instanceof ClassDef) {
+				ClassDef classFunction = (ClassDef) parentNode;
+				classesSet.add(classFunction);
+				parentNode = parentNode.parent;
+			}
+		}
+
+		return classesSet;
 	}
 
 	private static Set<PythonNode> getPythonNodes(Object obj) {
@@ -123,8 +140,6 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		CSVPrinter resultsPrinter = null;
-		CSVPrinter functionsPrinter = null;
-		CSVPrinter decoratorsPrinter = null;
 
 		HybridizeFunctionRefactoringProcessor processor = null;
 
@@ -133,23 +148,11 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 		try {
 			ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
 
-			List<String> resultsHeader = new ArrayList<>(Arrays.asList("project", "# functions", "# hybrid functions",
-					"# decorators with hybrid parameters", "# func param", "# input_signature param", "# autograph param",
-					"# jit_compile param", "# reduce_retracing param", "# experimental_implements param",
-					"# experimental_autograph_options param", "# experimental_follow_type_hints param"));
-
-			List<String> functionsHeader = new ArrayList<>(Arrays.asList("project", "file/path", "function id", "is_method",
-					"is_embedded_function", "is_hybrid", "has_hybrid_params?"));
-
-			List<String> decoratorsHeader = new ArrayList<>(Arrays.asList("project", "file/path", "function id", "func", "input_signature",
-					"autograph", "jit_compile", "reduce_retracing", "experimental_implements", "experimental_autograph_options",
-					"experimental_follow_type_hints"));
+			List<String> resultsHeader = new ArrayList<>(Arrays.asList("Subject", "SLOC", "classes", "functions",
+					"hybrid functions (original)", "optimization available functions", "optimized functions",
+					"convert eager Function to hybrid", "convert eager function to hybrid", "failed preconditions", "time (s)"));
 
 			resultsPrinter = createCSVPrinter("results.csv", resultsHeader.toArray(new String[resultsHeader.size()]));
-
-			functionsPrinter = createCSVPrinter("functions.csv", functionsHeader.toArray(new String[functionsHeader.size()]));
-
-			decoratorsPrinter = createCSVPrinter("decorators.csv", decoratorsHeader.toArray(new String[decoratorsHeader.size()]));
 
 			if (currentSelection instanceof IStructuredSelection) {
 				List<?> list = ((IStructuredSelection) currentSelection).toList();
@@ -157,7 +160,7 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 				if (list != null)
 					for (Object obj : list) {
 
-						// get projectName
+						// get Subject Name
 						String projectName = getProjectName(obj);
 
 						// Project Name for results.csv
@@ -177,19 +180,10 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 							}
 
 						// Counters for aggregate information
-						int countFunctionsPerProject = 0;
+						int countfunctionsPerNode = 0;
 						int countHybridPerProject = 0;
-
-						// Counters for tf.function parameters
-						int countFuncParamsPerProject = 0;
-						int countInputSignatureParamsPerProject = 0;
-						int countAutoGraphParamsPerProject = 0;
-						int countJitCompileParamsPerProject = 0;
-						int countReduceRetrainingParamsPerProject = 0;
-						int countExpImplementsParamsPerProject = 0;
-						int countExpAutographOptParamsPerProject = 0;
-						int countExpTypeHintParamsPerProject = 0;
-						int countDecoratorsWithHybridParams = 0;
+						int slocTotal = 0;
+						Set<ClassDef> classesTotal = new HashSet<>();
 
 						// Getting information about the functions
 						for (Map.Entry<Set<FunctionDefinition>, PythonNode> map : functionsToNodes.entrySet()) {
@@ -197,143 +191,42 @@ public class HybridizeEvaluationHandler extends AbstractHandler {
 							// Getting functions
 							processor = new HybridizeFunctionRefactoringProcessor(map.getKey(), monitor);
 
+							classesTotal.addAll(getClasses(map.getKey()));
+
 							Set<Function> functionsPerNode = processor.getFunctions();
+							
+							IDocument document = null;
 
 							// Iterate over the functions per Python Node
 							for (Function func : functionsPerNode) {
-
-								// Print each project for each function
-								functionsPrinter.print(projectName);
-
-								// Getting relative path
-								IPath relativePath = map.getValue().pythonFile.getActualObject().getProjectRelativePath();
-
-								// Printing relative path
-								functionsPrinter.print(relativePath);
-
-								// Getting function identifier
-								String functionId = func.getIdentifer();
-
-								// Printing function identifier
-								functionsPrinter.print(functionId);
-
-								functionsPrinter.print(func.getIsMethod());
-
-								functionsPrinter.print(func.getIsEmbedded());
-
-								// Getting tf.function parameter information
-								// This already checks if the func is hybrid
-								Function.HybridizationParameters args = func.getHybridizationParameters();
-								boolean existenceOfTfParam = false;
-
-								if (args != null) {
-
-									// If args not null, then it means that it is hybrid
-									functionsPrinter.print("True");
-
-									// Counting the number of hybrid projects per project
-									++countHybridPerProject;
-
-									// Print each project for each function
-									decoratorsPrinter.print(projectName);
-
-									// Print each project for each function
-									decoratorsPrinter.print(relativePath);
-
-									// Printing function identifier
-									decoratorsPrinter.print(functionId);
-
-									if (args.hasFuncParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countFuncParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasInputSignatureParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countInputSignatureParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasAutoGraphParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countAutoGraphParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasJitCompileParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countJitCompileParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasReduceRetracingParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countReduceRetrainingParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasExperimentalImplementsParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countExpImplementsParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasExperimentalAutographOptParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countExpAutographOptParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									if (args.hasExperimentalFollowTypeHintsParam()) {
-										decoratorsPrinter.print("True");
-										existenceOfTfParam = true;
-										++countExpTypeHintParamsPerProject;
-									} else
-										decoratorsPrinter.print("False");
-									decoratorsPrinter.println();
-								} else
-									functionsPrinter.print("False");
-
-								if (existenceOfTfParam)
-									++countDecoratorsWithHybridParams;
-
-								functionsPrinter.print(existenceOfTfParam);
-
-								functionsPrinter.println();
-								++countFunctionsPerProject;
+								document = func.getContainingDocument();
+								if (func.isHybrid()) {
+									countHybridPerProject++;
+								}
+								countfunctionsPerNode++;
 							}
-
+							if (document != null)
+								slocTotal += document.getNumberOfLines();;
 						}
 
+						// Printing SLOC per project
+						resultsPrinter.print(slocTotal);
+
+						// Printing number of classes per project
+						resultsPrinter.print(classesTotal.size());
+
 						// Printing number of functions per project
-						resultsPrinter.print(countFunctionsPerProject);
+						resultsPrinter.print(countfunctionsPerNode);
 
 						// Printing number of hybrid functions per project
 						resultsPrinter.print(countHybridPerProject);
 
-						// Printing number functions with hybrid parameters
-						resultsPrinter.print(countDecoratorsWithHybridParams);
-
-						// Printing number of tf.function parameters per project
-						resultsPrinter.print(countFuncParamsPerProject);
-						resultsPrinter.print(countInputSignatureParamsPerProject);
-						resultsPrinter.print(countAutoGraphParamsPerProject);
-						resultsPrinter.print(countJitCompileParamsPerProject);
-						resultsPrinter.print(countReduceRetrainingParamsPerProject);
-						resultsPrinter.print(countExpImplementsParamsPerProject);
-						resultsPrinter.print(countExpAutographOptParamsPerProject);
-						resultsPrinter.print(countExpTypeHintParamsPerProject);
-
 						// Finish row of results.csv
 						resultsPrinter.println();
-
 					}
 				// Close printer
 				if (resultsPrinter != null) {
 					resultsPrinter.close();
-					functionsPrinter.close();
-					decoratorsPrinter.close();
 				}
 			}
 		} catch (IOException | TooManyMatchesException | BadLocationException e) {
