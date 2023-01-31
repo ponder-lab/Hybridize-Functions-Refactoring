@@ -213,16 +213,17 @@ public class Function extends RefactorableProgramEntity {
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
+								StringBuilder argument = new StringBuilder();
 								if (keyword.value instanceof Attribute) {
 									Attribute attr = (Attribute) keyword.value;
 									NameTok lastAttribute = (NameTok) attr.attr;
 									while (attr.value instanceof Attribute) {
-										attr = (Attribute) attr.value;
 										NameTok valueAttribute = (NameTok) attr.attr;
-										this.experimentalAutographOptionsParamValue += "." + valueAttribute.id;
+										argument.append(valueAttribute.id);
+										argument.append(".");
+										attr = (Attribute) attr.value;
 									}
-									this.experimentalAutographOptionsParamValue += "." + lastAttribute.id;
-									System.out.println("VAMOS A VER SI FUNCTIONA " + this.experimentalAutographOptionsParamExists);
+									this.experimentalAutographOptionsParamValue = argument.toString() + "." + lastAttribute.id;
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
