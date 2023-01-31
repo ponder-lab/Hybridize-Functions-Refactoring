@@ -14,6 +14,7 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
@@ -101,6 +102,46 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph.
+		 */
+		private String autoGraphParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints.
+		 */
+		private String experimentaFollowTypeHintsParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options.
+		 */
+		private String experimentalAutographOptionsParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements.
+		 */
+		private String experimentalImplementsParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter func.
+		 */
+		private String funcParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature.
+		 */
+		private String inputSignatureParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile.
+		 */
+		private String jitCompileParamValue;
+
+		/**
+		 * Value of this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 */
+		private String reduceRetracingParamValue;
+
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -133,37 +174,47 @@ public class Function extends RefactorableProgramEntity {
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
 							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals(FUNC))
+							Name value = (Name) keyword.value;
+							if (name.id.equals(FUNC)) {
 								// Found parameter func
 								this.funcParamExists = true;
-							else if (name.id.equals(INPUT_SIGNATURE))
+								this.funcParamValue = value.id;
+							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
-							else if (name.id.equals(AUTOGRAPH))
+								this.inputSignatureParamValue = value.id;
+							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
+								this.autoGraphParamValue = value.id;
 							// The version of the API we are using allows
 							// parameter names jit_compile and
 							// deprecated name experimental_compile
-							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
+							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
+								this.jitCompileParamValue = value.id;
 							// The version of the API we are using allows
 							// parameter names reduce_retracing
 							// and deprecated name experimental_relax_shapes
-							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
+							} else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES)) {
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
+								this.reduceRetracingParamValue = value.id;
+							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+								this.experimentaFollowTypeHintsParamValue = value.id;
+							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+								this.experimentalAutographOptionsParamValue = value.id;
+							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
+								this.experimentaFollowTypeHintsParamValue = value.id;
+							}
 						}
 					}
 				} // else, tf.function is used without parameters.
@@ -239,6 +290,78 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		public boolean hasReduceRetracingParam() {
 			return this.reduceRetracingParamExists;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter autograph.
+		 *
+		 * @return String of this {@link decoratorType} parameter autograph.
+		 */
+		public String getAutoGraphArg() {
+			return this.autoGraphParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_autograph_options.
+		 */
+		public String getExperimentalAutographOptArg() {
+			return this.experimentalAutographOptionsParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_implements.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_implements.
+		 */
+		public String getExperimentalImplementsArg() {
+			return this.experimentalImplementsParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_follow_type_hints.
+		 */
+		public String getExperimentalFollowTypeHintsArg() {
+			return this.experimentaFollowTypeHintsParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter has parameter func.
+		 *
+		 * @return String of this {@link decoratorType} parameter func.
+		 */
+		public String getFuncArg() {
+			return this.funcParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter input_signature.
+		 *
+		 * @return String of this {@link decoratorType} parameter input_signature.
+		 */
+		public String getInputSignatureArg() {
+			return this.inputSignatureParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter jit_compile.
+		 *
+		 * @return String of this {@link decoratorType} parameter jit_compile.
+		 */
+		public String getJitCompileArg() {
+			return this.jitCompileParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter reduce_retracing.
+		 *
+		 * @return String of this {@link Function} parameter reduce_retracing.
+		 */
+		public String getReduceRetracingArg() {
+			return this.reduceRetracingParamValue;
 		}
 	}
 
