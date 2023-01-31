@@ -218,14 +218,8 @@ public class Function extends RefactorableProgramEntity {
 									NameTok lastAttribute = (NameTok) attr.attr;
 									while (attr.value instanceof Attribute) {
 										attr = (Attribute) attr.value;
-									}
-									if (attr.value instanceof Name) {
-										Name value = (Name) attr.value;
-										this.experimentalAutographOptionsParamValue = value.id;
-										while (attr.attr instanceof NameTok) {
-											NameTok valueAttribute = (NameTok) attr.attr;
-											this.experimentalAutographOptionsParamValue += "." + valueAttribute.id;
-										}
+										NameTok valueAttribute = (NameTok) attr.attr;
+										this.experimentalAutographOptionsParamValue += "." + valueAttribute.id;
 									}
 									this.experimentalAutographOptionsParamValue += "." + lastAttribute.id;
 									System.out.println("VAMOS A VER SI FUNCTIONA " + this.experimentalAutographOptionsParamExists);
