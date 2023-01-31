@@ -217,7 +217,7 @@ public class Function extends RefactorableProgramEntity {
 									Attribute attr = (Attribute) keyword.value;
 									NameTok lastAttribute = (NameTok) attr.attr;
 									while (attr.value instanceof Attribute) {
-										attr.value = attr.value;
+										attr = (Attribute) attr.value;
 									}
 									if (attr.value instanceof Name) {
 										Name value = (Name) attr.value;
