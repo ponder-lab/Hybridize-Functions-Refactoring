@@ -174,45 +174,66 @@ public class Function extends RefactorableProgramEntity {
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
 							NameTok name = (NameTok) keyword.arg;
-							Name value = (Name) keyword.value;
 							if (name.id.equals(FUNC)) {
 								// Found parameter func
 								this.funcParamExists = true;
+								Name value = (Name) keyword.value;
 								this.funcParamValue = value.id;
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
-								this.inputSignatureParamValue = value.id;
+								// Tuple value = (Tuple) keyword.value;
+								// this.inputSignatureParamValue = value.id;
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
+								Name value = (Name) keyword.value;
 								this.autoGraphParamValue = value.id;
-							// The version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
+								// The version of the API we are using allows
+								// parameter names jit_compile and
+								// deprecated name experimental_compile
 							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
+								Name value = (Name) keyword.value;
 								this.jitCompileParamValue = value.id;
-							// The version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
+								// The version of the API we are using allows
+								// parameter names reduce_retracing
+								// and deprecated name experimental_relax_shapes
 							} else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES)) {
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
+								Name value = (Name) keyword.value;
 								this.reduceRetracingParamValue = value.id;
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-								this.experimentaFollowTypeHintsParamValue = value.id;
+								// this.experimentalImplementsParamValue = value.id;
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-								this.experimentalAutographOptionsParamValue = value.id;
+								if (keyword.value instanceof Attribute) {
+									Attribute attr = (Attribute) keyword.value;
+									NameTok lastAttribute = (NameTok) attr.attr;
+									while (attr.value instanceof Attribute) {
+										attr.value = attr.value;
+									}
+									if (attr.value instanceof Name) {
+										Name value = (Name) attr.value;
+										this.experimentalAutographOptionsParamValue = value.id;
+										while (attr.attr instanceof NameTok) {
+											NameTok valueAttribute = (NameTok) attr.attr;
+											this.experimentalAutographOptionsParamValue += "." + valueAttribute.id;
+										}
+									}
+									this.experimentalAutographOptionsParamValue += "." + lastAttribute.id;
+									System.out.println("VAMOS A VER SI FUNCTIONA " + this.experimentalAutographOptionsParamExists);
+								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
+								Name value = (Name) keyword.value;
 								this.experimentaFollowTypeHintsParamValue = value.id;
 							}
 						}
