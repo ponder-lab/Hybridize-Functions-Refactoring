@@ -1,13 +1,10 @@
 import tensorflow as tf
 
 
-@tf.function(experimental_autograph_options=tf.autograph.experimental.Feature.EQUALITY_OPERATORS)
-def func(i):
-  if i == 0:
-    tf.print('i is zero')
+@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),))
+def func(x):
+  return x
 
- 
 if __name__ == '__main__':
-    x = tf.constant(1)
-    func(x)
-
+    number = tf.constant([1.0, 1.0])
+    func(number)

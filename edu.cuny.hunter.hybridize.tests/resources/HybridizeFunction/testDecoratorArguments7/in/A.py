@@ -1,11 +1,10 @@
 import tensorflow as tf
 
-     
-@tf.function(autograph=False)
+
+@tf.function(autograph=True)
 def func():
-    print("Testing")
+  pass
 
  
 if __name__ == '__main__':
-    func()
-    
+    func()   

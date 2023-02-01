@@ -1,10 +1,12 @@
+import custom
 import tensorflow as tf
 
 
+@custom.decorator(input_signature=None)
 @tf.function(autograph=False)
 def func():
-  pass
+    pass
 
- 
+
 if __name__ == '__main__':
-    func()   
+    func()

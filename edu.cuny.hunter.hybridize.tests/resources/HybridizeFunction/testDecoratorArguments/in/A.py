@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-@tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),))
+@tf.function(input_signature=None)
 def func(x):
   return x
 

@@ -1,12 +1,10 @@
 import tensorflow as tf
 
 
-@tf.function(autograph=False)
-@tf.function(jit_compile=True)
-def func(x):
-  return x
+@tf.function(reduce_retracing=False)
+def func():
+  pass
 
-  
+ 
 if __name__ == '__main__':
-    func(tf.constant(1))
-
+    func()   

@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-@tf.function(jit_compile=True)
+@tf.function(experimental_autograph_options=None)
 def func():
   pass
 
