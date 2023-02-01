@@ -218,13 +218,16 @@ public class Function extends RefactorableProgramEntity {
 									Attribute attr = (Attribute) keyword.value;
 									while (attr.value instanceof Attribute) {
 										NameTok valueAttribute = (NameTok) attr.attr;
-										System.out.println("SOLO: " + valueAttribute.id);
 										argument.insert(0, valueAttribute.id);
 										argument.insert(0, ".");
 										attr = (Attribute) attr.value;
 									}
 									this.experimentalAutographOptionsParamValue = ((Name) attr.value).id + "." + ((NameTok) attr.attr).id
 											+ argument.toString();
+								}
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentalAutographOptionsParamValue = value.id;
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
