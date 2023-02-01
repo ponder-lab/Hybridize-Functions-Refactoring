@@ -5,6 +5,6 @@ import tensorflow as tf
 def func():
   pass
 
- 
+
 if __name__ == '__main__':
-    func()   
+    func()
