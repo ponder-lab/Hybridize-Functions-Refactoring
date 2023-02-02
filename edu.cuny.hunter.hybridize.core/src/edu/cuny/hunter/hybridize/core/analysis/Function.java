@@ -383,6 +383,24 @@ public class Function extends RefactorableProgramEntity {
 		public String getReduceRetracingArg() {
 			return this.reduceRetracingParamValue;
 		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_compile.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_compile.
+		 */
+		public String getExperimentalCompileArg() {
+			return this.jitCompileParamValue;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_relax_shapes.
+		 *
+		 * @return String of this {@link Function} parameter experimental_relax_shapes.
+		 */
+		public String getExperimentalRelaxShapeArg() {
+			return this.reduceRetracingParamValue;
+		}
 	}
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
