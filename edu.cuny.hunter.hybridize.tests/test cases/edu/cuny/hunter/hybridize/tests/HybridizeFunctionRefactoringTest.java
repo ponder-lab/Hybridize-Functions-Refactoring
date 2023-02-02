@@ -826,27 +826,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	}
 
-	// /**
-	// * Test for #136. This simply tests whether we can get the tf.function argument input_signature.
-	// */
-	// @Test
-	// public void testDecoratorArguments() throws Exception {
-	// Set<Function> functions = this.getFunctions();
-	// assertNotNull(functions);
-	// assertEquals(1, functions.size());
-	// Function function = functions.iterator().next();
-	// assertNotNull(function);
-	//
-	// assertTrue(function.isHybrid());
-	//
-	// Function.HybridizationParameters args = function.getHybridizationParameters();
-	// assertNotNull(args);
-	//
-	// if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-	// && !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-	// && !args.hasExperimentalFollowTypeHintsParam())
-	// assertEquals("None", args.getInputSignatureArg());
-	// }
+	/**
+	 * Test for #136. This simply tests whether we can get the tf.function argument input_signature.
+	 */
+	@Test
+	public void testDecoratorArguments() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam())
+			assertEquals("None", args.getInputSignatureArg());
+	}
 
 	// /**
 	// * Test for #136. This simply tests whether we can get the tf.function argument input_signature.
@@ -1086,71 +1086,71 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("False", args.getReduceRetracingArg());
 	}
 
-	// /**
-	// * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
-	// */
-	// @Test
-	// public void testDecoratorArguments13() throws Exception {
-	// Set<Function> functions = this.getFunctions();
-	// assertNotNull(functions);
-	// assertEquals(1, functions.size());
-	// Function function = functions.iterator().next();
-	// assertNotNull(function);
-	//
-	// assertTrue(function.isHybrid());
-	//
-	// Function.HybridizationParameters args = function.getHybridizationParameters();
-	// assertNotNull(args);
-	//
-	// if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-	// && !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-	// && !args.hasExperimentalFollowTypeHintsParam())
-	// assertEquals("google.matmul_low_rank_matrix", args.getExperimentalImplementsArg());
-	// }
+	/**
+	 * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
+	 */
+	@Test
+	public void testDecoratorArguments13() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
 
-	// /**
-	// * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
-	// */
-	// @Test
-	// public void testDecoratorArguments14() throws Exception {
-	// Set<Function> functions = this.getFunctions();
-	// assertNotNull(functions);
-	// assertEquals(1, functions.size());
-	// Function function = functions.iterator().next();
-	// assertNotNull(function);
-	//
-	// assertTrue(function.isHybrid());
-	//
-	// Function.HybridizationParameters args = function.getHybridizationParameters();
-	// assertNotNull(args);
-	//
-	// if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-	// && !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-	// && !args.hasExperimentalFollowTypeHintsParam())
-	// assertEquals("google.embedded_matmul", args.getExperimentalImplementsArg());
-	// }
+		assertTrue(function.isHybrid());
 
-	// /**
-	// * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
-	// */
-	// @Test
-	// public void testDecoratorArguments15() throws Exception {
-	// Set<Function> functions = this.getFunctions();
-	// assertNotNull(functions);
-	// assertEquals(1, functions.size());
-	// Function function = functions.iterator().next();
-	// assertNotNull(function);
-	//
-	// assertTrue(function.isHybrid());
-	//
-	// Function.HybridizationParameters args = function.getHybridizationParameters();
-	// assertNotNull(args);
-	//
-	// if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-	// && !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
-	// && !args.hasExperimentalFollowTypeHintsParam())
-	// assertEquals("None", args.getExperimentalImplementsArg());
-	// }
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam())
+			assertEquals("google.matmul_low_rank_matrix", args.getExperimentalImplementsArg());
+	}
+
+	/**
+	 * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
+	 */
+	@Test
+	public void testDecoratorArguments14() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam())
+			assertEquals("google.embedded_matmul", args.getExperimentalImplementsArg());
+	}
+
+	/**
+	 * Test for #136. This simply tests whether we can get the tf.function argument experimental_implements.
+	 */
+	@Test
+	public void testDecoratorArguments15() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam())
+			assertEquals("None", args.getExperimentalImplementsArg());
+	}
 
 	/**
 	 * Test for #136. This simply tests whether we can get the tf.function argument experimental_autograph_options
@@ -1205,21 +1205,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	// public void testDecoratorArguments18() throws Exception {
 	// Set<Function> functions = this.getFunctions();
 	//
-	//	assertNotNull(functions);
-	//	assertEquals(1, functions.size());
-	//	Function function = functions.iterator().next();
-	//	assertNotNull(function);
+	// assertNotNull(functions);
+	// assertEquals(1, functions.size());
+	// Function function = functions.iterator().next();
+	// assertNotNull(function);
 	//
-	//	assertTrue(function.isHybrid());
+	// assertTrue(function.isHybrid());
 	//
-	//	Function.HybridizationParameters args = function.getHybridizationParameters();
-	//	assertNotNull(args);
+	// Function.HybridizationParameters args = function.getHybridizationParameters();
+	// assertNotNull(args);
 	//
-	//	if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-	//			&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
-	//			&& !args.hasExperimentalFollowTypeHintsParam())
-	//		assertEquals("(tf.autograph.experimental.Feature.EQUALITY_OPERATORS, tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)",
-	//				args.getExperimentalAutographOptArg());
+	// if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+	// && !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
+	// && !args.hasExperimentalFollowTypeHintsParam())
+	// assertEquals("(tf.autograph.experimental.Feature.EQUALITY_OPERATORS, tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)",
+	// args.getExperimentalAutographOptArg());
 	// }
 
 	/**

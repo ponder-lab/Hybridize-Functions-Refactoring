@@ -16,6 +16,7 @@ import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.Str;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -177,26 +178,36 @@ public class Function extends RefactorableProgramEntity {
 							if (name.id.equals(FUNC)) {
 								// Found parameter func
 								this.funcParamExists = true;
-								Name value = (Name) keyword.value;
-								this.funcParamValue = value.id;
+								// Name of function.
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.funcParamValue = value.id;
+								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
-								// Tuple value = (Tuple) keyword.value;
-								// this.inputSignatureParamValue = value.id;
+								// TODO: Nested sequence of tf.TensorSpecs
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.inputSignatureParamValue = value.id;
+								}
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-								Name value = (Name) keyword.value;
-								this.autoGraphParamValue = value.id;
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.autoGraphParamValue = value.id;
+								}
 								// The version of the API we are using allows
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
 							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
-								Name value = (Name) keyword.value;
-								this.jitCompileParamValue = value.id;
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.jitCompileParamValue = value.id;
+								}
 								// The version of the API we are using allows
 								// parameter names reduce_retracing
 								// and deprecated name experimental_relax_shapes
@@ -204,16 +215,26 @@ public class Function extends RefactorableProgramEntity {
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-								Name value = (Name) keyword.value;
-								this.reduceRetracingParamValue = value.id;
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.reduceRetracingParamValue = value.id;
+								}
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-								// this.experimentalImplementsParamValue = value.id;
+								if (keyword.value instanceof Str) {
+									Str value = (Str) keyword.value;
+									this.experimentalImplementsParamValue = value.s;
+								}
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentalImplementsParamValue = value.id;
+								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
 								StringBuilder argument = new StringBuilder();
+								// TODO: Tuple of multiple options
 								if (keyword.value instanceof Attribute) {
 									Attribute attr = (Attribute) keyword.value;
 									while (attr.value instanceof Attribute) {
@@ -232,8 +253,10 @@ public class Function extends RefactorableProgramEntity {
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-								Name value = (Name) keyword.value;
-								this.experimentaFollowTypeHintsParamValue = value.id;
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentaFollowTypeHintsParamValue = value.id;
+								}
 							}
 						}
 					}
