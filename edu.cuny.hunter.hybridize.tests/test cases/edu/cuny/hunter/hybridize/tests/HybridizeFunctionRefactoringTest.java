@@ -1127,7 +1127,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("google.embedded_matmul", args.getExperimentalImplementsArg());
+			assertEquals("embedded_matmul", args.getExperimentalImplementsArg());
 	}
 
 	/**
