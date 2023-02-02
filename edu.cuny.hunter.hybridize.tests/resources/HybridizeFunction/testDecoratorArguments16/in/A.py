@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-@tf.function(experimental_autograph_options="tf.autograph.experimental.Feature.EQUALITY_OPERATORS")
+@tf.function(experimental_autograph_options=tf.autograph.experimental.Feature.EQUALITY_OPERATORS)
 def func():
   pass
 
