@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-@tf.function(experimental_implements="google.embedded_matmul")
+@tf.function(experimental_implements="embedded_matmul")
 def func():
   pass
 
