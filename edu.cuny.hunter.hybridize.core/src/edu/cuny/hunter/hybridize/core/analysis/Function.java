@@ -225,8 +225,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Str) {
 									Str value = (Str) keyword.value;
 									this.experimentalImplementsParamValue = value.s;
-								}
-								else if (keyword.value instanceof Name) {
+								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									this.experimentalImplementsParamValue = value.id;
 								}
@@ -245,8 +244,7 @@ public class Function extends RefactorableProgramEntity {
 									}
 									this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
 											+ ((NameTok) keywordAttribute.attr).id + argument.toString();
-								}
-								else if (keyword.value instanceof Name) {
+								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									this.experimentalAutographOptionsParamValue = value.id;
 								}
