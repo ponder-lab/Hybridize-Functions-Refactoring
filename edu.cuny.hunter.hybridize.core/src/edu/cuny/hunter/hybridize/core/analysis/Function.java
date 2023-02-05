@@ -226,7 +226,7 @@ public class Function extends RefactorableProgramEntity {
 									Str value = (Str) keyword.value;
 									this.experimentalImplementsParamValue = value.s;
 								}
-								if (keyword.value instanceof Name) {
+								else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									this.experimentalImplementsParamValue = value.id;
 								}
@@ -236,17 +236,17 @@ public class Function extends RefactorableProgramEntity {
 								StringBuilder argument = new StringBuilder();
 								// TODO: Tuple of multiple options
 								if (keyword.value instanceof Attribute) {
-									Attribute attr = (Attribute) keyword.value;
-									while (attr.value instanceof Attribute) {
-										NameTok valueAttribute = (NameTok) attr.attr;
+									Attribute keywordAttribute = (Attribute) keyword.value;
+									while (keywordAttribute.value instanceof Attribute) {
+										NameTok valueAttribute = (NameTok) keywordAttribute.attr;
 										argument.insert(0, valueAttribute.id);
 										argument.insert(0, ".");
-										attr = (Attribute) attr.value;
+										keywordAttribute = (Attribute) keywordAttribute.value;
 									}
-									this.experimentalAutographOptionsParamValue = ((Name) attr.value).id + "." + ((NameTok) attr.attr).id
-											+ argument.toString();
+									this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
+											+ ((NameTok) keywordAttribute.attr).id + argument.toString();
 								}
-								if (keyword.value instanceof Name) {
+								else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									this.experimentalAutographOptionsParamValue = value.id;
 								}
