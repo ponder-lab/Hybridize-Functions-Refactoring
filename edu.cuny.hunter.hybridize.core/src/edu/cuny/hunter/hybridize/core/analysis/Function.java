@@ -210,7 +210,7 @@ public class Function extends RefactorableProgramEntity {
 								// The version of the API we are using allows
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
-							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(JIT_COMPILE)) {
+							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 								// Example of value: True, False, None
@@ -219,7 +219,7 @@ public class Function extends RefactorableProgramEntity {
 									this.jitCompileParamValue = value.id;
 								} else {
 									throw new IllegalArgumentException(
-											"Unable to process " + JIT_COMPILE + "/" + JIT_COMPILE + " argument.");
+											"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
 								}
 								// The version of the API we are using allows
 								// parameter names reduce_retracing
