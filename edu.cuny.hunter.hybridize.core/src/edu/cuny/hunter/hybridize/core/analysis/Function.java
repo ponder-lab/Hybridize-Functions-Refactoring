@@ -186,7 +186,7 @@ public class Function extends RefactorableProgramEntity {
 									}
 								} catch (Exception e) {
 									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+											"Unable to process " + FUNC + " arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
@@ -200,7 +200,7 @@ public class Function extends RefactorableProgramEntity {
 									}
 								} catch (Exception e) {
 									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+											"Unable to process " + INPUT_SIGNATURE + " arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
@@ -213,12 +213,12 @@ public class Function extends RefactorableProgramEntity {
 									}
 								} catch (Exception e) {
 									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+											"Unable to process " + AUTOGRAPH + " arguments: " + keyword.value.toString(), e);
 								}
 								// The version of the API we are using allows
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
-							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
+							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(JIT_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 								// Example of value: True, False, None
@@ -228,8 +228,8 @@ public class Function extends RefactorableProgramEntity {
 										this.jitCompileParamValue = value.id;
 									}
 								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+									throw new IllegalArgumentException("Unable to process " + JIT_COMPILE + "/" + JIT_COMPILE
+											+ " arguments: " + keyword.value.toString(), e);
 								}
 								// The version of the API we are using allows
 								// parameter names reduce_retracing
@@ -245,8 +245,8 @@ public class Function extends RefactorableProgramEntity {
 										this.reduceRetracingParamValue = value.id;
 									}
 								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+									throw new IllegalArgumentException("Unable to process " + REDUCE_RETRACING + "/"
+											+ EXPERIMENTAL_RELAX_SHAPES + " arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
@@ -263,7 +263,7 @@ public class Function extends RefactorableProgramEntity {
 									}
 								} catch (Exception e) {
 									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+											"Unable to process " + EXPERIMENTAL_IMPLEMENTS + " arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
@@ -287,8 +287,8 @@ public class Function extends RefactorableProgramEntity {
 										this.experimentalAutographOptionsParamValue = value.id;
 									}
 								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS
+											+ " arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
@@ -300,8 +300,8 @@ public class Function extends RefactorableProgramEntity {
 										this.experimentaFollowTypeHintsParamValue = value.id;
 									}
 								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
+									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS
+											+ " arguments: " + keyword.value.toString(), e);
 								}
 							}
 						}
