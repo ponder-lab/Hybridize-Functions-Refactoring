@@ -54,7 +54,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+			throws TooManyMatchesException, BadLocationException, IllegalArgumentException {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 

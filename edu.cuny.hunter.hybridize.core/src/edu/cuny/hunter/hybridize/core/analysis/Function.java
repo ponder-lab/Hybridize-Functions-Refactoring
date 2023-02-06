@@ -143,7 +143,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private String reduceRetracingParamValue;
 
-		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
+		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException, IllegalArgumentException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
@@ -178,25 +178,42 @@ public class Function extends RefactorableProgramEntity {
 							if (name.id.equals(FUNC)) {
 								// Found parameter func
 								this.funcParamExists = true;
-								// Name of function.
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.funcParamValue = value.id;
+								try {
+									// Example of value: Name of function or None
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.funcParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
 								// TODO: Nested sequence of tf.TensorSpecs
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.inputSignatureParamValue = value.id;
+								try {
+									// Example of value: None
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.inputSignatureParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.autoGraphParamValue = value.id;
+								try {
+									// Example of value: True, False
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.autoGraphParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 								// The version of the API we are using allows
 								// parameter names jit_compile and
@@ -204,9 +221,15 @@ public class Function extends RefactorableProgramEntity {
 							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.jitCompileParamValue = value.id;
+								// Example of value: True, False, None
+								try {
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.jitCompileParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 								// The version of the API we are using allows
 								// parameter names reduce_retracing
@@ -215,45 +238,70 @@ public class Function extends RefactorableProgramEntity {
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.reduceRetracingParamValue = value.id;
+								try {
+									// Example of value: True, False
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.reduceRetracingParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-								if (keyword.value instanceof Str) {
-									Str value = (Str) keyword.value;
-									this.experimentalImplementsParamValue = value.s;
-								} else if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.experimentalImplementsParamValue = value.id;
+								try {
+									// Example of value: "google.matmul_low_rank_matrix"
+									if (keyword.value instanceof Str) {
+										Str value = (Str) keyword.value;
+										this.experimentalImplementsParamValue = value.s;
+										// Example of value: None
+									} else if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.experimentalImplementsParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-								StringBuilder argument = new StringBuilder();
-								// TODO: Tuple of multiple options
-								if (keyword.value instanceof Attribute) {
-									Attribute keywordAttribute = (Attribute) keyword.value;
-									while (keywordAttribute.value instanceof Attribute) {
-										NameTok valueAttribute = (NameTok) keywordAttribute.attr;
-										argument.insert(0, valueAttribute.id);
-										argument.insert(0, ".");
-										keywordAttribute = (Attribute) keywordAttribute.value;
+								try {
+									StringBuilder argument = new StringBuilder();
+									// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
+									if (keyword.value instanceof Attribute) {
+										Attribute keywordAttribute = (Attribute) keyword.value;
+										while (keywordAttribute.value instanceof Attribute) {
+											NameTok valueAttribute = (NameTok) keywordAttribute.attr;
+											argument.insert(0, valueAttribute.id);
+											argument.insert(0, ".");
+											keywordAttribute = (Attribute) keywordAttribute.value;
+										}
+										this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
+												+ ((NameTok) keywordAttribute.attr).id + argument.toString();
+										// Example of value: None
+									} else if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.experimentalAutographOptionsParamValue = value.id;
 									}
-									this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
-											+ ((NameTok) keywordAttribute.attr).id + argument.toString();
-								} else if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.experimentalAutographOptionsParamValue = value.id;
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-								if (keyword.value instanceof Name) {
-									Name value = (Name) keyword.value;
-									this.experimentaFollowTypeHintsParamValue = value.id;
+								try {
+									// Example of value: True, False, None
+									if (keyword.value instanceof Name) {
+										Name value = (Name) keyword.value;
+										this.experimentaFollowTypeHintsParamValue = value.id;
+									}
+								} catch (Exception e) {
+									throw new IllegalArgumentException(
+											"Unable to process your decorators arguments: " + keyword.value.toString(), e);
 								}
 							}
 						}
@@ -465,7 +513,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private IPythonNature nature;
 
-	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
+	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException, IllegalArgumentException {
 		this.functionDefinition = fd;
 
 		// Find out if it's hybrid via the tf.function decorator.
