@@ -14,7 +14,7 @@ import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringP
 public class Util {
 
 	public static Refactoring createRefactoring(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException, IllegalArgumentException {
+			throws TooManyMatchesException, BadLocationException {
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(functionDefinitions, monitor);
 		return new ProcessorBasedRefactoring(processor);
 	}

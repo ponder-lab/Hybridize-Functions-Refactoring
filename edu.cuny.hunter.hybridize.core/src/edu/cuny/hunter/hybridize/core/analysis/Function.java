@@ -143,7 +143,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private String reduceRetracingParamValue;
 
-		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException, IllegalArgumentException {
+		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
@@ -178,42 +178,34 @@ public class Function extends RefactorableProgramEntity {
 							if (name.id.equals(FUNC)) {
 								// Found parameter func
 								this.funcParamExists = true;
-								try {
-									// Example of value: Name of function or None
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.funcParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process " + FUNC + " arguments: " + keyword.value.toString(), e);
+								// Example of value: Name of function or None
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.funcParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
 								this.inputSignatureParamExists = true;
 								// TODO: Nested sequence of tf.TensorSpecs
-								try {
-									// Example of value: None
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.inputSignatureParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process " + INPUT_SIGNATURE + " arguments: " + keyword.value.toString(), e);
+								// Example of value: None
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.inputSignatureParamValue = value.id;
+
+								} else {
+									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 								}
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-								try {
-									// Example of value: True, False
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.autoGraphParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process " + AUTOGRAPH + " arguments: " + keyword.value.toString(), e);
+								// Example of value: True, False
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.autoGraphParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
 								}
 								// The version of the API we are using allows
 								// parameter names jit_compile and
@@ -222,14 +214,12 @@ public class Function extends RefactorableProgramEntity {
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
 								// Example of value: True, False, None
-								try {
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.jitCompileParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException("Unable to process " + JIT_COMPILE + "/" + JIT_COMPILE
-											+ " arguments: " + keyword.value.toString(), e);
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.jitCompileParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + JIT_COMPILE + "/" + JIT_COMPILE + " argument.");
 								}
 								// The version of the API we are using allows
 								// parameter names reduce_retracing
@@ -238,70 +228,61 @@ public class Function extends RefactorableProgramEntity {
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
 								this.reduceRetracingParamExists = true;
-								try {
-									// Example of value: True, False
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.reduceRetracingParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException("Unable to process " + REDUCE_RETRACING + "/"
-											+ EXPERIMENTAL_RELAX_SHAPES + " arguments: " + keyword.value.toString(), e);
+								// Example of value: True, False
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.reduceRetracingParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
 								}
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
 								this.experimentalImplementsParamExists = true;
-								try {
-									// Example of value: "google.matmul_low_rank_matrix"
-									if (keyword.value instanceof Str) {
-										Str value = (Str) keyword.value;
-										this.experimentalImplementsParamValue = value.s;
-										// Example of value: None
-									} else if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.experimentalImplementsParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException(
-											"Unable to process " + EXPERIMENTAL_IMPLEMENTS + " arguments: " + keyword.value.toString(), e);
+								// Example of value: "google.matmul_low_rank_matrix"
+								if (keyword.value instanceof Str) {
+									Str value = (Str) keyword.value;
+									this.experimentalImplementsParamValue = value.s;
+									// Example of value: None
+								} else if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentalImplementsParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
 								this.experimentalAutographOptionsParamExists = true;
-								try {
-									StringBuilder argument = new StringBuilder();
-									// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
-									if (keyword.value instanceof Attribute) {
-										Attribute keywordAttribute = (Attribute) keyword.value;
-										while (keywordAttribute.value instanceof Attribute) {
-											NameTok valueAttribute = (NameTok) keywordAttribute.attr;
-											argument.insert(0, valueAttribute.id);
-											argument.insert(0, ".");
-											keywordAttribute = (Attribute) keywordAttribute.value;
-										}
-										this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
-												+ ((NameTok) keywordAttribute.attr).id + argument.toString();
-										// Example of value: None
-									} else if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.experimentalAutographOptionsParamValue = value.id;
+								StringBuilder argument = new StringBuilder();
+								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
+								if (keyword.value instanceof Attribute) {
+									Attribute keywordAttribute = (Attribute) keyword.value;
+									while (keywordAttribute.value instanceof Attribute) {
+										NameTok valueAttribute = (NameTok) keywordAttribute.attr;
+										argument.insert(0, valueAttribute.id);
+										argument.insert(0, ".");
+										keywordAttribute = (Attribute) keywordAttribute.value;
 									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS
-											+ " arguments: " + keyword.value.toString(), e);
+									this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
+											+ ((NameTok) keywordAttribute.attr).id + argument.toString();
+									// Example of value: None
+								} else if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentalAutographOptionsParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-								try {
-									// Example of value: True, False, None
-									if (keyword.value instanceof Name) {
-										Name value = (Name) keyword.value;
-										this.experimentaFollowTypeHintsParamValue = value.id;
-									}
-								} catch (Exception e) {
-									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS
-											+ " arguments: " + keyword.value.toString(), e);
+								// Example of value: True, False, None
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									this.experimentaFollowTypeHintsParamValue = value.id;
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " arguments");
 								}
 							}
 						}
@@ -513,7 +494,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private IPythonNature nature;
 
-	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException, IllegalArgumentException {
+	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
 		this.functionDefinition = fd;
 
 		// Find out if it's hybrid via the tf.function decorator.

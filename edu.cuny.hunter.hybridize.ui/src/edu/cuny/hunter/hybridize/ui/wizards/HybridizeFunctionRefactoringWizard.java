@@ -64,7 +64,7 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 	}
 
 	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException, IllegalArgumentException {
+			throws TooManyMatchesException, BadLocationException {
 		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functionDefinitions, monitor);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 
