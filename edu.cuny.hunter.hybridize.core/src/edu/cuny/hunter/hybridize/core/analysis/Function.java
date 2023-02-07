@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Objects;
 
 import org.eclipse.core.runtime.ILog;
@@ -14,9 +15,12 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.List;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.Num;
 import org.python.pydev.parser.jython.ast.Str;
+import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -64,46 +68,6 @@ public class Function extends RefactorableProgramEntity {
 		private static final String FUNC = "func";
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
-		 */
-		private boolean autoGraphParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
-		 */
-		private boolean experimentaFollowTypeHintsParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
-		 */
-		private boolean experimentalAutographOptionsParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
-		 */
-		private boolean experimentalImplementsParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
-		 */
-		private boolean funcParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
-		 */
-		private boolean inputSignatureParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
-		 */
-		private boolean jitCompileParamExists;
-
-		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
-		 */
-		private boolean reduceRetracingParamExists;
-
-		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph.
 		 */
 		private String autoGraphParamValue;
@@ -143,6 +107,45 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private String reduceRetracingParamValue;
 
+		final class TensorSpec {
+			private String shape;
+			private String dtype;
+
+			public TensorSpec() {
+				this.shape = "";
+				this.dtype = ""; // Default value
+			}
+
+			public TensorSpec(String s, String d) {
+				this.shape = s;
+				this.dtype = d;
+			}
+
+			public String getShape() {
+				return this.shape;
+			}
+
+			public String getDType() {
+				return this.dtype;
+			}
+
+			public void setShape(String s) {
+				this.shape = s;
+			}
+
+			public void setDType(String d) {
+				this.dtype = d;
+			}
+
+			@Override
+			public String toString() {
+				if (this.dtype.isEmpty() && this.shape.isEmpty())
+					return "tf.TensorSpec([])";
+				else
+					return "tf.TensorSpec(shape=[" + this.shape + "]" + ", dtype=" + this.dtype + ")";
+			}
+		}
+
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -177,7 +180,6 @@ public class Function extends RefactorableProgramEntity {
 							NameTok name = (NameTok) keyword.arg;
 							if (name.id.equals(FUNC)) {
 								// Found parameter func
-								this.funcParamExists = true;
 								// Example of value: Name of function or None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -187,19 +189,56 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
+								LOG.info(keyword.value.toString());
 								// TODO: Nested sequence of tf.TensorSpecs
+
 								// Example of value: None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									this.inputSignatureParamValue = value.id;
-
+									// Example: (tf.TensorSpec(shape=[None], dtype=tf.float32),)
+								} else if (keyword.value instanceof Tuple) {
+									Tuple value = (Tuple) keyword.value;
+									exprType[] valueElements = value.elts;
+									this.inputSignatureParamValue += "(";
+									ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
+									for (exprType expr : valueElements) {
+										if (expr instanceof Call) {
+											Call callTuple = (Call) expr;
+											keywordType[] keywordsCall = callTuple.keywords;
+											TensorSpec tensor = new TensorSpec();
+											for (keywordType kywrds : keywordsCall) {
+												if (kywrds.value instanceof Tuple)
+													tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
+												if (kywrds.value instanceof List)
+													tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
+												if (kywrds.value instanceof Attribute) {
+													Attribute attrValue = (Attribute) kywrds.value;
+													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+												}
+											}
+											tensorSpecList.add(tensor);
+										}
+									}
+									this.inputSignatureParamValue = "(";
+									int count = 0;
+									for (TensorSpec tensor : tensorSpecList) {
+										if (count == 0)
+											this.inputSignatureParamValue += tensor.toString();
+										else
+											this.inputSignatureParamValue += ", " + tensor.toString();
+										count++;
+									}
+									if (value.endsWithComma)
+										this.inputSignatureParamValue += ",)";
+									else
+										this.inputSignatureParamValue += ")";
 								} else {
 									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 								}
+								LOG.info(inputSignatureParamValue);
 							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
-								this.autoGraphParamExists = true;
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -211,8 +250,7 @@ public class Function extends RefactorableProgramEntity {
 								// parameter names jit_compile and
 								// deprecated name experimental_compile
 							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
-								// Found parameter jit_compile/experimental_compile
-								this.jitCompileParamExists = true;
+								// Found parameter jit_compile or experimental_compile
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -225,9 +263,7 @@ public class Function extends RefactorableProgramEntity {
 								// parameter names reduce_retracing
 								// and deprecated name experimental_relax_shapes
 							} else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES)) {
-								// Found parameter reduce_retracing
-								// or experimental_relax_shapes
-								this.reduceRetracingParamExists = true;
+								// Found parameter reduce_retracing or experimental_relax_shapes
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -238,7 +274,6 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
 								// Example of value: "google.matmul_low_rank_matrix"
 								if (keyword.value instanceof Str) {
 									Str value = (Str) keyword.value;
@@ -252,7 +287,6 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
 								StringBuilder argument = new StringBuilder();
 								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
 								if (keyword.value instanceof Attribute) {
@@ -275,7 +309,6 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -290,13 +323,34 @@ public class Function extends RefactorableProgramEntity {
 				} // else, tf.function is used without parameters.
 		}
 
+		private String processTupleOrList(exprType[] exprTupleOrList) {
+			int count = 0;
+			String tempString = "";
+
+			for (exprType expr : exprTupleOrList) {
+				if (expr instanceof Num) {
+					if (count == 0)
+						tempString += ((Num) expr).num;
+					else
+						tempString += ", " + ((Num) expr).num;
+					count++;
+				}
+				if (expr instanceof Name)
+					tempString = ((Name) expr).id;
+			}
+
+			return tempString;
+
+		}
+
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
 		public boolean hasAutoGraphParam() {
-			return this.autoGraphParamExists;
+			return (this.autoGraphParamValue != null);
+
 		}
 
 		/**
@@ -305,7 +359,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
 		public boolean hasExperimentalAutographOptParam() {
-			return this.experimentalAutographOptionsParamExists;
+			return (this.experimentalAutographOptionsParamValue != null);
 		}
 
 		/**
@@ -314,7 +368,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
 		public boolean hasExperimentalImplementsParam() {
-			return this.experimentalImplementsParamExists;
+			return (this.experimentalImplementsParamValue != null);
 		}
 
 		/**
@@ -323,7 +377,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean hasExperimentalFollowTypeHintsParam() {
-			return this.experimentaFollowTypeHintsParamExists;
+			return (this.experimentaFollowTypeHintsParamValue != null);
 		}
 
 		/**
@@ -332,7 +386,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
 		public boolean hasFuncParam() {
-			return this.funcParamExists;
+			return (this.funcParamValue != null);
 		}
 
 		/**
@@ -341,7 +395,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
 		public boolean hasInputSignatureParam() {
-			return this.inputSignatureParamExists;
+			return (this.inputSignatureParamValue != null);
 		}
 
 		/**
@@ -350,7 +404,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
 		public boolean hasJitCompileParam() {
-			return this.jitCompileParamExists;
+			return (this.jitCompileParamValue != null);
 		}
 
 		/**
@@ -359,7 +413,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
 		public boolean hasReduceRetracingParam() {
-			return this.reduceRetracingParamExists;
+			return (this.reduceRetracingParamValue != null);
 		}
 
 		/**
