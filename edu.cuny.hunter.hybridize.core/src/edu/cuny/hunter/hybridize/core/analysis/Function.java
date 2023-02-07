@@ -141,8 +141,7 @@ public class Function extends RefactorableProgramEntity {
 			public String toString() {
 				if (this.dtype.isEmpty() && this.shape.isEmpty())
 					return "tf.TensorSpec([])";
-				else
-					return "tf.TensorSpec(shape=[" + this.shape + "]" + ", dtype=" + this.dtype + ")";
+				return "tf.TensorSpec(shape=[" + this.shape + "]" + ", dtype=" + this.dtype + ")";
 			}
 		}
 
