@@ -198,7 +198,7 @@ public class Function extends RefactorableProgramEntity {
 											tensorSpecList.add(tensor);
 										}
 									}
-									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, value);
+									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, value.endsWithComma);
 								} else if (keyword.value instanceof List) {
 									List value = (List) keyword.value;
 									exprType[] valueElements = value.elts;
@@ -240,7 +240,7 @@ public class Function extends RefactorableProgramEntity {
 											tensorSpecList.add(tensor);
 										}
 									}
-									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, null);
+									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, false);
 								} else {
 									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 								}
@@ -335,7 +335,6 @@ public class Function extends RefactorableProgramEntity {
 			int count = 0;
 			String tempString = "";
 
-			tempString = "(";
 			for (exprType expr : exprTupleOrList) {
 				if (expr instanceof Num) {
 					if (count == 0)
@@ -352,7 +351,7 @@ public class Function extends RefactorableProgramEntity {
 
 		}
 
-		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList, Tuple value) {
+		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList, boolean comma) {
 			String tempString = "";
 
 			tempString = "(";
@@ -364,7 +363,7 @@ public class Function extends RefactorableProgramEntity {
 					tempString += ", " + tensor.toString();
 				count++;
 			}
-			if (value.endsWithComma)
+			if (comma)
 				tempString += ",)";
 			else
 				tempString += ")";
