@@ -300,18 +300,26 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
 								// Found parameter experimental_autograph_options
-								StringBuilder argument = new StringBuilder();
 								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
 								if (keyword.value instanceof Attribute) {
 									Attribute keywordAttribute = (Attribute) keyword.value;
-									while (keywordAttribute.value instanceof Attribute) {
-										NameTok valueAttribute = (NameTok) keywordAttribute.attr;
-										argument.insert(0, valueAttribute.id);
-										argument.insert(0, ".");
-										keywordAttribute = (Attribute) keywordAttribute.value;
+									this.experimentalAutographOptionsParamValue = processAttribute(keywordAttribute);
+								} else if (keyword.value instanceof Tuple) {
+									Tuple keywordTuple = (Tuple) keyword.value;
+									exprType[] keywordExpr = keywordTuple.elts;
+									String finalTuple = "";
+									int count = 0;
+									for (exprType expr : keywordExpr) {
+										if (expr instanceof Attribute) {
+											Attribute keywordAttribute = (Attribute) expr;
+											if (count == 0)
+												finalTuple += processAttribute(keywordAttribute);
+											else
+												finalTuple += ", " + processAttribute(keywordAttribute);
+										}
+										count++;
 									}
-									this.experimentalAutographOptionsParamValue = ((Name) keywordAttribute.value).id + "."
-											+ ((NameTok) keywordAttribute.attr).id + argument.toString();
+									this.experimentalAutographOptionsParamValue = "(" + finalTuple + ")";
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -320,6 +328,7 @@ public class Function extends RefactorableProgramEntity {
 									throw new IllegalArgumentException(
 											"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
 								}
+								LOG.info(this.experimentalAutographOptionsParamValue);
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								// Example of value: True, False, None
@@ -354,6 +363,20 @@ public class Function extends RefactorableProgramEntity {
 
 			return tempString;
 
+		}
+
+		private String processAttribute(Attribute keywordAttribute) {
+			StringBuilder argument = new StringBuilder();
+			Attribute tempAttr = keywordAttribute;
+
+			while (tempAttr.value instanceof Attribute) {
+				NameTok valueAttribute = (NameTok) tempAttr.attr;
+				argument.insert(0, valueAttribute.id);
+				argument.insert(0, ".");
+				tempAttr = (Attribute) tempAttr.value;
+			}
+
+			return ((Name) tempAttr.value).id + "." + ((NameTok) tempAttr.attr).id + argument.toString();
 		}
 
 		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList) {
