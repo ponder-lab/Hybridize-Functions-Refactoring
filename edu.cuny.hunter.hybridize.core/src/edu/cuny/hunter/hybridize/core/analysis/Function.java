@@ -150,9 +150,6 @@ public class Function extends RefactorableProgramEntity {
 								}
 							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
-								LOG.info(keyword.value.toString());
-								// TODO: Nested sequence of tf.TensorSpecs
-
 								// Example of value: None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
@@ -161,91 +158,16 @@ public class Function extends RefactorableProgramEntity {
 								} else if (keyword.value instanceof Tuple) {
 									Tuple value = (Tuple) keyword.value;
 									exprType[] valueElements = value.elts;
-									ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
-									for (exprType expr : valueElements) {
-										if (expr instanceof Call) {
-											Call callTuple = (Call) expr;
-											TensorSpec tensor = new TensorSpec();
-											// Positional arguments
-											exprType[] tensorArgs = callTuple.args;
-											for (exprType tensorArg : tensorArgs) {
-												if (tensorArg instanceof Tuple) {
-													tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
-													tensor.setShapeKeyword(false);
-												}
-												if (tensorArg instanceof List) {
-													tensor.setShape(processTupleOrList(((List) tensorArg).elts));
-													tensor.setShapeKeyword(false);
-												}
-												if (tensorArg instanceof Attribute) {
-													Attribute attrValue = (Attribute) tensorArg;
-													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-													tensor.setDTypeKeyword(false);
-												}
-											}
-											// Keyword arguments
-											keywordType[] keywordsCall = callTuple.keywords;
-											for (keywordType kywrds : keywordsCall) {
-												if (kywrds.value instanceof Tuple)
-													tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
-												if (kywrds.value instanceof List)
-													tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
-												if (kywrds.value instanceof Attribute) {
-													Attribute attrValue = (Attribute) kywrds.value;
-													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-												}
-											}
-											tensorSpecList.add(tensor);
-										}
-									}
+									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
 									this.inputSignatureParamValue = "(" + createTupleOrListOfTensorSpec(tensorSpecList);
-
 									if (value.endsWithComma)
 										this.inputSignatureParamValue += ",)";
 									else
 										this.inputSignatureParamValue += ")";
-
 								} else if (keyword.value instanceof List) {
 									List value = (List) keyword.value;
 									exprType[] valueElements = value.elts;
-									ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
-									for (exprType expr : valueElements) {
-										if (expr instanceof Call) {
-											Call callTuple = (Call) expr;
-											TensorSpec tensor = new TensorSpec();
-
-											// Positional arguments
-											exprType[] tensorArgs = callTuple.args;
-											for (exprType tensorArg : tensorArgs) {
-												if (tensorArg instanceof Tuple) {
-													tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
-													tensor.setShapeKeyword(false);
-												}
-												if (tensorArg instanceof List) {
-													tensor.setShape(processTupleOrList(((List) tensorArg).elts));
-													tensor.setShapeKeyword(false);
-												}
-												if (tensorArg instanceof Attribute) {
-													Attribute attrValue = (Attribute) tensorArg;
-													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-													tensor.setDTypeKeyword(false);
-												}
-											}
-											// Keyword Arguments
-											keywordType[] keywordsCall = callTuple.keywords;
-											for (keywordType kywrds : keywordsCall) {
-												if (kywrds.value instanceof Tuple)
-													tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
-												if (kywrds.value instanceof List)
-													tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
-												if (kywrds.value instanceof Attribute) {
-													Attribute attrValue = (Attribute) kywrds.value;
-													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-												}
-											}
-											tensorSpecList.add(tensor);
-										}
-									}
+									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
 									this.inputSignatureParamValue = "[" + createTupleOrListOfTensorSpec(tensorSpecList) + "]";
 								} else {
 									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
@@ -304,6 +226,8 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Attribute) {
 									Attribute keywordAttribute = (Attribute) keyword.value;
 									this.experimentalAutographOptionsParamValue = processAttribute(keywordAttribute);
+									// Example of value: (tf.autograph.experimental.Feature.EQUALITY_OPERATORS,
+									// tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)
 								} else if (keyword.value instanceof Tuple) {
 									Tuple keywordTuple = (Tuple) keyword.value;
 									exprType[] keywordExpr = keywordTuple.elts;
@@ -328,7 +252,6 @@ public class Function extends RefactorableProgramEntity {
 									throw new IllegalArgumentException(
 											"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
 								}
-								LOG.info(this.experimentalAutographOptionsParamValue);
 							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
 								// Example of value: True, False, None
@@ -377,6 +300,48 @@ public class Function extends RefactorableProgramEntity {
 			}
 
 			return ((Name) tempAttr.value).id + "." + ((NameTok) tempAttr.attr).id + argument.toString();
+		}
+
+		private ArrayList<TensorSpec> processTensorSpecs(exprType[] valueElements) {
+			ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
+			for (exprType expr : valueElements) {
+				if (expr instanceof Call) {
+					Call callTuple = (Call) expr;
+					TensorSpec tensor = new TensorSpec();
+
+					// Positional arguments
+					exprType[] tensorArgs = callTuple.args;
+					for (exprType tensorArg : tensorArgs) {
+						if (tensorArg instanceof Tuple) {
+							tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
+							tensor.setShapeKeyword(false);
+						}
+						if (tensorArg instanceof List) {
+							tensor.setShape(processTupleOrList(((List) tensorArg).elts));
+							tensor.setShapeKeyword(false);
+						}
+						if (tensorArg instanceof Attribute) {
+							Attribute attrValue = (Attribute) tensorArg;
+							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+							tensor.setDTypeKeyword(false);
+						}
+					}
+					// Keyword Arguments
+					keywordType[] keywordsCall = callTuple.keywords;
+					for (keywordType kywrds : keywordsCall) {
+						if (kywrds.value instanceof Tuple)
+							tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
+						if (kywrds.value instanceof List)
+							tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
+						if (kywrds.value instanceof Attribute) {
+							Attribute attrValue = (Attribute) kywrds.value;
+							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+						}
+					}
+					tensorSpecList.add(tensor);
+				}
+			}
+			return tensorSpecList;
 		}
 
 		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList) {
