@@ -107,44 +107,6 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private String reduceRetracingParamValue;
 
-		final class TensorSpec {
-			private String shape;
-			private String dtype;
-
-			public TensorSpec() {
-				this.shape = "";
-				this.dtype = ""; // Default value
-			}
-
-			public TensorSpec(String s, String d) {
-				this.shape = s;
-				this.dtype = d;
-			}
-
-			public String getShape() {
-				return this.shape;
-			}
-
-			public String getDType() {
-				return this.dtype;
-			}
-
-			public void setShape(String s) {
-				this.shape = s;
-			}
-
-			public void setDType(String d) {
-				this.dtype = d;
-			}
-
-			@Override
-			public String toString() {
-				if (this.dtype.isEmpty() && this.shape.isEmpty())
-					return "tf.TensorSpec([])";
-				return "tf.TensorSpec(shape=[" + this.shape + "]" + ", dtype=" + this.dtype + ")";
-			}
-		}
-
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
@@ -199,13 +161,30 @@ public class Function extends RefactorableProgramEntity {
 								} else if (keyword.value instanceof Tuple) {
 									Tuple value = (Tuple) keyword.value;
 									exprType[] valueElements = value.elts;
-									this.inputSignatureParamValue += "(";
 									ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
 									for (exprType expr : valueElements) {
 										if (expr instanceof Call) {
 											Call callTuple = (Call) expr;
-											keywordType[] keywordsCall = callTuple.keywords;
 											TensorSpec tensor = new TensorSpec();
+											// Positional arguments
+											exprType[] tensorArgs = callTuple.args;
+											for (exprType tensorArg : tensorArgs) {
+												if (tensorArg instanceof Tuple) {
+													tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
+													tensor.setShapeKeyword(false);
+												}
+												if (tensorArg instanceof List) {
+													tensor.setShape(processTupleOrList(((List) tensorArg).elts));
+													tensor.setShapeKeyword(false);
+												}
+												if (tensorArg instanceof Attribute) {
+													Attribute attrValue = (Attribute) tensorArg;
+													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+													tensor.setDTypeKeyword(false);
+												}
+											}
+											// Keyword arguments
+											keywordType[] keywordsCall = callTuple.keywords;
 											for (keywordType kywrds : keywordsCall) {
 												if (kywrds.value instanceof Tuple)
 													tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
@@ -219,19 +198,49 @@ public class Function extends RefactorableProgramEntity {
 											tensorSpecList.add(tensor);
 										}
 									}
-									this.inputSignatureParamValue = "(";
-									int count = 0;
-									for (TensorSpec tensor : tensorSpecList) {
-										if (count == 0)
-											this.inputSignatureParamValue += tensor.toString();
-										else
-											this.inputSignatureParamValue += ", " + tensor.toString();
-										count++;
+									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, value);
+								} else if (keyword.value instanceof List) {
+									List value = (List) keyword.value;
+									exprType[] valueElements = value.elts;
+									ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
+									for (exprType expr : valueElements) {
+										if (expr instanceof Call) {
+											Call callTuple = (Call) expr;
+											TensorSpec tensor = new TensorSpec();
+
+											// Positional arguments
+											exprType[] tensorArgs = callTuple.args;
+											for (exprType tensorArg : tensorArgs) {
+												if (tensorArg instanceof Tuple) {
+													tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
+													tensor.setShapeKeyword(false);
+												}
+												if (tensorArg instanceof List) {
+													tensor.setShape(processTupleOrList(((List) tensorArg).elts));
+													tensor.setShapeKeyword(false);
+												}
+												if (tensorArg instanceof Attribute) {
+													Attribute attrValue = (Attribute) tensorArg;
+													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+													tensor.setDTypeKeyword(false);
+												}
+											}
+											// Keyword Arguments
+											keywordType[] keywordsCall = callTuple.keywords;
+											for (keywordType kywrds : keywordsCall) {
+												if (kywrds.value instanceof Tuple)
+													tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
+												if (kywrds.value instanceof List)
+													tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
+												if (kywrds.value instanceof Attribute) {
+													Attribute attrValue = (Attribute) kywrds.value;
+													tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+												}
+											}
+											tensorSpecList.add(tensor);
+										}
 									}
-									if (value.endsWithComma)
-										this.inputSignatureParamValue += ",)";
-									else
-										this.inputSignatureParamValue += ")";
+									this.inputSignatureParamValue = createTupleOrListOfTensorSpec(tensorSpecList, null);
 								} else {
 									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 								}
@@ -326,6 +335,7 @@ public class Function extends RefactorableProgramEntity {
 			int count = 0;
 			String tempString = "";
 
+			tempString = "(";
 			for (exprType expr : exprTupleOrList) {
 				if (expr instanceof Num) {
 					if (count == 0)
@@ -337,6 +347,27 @@ public class Function extends RefactorableProgramEntity {
 				if (expr instanceof Name)
 					tempString = ((Name) expr).id;
 			}
+
+			return tempString;
+
+		}
+
+		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList, Tuple value) {
+			String tempString = "";
+
+			tempString = "(";
+			int count = 0;
+			for (TensorSpec tensor : tensorSpecList) {
+				if (count == 0)
+					tempString += tensor.toString();
+				else
+					tempString += ", " + tensor.toString();
+				count++;
+			}
+			if (value.endsWithComma)
+				tempString += ",)";
+			else
+				tempString += ")";
 
 			return tempString;
 
