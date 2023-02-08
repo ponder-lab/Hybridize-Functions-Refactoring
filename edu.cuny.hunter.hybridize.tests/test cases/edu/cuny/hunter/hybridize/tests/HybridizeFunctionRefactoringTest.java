@@ -889,7 +889,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("tf.TensorSpec(shape=(2, 2), dtype=tf.float32),)", args.getInputSignatureArg());
+			assertEquals("tf.TensorSpec(shape=[2, 2], dtype=tf.float32),)", args.getInputSignatureArg());
 	}
 
 	/**
@@ -911,7 +911,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("[]", args.getInputSignatureArg());
+			assertEquals("(tf.TensorSpec([]), tf.TensorSpec([]))", args.getInputSignatureArg());
 	}
 
 	/**

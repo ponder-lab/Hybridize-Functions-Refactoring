@@ -1,8 +1,11 @@
 import tensorflow as tf
 
-@tf.function(input_signature=[])
-def func(x):
-  return x
+
+@tf.function(input_signature=(tf.TensorSpec([]), tf.TensorSpec([])))
+def func_2(tensor, integer):
+    return tensor + integer
+
 
 if __name__ == '__main__':
-  func(tf.constant(2.))
+  input = tf.constant(0.0)
+  func_2(input, 2)
