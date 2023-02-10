@@ -1431,6 +1431,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 	}
+	
+	/**
+	 * Test for #136. Tests non-literal value in the tf.function decorator argument.
+	 */
+	@Test(expected = IllegalArgumentException.class)
+	public void testDecoratorArguments28() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam()) {
+			assertEquals("var", args.getJitCompileArg());
+		}
+
+	}
 
 	/**
 	 * This simply tests whether we have the correct qualified name.
