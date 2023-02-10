@@ -144,7 +144,10 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: Name of function or None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.funcParamValue = value.id;
+									if (value.id == "None") // Checking only literals
+										this.funcParamValue = value.id;
+									else
+										throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								}
@@ -153,7 +156,10 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.inputSignatureParamValue = value.id;
+									if (value.id == "None") // Checking only literals
+										this.inputSignatureParamValue = value.id;
+									else
+										throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 									// Example: (tf.TensorSpec(shape=[None], dtype=tf.float32),)
 								} else if (keyword.value instanceof Tuple) {
 									Tuple value = (Tuple) keyword.value;
@@ -177,7 +183,10 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.autoGraphParamValue = value.id;
+									if (value.id == "True" || value.id == "False") // Checking only literals
+										this.autoGraphParamValue = value.id;
+									else
+										throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
 								}
@@ -189,7 +198,11 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.jitCompileParamValue = value.id;
+									if (value.id == "True" || value.id == "False" || value.id == "None") // Checking only literals
+										this.jitCompileParamValue = value.id;
+									else
+										throw new IllegalArgumentException(
+												"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
 								} else {
 									throw new IllegalArgumentException(
 											"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
@@ -202,7 +215,11 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.reduceRetracingParamValue = value.id;
+									if (value.id == "True" || value.id == "False") // Checking only literals
+										this.reduceRetracingParamValue = value.id;
+									else
+										throw new IllegalArgumentException(
+												"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
 								} else {
 									throw new IllegalArgumentException(
 											"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
@@ -216,7 +233,10 @@ public class Function extends RefactorableProgramEntity {
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.experimentalImplementsParamValue = value.id;
+									if (value.id == "None") // Checking only literals
+										this.experimentalImplementsParamValue = value.id;
+									else
+										throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								}
@@ -247,7 +267,11 @@ public class Function extends RefactorableProgramEntity {
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.experimentalAutographOptionsParamValue = value.id;
+									if (value.id == "None") // Checking only literals
+										this.experimentalAutographOptionsParamValue = value.id;
+									else
+										throw new IllegalArgumentException(
+												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
 								} else {
 									throw new IllegalArgumentException(
 											"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
@@ -257,7 +281,11 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									this.experimentaFollowTypeHintsParamValue = value.id;
+									if (value.id == "None" || value.id == "True" || value.id == "False") // Checking only literals
+										this.experimentaFollowTypeHintsParamValue = value.id;
+									else
+										throw new IllegalArgumentException(
+												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
 								} else {
 									throw new IllegalArgumentException(
 											"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " arguments");
