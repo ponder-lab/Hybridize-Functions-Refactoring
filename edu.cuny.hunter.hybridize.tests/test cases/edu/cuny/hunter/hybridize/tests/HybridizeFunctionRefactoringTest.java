@@ -1431,7 +1431,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 	}
-	
+
 	/**
 	 * Test for #136. Tests non-literal value in the tf.function decorator argument.
 	 */
