@@ -297,6 +297,11 @@ public class Function extends RefactorableProgramEntity {
 				} // else, tf.function is used without parameters.
 		}
 
+		/**
+		 * Parses expressions to return a string of the shape of a TensorSpec for input signature.
+		 *
+		 * @return String of TensorSpec shape.
+		 */
 		private String processTupleOrListForShape(exprType[] exprTupleOrList) {
 			int count = 0;
 			String tempString = "";
@@ -321,6 +326,11 @@ public class Function extends RefactorableProgramEntity {
 
 		}
 
+		/**
+		 * Parses attributes to return a string of the autograph options.
+		 *
+		 * @return String of autograph options that contains various attributes.
+		 */
 		private String processAttributeForAutographOptions(Attribute keywordAttribute) {
 			StringBuilder argument = new StringBuilder();
 			Attribute tempAttr = keywordAttribute;
@@ -335,6 +345,11 @@ public class Function extends RefactorableProgramEntity {
 			return ((Name) tempAttr.value).id + "." + ((NameTok) tempAttr.attr).id + argument.toString();
 		}
 
+		/**
+		 * Parses expressions to retrieve information about the TensorSpecs for input signature.
+		 *
+		 * @return Array of TensorSpecs with the parsed information.
+		 */
 		private ArrayList<TensorSpec> processTensorSpecs(exprType[] valueElements) {
 			ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
 			for (exprType expr : valueElements) {
@@ -372,11 +387,18 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 					tensorSpecList.add(tensor);
+				} else {
+					throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 				}
 			}
 			return tensorSpecList;
 		}
 
+		/**
+		 * Gets the array of Tensorspecs and returns the tuple or list of them, if necessary.
+		 *
+		 * @return String of nested TensorSpecs.
+		 */
 		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList) {
 			String tempString = "";
 
