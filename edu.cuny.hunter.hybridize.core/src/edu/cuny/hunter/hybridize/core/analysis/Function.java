@@ -170,6 +170,7 @@ public class Function extends RefactorableProgramEntity {
 										this.inputSignatureParamValue += ",)";
 									else
 										this.inputSignatureParamValue += ")";
+									// Example: [tf.TensorSpec(shape=[None], dtype=tf.float32)]
 								} else if (keyword.value instanceof List) {
 									List value = (List) keyword.value;
 									exprType[] valueElements = value.elts;
@@ -356,13 +357,13 @@ public class Function extends RefactorableProgramEntity {
 					}
 					// Keyword Arguments
 					keywordType[] keywordsCall = callTuple.keywords;
-					for (keywordType kywrds : keywordsCall) {
-						if (kywrds.value instanceof Tuple)
-							tensor.setShape(processTupleOrList(((Tuple) kywrds.value).elts));
-						if (kywrds.value instanceof List)
-							tensor.setShape(processTupleOrList(((List) kywrds.value).elts));
-						if (kywrds.value instanceof Attribute) {
-							Attribute attrValue = (Attribute) kywrds.value;
+					for (keywordType keyword : keywordsCall) {
+						if (keyword.value instanceof Tuple)
+							tensor.setShape(processTupleOrList(((Tuple) keyword.value).elts));
+						if (keyword.value instanceof List)
+							tensor.setShape(processTupleOrList(((List) keyword.value).elts));
+						if (keyword.value instanceof Attribute) {
+							Attribute attrValue = (Attribute) keyword.value;
 							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
 						}
 					}
