@@ -1433,7 +1433,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #136. Tests non-literal value in the tf.function decorator argument.
+	 * Test for #136. Tests non-literal value in the tf.function decorator argument. We can remove the expected exception once we don't
+	 * check for literals only.
 	 */
 	@Test(expected = IllegalArgumentException.class)
 	public void testDecoratorArguments28() throws Exception {
@@ -1451,7 +1452,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("var", args.getJitCompileArg());
+			assertEquals("True", args.getJitCompileArg());
 		}
 
 	}
