@@ -246,7 +246,7 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
 								if (keyword.value instanceof Attribute) {
 									Attribute keywordAttribute = (Attribute) keyword.value;
-									this.experimentalAutographOptionsParamValue = processAttribute(keywordAttribute);
+									this.experimentalAutographOptionsParamValue = processAttributeForAutographOptions(keywordAttribute);
 									// Example of value: (tf.autograph.experimental.Feature.EQUALITY_OPERATORS,
 									// tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)
 								} else if (keyword.value instanceof Tuple) {
@@ -258,9 +258,9 @@ public class Function extends RefactorableProgramEntity {
 										if (expr instanceof Attribute) {
 											Attribute keywordAttribute = (Attribute) expr;
 											if (count == 0)
-												finalTuple += processAttribute(keywordAttribute);
+												finalTuple += processAttributeForAutographOptions(keywordAttribute);
 											else
-												finalTuple += ", " + processAttribute(keywordAttribute);
+												finalTuple += ", " + processAttributeForAutographOptions(keywordAttribute);
 										}
 										count++;
 									}
@@ -297,7 +297,7 @@ public class Function extends RefactorableProgramEntity {
 				} // else, tf.function is used without parameters.
 		}
 
-		private String processTupleOrList(exprType[] exprTupleOrList) {
+		private String processTupleOrListForShape(exprType[] exprTupleOrList) {
 			int count = 0;
 			String tempString = "";
 
@@ -309,15 +309,19 @@ public class Function extends RefactorableProgramEntity {
 						tempString += ", " + ((Num) expr).num;
 					count++;
 				}
-				if (expr instanceof Name)
-					tempString = ((Name) expr).id;
+				if (expr instanceof Name) {
+					if (((Name) expr).id == "None") // Checking only literals
+						tempString = ((Name) expr).id;
+					else
+						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+				}
 			}
 
 			return tempString;
 
 		}
 
-		private String processAttribute(Attribute keywordAttribute) {
+		private String processAttributeForAutographOptions(Attribute keywordAttribute) {
 			StringBuilder argument = new StringBuilder();
 			Attribute tempAttr = keywordAttribute;
 
@@ -342,11 +346,11 @@ public class Function extends RefactorableProgramEntity {
 					exprType[] tensorArgs = callTuple.args;
 					for (exprType tensorArg : tensorArgs) {
 						if (tensorArg instanceof Tuple) {
-							tensor.setShape(processTupleOrList(((Tuple) tensorArg).elts));
+							tensor.setShape(processTupleOrListForShape(((Tuple) tensorArg).elts));
 							tensor.setShapeKeyword(false);
 						}
 						if (tensorArg instanceof List) {
-							tensor.setShape(processTupleOrList(((List) tensorArg).elts));
+							tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
 							tensor.setShapeKeyword(false);
 						}
 						if (tensorArg instanceof Attribute) {
@@ -359,9 +363,9 @@ public class Function extends RefactorableProgramEntity {
 					keywordType[] keywordsCall = callTuple.keywords;
 					for (keywordType keyword : keywordsCall) {
 						if (keyword.value instanceof Tuple)
-							tensor.setShape(processTupleOrList(((Tuple) keyword.value).elts));
+							tensor.setShape(processTupleOrListForShape(((Tuple) keyword.value).elts));
 						if (keyword.value instanceof List)
-							tensor.setShape(processTupleOrList(((List) keyword.value).elts));
+							tensor.setShape(processTupleOrListForShape(((List) keyword.value).elts));
 						if (keyword.value instanceof Attribute) {
 							Attribute attrValue = (Attribute) keyword.value;
 							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
