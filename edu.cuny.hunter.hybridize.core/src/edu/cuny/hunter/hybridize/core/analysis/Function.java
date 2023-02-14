@@ -363,41 +363,46 @@ public class Function extends RefactorableProgramEntity {
 			for (exprType expr : valueElements) {
 				if (expr instanceof Call) {
 					Call callTuple = (Call) expr;
-					TensorSpec tensor = new TensorSpec();
 
-					// Positional arguments for TensorSpecs
-					exprType[] tensorArgs = callTuple.args;
-					for (exprType tensorArg : tensorArgs) {
-						if (tensorArg instanceof Tuple) {
-							tensor.setShape(processTupleOrListForShape(((Tuple) tensorArg).elts));
-							tensor.setShapeKeyword(false);
-						} else if (tensorArg instanceof List) {
-							tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
-							tensor.setShapeKeyword(false);
-						} else if (tensorArg instanceof Attribute) {
-							Attribute attrValue = (Attribute) tensorArg;
-							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-							tensor.setDTypeKeyword(false);
-						} else {
-							throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
-						}
+					if (((NameTok) ((Attribute) callTuple.func).attr).id.equals("TensorSpec")) {
+						TensorSpec tensor = new TensorSpec();
 
-					}
-					// Keyword Arguments for TensorSpecs
-					keywordType[] keywordsCall = callTuple.keywords;
-					for (keywordType keyword : keywordsCall) {
-						if (keyword.value instanceof Tuple)
-							tensor.setShape(processTupleOrListForShape(((Tuple) keyword.value).elts));
-						else if (keyword.value instanceof List)
-							tensor.setShape(processTupleOrListForShape(((List) keyword.value).elts));
-						else if (keyword.value instanceof Attribute) {
-							Attribute attrValue = (Attribute) keyword.value;
-							tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-						} else {
-							throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+						// Positional arguments for TensorSpecs
+						exprType[] tensorArgs = callTuple.args;
+						for (exprType tensorArg : tensorArgs) {
+							if (tensorArg instanceof Tuple) {
+								tensor.setShape(processTupleOrListForShape(((Tuple) tensorArg).elts));
+								tensor.setShapeKeyword(false);
+							} else if (tensorArg instanceof List) {
+								tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
+								tensor.setShapeKeyword(false);
+							} else if (tensorArg instanceof Attribute) {
+								Attribute attrValue = (Attribute) tensorArg;
+								tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+								tensor.setDTypeKeyword(false);
+							} else {
+								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+							}
+
 						}
+						// Keyword Arguments for TensorSpecs
+						keywordType[] keywordsCall = callTuple.keywords;
+						for (keywordType keyword : keywordsCall) {
+							if (keyword.value instanceof Tuple)
+								tensor.setShape(processTupleOrListForShape(((Tuple) keyword.value).elts));
+							else if (keyword.value instanceof List)
+								tensor.setShape(processTupleOrListForShape(((List) keyword.value).elts));
+							else if (keyword.value instanceof Attribute) {
+								Attribute attrValue = (Attribute) keyword.value;
+								tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+							} else {
+								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+							}
+						}
+						tensorSpecList.add(tensor);
+					} else {
+						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 					}
-					tensorSpecList.add(tensor);
 				} else {
 					throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 				}
