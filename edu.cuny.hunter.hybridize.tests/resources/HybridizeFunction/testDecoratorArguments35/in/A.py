@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-var = False 
+var = False
 
 @tf.function(experimental_follow_type_hints=var)
 def func():
