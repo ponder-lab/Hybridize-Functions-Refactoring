@@ -2,7 +2,7 @@ import tensorflow as tf
 
 var = False
 
-@tf.function(autograph=var)
+@tf.function(reduce_retracing=var)
 def func(x):
   return x
 

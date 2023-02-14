@@ -2,7 +2,7 @@ import tensorflow as tf
 
 var = False
 
-@tf.function(autograph=var)
+@tf.function(jit_compile=var)
 def func(x):
   return x
 

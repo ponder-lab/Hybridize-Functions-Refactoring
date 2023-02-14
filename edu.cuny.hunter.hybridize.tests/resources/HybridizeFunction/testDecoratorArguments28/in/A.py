@@ -1,11 +1,13 @@
 import tensorflow as tf
 
-var = True
+var = (tf.TensorSpec(shape=[None], dtype=tf.float32),)
 
-@tf.function(jit_compile=var)
+
+@tf.function(input_signature=var)
 def func(x):
   return x
 
 
 if __name__ == '__main__':
-    func(tf.constant(1))
+    number = tf.constant([1.0, 1.0])
+    func(number)
