@@ -68,42 +68,47 @@ public class Function extends RefactorableProgramEntity {
 		private static final String FUNC = "func";
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph. The values could be True or False.
 		 */
 		private String autoGraphParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints. The values could be None, False
+		 * or True.
 		 */
 		private String experimentaFollowTypeHintsParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options. The values could be an optional
+		 * tuple or value of tf.autograph.experimental.Feature values or None.
 		 */
 		private String experimentalAutographOptionsParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements. The value could be None or a name of a
+		 * "known" function this implements.
 		 */
 		private String experimentalImplementsParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter func.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter func. The value could be None, or the function name to be
+		 * compiled.
 		 */
 		private String funcParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature. The value could be None, or a possibly nested
+		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function
 		 */
 		private String inputSignatureParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True.
 		 */
 		private String jitCompileParamValue;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 * Value of this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing. The values could be False or True.
 		 */
 		private String reduceRetracingParamValue;
 
@@ -360,7 +365,7 @@ public class Function extends RefactorableProgramEntity {
 					Call callTuple = (Call) expr;
 					TensorSpec tensor = new TensorSpec();
 
-					// Positional arguments
+					// Positional arguments for TensorSpecs
 					exprType[] tensorArgs = callTuple.args;
 					for (exprType tensorArg : tensorArgs) {
 						if (tensorArg instanceof Tuple) {
@@ -378,7 +383,7 @@ public class Function extends RefactorableProgramEntity {
 						}
 
 					}
-					// Keyword Arguments
+					// Keyword Arguments for TensorSpecs
 					keywordType[] keywordsCall = callTuple.keywords;
 					for (keywordType keyword : keywordsCall) {
 						if (keyword.value instanceof Tuple)
