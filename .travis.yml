@@ -24,6 +24,7 @@ before_install:
   - export PYTHONPATH=/usr/bin/python3
   - echo $PYTHONPATH
   - which python3
+  - pyenv versions
 services:
 - xvfb
 install:
