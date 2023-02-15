@@ -21,7 +21,8 @@ before_install:
   - sudo update-alternatives --auto python3
   - sudo apt install -y python3.10-distutils
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  - export PYTHONPATH=$PYTHONPATH:/usr/bin/python3
+  - export PYTHONPATH=/usr/bin/python3
+  - echo $PYTHONPATH
   - which python3
 services:
 - xvfb
