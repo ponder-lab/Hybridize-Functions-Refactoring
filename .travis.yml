@@ -17,11 +17,11 @@ before_install:
   - sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
   - sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 100
   - sudo update-alternatives --auto python3
-  - sudo update-alternatives --config python3
   - sudo apt install -y python3.10-distutils
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
   - pip3 --version
   - python3 --version
+  - python3 -V
 services:
 - xvfb
 install:
