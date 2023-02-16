@@ -12,7 +12,6 @@ cache:
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
   - pyenv install 3.10.0
-  - pyenv global 3.10.0
   - pip3 --version
 services:
 - xvfb
@@ -20,6 +19,7 @@ install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
 before_script:
   - python3 --version
+  - python3.10 --version
 script:
 - mkdir "$HOME/git"
 - pushd .
