@@ -11,8 +11,8 @@ cache:
   - $HOME/.cache/pip
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
-  - pyenv install --list
-  - pyenv install 3.10
+  - pyenv install 3.10.3
+  - pyenv global 3.10.3
   - pip3 --version
 services:
 - xvfb
