@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 # Same is testIsHybridTrue, except that we use "from" in the import statement.
 from tensorflow import function
 

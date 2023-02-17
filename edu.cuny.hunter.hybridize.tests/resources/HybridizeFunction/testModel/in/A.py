@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import tensorflow as tf
 
 # Create an override model to classify pictures

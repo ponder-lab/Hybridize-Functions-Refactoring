@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import tensorflow as tf
 
 @tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),))
