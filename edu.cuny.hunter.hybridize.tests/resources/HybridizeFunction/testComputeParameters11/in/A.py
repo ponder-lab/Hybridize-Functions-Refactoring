@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import custom
 import tensorflow as tf
 

@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import tensorflow
 import pytest
 import sys

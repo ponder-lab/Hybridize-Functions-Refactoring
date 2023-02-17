@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import tensorflow as tf
 from tf_image.core.convert_type_decorator import convert_type
 
