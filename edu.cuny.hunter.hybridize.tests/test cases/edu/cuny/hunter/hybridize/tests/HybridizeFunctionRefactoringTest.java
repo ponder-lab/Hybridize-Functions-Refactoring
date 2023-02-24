@@ -453,6 +453,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		File file = this.getInputTestFile("A");
 		File parent = file.getParentFile();
 
+		// Just install requirements one time.
+		int numberFiles = 1;
+
 		// Iterate over the files in the directory
 		// Make sure that we verify that all files are valid
 		for (File p : parent.listFiles()) {
@@ -471,7 +474,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
 
 				// Run the Python test file.
-				installRequirements(inputTestFileDirectoryAbsolutePath);
+				if (numberFiles == 1)
+					installRequirements(inputTestFileDirectoryAbsolutePath);
 				runPython(inputTestFileAbsolutionPath);
 
 				// Project Python path.
@@ -485,6 +489,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 				checkSize();
 			}
+			numberFiles++;
 		}
 
 		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
