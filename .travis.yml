@@ -19,6 +19,9 @@ before_install:
   - sudo update-alternatives --auto python3
   - sudo apt install -y python3.10-distutils
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/opt/pyenv/shims" | tr "\n" ":"`
+  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/home/travis/.phpenv/shims" | tr "\n" ":"`
+  - PATH="$PATH:/usr/bin/python3"
 services:
 - xvfb
 install:
