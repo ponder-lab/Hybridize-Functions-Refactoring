@@ -72,7 +72,7 @@ public class Util {
 							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
 							containingFile.getName(), nature.getProject()));
 
-		// Collect the potential declaring module names.
+		// Collect the potential declaring definition names.
 		Set<Definition> potentialDeclaringDefinitions = new HashSet<>();
 
 		// for each match.
@@ -80,7 +80,7 @@ public class Util {
 			Definition definition = itemPointer.definition;
 			LOG.info("Found definition: " + definition + ".");
 
-			// add it to the set of found module names.
+			// add it to the set of found definition names.
 			potentialDeclaringDefinitions.add(definition);
 		}
 

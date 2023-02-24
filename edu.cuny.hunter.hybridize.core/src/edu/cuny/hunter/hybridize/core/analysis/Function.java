@@ -177,6 +177,8 @@ public class Function extends RefactorableProgramEntity {
 					// Processing positional arguments for tf.function
 					exprType[] arguments = callFunction.args;
 					for (int i = 0; i < arguments.length; i++) {
+						// We iterate over the tf.function's parameters positions. From the position we are currently evaluating (i), we use
+						// the tf.function's definition (argumentIdDeclaringDefintion) to verify which parameter we are analyzing.
 						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
@@ -218,7 +220,7 @@ public class Function extends RefactorableProgramEntity {
 
 					// Processing keywords arguments
 					// If we have keyword parameter, afterwards, we cannot have positional parameters because it would result in invalid
-					// Python code.
+					// Python code. This is why we check the keywords last.
 					keywordType[] keywords = callFunction.keywords;
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
