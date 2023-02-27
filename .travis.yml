@@ -22,9 +22,9 @@ before_install:
   - sudo update-alternatives --set python3 /usr/bin/python3.10
   - sudo apt install -y python3.10-distutils
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  - export PYTHONPATH=/usr/bin/python3
-  - echo $PYTHONPATH
-  - which python3
+  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/opt/pyenv/shims" | tr "\n" ":"` # Removing pyenv path from PATH
+  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/home/travis/.phpenv/shims" | tr "\n" ":"` # Removing pyenv path from PATH
+  - PATH="$PATH:/usr/bin/python3" # Adding our python version to PATH
 services:
 - xvfb
 install:
