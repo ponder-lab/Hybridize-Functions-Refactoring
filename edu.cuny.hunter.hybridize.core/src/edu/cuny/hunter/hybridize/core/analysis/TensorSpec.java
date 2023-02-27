@@ -1,9 +1,28 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+/**
+ * A representation of a tf.Tensorspec which describes a tf.Tensor
+ */
 public class TensorSpec {
+
+	/**
+	 * Shape of the tensor being described by {@link TensorSpec}.
+	 */
 	private String shape;
+
+	/**
+	 * Type of the tensor being described by {@link TensorSpec}.
+	 */
 	private String dtype;
+
+	/**
+	 * True if the {@link TensorSpec} is using keyword arguments for the shape.
+	 */
 	private boolean shapeKeyword;
+
+	/**
+	 * True if the {@link TensorSpec} is using keyword arguments for the type.
+	 */
 	private boolean dtypeKeyword;
 
 	public TensorSpec() {
