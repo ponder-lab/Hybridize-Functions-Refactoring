@@ -242,7 +242,9 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile. In our accepted interval versions of
+		 * the API, it allows parameter names jit_compile and deprecated name experimental_compile. If a client is using this, they might
+		 * not know about what is deprecated or not, therefore we need to include all the deprecated arguments to be complete.
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_compile.
 		 */
@@ -251,7 +253,10 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes. In our accepted interval
+		 * versions of the API, it allows parameter names reduce_retracing and deprecated name experimental_relax_shapes. If a client is
+		 * using this, they might not know about what is deprecated or not, therefore we need to include all the deprecated arguments to be
+		 * complete.
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_relax_shapes.
 		 */
