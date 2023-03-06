@@ -38,26 +38,48 @@ public class TensorSpec {
 		this.dtype = d;
 	}
 
+	/**
+	 * Shape of {@link TensorSpec}.
+	 *
+	 * @return String of this {@link TensorSpec} shape.
+	 */
 	public String getShape() {
 		return this.shape;
 	}
 
+	/**
+	 * Dtype of {@link TensorSpec}.
+	 *
+	 * @return String of this {@link TensorSpec} dtype.
+	 */
 	public String getDType() {
 		return this.dtype;
 	}
 
+	/**
+	 * Set shape of {@link TensorSpec}.
+	 */
 	public void setShape(String s) {
 		this.shape = s;
 	}
 
+	/**
+	 * Set dtype of {@link TensorSpec}.
+	 */
 	public void setDType(String d) {
 		this.dtype = d;
 	}
 
+	/**
+	 * Set if the type of the argument for shape of {@link TensorSpec} is a keyword.
+	 */
 	public void setShapeKeyword(boolean s) {
 		this.shapeKeyword = s;
 	}
 
+	/**
+	 * Set if the type of the argument for dtype of {@link TensorSpec} is a keyword.
+	 */
 	public void setDTypeKeyword(boolean d) {
 		this.dtypeKeyword = d;
 	}

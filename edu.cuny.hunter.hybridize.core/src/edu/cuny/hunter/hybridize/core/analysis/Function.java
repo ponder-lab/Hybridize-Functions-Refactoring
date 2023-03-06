@@ -468,7 +468,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter has parameter func.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
@@ -540,7 +540,7 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * Value of {@link Function}'s {@link decoratorsType} parameter has parameter func.
+		 * Value of {@link Function}'s {@link decoratorsType} parameter func.
 		 *
 		 * @return String of this {@link decoratorType} parameter func.
 		 */
