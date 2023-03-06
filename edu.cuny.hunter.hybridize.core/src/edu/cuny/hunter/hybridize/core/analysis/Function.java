@@ -5,6 +5,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -44,34 +45,54 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	public class HybridizationParameters {
 
-		// Available in TF version [2.4,2.11].
+		/**
+		 * Available in TF version [2.4,2.11].
+		 */
 		private static final String EXPERIMENTAL_FOLLOW_TYPE_HINTS = "experimental_follow_type_hints";
 
-		// Available in TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.0,2.11].
+		 */
 		private static final String EXPERIMENTAL_AUTOGRAPH_OPTIONS = "experimental_autograph_options";
 
-		// Available in TF version [2.1,2.11].
+		/**
+		 * Available in TF version [2.1,2.11].
+		 */
 		private static final String EXPERIMENTAL_IMPLEMENTS = "experimental_implements";
 
-		// Available in TF version [2.9,2.11]. Previously, experimental_relax_shapes which is available TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.9,2.11]. Previously, experimental_relax_shapes which is available TF version [2.0,2.11].
+		 */
 		private static final String REDUCE_RETRACING = "reduce_retracing";
 
-		// Available in TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.0,2.11].
+		 */
 		private static final String EXPERIMENTAL_RELAX_SHAPES = "experimental_relax_shapes";
 
-		// Available in TF version [2.1,2.11].
+		/**
+		 * Available in TF version [2.1,2.11].
+		 */
 		private static final String EXPERIMENTAL_COMPILE = "experimental_compile";
 
-		// Available in TF version [2.5,2.11]. Previously, experimental_compile which is available TF version [2.1,2.11].
+		/**
+		 * Available in TF version [2.5,2.11]. Previously, experimental_compile which is available TF version [2.1,2.11].
+		 */
 		private static final String JIT_COMPILE = "jit_compile";
 
-		// Available in TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.0,2.11].
+		 */
 		private static final String AUTOGRAPH = "autograph";
 
-		// Available in TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.0,2.11].
+		 */
 		private static final String INPUT_SIGNATURE = "input_signature";
 
-		// Available in TF version [2.0,2.11].
+		/**
+		 * Available in TF version [2.0,2.11].
+		 */
 		private static final String FUNC = "func";
 
 		/**
@@ -136,38 +157,18 @@ public class Function extends RefactorableProgramEntity {
 							Function.this.nature, monitor)) { // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
 						// Returns the set of potential declaring definitions of the selection.
-						declaringDefinition = Util.getDeclaringDefinition(selection, Function.this.containingModuleName,
-								Function.this.containingFile, Function.this.nature, monitor).iterator().next();
+						Set<Definition> potentialDeclaringDefitinion = Util.getDeclaringDefinition(selection,
+								Function.this.containingModuleName, Function.this.containingFile, Function.this.nature, monitor);
+						if (potentialDeclaringDefitinion.size() == 1)
+							declaringDefinition = potentialDeclaringDefitinion.iterator().next();
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
-			// Python source arguments from the declaring definition
-			exprType[] declaringArguments = null;
-
-			// Getting the arguments from TensorFlow source
-			if (declaringDefinition != null) {
-				if (declaringDefinition.ast instanceof FunctionDef) {
-					FunctionDef declaringFunctionDefinition = (FunctionDef) declaringDefinition.ast;
-					argumentsType declaringArgumentTypes = declaringFunctionDefinition.args;
-					declaringArguments = declaringArgumentTypes.args;
-				}
-			}
-
-			// Python source arguments from the declaring definition
-			ArrayList<String> argumentIdDeclaringDefintion = new ArrayList<>();
-
-			// Getting the arguments from the definition
-			if (declaringArguments != null) {
-				for (exprType declaredArgument : declaringArguments) {
-					if (declaredArgument instanceof Name) {
-						Name argumentName = (Name) declaredArgument;
-						argumentIdDeclaringDefintion.add(argumentName.id);
-					}
-				}
-			}
+			// Getting tf.functions Python definition arguments.
+			ArrayList<String> argumentIdDeclaringDefintion = getTfFunctionPythonDefinitionArguments(declaringDefinition);
 
 			if (tfFunctionDecorator != null)
 				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
@@ -176,9 +177,9 @@ public class Function extends RefactorableProgramEntity {
 
 					// Processing positional arguments for tf.function
 					exprType[] arguments = callFunction.args;
+					// We iterate over the tf.function's parameters positions.
 					for (int i = 0; i < arguments.length; i++) {
-						// We iterate over the tf.function's parameters positions. From the position we are currently evaluating (i), we use
-						// the tf.function's definition (argumentIdDeclaringDefintion) to verify which parameter we are analyzing.
+						// From the position i, we use the tf.function's definition to verify which parameter we are analyzing.
 						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
@@ -191,16 +192,14 @@ public class Function extends RefactorableProgramEntity {
 						else if (argumentDeclaringDefinition.equals(AUTOGRAPH))
 							// Found parameter autograph
 							this.autoGraphParamExists = true;
-						// The latest version of the API we are using allows
-						// parameter names jit_compile and
-						// deprecated name experimental_compile
+						// In our accepter interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
+						// deprecated name experimental_compile.
 						else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
 								|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE))
 							// Found parameter jit_compile/experimental_compile
 							this.jitCompileParamExists = true;
-						// The latest version of the API we are using allows
-						// parameter names reduce_retracing
-						// and deprecated name experimental_relax_shapes
+						// In our accepter interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
+						// and deprecated name experimental_relax_shapes.
 						else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING))
 							// Found parameter reduce_retracing
 							this.reduceRetracingParamExists = true;
@@ -234,15 +233,13 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(AUTOGRAPH))
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-							// The latest version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
+							// In our accepter interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
+							// deprecated name experimental_compile.
 							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
-							// The latest version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
+							// In our accepter interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
+							// and deprecated name experimental_relax_shapes.
 							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
 								// Found parameter reduce_retracing
 								// or experimental_relax_shapes
@@ -259,6 +256,41 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				} // else, tf.function is used without parameters.
+		}
+
+		/**
+		 * Get the tf.function parameter names from the {@link Definition}.
+		 *
+		 * @param declaringDefinition The Definition to use.
+		 * @return An array with the names of the arguments given by {@link Definition}.
+		 */
+		ArrayList<String> getTfFunctionPythonDefinitionArguments(Definition declaringDefinition) {
+			// Python source arguments from the declaring definition
+			exprType[] declaringArguments = null;
+
+			// Getting the arguments from TensorFlow source
+			if (declaringDefinition != null) {
+				if (declaringDefinition.ast instanceof FunctionDef) {
+					FunctionDef declaringFunctionDefinition = (FunctionDef) declaringDefinition.ast;
+					argumentsType declaringArgumentTypes = declaringFunctionDefinition.args;
+					declaringArguments = declaringArgumentTypes.args;
+				}
+			}
+
+			// Python source arguments from the declaring definition
+			ArrayList<String> argumentIdDeclaringDefintion = new ArrayList<>();
+
+			// Getting the arguments from the definition
+			if (declaringArguments != null) {
+				for (exprType declaredArgument : declaringArguments) {
+					if (declaredArgument instanceof Name) {
+						Name argumentName = (Name) declaredArgument;
+						argumentIdDeclaringDefintion.add(argumentName.id);
+					}
+				}
+			}
+
+			return argumentIdDeclaringDefintion;
 		}
 
 		/**

@@ -33,7 +33,7 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 public class Util {
 
 	private static final ILog LOG = getLog(Util.class);
-	
+
 	/**
 	 * Get the set of potential declaring definitions of the entity described in the given {@link PySelection}.
 	 *
@@ -85,7 +85,6 @@ public class Util {
 		}
 
 		return potentialDeclaringDefinitions;
-
 	}
 
 	/**
