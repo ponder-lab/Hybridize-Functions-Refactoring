@@ -242,25 +242,24 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile. In our accepted interval versions of
-		 * the API, it allows parameter names jit_compile and deprecated name experimental_compile. If a client is using this, they might
-		 * not know about what is deprecated or not, therefore we need to include all the deprecated arguments to be complete.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_compile.
 		 */
 		public boolean hasExperimentalCompileParam() {
+			// Since jit_compile and experimental_compile (deprecated) have the same functionalities, when we parse these parameters we put
+			// look for both strings and store it into this boolean variable.
 			return this.jitCompileParamExists;
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes. In our accepted interval
-		 * versions of the API, it allows parameter names reduce_retracing and deprecated name experimental_relax_shapes. If a client is
-		 * using this, they might not know about what is deprecated or not, therefore we need to include all the deprecated arguments to be
-		 * complete.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes.
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_relax_shapes.
 		 */
 		public boolean hasExperimentalRelaxShapesParam() {
+			// Since reduce_retracing and experimental_relax_shapes (deprecated) have the same functionalities, when we parse these
+			// parameters we put look for both strings and store it into this boolean variable.
 			return this.reduceRetracingParamExists;
 		}
 
