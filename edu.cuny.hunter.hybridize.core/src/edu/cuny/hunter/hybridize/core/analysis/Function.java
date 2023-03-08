@@ -248,7 +248,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		public boolean hasExperimentalCompileParam() {
 			// Since jit_compile and experimental_compile (deprecated) have the same functionalities, when we parse these parameters together
-			// and store it into this boolean variable.
+			// and store it into the same boolean variable.
 			return this.jitCompileParamExists;
 		}
 
@@ -259,7 +259,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		public boolean hasExperimentalRelaxShapesParam() {
 			// Since reduce_retracing and experimental_relax_shapes (deprecated) have the same functionalities, when we parse these
-			// parameters together and store it into this boolean variable.
+			// parameters together and store it into the same boolean variable.
 			return this.reduceRetracingParamExists;
 		}
 
