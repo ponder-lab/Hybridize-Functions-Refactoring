@@ -70,47 +70,47 @@ public class Function extends RefactorableProgramEntity {
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph. The values could be True or False.
 		 */
-		private String autoGraphParamValue;
+		private boolean autoGraphParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints. The values could be None, False
 		 * or True.
 		 */
-		private String experimentaFollowTypeHintsParamValue;
+		private Boolean experimentaFollowTypeHintsParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options. The values could be an optional
 		 * tuple or value of tf.autograph.experimental.Feature values or None.
 		 */
-		private String experimentalAutographOptionsParamValue;
+		private String experimentalAutographOptionsParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements. The value could be None or a name of a
 		 * "known" function this implements.
 		 */
-		private String experimentalImplementsParamValue;
+		private String experimentalImplementsParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter func. The value could be None, or the function name to be
 		 * compiled.
 		 */
-		private String funcParamValue;
+		private String funcParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature. The value could be None, or a possibly nested
 		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function
 		 */
-		private String inputSignatureParamValue;
+		private ArrayList<TensorSpec> inputSignatureParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True.
 		 */
-		private String jitCompileParamValue;
+		private Boolean jitCompileParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing. The values could be False or True.
 		 */
-		private String reduceRetracingParamValue;
+		private boolean reduceRetracingParam;
 
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
@@ -150,7 +150,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.funcParamValue = value.id;
+										this.funcParam = value.id;
 									else
 										throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								} else {
@@ -162,7 +162,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.inputSignatureParamValue = value.id;
+										this.inputSignatureParam = null;
 									else
 										throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 									// Example: (tf.TensorSpec(shape=[None], dtype=tf.float32),)
@@ -170,17 +170,13 @@ public class Function extends RefactorableProgramEntity {
 									Tuple value = (Tuple) keyword.value;
 									exprType[] valueElements = value.elts;
 									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
-									this.inputSignatureParamValue = "(" + createTupleOrListOfTensorSpec(tensorSpecList);
-									if (value.endsWithComma)
-										this.inputSignatureParamValue += ",)";
-									else
-										this.inputSignatureParamValue += ")";
+									this.inputSignatureParam = tensorSpecList;
 									// Example: [tf.TensorSpec(shape=[None], dtype=tf.float32)]
 								} else if (keyword.value instanceof List) {
 									List value = (List) keyword.value;
 									exprType[] valueElements = value.elts;
 									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
-									this.inputSignatureParamValue = "[" + createTupleOrListOfTensorSpec(tensorSpecList) + "]";
+									this.inputSignatureParam = tensorSpecList;
 								} else {
 									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 								}
@@ -189,8 +185,10 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "True" || value.id == "False") // Checking only literals
-										this.autoGraphParamValue = value.id;
+									if (value.id == "True")// Checking only literals
+										this.autoGraphParam = true;
+									else if (value.id == "False")
+										this.autoGraphParam = false;
 									else
 										throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
 								} else {
@@ -204,8 +202,12 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "True" || value.id == "False" || value.id == "None") // Checking only literals
-										this.jitCompileParamValue = value.id;
+									if (value.id == "True") // Checking only literals
+										this.jitCompileParam = true;
+									else if (value.id == "False")
+										this.jitCompileParam = false;
+									else if (value.id == "None")
+										this.jitCompileParam = null;
 									else
 										throw new IllegalArgumentException(
 												"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
@@ -221,8 +223,10 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "True" || value.id == "False") // Checking only literals
-										this.reduceRetracingParamValue = value.id;
+									if (value.id == "True") // Checking only literals
+										this.reduceRetracingParam = true;
+									else if (value.id == "False") // Checking only literals
+										this.reduceRetracingParam = false;
 									else
 										throw new IllegalArgumentException(
 												"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
@@ -235,12 +239,12 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: "google.matmul_low_rank_matrix"
 								if (keyword.value instanceof Str) {
 									Str value = (Str) keyword.value;
-									this.experimentalImplementsParamValue = value.s;
+									this.experimentalImplementsParam = value.s;
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.experimentalImplementsParamValue = value.id;
+										this.experimentalImplementsParam = value.id;
 									else
 										throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								} else {
@@ -251,7 +255,7 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
 								if (keyword.value instanceof Attribute) {
 									Attribute keywordAttribute = (Attribute) keyword.value;
-									this.experimentalAutographOptionsParamValue = processAttributeForAutographOptions(keywordAttribute);
+									this.experimentalAutographOptionsParam = processAttributeForAutographOptions(keywordAttribute);
 									// Example of value: (tf.autograph.experimental.Feature.EQUALITY_OPERATORS,
 									// tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)
 								} else if (keyword.value instanceof Tuple) {
@@ -269,12 +273,12 @@ public class Function extends RefactorableProgramEntity {
 										}
 										count++;
 									}
-									this.experimentalAutographOptionsParamValue = "(" + finalTuple + ")";
+									this.experimentalAutographOptionsParam = "(" + finalTuple + ")";
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.experimentalAutographOptionsParamValue = value.id;
+										this.experimentalAutographOptionsParam = value.id;
 									else
 										throw new IllegalArgumentException(
 												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
@@ -287,8 +291,12 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None" || value.id == "True" || value.id == "False") // Checking only literals
-										this.experimentaFollowTypeHintsParamValue = value.id;
+									if (value.id == "None") // Checking only literals
+										this.experimentaFollowTypeHintsParam = null;
+									else if (value.id == "True") // Checking only literals
+										this.experimentaFollowTypeHintsParam = true;
+									else if (value.id == "False") // Checking only literals
+										this.experimentaFollowTypeHintsParam = false;
 									else
 										throw new IllegalArgumentException(
 												"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " argument.");
@@ -411,32 +419,13 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * Gets the array of Tensorspecs and returns the tuple or list of them, if necessary.
-		 *
-		 * @return String of nested TensorSpecs.
-		 */
-		private String createTupleOrListOfTensorSpec(ArrayList<TensorSpec> tensorSpecList) {
-			String tempString = "";
-
-			int count = 0;
-			for (TensorSpec tensor : tensorSpecList) {
-				if (count == 0)
-					tempString += tensor.toString();
-				else
-					tempString += ", " + tensor.toString();
-				count++;
-			}
-
-			return tempString;
-		}
-
-		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
 		public boolean hasAutoGraphParam() {
-			return (this.autoGraphParamValue != null);
+			// False is the default value
+			return (this.autoGraphParam != false);
 
 		}
 
@@ -446,7 +435,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
 		public boolean hasExperimentalAutographOptParam() {
-			return (this.experimentalAutographOptionsParamValue != null);
+			return (this.experimentalAutographOptionsParam != null);
 		}
 
 		/**
@@ -455,7 +444,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
 		public boolean hasExperimentalImplementsParam() {
-			return (this.experimentalImplementsParamValue != null);
+			return (this.experimentalImplementsParam != null);
 		}
 
 		/**
@@ -464,7 +453,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean hasExperimentalFollowTypeHintsParam() {
-			return (this.experimentaFollowTypeHintsParamValue != null);
+			return (this.experimentaFollowTypeHintsParam != null);
 		}
 
 		/**
@@ -473,7 +462,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
 		public boolean hasFuncParam() {
-			return (this.funcParamValue != null);
+			return (this.funcParam != null);
 		}
 
 		/**
@@ -482,7 +471,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
 		public boolean hasInputSignatureParam() {
-			return (this.inputSignatureParamValue != null);
+			return (this.inputSignatureParam != null);
 		}
 
 		/**
@@ -491,7 +480,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
 		public boolean hasJitCompileParam() {
-			return (this.jitCompileParamValue != null);
+			// None is the default value
+			return (this.jitCompileParam != null);
 		}
 
 		/**
@@ -500,16 +490,17 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
 		public boolean hasReduceRetracingParam() {
-			return (this.reduceRetracingParamValue != null);
+			// False is the default value
+			return (this.reduceRetracingParam != false);
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter autograph.
 		 *
-		 * @return String of this {@link decoratorType} parameter autograph.
+		 * @return boolean of this {@link decoratorType} parameter autograph.
 		 */
-		public String getAutoGraphArg() {
-			return this.autoGraphParamValue;
+		public boolean getAutoGraphArg() {
+			return this.autoGraphParam;
 		}
 
 		/**
@@ -518,7 +509,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return String of this {@link decoratorType} parameter experimental_autograph_options.
 		 */
 		public String getExperimentalAutographOptArg() {
-			return this.experimentalAutographOptionsParamValue;
+			return this.experimentalAutographOptionsParam;
 		}
 
 		/**
@@ -527,16 +518,16 @@ public class Function extends RefactorableProgramEntity {
 		 * @return String of this {@link decoratorType} parameter experimental_implements.
 		 */
 		public String getExperimentalImplementsArg() {
-			return this.experimentalImplementsParamValue;
+			return this.experimentalImplementsParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints.
 		 *
-		 * @return String of this {@link decoratorType} parameter experimental_follow_type_hints.
+		 * @return Boolean of this {@link decoratorType} parameter experimental_follow_type_hints.
 		 */
-		public String getExperimentalFollowTypeHintsArg() {
-			return this.experimentaFollowTypeHintsParamValue;
+		public Boolean getExperimentalFollowTypeHintsArg() {
+			return this.experimentaFollowTypeHintsParam;
 		}
 
 		/**
@@ -545,52 +536,52 @@ public class Function extends RefactorableProgramEntity {
 		 * @return String of this {@link decoratorType} parameter func.
 		 */
 		public String getFuncArg() {
-			return this.funcParamValue;
+			return this.funcParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter input_signature.
 		 *
-		 * @return String of this {@link decoratorType} parameter input_signature.
+		 * @return ArrayList of TensorSpecs of this {@link decoratorType} parameter input_signature.
 		 */
-		public String getInputSignatureArg() {
-			return this.inputSignatureParamValue;
+		public ArrayList<TensorSpec> getInputSignatureArg() {
+			return this.inputSignatureParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter jit_compile.
 		 *
-		 * @return String of this {@link decoratorType} parameter jit_compile.
+		 * @return Boolean of this {@link decoratorType} parameter jit_compile.
 		 */
-		public String getJitCompileArg() {
-			return this.jitCompileParamValue;
+		public Boolean getJitCompileArg() {
+			return this.jitCompileParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter reduce_retracing.
 		 *
-		 * @return String of this {@link Function} parameter reduce_retracing.
+		 * @return boolean of this {@link Function} parameter reduce_retracing.
 		 */
-		public String getReduceRetracingArg() {
-			return this.reduceRetracingParamValue;
+		public boolean getReduceRetracingArg() {
+			return this.reduceRetracingParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_compile.
 		 *
-		 * @return String of this {@link decoratorType} parameter experimental_compile.
+		 * @return Boolean of this {@link decoratorType} parameter experimental_compile.
 		 */
-		public String getExperimentalCompileArg() {
-			return this.jitCompileParamValue;
+		public Boolean getExperimentalCompileArg() {
+			return this.jitCompileParam;
 		}
 
 		/**
 		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_relax_shapes.
 		 *
-		 * @return String of this {@link Function} parameter experimental_relax_shapes.
+		 * @return boolean of this {@link Function} parameter experimental_relax_shapes.
 		 */
-		public String getExperimentalRelaxShapeArg() {
-			return this.reduceRetracingParamValue;
+		public boolean getExperimentalRelaxShapeArg() {
+			return this.reduceRetracingParam;
 		}
 	}
 
