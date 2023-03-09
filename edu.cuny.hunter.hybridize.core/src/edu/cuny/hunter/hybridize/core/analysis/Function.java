@@ -150,7 +150,8 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.funcParam = value.id;
+										// Default value
+										this.funcParam = null;
 									else
 										throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								} else {
@@ -162,6 +163,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
+										// Default value
 										this.inputSignatureParam = null;
 									else
 										throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
@@ -186,6 +188,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "True")// Checking only literals
+										// Default value
 										this.autoGraphParam = true;
 									else if (value.id == "False")
 										this.autoGraphParam = false;
@@ -207,6 +210,7 @@ public class Function extends RefactorableProgramEntity {
 									else if (value.id == "False")
 										this.jitCompileParam = false;
 									else if (value.id == "None")
+										// Default value
 										this.jitCompileParam = null;
 									else
 										throw new IllegalArgumentException(
@@ -226,6 +230,7 @@ public class Function extends RefactorableProgramEntity {
 									if (value.id == "True") // Checking only literals
 										this.reduceRetracingParam = true;
 									else if (value.id == "False") // Checking only literals
+										// Default value
 										this.reduceRetracingParam = false;
 									else
 										throw new IllegalArgumentException(
@@ -244,7 +249,8 @@ public class Function extends RefactorableProgramEntity {
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.experimentalImplementsParam = value.id;
+										// Default value
+										this.experimentalImplementsParam = null;
 									else
 										throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								} else {
@@ -278,7 +284,8 @@ public class Function extends RefactorableProgramEntity {
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
-										this.experimentalAutographOptionsParam = value.id;
+										// Default value
+										this.experimentalAutographOptionsParam = null;
 									else
 										throw new IllegalArgumentException(
 												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
@@ -292,6 +299,7 @@ public class Function extends RefactorableProgramEntity {
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
 									if (value.id == "None") // Checking only literals
+										// Default value
 										this.experimentaFollowTypeHintsParam = null;
 									else if (value.id == "True") // Checking only literals
 										this.experimentaFollowTypeHintsParam = true;
@@ -424,8 +432,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
 		public boolean hasAutoGraphParam() {
-			// False is the default value
-			return (this.autoGraphParam != false);
+			// True is the default value
+			return (this.autoGraphParam != true);
 
 		}
 
@@ -435,6 +443,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
 		public boolean hasExperimentalAutographOptParam() {
+			// None is the default value
 			return (this.experimentalAutographOptionsParam != null);
 		}
 
@@ -444,6 +453,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
 		public boolean hasExperimentalImplementsParam() {
+			// None is the default value
 			return (this.experimentalImplementsParam != null);
 		}
 
@@ -453,6 +463,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean hasExperimentalFollowTypeHintsParam() {
+			// None is the default value
 			return (this.experimentaFollowTypeHintsParam != null);
 		}
 
@@ -462,6 +473,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
 		public boolean hasFuncParam() {
+			// None is the default value
 			return (this.funcParam != null);
 		}
 
@@ -471,6 +483,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
 		public boolean hasInputSignatureParam() {
+			// None is the default value
 			return (this.inputSignatureParam != null);
 		}
 

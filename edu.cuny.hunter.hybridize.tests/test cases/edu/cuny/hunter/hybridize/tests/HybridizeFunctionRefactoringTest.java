@@ -845,7 +845,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("None", args.getInputSignatureArg());
+			assertEquals(null, args.getInputSignatureArg());
 	}
 
 	/**
@@ -955,7 +955,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("False", args.getAutoGraphArg());
+			assertEquals(false, args.getAutoGraphArg());
 	}
 
 	/**
@@ -977,7 +977,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("True", args.getAutoGraphArg());
+			assertEquals(true, args.getAutoGraphArg());
 	}
 
 	/**
@@ -999,7 +999,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("True", args.getJitCompileArg());
+			assertEquals(true, args.getJitCompileArg());
 	}
 
 	/**
@@ -1021,7 +1021,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("False", args.getJitCompileArg());
+			assertEquals(false, args.getJitCompileArg());
 	}
 
 	/**
@@ -1043,7 +1043,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("None", args.getJitCompileArg());
+			assertEquals(null, args.getJitCompileArg());
 	}
 
 	/**
@@ -1063,7 +1063,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("True", args.getReduceRetracingArg());
+			assertEquals(true, args.getReduceRetracingArg());
 	}
 
 	/**
@@ -1083,7 +1083,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("False", args.getReduceRetracingArg());
+			assertEquals(false, args.getReduceRetracingArg());
 	}
 
 	/**
@@ -1149,7 +1149,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("None", args.getExperimentalImplementsArg());
+			assertEquals(null, args.getExperimentalImplementsArg());
 	}
 
 	/**
@@ -1242,7 +1242,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("None", args.getExperimentalAutographOptArg());
+			assertEquals(null, args.getExperimentalAutographOptArg());
 	}
 
 	/**
@@ -1264,7 +1264,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("True", args.getExperimentalFollowTypeHintsArg());
+			assertEquals(true, args.getExperimentalFollowTypeHintsArg());
 	}
 
 	/**
@@ -1286,7 +1286,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("False", args.getExperimentalFollowTypeHintsArg());
+			assertEquals(false, args.getExperimentalFollowTypeHintsArg());
 	}
 
 	/**
@@ -1308,7 +1308,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("None", args.getExperimentalFollowTypeHintsArg());
+			assertEquals(null, args.getExperimentalFollowTypeHintsArg());
 	}
 
 	/**
@@ -1327,8 +1327,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(args.getFuncArg() == null && args.getInputSignatureArg() == null & args.getAutoGraphArg() == null
-				&& args.getJitCompileArg() == null && args.getReduceRetracingArg() == null && args.getExperimentalImplementsArg() == null
+		assertTrue(args.getFuncArg() == null && args.getInputSignatureArg() == null & args.getAutoGraphArg() == false
+				&& args.getJitCompileArg() == null && args.getReduceRetracingArg() == false && args.getExperimentalImplementsArg() == null
 				&& args.getExperimentalAutographOptArg() == null && args.getExperimentalFollowTypeHintsArg() == null);
 	}
 
@@ -1352,7 +1352,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
 			assertEquals("(tf.TensorSpec(shape=[None], dtype=tf.float32),)", args.getInputSignatureArg());
-			assertEquals("False", args.getAutoGraphArg());
+			assertEquals(false, args.getAutoGraphArg());
 		}
 	}
 
@@ -1401,7 +1401,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("False", args.getAutoGraphArg());
+			assertEquals(false, args.getAutoGraphArg());
 			assertTrue(args.getInputSignatureArg() == null);
 		}
 
@@ -1426,8 +1426,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("True", args.getJitCompileArg());
-			assertTrue(args.getAutoGraphArg() == null);
+			assertEquals(true, args.getJitCompileArg());
+			assertTrue(args.getAutoGraphArg() == false);
 		}
 
 	}
@@ -1502,7 +1502,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("False", args.getAutoGraphArg());
+			assertEquals(false, args.getAutoGraphArg());
 		}
 	}
 
@@ -1526,7 +1526,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("False", args.getJitCompileArg());
+			assertEquals(false, args.getJitCompileArg());
 		}
 	}
 
@@ -1550,7 +1550,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("False", args.getReduceRetracingArg());
+			assertEquals(false, args.getReduceRetracingArg());
 		}
 	}
 
@@ -1623,7 +1623,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("True", args.getExperimentalFollowTypeHintsArg());
+			assertEquals(true, args.getExperimentalFollowTypeHintsArg());
 		}
 	}
 
