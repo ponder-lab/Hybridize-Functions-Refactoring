@@ -15,22 +15,9 @@ public class TensorSpec {
 	 */
 	private String dtype;
 
-	/**
-	 * True if the {@link TensorSpec} is using keyword arguments for the shape.
-	 */
-	private boolean shapeKeyword;
-
-	/**
-	 * True if the {@link TensorSpec} is using keyword arguments for the type.
-	 */
-	private boolean dtypeKeyword;
-
 	public TensorSpec() {
 		this.shape = "";
 		this.dtype = "";
-		this.shapeKeyword = true;
-		this.dtypeKeyword = true;
-
 	}
 
 	public TensorSpec(String s, String d) {
@@ -70,28 +57,4 @@ public class TensorSpec {
 		this.dtype = d;
 	}
 
-	/**
-	 * Set if the type of the argument for shape of {@link TensorSpec} is a keyword.
-	 */
-	public void setShapeKeyword(boolean s) {
-		this.shapeKeyword = s;
-	}
-
-	/**
-	 * Set if the type of the argument for dtype of {@link TensorSpec} is a keyword.
-	 */
-	public void setDTypeKeyword(boolean d) {
-		this.dtypeKeyword = d;
-	}
-
-	@Override
-	public String toString() {
-		if (this.dtype.isEmpty() && this.shape.isEmpty())
-			return "tf.TensorSpec([])";
-		if (!this.shapeKeyword && !this.dtypeKeyword)
-			return "tf.TensorSpec([" + this.shape + "]" + ", " + this.dtype + ")";
-		if (!this.shapeKeyword && this.dtypeKeyword)
-			return "tf.TensorSpec([" + this.shape + "]" + ", dtype=" + this.dtype + ")";
-		return "tf.TensorSpec(shape=[" + this.shape + "]" + ", dtype=" + this.dtype + ")";
-	}
 }

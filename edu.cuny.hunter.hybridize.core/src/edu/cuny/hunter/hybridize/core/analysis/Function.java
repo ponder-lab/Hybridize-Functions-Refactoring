@@ -386,20 +386,15 @@ public class Function extends RefactorableProgramEntity {
 						// Positional arguments for TensorSpecs
 						exprType[] tensorArgs = callTuple.args;
 						for (exprType tensorArg : tensorArgs) {
-							if (tensorArg instanceof Tuple) {
+							if (tensorArg instanceof Tuple)
 								tensor.setShape(processTupleOrListForShape(((Tuple) tensorArg).elts));
-								tensor.setShapeKeyword(false);
-							} else if (tensorArg instanceof List) {
+							else if (tensorArg instanceof List)
 								tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
-								tensor.setShapeKeyword(false);
-							} else if (tensorArg instanceof Attribute) {
+							else if (tensorArg instanceof Attribute) {
 								Attribute attrValue = (Attribute) tensorArg;
 								tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
-								tensor.setDTypeKeyword(false);
-							} else {
+							} else
 								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
-							}
-
 						}
 						// Keyword Arguments for TensorSpecs
 						keywordType[] keywordsCall = callTuple.keywords;

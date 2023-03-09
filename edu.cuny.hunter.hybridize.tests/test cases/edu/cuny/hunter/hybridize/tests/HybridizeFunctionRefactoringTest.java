@@ -90,6 +90,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.TensorSpec;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -864,10 +865,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("None", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("(tf.TensorSpec(shape=[None], dtype=tf.float32),)", args.getInputSignatureArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 	}
 
 	/**
@@ -886,10 +891,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("2, 2", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("(tf.TensorSpec(shape=[2, 2], dtype=tf.float32),)", args.getInputSignatureArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 	}
 
 	/**
@@ -908,10 +917,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec();
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+		tensors.add(tensor);
+
+		System.out.println("Size tensors : " + Integer.toString(tensors.size()));
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("(tf.TensorSpec([]), tf.TensorSpec([]))", args.getInputSignatureArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 	}
 
 	/**
@@ -930,10 +946,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("[tf.TensorSpec([], tf.float32)]", args.getInputSignatureArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 	}
 
 	/**
@@ -1348,10 +1368,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("None", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("(tf.TensorSpec(shape=[None], dtype=tf.float32),)", args.getInputSignatureArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 			assertEquals(false, args.getAutoGraphArg());
 		}
 	}
@@ -1449,10 +1473,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("None", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("(tf.TensorSpec(shape=[None], dtype=tf.float32),)", args.getJitCompileArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 		}
 
 	}
@@ -1474,10 +1502,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		TensorSpec tensor = new TensorSpec("2, 2", "tf.float32");
+		ArrayList<TensorSpec> tensors = new ArrayList<TensorSpec>();
+		tensors.add(tensor);
+
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("(tf.TensorSpec(shape=[2, 2], dtype=tf.float32),)", args.getJitCompileArg());
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
 		}
 
 	}
