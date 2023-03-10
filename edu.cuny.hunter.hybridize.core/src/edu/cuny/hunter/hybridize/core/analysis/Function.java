@@ -159,7 +159,9 @@ public class Function extends RefactorableProgramEntity {
 						// Returns the set of potential declaring definitions of the selection.
 						Set<Definition> potentialDeclaringDefitinion = Util.getDeclaringDefinition(selection,
 								Function.this.containingModuleName, Function.this.containingFile, Function.this.nature, monitor);
-						if (potentialDeclaringDefitinion.size() == 1)
+						// If it has an element we store it in a variable. If it doesn't, the variable would be null and the code below
+						// handles this if it is the case.
+						if (potentialDeclaringDefitinion.iterator().hasNext())
 							declaringDefinition = potentialDeclaringDefitinion.iterator().next();
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
@@ -215,6 +217,8 @@ public class Function extends RefactorableProgramEntity {
 						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 							// Found parameter experimental_follow_type_hints
 							this.experimentaFollowTypeHintsParamExists = true;
+						else
+							throw new IllegalArgumentException("Unable to process tf.function argument.");
 					}
 
 					// Processing keywords arguments
@@ -253,6 +257,8 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
+							else
+								throw new IllegalArgumentException("Unable to process tf.function argument.");
 						}
 					}
 				} // else, tf.function is used without parameters.
