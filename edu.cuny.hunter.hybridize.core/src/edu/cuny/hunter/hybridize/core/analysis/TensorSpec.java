@@ -1,5 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.Objects;
+
 /**
  * A representation of a tf.Tensorspec which describes a tf.Tensor
  */
@@ -57,4 +59,24 @@ public class TensorSpec {
 		this.dtype = d;
 	}
 
+	@Override
+	public int hashCode() {
+		return Objects.hash(shape, dtype);
+	}
+
+	@Override
+	public boolean equals(Object tensorObject) {
+
+		if (tensorObject == this) {
+			return true;
+		}
+
+		if (!(tensorObject instanceof TensorSpec)) {
+			return false;
+		}
+
+		TensorSpec tensor = (TensorSpec) tensorObject;
+
+		return shape.equals(tensor.shape) && dtype.equals(tensor.dtype);
+	}
 }

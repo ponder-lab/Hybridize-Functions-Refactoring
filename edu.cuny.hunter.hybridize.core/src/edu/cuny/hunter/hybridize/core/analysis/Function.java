@@ -68,9 +68,10 @@ public class Function extends RefactorableProgramEntity {
 		private static final String FUNC = "func";
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph. The values could be True or False.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph. The values could be True or False. Setting it as
+		 * true because that is the default value of autograph.
 		 */
-		private boolean autoGraphParam;
+		private boolean autoGraphParam = true;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints. The values could be None, False

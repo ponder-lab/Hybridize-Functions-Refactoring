@@ -1347,7 +1347,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(args.getFuncArg() == null && args.getInputSignatureArg() == null & args.getAutoGraphArg() == false
+		// Default values
+		assertTrue(args.getFuncArg() == null && args.getInputSignatureArg() == null & args.getAutoGraphArg() == true
 				&& args.getJitCompileArg() == null && args.getReduceRetracingArg() == false && args.getExperimentalImplementsArg() == null
 				&& args.getExperimentalAutographOptArg() == null && args.getExperimentalFollowTypeHintsArg() == null);
 	}
@@ -1451,7 +1452,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
 			assertEquals(true, args.getJitCompileArg());
-			assertTrue(args.getAutoGraphArg() == false);
+			assertTrue(args.getAutoGraphArg() == true); // default value of autograph
 		}
 
 	}
