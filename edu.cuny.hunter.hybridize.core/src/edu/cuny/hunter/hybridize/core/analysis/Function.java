@@ -194,8 +194,7 @@ public class Function extends RefactorableProgramEntity {
 							this.autoGraphParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
 						// deprecated name experimental_compile.
-						else if (evaluatedArgument.equals(JIT_COMPILE)
-								|| evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
+						else if (evaluatedArgument.equals(JIT_COMPILE) || evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
 							// Found parameter jit_compile/experimental_compile
 							this.jitCompileParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
@@ -235,12 +234,12 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(AUTOGRAPH))
 								// Found parameter autograph
 								this.autoGraphParamExists = true;
-							// In our accepter interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
+							// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
 							// deprecated name experimental_compile.
 							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
 								// Found parameter jit_compile/experimental_compile
 								this.jitCompileParamExists = true;
-							// In our accepter interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
+							// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
 							// and deprecated name experimental_relax_shapes.
 							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
 								// Found parameter reduce_retracing
