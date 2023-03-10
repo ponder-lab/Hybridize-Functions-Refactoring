@@ -177,44 +177,42 @@ public class Function extends RefactorableProgramEntity {
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
 
-					// Processing positional arguments for tf.function
-					exprType[] arguments = callFunction.args;
 					// We iterate over the tf.function's parameters positions.
-					for (int i = 0; i < arguments.length; i++) {
+					for (int i = 0; i < callFunction.args.length; i++) {
 						// From the position i, we use the tf.function's definition to verify which parameter we are analyzing.
-						String argumentDeclaringDefinition = argumentIdDeclaringDefintion.get(i);
+						String evaluatedArgument = argumentIdDeclaringDefintion.get(i);
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
-						if (argumentDeclaringDefinition.equals(FUNC))
+						if (evaluatedArgument.equals(FUNC))
 							// Found parameter func
 							this.funcParamExists = true;
-						else if (argumentDeclaringDefinition.equals(INPUT_SIGNATURE))
+						else if (evaluatedArgument.equals(INPUT_SIGNATURE))
 							// Found parameter input_signature
 							this.inputSignatureParamExists = true;
-						else if (argumentDeclaringDefinition.equals(AUTOGRAPH))
+						else if (evaluatedArgument.equals(AUTOGRAPH))
 							// Found parameter autograph
 							this.autoGraphParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
 						// deprecated name experimental_compile.
-						else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
-								|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE))
+						else if (evaluatedArgument.equals(JIT_COMPILE)
+								|| evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
 							// Found parameter jit_compile/experimental_compile
 							this.jitCompileParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
 						// and deprecated name experimental_relax_shapes.
-						else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING))
+						else if (evaluatedArgument.equals(REDUCE_RETRACING))
 							// Found parameter reduce_retracing
 							this.reduceRetracingParamExists = true;
-						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_RELAX_SHAPES))
+						else if (evaluatedArgument.equals(EXPERIMENTAL_RELAX_SHAPES))
 							// Found parameter experimental_relax_shapes
 							this.reduceRetracingParamExists = true;
-						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_IMPLEMENTS))
+						else if (evaluatedArgument.equals(EXPERIMENTAL_IMPLEMENTS))
 							// Found parameter experimental_implements
 							this.experimentalImplementsParamExists = true;
-						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+						else if (evaluatedArgument.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
 							// Found parameter experimental_autograph_options
 							this.experimentalAutographOptionsParamExists = true;
-						else if (argumentDeclaringDefinition.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+						else if (evaluatedArgument.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 							// Found parameter experimental_follow_type_hints
 							this.experimentaFollowTypeHintsParamExists = true;
 						else
