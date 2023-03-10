@@ -75,7 +75,7 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints. The values could be None, False
-		 * or True.
+		 * or True. null represents the value of None.
 		 */
 		private Boolean experimentaFollowTypeHintsParam;
 
@@ -99,12 +99,13 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature. The value could be None, or a possibly nested
-		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function
+		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function.
 		 */
 		private ArrayList<TensorSpec> inputSignatureParam;
 
 		/**
-		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True. null
+		 * represents the value of None.
 		 */
 		private Boolean jitCompileParam;
 
