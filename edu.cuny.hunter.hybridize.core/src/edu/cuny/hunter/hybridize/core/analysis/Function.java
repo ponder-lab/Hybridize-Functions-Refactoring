@@ -194,13 +194,13 @@ public class Function extends RefactorableProgramEntity {
 						else if (argumentDeclaringDefinition.equals(AUTOGRAPH))
 							// Found parameter autograph
 							this.autoGraphParamExists = true;
-						// In our accepter interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
+						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
 						// deprecated name experimental_compile.
 						else if (argumentDeclaringDefinition.equals(JIT_COMPILE)
 								|| argumentDeclaringDefinition.equals(EXPERIMENTAL_COMPILE))
 							// Found parameter jit_compile/experimental_compile
 							this.jitCompileParamExists = true;
-						// In our accepter interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
+						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
 						// and deprecated name experimental_relax_shapes.
 						else if (argumentDeclaringDefinition.equals(REDUCE_RETRACING))
 							// Found parameter reduce_retracing
