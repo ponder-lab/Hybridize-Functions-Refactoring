@@ -922,8 +922,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		tensors.add(tensor);
 		tensors.add(tensor);
 
-		System.out.println("Size tensors : " + Integer.toString(tensors.size()));
-
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
