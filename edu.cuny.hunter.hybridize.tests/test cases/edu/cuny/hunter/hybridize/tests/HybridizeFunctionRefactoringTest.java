@@ -1608,4 +1608,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// no hybrids.
 		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 	}
+
+	/**
+	 * Test a model. No tf.function in this one. Explicit call method.
+	 */
+	@Test
+	public void testModel2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+	}
 }
