@@ -34,7 +34,7 @@ if __name__ == '__main__':
     print(input_data)
 
     model = SequentialModel()
-    result = model(input_data)
+    result = model.__call__(input_data)
 
     print("Output:")
     print(type(input_data))

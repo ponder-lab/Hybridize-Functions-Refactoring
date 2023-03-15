@@ -16,7 +16,7 @@ class SequentialModel(tf.keras.Model):
     self.dropout = tf.keras.layers.Dropout(0.2)
     self.dense_2 = tf.keras.layers.Dense(10)
 
-  def __call__(self, x):
+  def call(self, x):
     x = self.flatten(x)
 
     for layer in self.my_layers:
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     print(input_data)
 
     model = SequentialModel()
-    result = model(input_data)
+    result = model.call(input_data)
 
     print("Output:")
     print(type(input_data))
