@@ -1610,10 +1610,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test a model. No tf.function in this one. Explicit call method.
+	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__.
+	 * See https://github.com/wala/ML/issues/24.
 	 */
 	@Test
 	public void testModel2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+	}
+
+	/**
+	 * Test a model. No tf.function in this one. Explicit call method.
+	 */
+	@Test
+	public void testModel3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+	}
+
+	/**
+	 * Test a model. No tf.function in this one. Explicit call method.
+	 */
+	@Test
+	public void testModel4() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 
