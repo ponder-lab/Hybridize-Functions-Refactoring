@@ -1622,4 +1622,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// no hybrids.
 		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 	}
+
+	// TODO: Test models that have tf.functions.
 }
