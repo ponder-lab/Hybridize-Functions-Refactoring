@@ -92,12 +92,15 @@ public class Function extends RefactorableProgramEntity {
 		private boolean inputSignatureParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile and deprecated name experimental_compile. For
+		 * more information, you can see this <a href="https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function">URL</a>.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing and deprecated name
+		 * experimental_relax_shapes. For more information, you can see this
+		 * <a href="https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function">URL</a>.
 		 */
 		private boolean reduceRetracingParamExists;
 
@@ -247,8 +250,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter experimental_compile.
 		 */
 		public boolean hasExperimentalCompileParam() {
-			// Since jit_compile and experimental_compile (deprecated) have the same functionalities, when we parse these parameters together
-			// and store it into the same boolean variable.
+			// Since jit_compile and experimental_compile (deprecated) have the same functionalities, when we parse these parameters
+			// together and store it into the same boolean variable.
 			return this.jitCompileParamExists;
 		}
 
