@@ -159,10 +159,12 @@ public class Function extends RefactorableProgramEntity {
 						// Returns the set of potential declaring definitions of the selection.
 						Set<Definition> potentialDeclaringDefitinion = Util.getDeclaringDefinition(selection,
 								Function.this.containingModuleName, Function.this.containingFile, Function.this.nature, monitor);
-						// If it has an element we store it in a variable. If it doesn't, the variable would be null and the code below
-						// handles this if it is the case.
+
+						// If it has an element, we store the definition in a variable.
 						if (potentialDeclaringDefitinion.iterator().hasNext())
 							declaringDefinition = potentialDeclaringDefitinion.iterator().next();
+						else
+							throw new IllegalStateException("Can't determine tf.function decorator defintion.");
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
@@ -267,7 +269,7 @@ public class Function extends RefactorableProgramEntity {
 		 * @param declaringDefinition The Definition to use.
 		 * @return An array with the names of the arguments given by {@link Definition}.
 		 */
-		ArrayList<String> getTfFunctionPythonDefinitionArguments(Definition declaringDefinition) {
+		private ArrayList<String> getTfFunctionPythonDefinitionArguments(Definition declaringDefinition) {
 			// Python source arguments from the declaring definition
 			exprType[] declaringArguments = null;
 
