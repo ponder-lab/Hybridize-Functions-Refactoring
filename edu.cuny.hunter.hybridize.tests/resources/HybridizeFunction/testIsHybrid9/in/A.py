@@ -1,11 +1,13 @@
 import tensorflow as tf
 
-     
-@tf.function(autograph=False)
-def func():
-    print("Testing")
 
- 
+@tf.function(autograph=True)
+def func():
+    """
+    Call case.
+    """
+    pass
+
+
 if __name__ == '__main__':
     func()
-    

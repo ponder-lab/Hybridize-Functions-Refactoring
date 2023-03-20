@@ -3,6 +3,8 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -18,8 +20,11 @@ import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -38,12 +43,16 @@ public class Util {
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The name of the module defining the given {@link PySelection}.
-	 * @throws TooManyMatchesException On ambiguous definitions found.
-	 * @throws BadLocationException On parsing error.
+	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
+	 * @throws BadLocationException On a parsing error.
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
-			IProgressMonitor monitor) throws TooManyMatchesException, BadLocationException {
+			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.beginTask("Getting declaring module name.", 1);
+
+		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+				selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName, containingFile,
+				nature.getProject()));
 
 		RefactoringRequest request = new RefactoringRequest(containingFile, selection, nature);
 
@@ -52,26 +61,51 @@ public class Util {
 		request.pushMonitor(monitor);
 
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
-		ItemPointer[] pointers = pyRefactoring.findDefinition(request);
+
+		ItemPointer[] pointers;
+		try {
+			pointers = pyRefactoring.findDefinition(request);
+		} catch (TooManyMatchesException e) {
+			throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature, e);
+		}
+
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException("Can't find declaring module for " + selection.getSelectedText() + ".");
+			throw new IllegalArgumentException(
+					String.format("Can't find declaring module for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
+							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
+							containingFile.getName(), nature.getProject()));
 
-		if (pointers.length > 1)
-			throw new TooManyMatchesException("Ambigious definitions found for " + selection.getSelectedText() + ".", pointers.length);
+		// Collect the potential declaring module names.
+		Set<String> potentialDeclaringModuleNames = new HashSet<>();
 
-		ItemPointer itemPointer = pointers[0];
-		Definition definition = itemPointer.definition;
+		// for each match.
+		for (ItemPointer itemPointer : pointers) {
+			Definition definition = itemPointer.definition;
+			LOG.info("Found definition: " + definition + ".");
 
-		LOG.info("Found definition: " + definition + ".");
+			IModule module = definition.module;
+			LOG.info(String.format("Found module: %s.", module));
 
-		IModule module = definition.module;
+			String moduleName = module.getName();
+			LOG.info(String.format("Found module name: %s.", moduleName));
 
-		LOG.info(String.format("Found module: %s.", module));
+			// add it to the set of found module names.
+			potentialDeclaringModuleNames.add(moduleName);
+		}
 
-		monitor.done();
-		return module.getName();
+		// if we found a unique module name.
+		if (potentialDeclaringModuleNames.size() == 1) {
+			monitor.done();
+
+			// return the first one.
+			return potentialDeclaringModuleNames.iterator().next();
+		}
+
+		// otherwise, we have an ambiguous declaring module name.
+		throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature,
+				potentialDeclaringModuleNames.size());
 	}
 
 	/**
@@ -84,12 +118,12 @@ public class Util {
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The FQN of the given {@link decoratorsType}.
-	 * @throws TooManyMatchesException If the definition of the decorator is ambiguous.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
+	 * @throws AmbiguousDeclaringModuleException If the definition of the decorator is ambiguous.
 	 */
 	public static String getFullyQualifiedName(decoratorsType decorator, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+			throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
 		exprType decoratorFunction = decorator.func;
@@ -100,8 +134,10 @@ public class Util {
 	}
 
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
-			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor) throws BadLocationException {
+			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
+			throws BadLocationException, AmbiguousDeclaringModuleException {
 		monitor.subTask("Getting declaring module name.");
+		LOG.info("Getting declaring module name for SimpleNode: " + node + ".");
 
 		String declaringModuleName = getDeclaringModuleName(containingSelection, containingModName, containingFile, nature, monitor);
 		LOG.info(String.format("Found declaring module: %s.", declaringModuleName));
@@ -155,10 +191,61 @@ public class Util {
 		return ret.toString();
 	}
 
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+		exprType expression = getExpressionFromFunction(decorator);
+		LOG.info("Getting PySelection for exprType: " + expression + ".");
+		return getSelection(expression, document);
+	}
+
+	public static PySelection getSelection(SimpleNode node, IDocument document) {
+		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
+		return new PySelection(document, coreTextSelection);
+	}
+
 	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
 		int offset = NodeUtils.getOffset(document, expression);
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;
+	}
+
+	/**
+	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 *
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its "function."
+	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 */
+	public static exprType getExpressionFromFunction(decoratorsType decorator) {
+		exprType func = decorator.func;
+		return getInnerExpression(func);
+	}
+
+	private static exprType getInnerExpression(exprType expr) {
+		if (expr instanceof Attribute || expr instanceof Name)
+			return expr;
+
+		if (expr instanceof Call) {
+			Call call = (Call) expr;
+			exprType func = call.func;
+			return getInnerExpression(func);
+		}
+
+		throw new IllegalArgumentException("Can't find attribute of: " + expr + ".");
+	}
+
+	/**
+	 * Returns true iff the given {@link decoratorsType} corresponds to a Python generated decorator (e.g., "setter" for properties).
+	 *
+	 * @param decorator The {@link decoratorsType} in question.
+	 * @return True iff the given {@link decoratorsType} is generated by the run-time (e.g., a property).
+	 */
+	public static boolean isGenerated(decoratorsType decorator) {
+		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
+		return decoratorRepresentation.equals("setter");
+	}
+
+	public static boolean isBuiltIn(decoratorsType decorator) {
+		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
+		return decoratorRepresentation.equals("property");
 	}
 }
