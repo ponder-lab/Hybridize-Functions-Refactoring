@@ -28,7 +28,6 @@ Fixes # .
 1. Test B. Result.
 1. Test .... Result ...
 
-
 ## Final Checks
 
 - [ ] The changes I am proposing meet the expectations I have described above.
