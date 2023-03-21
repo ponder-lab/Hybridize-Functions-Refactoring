@@ -1591,6 +1591,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.likelyHasTensorParameter());
 	}
 
+	/**
+	 * Test for #2. From https://tensorflow.org/guide/function#usage.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+        assertNotNull(actualParameter);
+
+        String paramName = NodeUtils.getRepresentationString(actualParameter);
+        assertEquals("a", paramName);
+
+        actualParameter = actualParams[1];
+        assertNotNull(actualParameter);
+
+        paramName = NodeUtils.getRepresentationString(actualParameter);
+        assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
+	}
+
+	private void checkParam(exprType[] actualParams) {
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("x", paramName);
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: Test tf.Tensor-like things?
