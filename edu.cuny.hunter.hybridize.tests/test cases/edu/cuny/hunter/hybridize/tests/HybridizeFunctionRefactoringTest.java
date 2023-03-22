@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -1624,9 +1625,134 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
 	}
 
+	/**
+	 * Test for #2. From https://tensorflow.org/guide/function#usage. <code>tf.Variable</code>s are similar to <code>tf.Tensor</code>s,
+	 * thus, can we say that it's a likely tensor parameter? Why not? The first parameter is a <code>tf.Variable</code>.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2. From https://tensorflow.org/guide/function#usage.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter13() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest add = new FunctionUnderTest("add");
+		add.addParameters("a", "b");
+		functionsToTest.add(add);
+
+		FunctionUnderTest denseLayer = new FunctionUnderTest("dense_layer");
+		denseLayer.addParameters("x", "w", "b");
+		functionsToTest.add(denseLayer);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			assertNotNull(function);
+			assertEquals(fut.isHybrid(), function.isHybrid());
+
+			argumentsType params = function.getParameters();
+
+			exprType[] actualParams = params.args;
+			List<String> expectedParameters = fut.getParameters();
+			assertEquals(expectedParameters.size(), actualParams.length);
+
+			for (int i = 0; i < actualParams.length; i++) {
+				exprType actualParameter = actualParams[i];
+				assertNotNull(actualParameter);
+
+				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				assertEquals(expectedParameters.get(i), paramName);
+			}
+
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
+	/**
+	 * Test for #2. From https://tensorflow.org/guide/function#usage.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter14() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest functionToTest = new FunctionUnderTest("conv_fn");
+		functionToTest.addParameters("image");
+		functionsToTest.add(functionToTest);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			assertNotNull(function);
+			assertEquals(fut.isHybrid(), function.isHybrid());
+
+			argumentsType params = function.getParameters();
+
+			exprType[] actualParams = params.args;
+			List<String> expectedParameters = fut.getParameters();
+			assertEquals(expectedParameters.size(), actualParams.length);
+
+			for (int i = 0; i < actualParams.length; i++) {
+				exprType actualParameter = actualParams[i];
+				assertNotNull(actualParameter);
+
+				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				assertEquals(expectedParameters.get(i), paramName);
+			}
+
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
-	// TODO: Test tf.Tensor-like things?
 
 	/**
 	 * Test a model. No tf.function in this one.
