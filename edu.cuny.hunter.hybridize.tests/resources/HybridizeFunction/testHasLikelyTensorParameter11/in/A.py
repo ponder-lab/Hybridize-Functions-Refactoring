@@ -6,5 +6,3 @@ def add(a, b):
 
 c = add(tf.ones([1, 2]), tf.ones([2, 2]))  #  [[2., 2.], [2., 2.]]
 
-print(c)
-print(type(c))
