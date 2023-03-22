@@ -1610,16 +1610,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(2, actualParams.length);
 
 		exprType actualParameter = actualParams[0];
-        assertNotNull(actualParameter);
+		assertNotNull(actualParameter);
 
-        String paramName = NodeUtils.getRepresentationString(actualParameter);
-        assertEquals("a", paramName);
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
 
-        actualParameter = actualParams[1];
-        assertNotNull(actualParameter);
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
 
-        paramName = NodeUtils.getRepresentationString(actualParameter);
-        assertEquals("b", paramName);
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
 	}
@@ -1651,8 +1651,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__.
-	 * See https://github.com/wala/ML/issues/24.
+	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__. See
+	 * https://github.com/wala/ML/issues/24.
 	 */
 	@Test
 	public void testModel2() throws Exception {
