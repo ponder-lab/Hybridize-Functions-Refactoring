@@ -172,44 +172,51 @@ public class Function extends RefactorableProgramEntity {
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
 			// Getting tf.functions Python definition arguments.
-			ArrayList<String> argumentIdDeclaringDefintion = getTfFunctionPythonDefinitionArguments(declaringDefinition);
+			ArrayList<String> argumentIdDeclaringDefintion = getPythonDefinitionArguments(declaringDefinition);
 
 			if (tfFunctionDecorator != null)
 				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
 
-					// We iterate over the tf.function's parameters positions.
-					for (int i = 0; i < callFunction.args.length; i++) {
-						// From the position i, we use the tf.function's definition to verify which parameter we are analyzing.
-						String evaluatedArgument = argumentIdDeclaringDefintion.get(i);
+					exprType[] tfFunctionPositionalArgs = callFunction.args;
 
-						// Matching the arguments from the definition and the arguments from the code being analyzed.
-						if (evaluatedArgument.equals(FUNC))
-							this.funcParamExists = true;
-						else if (evaluatedArgument.equals(INPUT_SIGNATURE))
-							this.inputSignatureParamExists = true;
-						else if (evaluatedArgument.equals(AUTOGRAPH))
-							this.autoGraphParamExists = true;
-						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
-						// deprecated name experimental_compile.
-						else if (evaluatedArgument.equals(JIT_COMPILE) || evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
-							this.jitCompileParamExists = true;
-						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
-						// and deprecated name experimental_relax_shapes.
-						else if (evaluatedArgument.equals(REDUCE_RETRACING))
-							this.reduceRetracingParamExists = true;
-						else if (evaluatedArgument.equals(EXPERIMENTAL_RELAX_SHAPES))
-							this.reduceRetracingParamExists = true;
-						else if (evaluatedArgument.equals(EXPERIMENTAL_IMPLEMENTS))
-							this.experimentalImplementsParamExists = true;
-						else if (evaluatedArgument.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-							this.experimentalAutographOptionsParamExists = true;
-						else if (evaluatedArgument.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-							this.experimentaFollowTypeHintsParamExists = true;
-						else
-							throw new IllegalArgumentException("Unable to process tf.function argument.");
-					}
+					// We iterate over the tf.function's parameters positions.
+					if (tfFunctionPositionalArgs.length <= argumentIdDeclaringDefintion.size()) {
+						for (int i = 0; i < tfFunctionPositionalArgs.length; i++) {
+							// From the position i, we use the tf.function's definition to verify which parameter we are analyzing.
+							String evaluatedArgument = argumentIdDeclaringDefintion.get(i);
+
+							// Matching the arguments from the definition and the arguments from the code being analyzed.
+							if (evaluatedArgument.equals(FUNC))
+								this.funcParamExists = true;
+							else if (evaluatedArgument.equals(INPUT_SIGNATURE))
+								this.inputSignatureParamExists = true;
+							else if (evaluatedArgument.equals(AUTOGRAPH))
+								this.autoGraphParamExists = true;
+							// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
+							// deprecated name experimental_compile.
+							else if (evaluatedArgument.equals(JIT_COMPILE) || evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
+								this.jitCompileParamExists = true;
+							// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
+							// and deprecated name experimental_relax_shapes.
+							else if (evaluatedArgument.equals(REDUCE_RETRACING))
+								this.reduceRetracingParamExists = true;
+							else if (evaluatedArgument.equals(EXPERIMENTAL_RELAX_SHAPES))
+								this.reduceRetracingParamExists = true;
+							else if (evaluatedArgument.equals(EXPERIMENTAL_IMPLEMENTS))
+								this.experimentalImplementsParamExists = true;
+							else if (evaluatedArgument.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+								this.experimentalAutographOptionsParamExists = true;
+							else if (evaluatedArgument.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+								this.experimentaFollowTypeHintsParamExists = true;
+							else
+								throw new IllegalArgumentException("Unable to process tf.function argument at position " + i);
+						}
+					} else
+						throw new IllegalArgumentException(
+								"Unable to process tf.function argument. The number of arguments " + tfFunctionPositionalArgs.length
+										+ " exceeds the accepted number of argumets " + argumentIdDeclaringDefintion.size());
 
 					// Processing keywords arguments
 					// If we have keyword parameter, afterwards, we cannot have positional parameters because it would result in invalid
@@ -253,12 +260,12 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * Get the tf.function parameter names from the {@link Definition}.
+		 * Get the parameter names from the {@link Definition}.
 		 *
 		 * @param declaringDefinition The Definition to use.
 		 * @return An array with the names of the arguments given by {@link Definition}.
 		 */
-		private ArrayList<String> getTfFunctionPythonDefinitionArguments(Definition declaringDefinition) {
+		private ArrayList<String> getPythonDefinitionArguments(Definition declaringDefinition) {
 			// Python source arguments from the declaring definition
 			exprType[] declaringArguments = null;
 
