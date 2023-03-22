@@ -8,7 +8,7 @@ import java.util.Objects;
 
 /**
  * A specification of a Python function being tested.
- * 
+ *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public class FunctionUnderTest {
