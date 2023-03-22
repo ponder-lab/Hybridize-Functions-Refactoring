@@ -143,7 +143,7 @@ public class Function extends RefactorableProgramEntity {
 			decoratorsType tfFunctionDecorator = null;
 
 			// Declaring definitions of the decorator, if it contains multiple definitions there might be more than one in this set. Since
-			// we are dealing with tf.function, we expect only one.
+			// we are dealing with tf.function, we check we it has one definition.
 			Definition declaringDefinition = null;
 
 			// Iterate through the decorators of the function
@@ -186,35 +186,26 @@ public class Function extends RefactorableProgramEntity {
 
 						// Matching the arguments from the definition and the arguments from the code being analyzed.
 						if (evaluatedArgument.equals(FUNC))
-							// Found parameter func
 							this.funcParamExists = true;
 						else if (evaluatedArgument.equals(INPUT_SIGNATURE))
-							// Found parameter input_signature
 							this.inputSignatureParamExists = true;
 						else if (evaluatedArgument.equals(AUTOGRAPH))
-							// Found parameter autograph
 							this.autoGraphParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names jit_compile and
 						// deprecated name experimental_compile.
 						else if (evaluatedArgument.equals(JIT_COMPILE) || evaluatedArgument.equals(EXPERIMENTAL_COMPILE))
-							// Found parameter jit_compile/experimental_compile
 							this.jitCompileParamExists = true;
 						// In our accepted interval version ([2.0,2.11]) of the API allows parameter names reduce_retracing
 						// and deprecated name experimental_relax_shapes.
 						else if (evaluatedArgument.equals(REDUCE_RETRACING))
-							// Found parameter reduce_retracing
 							this.reduceRetracingParamExists = true;
 						else if (evaluatedArgument.equals(EXPERIMENTAL_RELAX_SHAPES))
-							// Found parameter experimental_relax_shapes
 							this.reduceRetracingParamExists = true;
 						else if (evaluatedArgument.equals(EXPERIMENTAL_IMPLEMENTS))
-							// Found parameter experimental_implements
 							this.experimentalImplementsParamExists = true;
 						else if (evaluatedArgument.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-							// Found parameter experimental_autograph_options
 							this.experimentalAutographOptionsParamExists = true;
 						else if (evaluatedArgument.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-							// Found parameter experimental_follow_type_hints
 							this.experimentaFollowTypeHintsParamExists = true;
 						else
 							throw new IllegalArgumentException("Unable to process tf.function argument.");
@@ -256,8 +247,6 @@ public class Function extends RefactorableProgramEntity {
 							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
 								// Found parameter experimental_follow_type_hints
 								this.experimentaFollowTypeHintsParamExists = true;
-							else
-								throw new IllegalArgumentException("Unable to process tf.function argument.");
 						}
 					}
 				} // else, tf.function is used without parameters.
