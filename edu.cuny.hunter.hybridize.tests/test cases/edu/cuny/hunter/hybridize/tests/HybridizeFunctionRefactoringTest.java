@@ -1624,14 +1624,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
 	}
 
-	private void checkParam(exprType[] actualParams) {
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("x", paramName);
-	}
-
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: Test tf.Tensor-like things?
