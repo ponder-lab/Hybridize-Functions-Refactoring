@@ -1751,8 +1751,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	/**
+	 * Test for #2. From https://www.tensorflow.org/guide/function#what_is_tracing.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter15() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest functionToTest = new FunctionUnderTest("double");
+		functionToTest.addParameters("a");
+		functionsToTest.add(functionToTest);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			assertNotNull(function);
+			assertEquals(fut.isHybrid(), function.isHybrid());
+
+			argumentsType params = function.getParameters();
+
+			exprType[] actualParams = params.args;
+			List<String> expectedParameters = fut.getParameters();
+			assertEquals(expectedParameters.size(), actualParams.length);
+
+			for (int i = 0; i < actualParams.length; i++) {
+				exprType actualParameter = actualParams[i];
+				assertNotNull(actualParameter);
+
+				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				assertEquals(expectedParameters.get(i), paramName);
+			}
+
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
+	// TODO: Left off at https://www.tensorflow.org/guide/function#controlling_retracing
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
+	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
+	// those to be refactored?
 
 	/**
 	 * Test a model. No tf.function in this one.
