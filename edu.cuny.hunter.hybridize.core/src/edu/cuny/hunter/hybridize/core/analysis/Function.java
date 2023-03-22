@@ -93,14 +93,15 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile and deprecated name experimental_compile. For
-		 * more information, you can see this <a href="https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function">URL</a>.
+		 * more information, you can see this
+		 * <a href="https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_compile">URL</a>.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing and deprecated name
 		 * experimental_relax_shapes. For more information, you can see this
-		 * <a href="https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function">URL</a>.
+		 * <a href="https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_relax_shapes">URL</a>.
 		 */
 		private boolean reduceRetracingParamExists;
 
@@ -245,24 +246,26 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile. Since jit_compile and
+		 * experimental_compile (deprecated) have the same functionalities, when we parse these parameters together it is stored into the
+		 * same boolean variable. For more information, you can see this link
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_compile
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_compile.
 		 */
 		public boolean hasExperimentalCompileParam() {
-			// Since jit_compile and experimental_compile (deprecated) have the same functionalities, when we parse these parameters
-			// together and store it into the same boolean variable.
 			return this.jitCompileParamExists;
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes. Since reduce_retracing and
+		 * experimental_relax_shapes (deprecated) have the same functionalities, when we parse these parameters together it is stored into
+		 * the same boolean variable. For more information, you can see this link
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_relax_shapes
 		 *
 		 * @return True iff this {@link Function} has parameter experimental_relax_shapes.
 		 */
 		public boolean hasExperimentalRelaxShapesParam() {
-			// Since reduce_retracing and experimental_relax_shapes (deprecated) have the same functionalities, when we parse these
-			// parameters together and store it into the same boolean variable.
 			return this.reduceRetracingParamExists;
 		}
 
