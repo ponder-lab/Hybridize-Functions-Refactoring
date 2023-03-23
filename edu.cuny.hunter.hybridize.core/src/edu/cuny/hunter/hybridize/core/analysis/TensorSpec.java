@@ -9,6 +9,11 @@ import java.util.Objects;
  */
 public class TensorSpec {
 
+	public enum Dtype {
+		float16, float32, float64, int32, int64, uint8, uint16, uint32, uint64, int16, int8, complex64, complex128, string, bool, qint8,
+		quint8, qint16, quint16, qint32, bfloat16, half, resource, variant
+	}
+
 	/**
 	 * Shape of the tensor being described by {@link TensorSpec}.
 	 */
@@ -17,15 +22,15 @@ public class TensorSpec {
 	/**
 	 * Type of the tensor being described by {@link TensorSpec}.
 	 */
-	private String dtype;
+	private Dtype dtype;
 
 	public TensorSpec() {
 		// Initialize to empty list
 		this.shape = new ArrayList<>();
-		this.dtype = "";
+		this.dtype = Dtype.float32;
 	}
 
-	public TensorSpec(List<Integer> s, String d) {
+	public TensorSpec(List<Integer> s, Dtype d) {
 		this.shape = s;
 		this.dtype = d;
 	}
@@ -42,9 +47,9 @@ public class TensorSpec {
 	/**
 	 * Dtype of {@link TensorSpec}.
 	 *
-	 * @return String of this {@link TensorSpec} dtype.
+	 * @return Dtype of this {@link TensorSpec} dtype.
 	 */
-	public String getDType() {
+	public Dtype getDType() {
 		return this.dtype;
 	}
 
@@ -58,7 +63,7 @@ public class TensorSpec {
 	/**
 	 * Set dtype of {@link TensorSpec}.
 	 */
-	public void setDType(String d) {
+	public void setDType(Dtype d) {
 		this.dtype = d;
 	}
 

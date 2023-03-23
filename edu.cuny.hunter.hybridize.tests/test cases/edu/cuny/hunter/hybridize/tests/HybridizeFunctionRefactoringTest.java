@@ -92,6 +92,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function.TfAutographExperimentalF
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.TensorSpec;
+import edu.cuny.hunter.hybridize.core.analysis.TensorSpec.Dtype;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -867,7 +868,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		List<Integer> shape = new ArrayList<>();
-		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		ArrayList<TensorSpec> tensors = new ArrayList<>();
 		tensors.add(tensor);
 
@@ -894,8 +895,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		List<Integer> shape = Arrays.asList(2, 2);
-
-		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -946,7 +946,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		List<Integer> shape = new ArrayList<>();
-		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -1375,7 +1375,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		List<Integer> shape = new ArrayList<>();
-		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -1479,7 +1479,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec(null, "tf.float32");
+		List<Integer> shape = new ArrayList<>();
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
@@ -1508,8 +1509,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		List<Integer> shape = Arrays.asList(2, 2);
-
-		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()

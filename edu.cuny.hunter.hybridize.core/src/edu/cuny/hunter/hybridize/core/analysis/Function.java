@@ -29,6 +29,7 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
+import edu.cuny.hunter.hybridize.core.analysis.TensorSpec.Dtype;
 
 /**
  * A representation of a Python function.
@@ -361,6 +362,66 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		/**
+		 * Classifies the dtype of TensorSpec to return a dtype of the TensorSpec autograph options.
+		 *
+		 * @return Dtype of TensorSpec.
+		 */
+		private Dtype determineDtypeForAutographOptions(String typeString) {
+
+			if (typeString.equals("bfloat16"))
+				return Dtype.bfloat16;
+			else if (typeString.equals("bool"))
+				return Dtype.bool;
+			else if (typeString.equals("complex128"))
+				return Dtype.complex128;
+			else if (typeString.equals("complex64"))
+				return Dtype.complex64;
+			else if (typeString.equals("float16"))
+				return Dtype.float16;
+			else if (typeString.equals("float32"))
+				return Dtype.float32;
+			else if (typeString.equals("float64"))
+				return Dtype.float64;
+			else if (typeString.equals("half"))
+				return Dtype.half;
+			else if (typeString.equals("int16"))
+				return Dtype.int16;
+			else if (typeString.equals("int32"))
+				return Dtype.int32;
+			else if (typeString.equals("int64"))
+				return Dtype.int64;
+			else if (typeString.equals("int8"))
+				return Dtype.int8;
+			else if (typeString.equals("qint16"))
+				return Dtype.qint16;
+			else if (typeString.equals("qint32"))
+				return Dtype.qint32;
+			else if (typeString.equals("qint8"))
+				return Dtype.qint8;
+			else if (typeString.equals("quint16"))
+				return Dtype.quint16;
+			else if (typeString.equals("quint8"))
+				return Dtype.quint8;
+			else if (typeString.equals("resource"))
+				return Dtype.resource;
+			else if (typeString.equals("string"))
+				return Dtype.string;
+			else if (typeString.equals("uint16"))
+				return Dtype.uint16;
+			else if (typeString.equals("uint32"))
+				return Dtype.uint32;
+			else if (typeString.equals("uint64"))
+				return Dtype.uint64;
+			else if (typeString.equals("uint8"))
+				return Dtype.uint8;
+			else if (typeString.equals("variant"))
+				return Dtype.variant;
+			else
+				return null;
+
+		}
+
+		/**
 		 * Parses expressions to retrieve information about the TensorSpecs for input signature.
 		 *
 		 * @return Array of TensorSpecs with the parsed information.
@@ -383,7 +444,8 @@ public class Function extends RefactorableProgramEntity {
 								tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
 							else if (tensorArg instanceof Attribute) {
 								Attribute attrValue = (Attribute) tensorArg;
-								tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+								Dtype dtype = determineDtypeForAutographOptions(((NameTok) attrValue.attr).id);
+								tensor.setDType(dtype);
 							} else
 								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 						}
@@ -396,7 +458,8 @@ public class Function extends RefactorableProgramEntity {
 								tensor.setShape(processTupleOrListForShape(((List) keyword.value).elts));
 							else if (keyword.value instanceof Attribute) {
 								Attribute attrValue = (Attribute) keyword.value;
-								tensor.setDType(((Name) attrValue.value).id + "." + ((NameTok) attrValue.attr).id);
+								Dtype dtype = determineDtypeForAutographOptions(((NameTok) attrValue.attr).id);
+								tensor.setDType(dtype);
 							} else {
 								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 							}
