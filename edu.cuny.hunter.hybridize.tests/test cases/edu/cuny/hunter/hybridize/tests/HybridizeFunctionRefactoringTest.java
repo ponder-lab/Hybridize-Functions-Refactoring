@@ -1825,6 +1825,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
+	// TODO: Model code w/o client code (use contexts).
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
 	// those to be refactored?
 
