@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -19,7 +20,7 @@ public class TensorSpec {
 	private String dtype;
 
 	public TensorSpec() {
-		this.shape = null;
+		this.shape = new ArrayList<>();
 		this.dtype = "";
 	}
 
