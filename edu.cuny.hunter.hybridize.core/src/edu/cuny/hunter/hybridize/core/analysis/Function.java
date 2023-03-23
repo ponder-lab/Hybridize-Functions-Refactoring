@@ -38,10 +38,14 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
  */
 public class Function extends RefactorableProgramEntity {
 
+	public enum TfAutographExperimentalFeature {
+		ALL, AUTO_CONTROL_DEPS, ASSERT_STATEMENTS, BUILTIN_FUNCTIONS, EQUALITY_OPERATORS, LISTS, NAME_SCOPES
+	}
+
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
-	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in
-	 * the documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
+	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in the
+	 * documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/tf.function-parameter's-version-information to see more
 	 * information about the tf.function parameters according to the versions.
 	 */
@@ -81,9 +85,10 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options. The values could be an optional
-		 * tuple or value of tf.autograph.experimental.Feature values or None.
+		 * tuple or value of tf.autograph.experimental.Feature values (<code>tf.autograph.experimental.Feature.EQUALITY_OPERATORS</code>)or
+		 * None.
 		 */
-		private String experimentalAutographOptionsParam;
+		private java.util.List<TfAutographExperimentalFeature> experimentalAutographOptionsParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements. The value could be None or a name of a
@@ -101,7 +106,7 @@ public class Function extends RefactorableProgramEntity {
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature. The value could be None, or a possibly nested
 		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function.
 		 */
-		private ArrayList<TensorSpec> inputSignatureParam;
+		private java.util.List<TensorSpec> inputSignatureParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True. null
@@ -164,10 +169,7 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None") // Checking only literals
-										// Default value
-										this.inputSignatureParam = null;
-									else
+									if (value.id != "None") // Checking only literals
 										throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 									// Example: (tf.TensorSpec(shape=[None], dtype=tf.float32),)
 								} else if (keyword.value instanceof Tuple) {
@@ -189,12 +191,9 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "True")// Checking only literals
-										// Default value
-										this.autoGraphParam = true;
-									else if (value.id == "False")
+									if (value.id == "False")
 										this.autoGraphParam = false;
-									else
+									else if (value.id != "True")
 										throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
@@ -211,10 +210,7 @@ public class Function extends RefactorableProgramEntity {
 										this.jitCompileParam = true;
 									else if (value.id == "False")
 										this.jitCompileParam = false;
-									else if (value.id == "None")
-										// Default value
-										this.jitCompileParam = null;
-									else
+									else if (value.id != "None")
 										throw new IllegalArgumentException(
 												"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
 								} else {
@@ -231,10 +227,7 @@ public class Function extends RefactorableProgramEntity {
 									Name value = (Name) keyword.value;
 									if (value.id == "True") // Checking only literals
 										this.reduceRetracingParam = true;
-									else if (value.id == "False") // Checking only literals
-										// Default value
-										this.reduceRetracingParam = false;
-									else
+									else if (value.id != "False") // Checking only literals
 										throw new IllegalArgumentException(
 												"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
 								} else {
@@ -250,45 +243,38 @@ public class Function extends RefactorableProgramEntity {
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None") // Checking only literals
-										// Default value
-										this.experimentalImplementsParam = null;
-									else
+									if (value.id != "None") // Checking only literals
 										throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
 								}
 							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
+								java.util.List<TfAutographExperimentalFeature> autographExperimental = new ArrayList<>();
 								// Found parameter experimental_autograph_options
 								// Example of value: tf.autograph.experimental.Feature.EQUALITY_OPERATORS
 								if (keyword.value instanceof Attribute) {
 									Attribute keywordAttribute = (Attribute) keyword.value;
-									this.experimentalAutographOptionsParam = processAttributeForAutographOptions(keywordAttribute);
+									autographExperimental.add(processAttributeForAutographOptions(keywordAttribute));
+									this.experimentalAutographOptionsParam = autographExperimental;
 									// Example of value: (tf.autograph.experimental.Feature.EQUALITY_OPERATORS,
 									// tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)
 								} else if (keyword.value instanceof Tuple) {
 									Tuple keywordTuple = (Tuple) keyword.value;
 									exprType[] keywordExpr = keywordTuple.elts;
-									String finalTuple = "";
-									int count = 0;
 									for (exprType expr : keywordExpr) {
 										if (expr instanceof Attribute) {
 											Attribute keywordAttribute = (Attribute) expr;
-											if (count == 0)
-												finalTuple += processAttributeForAutographOptions(keywordAttribute);
-											else
-												finalTuple += ", " + processAttributeForAutographOptions(keywordAttribute);
+											autographExperimental.add(processAttributeForAutographOptions(keywordAttribute));
+										} else {
+											throw new IllegalArgumentException(
+													"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
 										}
-										count++;
 									}
-									this.experimentalAutographOptionsParam = "(" + finalTuple + ")";
+									this.experimentalAutographOptionsParam = autographExperimental;
 									// Example of value: None
 								} else if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None") // Checking only literals
-										// Default value
-										this.experimentalAutographOptionsParam = null;
-									else
+									if (value.id != "None") // Checking only literals
 										throw new IllegalArgumentException(
 												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
 								} else {
@@ -300,14 +286,11 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: True, False, None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None") // Checking only literals
-										// Default value
-										this.experimentaFollowTypeHintsParam = null;
-									else if (value.id == "True") // Checking only literals
+									if (value.id == "True") // Checking only literals
 										this.experimentaFollowTypeHintsParam = true;
 									else if (value.id == "False") // Checking only literals
 										this.experimentaFollowTypeHintsParam = false;
-									else
+									else if (value.id != "None")
 										throw new IllegalArgumentException(
 												"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " argument.");
 								} else {
@@ -325,27 +308,20 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return String of TensorSpec shape.
 		 */
-		private String processTupleOrListForShape(exprType[] exprTupleOrList) {
-			int count = 0;
-			String tempString = "";
+		private java.util.List<Integer> processTupleOrListForShape(exprType[] exprTupleOrList) {
+			java.util.List<Integer> shape = new ArrayList<>();
 
 			for (exprType expr : exprTupleOrList) {
 				if (expr instanceof Num) {
-					if (count == 0)
-						tempString += ((Num) expr).num;
-					else
-						tempString += ", " + ((Num) expr).num;
-					count++;
+					shape.add(((Num) expr).type);
 				} else if (expr instanceof Name) {
-					if (((Name) expr).id == "None") // Checking only literals
-						tempString = ((Name) expr).id;
-					else
+					if (((Name) expr).id != "None") // Checking only literals
 						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 				} else
 					throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
 			}
 
-			return tempString;
+			return shape;
 
 		}
 
@@ -354,21 +330,34 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return String of autograph options that contains various attributes.
 		 */
-		private String processAttributeForAutographOptions(Attribute keywordAttribute) {
-			StringBuilder argument = new StringBuilder();
+		private TfAutographExperimentalFeature processAttributeForAutographOptions(Attribute keywordAttribute) {
+			String attributeEnum;
 			Attribute tempAttr = keywordAttribute;
 
-			while (tempAttr.value instanceof Attribute) {
+			if (tempAttr.value instanceof Attribute) {
 				NameTok valueAttribute = (NameTok) tempAttr.attr;
-				argument.insert(0, valueAttribute.id);
-				argument.insert(0, ".");
-				if (tempAttr.value instanceof Attribute)
-					tempAttr = (Attribute) tempAttr.value;
-				else
-					throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
-			}
+				attributeEnum = valueAttribute.id;
+			} else
+				throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
 
-			return ((Name) tempAttr.value).id + "." + ((NameTok) tempAttr.attr).id + argument.toString();
+			LOG.info(attributeEnum);
+
+			if (attributeEnum.equals("ALL"))
+				return TfAutographExperimentalFeature.ALL;
+			else if (attributeEnum.equals("AUTO_CONTROL_DEPS"))
+				return TfAutographExperimentalFeature.AUTO_CONTROL_DEPS;
+			else if (attributeEnum.equals("ASSERT_STATEMENTS"))
+				return TfAutographExperimentalFeature.ASSERT_STATEMENTS;
+			else if (attributeEnum.equals("BUILTIN_FUNCTIONS"))
+				return TfAutographExperimentalFeature.BUILTIN_FUNCTIONS;
+			else if (attributeEnum.equals("EQUALITY_OPERATORS"))
+				return TfAutographExperimentalFeature.EQUALITY_OPERATORS;
+			else if (attributeEnum.equals("LISTS"))
+				return TfAutographExperimentalFeature.LISTS;
+			else if (attributeEnum.equals("NAME_SCOPES"))
+				return TfAutographExperimentalFeature.NAME_SCOPES;
+			else
+				return null;
 		}
 
 		/**
@@ -518,7 +507,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return String of this {@link decoratorType} parameter experimental_autograph_options.
 		 */
-		public String getExperimentalAutographOptArg() {
+		public java.util.List<TfAutographExperimentalFeature> getExperimentalAutographOptArg() {
 			return this.experimentalAutographOptionsParam;
 		}
 
@@ -554,7 +543,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return ArrayList of TensorSpecs of this {@link decoratorType} parameter input_signature.
 		 */
-		public ArrayList<TensorSpec> getInputSignatureArg() {
+		public java.util.List<TensorSpec> getInputSignatureArg() {
 			return this.inputSignatureParam;
 		}
 

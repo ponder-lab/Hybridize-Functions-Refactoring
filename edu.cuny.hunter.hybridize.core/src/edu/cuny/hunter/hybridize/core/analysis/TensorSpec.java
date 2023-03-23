@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -10,7 +11,7 @@ public class TensorSpec {
 	/**
 	 * Shape of the tensor being described by {@link TensorSpec}.
 	 */
-	private String shape;
+	private List<Integer> shape;
 
 	/**
 	 * Type of the tensor being described by {@link TensorSpec}.
@@ -18,11 +19,11 @@ public class TensorSpec {
 	private String dtype;
 
 	public TensorSpec() {
-		this.shape = "";
+		this.shape = null;
 		this.dtype = "";
 	}
 
-	public TensorSpec(String s, String d) {
+	public TensorSpec(List<Integer> s, String d) {
 		this.shape = s;
 		this.dtype = d;
 	}
@@ -30,9 +31,9 @@ public class TensorSpec {
 	/**
 	 * Shape of {@link TensorSpec}.
 	 *
-	 * @return String of this {@link TensorSpec} shape.
+	 * @return List of dimensions (null if the shape is unspecified) of this {@link TensorSpec} shape.
 	 */
-	public String getShape() {
+	public List<Integer> getShape() {
 		return this.shape;
 	}
 
@@ -48,7 +49,7 @@ public class TensorSpec {
 	/**
 	 * Set shape of {@link TensorSpec}.
 	 */
-	public void setShape(String s) {
+	public void setShape(List<Integer> s) {
 		this.shape = s;
 	}
 

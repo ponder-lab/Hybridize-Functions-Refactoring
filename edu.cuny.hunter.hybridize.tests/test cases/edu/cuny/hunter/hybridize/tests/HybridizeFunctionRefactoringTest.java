@@ -88,6 +88,7 @@ import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo
 
 import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.Function.TfAutographExperimentalFeature;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.TensorSpec;
@@ -865,7 +866,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("None", "tf.float32");
+		TensorSpec tensor = new TensorSpec(null, "tf.float32");
 		ArrayList<TensorSpec> tensors = new ArrayList<>();
 		tensors.add(tensor);
 
@@ -891,9 +892,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("2, 2", "tf.float32");
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
+		List<Integer> shape = Arrays.asList(2, 2);
+
+		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -918,9 +920,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(args);
 
 		TensorSpec tensor = new TensorSpec();
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
-		tensors.add(tensor);
+		List<TensorSpec> tensors = Arrays.asList(tensor, tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -944,9 +944,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("", "tf.float32");
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
+		TensorSpec tensor = new TensorSpec(null, "tf.float32");
+		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -1187,10 +1186,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		List<TfAutographExperimentalFeature> feature = Arrays.asList(TfAutographExperimentalFeature.EQUALITY_OPERATORS);
+
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("tf.autograph.experimental.Feature.EQUALITY_OPERATORS", args.getExperimentalAutographOptArg());
+			assertEquals(feature, args.getExperimentalAutographOptArg());
 	}
 
 	/**
@@ -1210,10 +1211,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		List<TfAutographExperimentalFeature> feature = Arrays.asList(TfAutographExperimentalFeature.ALL);
+
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("tf.autograph.experimental.Feature.ALL", args.getExperimentalAutographOptArg());
+			assertEquals(feature, args.getExperimentalAutographOptArg());
 	}
 
 	/**
@@ -1233,11 +1236,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		List<TfAutographExperimentalFeature> feature = Arrays.asList(TfAutographExperimentalFeature.EQUALITY_OPERATORS,
+				TfAutographExperimentalFeature.BUILTIN_FUNCTIONS);
+
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam())
-			assertEquals("(tf.autograph.experimental.Feature.EQUALITY_OPERATORS, tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)",
-					args.getExperimentalAutographOptArg());
+			assertEquals(feature, args.getExperimentalAutographOptArg());
 	}
 
 	/**
@@ -1367,9 +1372,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("None", "tf.float32");
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
+		TensorSpec tensor = new TensorSpec(null, "tf.float32");
+		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -1472,9 +1476,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("None", "tf.float32");
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
+		TensorSpec tensor = new TensorSpec(null, "tf.float32");
+		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -1501,9 +1504,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		TensorSpec tensor = new TensorSpec("2, 2", "tf.float32");
-		ArrayList<TensorSpec> tensors = new ArrayList<>();
-		tensors.add(tensor);
+		List<Integer> shape = Arrays.asList(2, 2);
+
+		TensorSpec tensor = new TensorSpec(shape, "tf.float32");
+		List<TensorSpec> tensors = Arrays.asList(tensor);
 
 		if (!args.hasFuncParam() && args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
@@ -1626,11 +1630,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
+		List<TfAutographExperimentalFeature> feature = Arrays.asList(TfAutographExperimentalFeature.EQUALITY_OPERATORS,
+				TfAutographExperimentalFeature.BUILTIN_FUNCTIONS);
+
 		if (!args.hasFuncParam() && !args.hasInputSignatureParam() & !args.hasAutoGraphParam() && !args.hasJitCompileParam()
 				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && args.hasExperimentalAutographOptParam()
 				&& !args.hasExperimentalFollowTypeHintsParam()) {
-			assertEquals("(tf.autograph.experimental.Feature.EQUALITY_OPERATORS, tf.autograph.experimental.Feature.BUILTIN_FUNCTIONS)",
-					args.getExperimentalAutographOptArg());
+			assertEquals(feature, args.getExperimentalAutographOptArg());
 		}
 	}
 
@@ -2442,8 +2448,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__.
-	 * See https://github.com/wala/ML/issues/24.
+	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__. See
+	 * https://github.com/wala/ML/issues/24.
 	 */
 	@Test
 	public void testModel2() throws Exception {
