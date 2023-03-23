@@ -164,7 +164,10 @@ public class Function extends RefactorableProgramEntity {
 						if (potentialDeclaringDefitinion.iterator().hasNext())
 							declaringDefinition = potentialDeclaringDefitinion.iterator().next();
 						else
-							throw new IllegalStateException("Can't determine tf.function decorator defintion.");
+							throw new IllegalStateException(String.format(
+									"Can't find declaring definition for selection: %s in line: %s, file: %s, and project: %s.",
+									selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(),
+									Function.this.containingFile.getName(), Function.this.nature.getProject()));
 					}
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
