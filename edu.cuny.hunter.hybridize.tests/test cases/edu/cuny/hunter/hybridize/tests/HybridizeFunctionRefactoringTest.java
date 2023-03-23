@@ -1795,7 +1795,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
-	// TODO: Left off at https://www.tensorflow.org/guide/function#controlling_retracing
+	/**
+	 * Test for #2. From https://tensorflow.org/guide/function#autograph_transformations.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter16() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest functionToTest = new FunctionUnderTest("f", "x");
+		functionsToTest.add(functionToTest);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			fut.compareTo(function);
+
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
