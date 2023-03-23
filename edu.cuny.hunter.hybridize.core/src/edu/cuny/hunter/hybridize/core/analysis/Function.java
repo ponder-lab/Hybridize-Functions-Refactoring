@@ -313,7 +313,7 @@ public class Function extends RefactorableProgramEntity {
 
 			for (exprType expr : exprTupleOrList) {
 				if (expr instanceof Num) {
-					shape.add(((Num) expr).type);
+					shape.add(Integer.parseInt(((Num) expr).num));
 				} else if (expr instanceof Name) {
 					if (((Name) expr).id != "None") // Checking only literals
 						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");

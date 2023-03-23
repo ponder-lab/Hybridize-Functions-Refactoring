@@ -20,6 +20,7 @@ public class TensorSpec {
 	private String dtype;
 
 	public TensorSpec() {
+		// Initialize to empty list
 		this.shape = new ArrayList<>();
 		this.dtype = "";
 	}
