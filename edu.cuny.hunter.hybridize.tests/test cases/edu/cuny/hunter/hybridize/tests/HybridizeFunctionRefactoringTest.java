@@ -1823,6 +1823,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	/**
+	 * Test for #2. From https://www.tensorflow.org/guide/function#executing_python_side_effects. The parameters here are ints and not
+	 * tensor-like.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter17() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest functionToTest = new FunctionUnderTest("f", "x");
+		functionsToTest.add(functionToTest);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			fut.compareTo(function);
+
+			assertFalse("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
+	// TODO: Left off at https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables. The model is not going to work
+	// because call() is called implicitly. See https://github.com/wala/ML/issues/24.
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: Model code w/o client code (use contexts).
