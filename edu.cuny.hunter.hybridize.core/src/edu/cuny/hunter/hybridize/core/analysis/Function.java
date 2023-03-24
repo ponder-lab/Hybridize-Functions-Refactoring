@@ -86,14 +86,14 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options. The values could be an optional
-		 * tuple or value of tf.autograph.experimental.Feature values (<code>tf.autograph.experimental.Feature.EQUALITY_OPERATORS</code>)or
-		 * None.
+		 * tuple or value of tf.autograph.experimental.Feature values (e.g.
+		 * <code>tf.autograph.experimental.Feature.EQUALITY_OPERATORS</code>) or None.
 		 */
 		private java.util.List<TfAutographExperimentalFeature> experimentalAutographOptionsParam;
 
 		/**
 		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements. The value could be None or a name of a
-		 * "known" function this implements.
+		 * "known" function this implements (e.g. <code>embedded_matmul</code>).
 		 */
 		private String experimentalImplementsParam;
 
@@ -157,10 +157,7 @@ public class Function extends RefactorableProgramEntity {
 								// Example of value: Name of function or None
 								if (keyword.value instanceof Name) {
 									Name value = (Name) keyword.value;
-									if (value.id == "None") // Checking only literals
-										// Default value
-										this.funcParam = null;
-									else
+									if (value.id != "None") // Checking only literals
 										throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
 								} else {
 									throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
