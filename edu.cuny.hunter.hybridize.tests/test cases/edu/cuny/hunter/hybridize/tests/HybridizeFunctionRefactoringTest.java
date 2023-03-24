@@ -1854,6 +1854,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	// TODO: Left off at https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables. The model is not going to work
 	// because call() is called implicitly. See https://github.com/wala/ML/issues/24.
+
+	/**
+	 * Test for #2. From https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#features. Example with closures.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter18() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		FunctionUnderTest functionToTest = new FunctionUnderTest("f");
+		functionsToTest.add(functionToTest);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<Function>> nameToFunctions = functions.stream().collect(Collectors.groupingBy(Function::getSimpleName));
+		assertEquals(functionsToTest.size(), nameToFunctions.size());
+
+		for (FunctionUnderTest fut : functionsToTest) {
+			List<Function> functionList = nameToFunctions.get(fut.getName());
+			assertEquals(1, functionList.size());
+
+			Function function = functionList.iterator().next();
+			fut.compareTo(function);
+
+			// NOTE: Not sure about this. Does WALA find closures? What really is the difference between having explicit parameters and
+			// implicit ones? We still need to examine the calling contexts to get any info.
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+		}
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: Model code w/o client code (use contexts).
