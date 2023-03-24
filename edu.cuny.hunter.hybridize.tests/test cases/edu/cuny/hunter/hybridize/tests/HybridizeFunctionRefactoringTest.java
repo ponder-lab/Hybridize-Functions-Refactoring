@@ -1848,7 +1848,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			assertFalse("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.likelyHasTensorParameter());
 		}
 	}
 
