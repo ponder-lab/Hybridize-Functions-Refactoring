@@ -11,5 +11,3 @@ updates:
       interval: "weekly"
     ignore:
       - dependency-name: "tensorflow*"
-      - update-types: "all"
-      - versions: "*"
