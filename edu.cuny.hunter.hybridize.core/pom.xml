@@ -3,9 +3,9 @@
   <artifactId>edu.cuny.hunter.hybridize.core</artifactId>
   <packaging>eclipse-plugin</packaging>
   <parent>
-  	<groupId>edu.cuny.hunter.hybridize</groupId>
-  	<artifactId>edu.cuny.hunter.hybridize</artifactId>
-  	<version>1.0.0-SNAPSHOT</version>
-  	<relativePath>..</relativePath>
+    <groupId>edu.cuny.hunter.hybridize</groupId>
+    <artifactId>edu.cuny.hunter.hybridize</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <relativePath>..</relativePath>
   </parent>
 </project>
