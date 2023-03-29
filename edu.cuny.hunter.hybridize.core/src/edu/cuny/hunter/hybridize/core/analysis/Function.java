@@ -4,11 +4,14 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Objects;
+import java.util.Set;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -278,10 +281,23 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private File containingFile;
 
+	private Set<Transformation> transformationSet;
+
+	// private InstanceKey instanceKey;
+
 	/**
 	 * Nature of {@link FunctionDefinition}.
 	 */
 	private IPythonNature nature;
+
+	private PreconditionSuccess passingPrecondition;
+
+	/**
+	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive.
+	 */
+	private Refactoring refactoring;
+
+	private RefactoringStatus status = new RefactoringStatus();
 
 	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
 		this.functionDefinition = fd;
@@ -563,5 +579,13 @@ public class Function extends RefactorableProgramEntity {
 
 	public argumentsType getParameters() {
 		return getFunctionDefinition().getFunctionDef().args;
+	}
+
+	public RefactoringStatus getStatus() {
+		return this.status;
+	}
+
+	public IProject getProject() {
+		return this.getFunctionDefinition().getProject();
 	}
 }

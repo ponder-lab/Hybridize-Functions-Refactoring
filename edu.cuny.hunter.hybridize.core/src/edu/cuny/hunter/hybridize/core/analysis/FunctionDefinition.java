@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import java.io.File;
 import java.util.Objects;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -91,5 +92,13 @@ public final class FunctionDefinition {
 
 	public FunctionDef getFunctionDef() {
 		return functionDef;
+	}
+
+	public IPythonNature getNature() {
+		return nature;
+	}
+
+	public IProject getProject() {
+		return this.getNature().getProject();
 	}
 }
