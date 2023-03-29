@@ -8,4 +8,11 @@
     <version>1.0.0-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
+  <dependencies>
+    <dependency>
+      <groupId>com.ibm.wala</groupId>
+      <artifactId>com.ibm.wala.cast.python.ml</artifactId>
+    </dependency>
+  </dependencies>
 </project>
+
