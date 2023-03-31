@@ -93,14 +93,14 @@ public class Function extends RefactorableProgramEntity {
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile and deprecated name experimental_compile. For
-		 * more information, you can see this https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_compile.
+		 * more information, you can see this https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#jit_compile.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing and deprecated name
 		 * experimental_relax_shapes. For more information, you can see this
-		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_relax_shapes
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#reduce_retracing
 		 */
 		private boolean reduceRetracingParamExists;
 
