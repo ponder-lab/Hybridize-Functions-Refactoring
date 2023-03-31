@@ -9,6 +9,9 @@ import java.util.Objects;
  */
 public class TensorSpec {
 
+	/**
+	 * Represents the type of the elements in a Tensor.
+	 */
 	public enum Dtype {
 		float16, float32, float64, int32, int64, uint8, uint16, uint32, uint64, int16, int8, complex64, complex128, string, bool, qint8,
 		quint8, qint16, quint16, qint32, bfloat16, half, resource, variant
@@ -17,7 +20,7 @@ public class TensorSpec {
 	/**
 	 * Shape of the tensor being described by {@link TensorSpec}.
 	 */
-	private List<Integer> shape;
+	private List<Object> shape;
 
 	/**
 	 * Type of the tensor being described by {@link TensorSpec}.
@@ -30,7 +33,7 @@ public class TensorSpec {
 		this.dtype = Dtype.float32;
 	}
 
-	public TensorSpec(List<Integer> s, Dtype d) {
+	public TensorSpec(List<Object> s, Dtype d) {
 		this.shape = s;
 		this.dtype = d;
 	}
@@ -40,7 +43,7 @@ public class TensorSpec {
 	 *
 	 * @return List of dimensions (null if the shape is unspecified) of this {@link TensorSpec} shape.
 	 */
-	public List<Integer> getShape() {
+	public List getShape() {
 		return this.shape;
 	}
 
@@ -56,7 +59,7 @@ public class TensorSpec {
 	/**
 	 * Set shape of {@link TensorSpec}.
 	 */
-	public void setShape(List<Integer> s) {
+	public void setShape(List<Object> s) {
 		this.shape = s;
 	}
 

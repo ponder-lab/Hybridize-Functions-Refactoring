@@ -867,7 +867,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = new ArrayList<>();
+		List<Object> shape = Arrays.asList("None");
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		ArrayList<TensorSpec> tensors = new ArrayList<>();
 		tensors.add(tensor);
@@ -894,7 +894,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = Arrays.asList(2, 2);
+		List<Object> shape = Arrays.asList(2, 2);
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
@@ -945,7 +945,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = new ArrayList<>();
+		List<Object> shape = new ArrayList<>();
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
@@ -1374,7 +1374,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = new ArrayList<>();
+		List<Object> shape = Arrays.asList("None");
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
@@ -1479,7 +1479,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = new ArrayList<>();
+		List<Object> shape = new ArrayList<>();
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
@@ -1508,7 +1508,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		List<Integer> shape = Arrays.asList(2, 2);
+		List<Object> shape = Arrays.asList(2, 2);
 		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
 		List<TensorSpec> tensors = Arrays.asList(tensor);
 
