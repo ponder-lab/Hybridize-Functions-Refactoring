@@ -1668,6 +1668,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #136. This simply tests whether we can get the tf.function argument input_signature.
+	 */
+	@Test
+	public void testDecoratorArguments36() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		List<Object> shape = Arrays.asList("None", 2);
+		TensorSpec tensor = new TensorSpec(shape, Dtype.float32);
+		List<TensorSpec> tensors = Arrays.asList(tensor);
+
+		if (!args.hasFuncParam() && args.hasInputSignatureParam() & args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptParam()
+				&& !args.hasExperimentalFollowTypeHintsParam()) {
+			assertTrue(tensors.equals(args.getInputSignatureArg()));
+			assertFalse(args.getAutoGraphArg());
+		}
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
