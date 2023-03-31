@@ -53,7 +53,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitions, IProgressMonitor monitor)
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
@@ -62,7 +62,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (functions != null) {
 			Set<Function> functionSet = this.getFunctions();
 
-			for (FunctionDefinition fd : functionDefinitions) {
+			for (FunctionDefinition fd : functionDefinitionSet) {
 				Function function = new Function(fd, monitor);
 
 				// Add the Function to the Function set.
