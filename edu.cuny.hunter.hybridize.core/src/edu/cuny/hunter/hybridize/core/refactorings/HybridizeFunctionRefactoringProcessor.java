@@ -100,8 +100,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			status.merge(checkParameters(func));
 			status.merge(checkDecorators(func));
-
-			subMonitor.worked(1);
 		}
 
 		return status;
