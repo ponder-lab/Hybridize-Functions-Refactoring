@@ -2,6 +2,7 @@
 <?pde version="3.8"?>
 <target name="ML">
 	<locations>
+		<location path="${eclipse_home}" type="Profile"/>
 		<location includeDependencyDepth="direct" includeDependencyScopes="compile,provided,runtime,test,system,import" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
