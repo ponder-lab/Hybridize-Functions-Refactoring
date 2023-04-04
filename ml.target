@@ -5,7 +5,7 @@
 		<location includeDependencyDepth="direct" includeDependencyScopes="compile,provided,runtime,test,system,import" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
-					<groupId>com.ibm.wala</groupId>
+					<groupId>com.github.ponder-lab.ML</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
 					<version>0.0.1-SNAPSHOT</version>
 					<type>jar</type>
