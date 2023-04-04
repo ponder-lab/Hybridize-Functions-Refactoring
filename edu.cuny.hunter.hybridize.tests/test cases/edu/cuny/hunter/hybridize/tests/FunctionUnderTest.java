@@ -1,13 +1,12 @@
 package edu.cuny.hunter.hybridize.tests;
 
-import java.util.List;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -87,7 +86,7 @@ public class FunctionUnderTest {
 
 	/**
 	 * Tests that the given {@link Function} matches the one we expect to test, i.e., this {@link FunctionUnderTest}.
-	 * 
+	 *
 	 * @param function The actual {@link Function}.
 	 */
 	public void compareTo(Function function) {
