@@ -31,6 +31,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
+import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
@@ -94,35 +95,41 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		SubMonitor subMonitor = SubMonitor.convert(monitor, Messages.Analyzing, IProgressMonitor.UNKNOWN);
 		TimeCollector timeCollector = this.getExcludedTimeCollector();
 
-		Set<Function> functions = this.getFunctions();
+		Set<Function> allFunctions = this.getFunctions();
 
 		// collect the projects to be analyzed.
-		Map<IProject, Set<Function>> projectToFunctions = functions.stream().filter(f -> f.getStatus().isOK())
+		Map<IProject, Set<Function>> projectToFunctions = allFunctions.stream().filter(f -> f.getStatus().isOK())
 				.collect(Collectors.groupingBy(Function::getProject, Collectors.toSet()));
 
 		// process each project.
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
 
-		// create the analysis engine for the project.
-		// exclude from the analysis because the IR will be built here.
-		timeCollector.start();
-		PythonTensorAnalysisEngine e = new PythonTensorAnalysisEngine();
+		for (IProject project : projectToFunctions.keySet()) {
 
-		LOG.info("Checking " + functions.size() + " function" + (functions.size() > 1 ? "s" : "") + ".");
-		subMonitor = SubMonitor.convert(monitor, Messages.CheckingFunctions, functions.size());
+			// create the analysis engine for the project.
+			// exclude from the analysis because the IR will be built here.
+			timeCollector.start();
+			PythonTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			timeCollector.stop();
 
-		for (Function func : functions) {
-			LOG.info("Checking function: " + func + ".");
+			Set<Function> projectFunctions = projectToFunctions.get(project);
 
-			// TODO: Whether a function has a tensor argument should probably be an initial
-			// condition: functions w/o such arguments should not be candidates.
-			// TODO: It might be time to now go back to the paper to see how we can
-			// formulate the preconditions. Have a look at the stream refactoring paper.
+			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
+			subMonitor = SubMonitor.convert(monitor, Messages.CheckingFunctions, allFunctions.size());
 
-			status.merge(checkParameters(func));
-			status.merge(checkDecorators(func));
+			for (Function func : projectFunctions) {
+				LOG.info("Checking function: " + func + ".");
 
-			subMonitor.worked(1);
+				// TODO: Whether a function has a tensor argument should probably be an initial
+				// condition: functions w/o such arguments should not be candidates.
+				// TODO: It might be time to now go back to the paper to see how we can
+				// formulate the preconditions. Have a look at the stream refactoring paper.
+
+				status.merge(checkParameters(func));
+				status.merge(checkDecorators(func));
+
+				subMonitor.worked(1);
+			}
 		}
 
 		return status;
