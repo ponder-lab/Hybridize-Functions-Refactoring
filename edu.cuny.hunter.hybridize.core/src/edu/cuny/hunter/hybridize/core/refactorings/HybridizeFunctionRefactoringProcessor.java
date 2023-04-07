@@ -109,7 +109,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// create the analysis engine for the project.
 			// exclude from the analysis because the IR will be built here.
 			timeCollector.start();
-			PythonTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			try {
+				PythonTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			} catch (Exception e) {
+				LOG.error("Could not create analysis engine for: " + project.getName(), e);
+				throw e;
+			}
 			timeCollector.stop();
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
