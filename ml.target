@@ -12,6 +12,12 @@
 					<type>jar</type>
 				</dependency>
 			</dependencies>
+			<repositories>
+				<repository>
+					<id>github</id>
+					<url>https://maven.pkg.github.com/ponder-lab/ML</url>
+				</repository>
+			</repositories>
 		</location>
 	</locations>
 	<environment>
