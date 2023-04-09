@@ -22,7 +22,6 @@ before_install:
   - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/opt/pyenv/shims" | tr "\n" ":"` # Removing pyenv path from PATH which was being used by command python3.
   - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/home/travis/.phpenv/shims" | tr "\n" ":"` # Removing the remaining pyenv path from PATH to make sure we are not using pyenv.
   - PATH="$PATH:/usr/bin/python3.10" # Adding our Python version to PATH.
-  - cp .travis.settings.xml $HOME/.m2/settings.xml # copy Travis CI-specific Maven settings to the home directory.
 services:
 - xvfb
 install:
@@ -30,6 +29,8 @@ install:
 before_script:
   - python3 --version
   - python3.10 --version
+  - cp .travis.settings.xml $HOME/.m2/settings.xml # copy Travis CI-specific Maven settings to the home directory.
+  - echo $GITHUB_USERNAME
 script:
 - mkdir "$HOME/git"
 - pushd .
