@@ -3,7 +3,7 @@
 <target name="ML">
 	<locations>
 		<location path="${eclipse_home}" type="Profile"/>
-		<location includeDependencyDepth="infinite" includeDependencyScopes="compile,provided,runtime,test,system,import" includeSource="true" missingManifest="generate" type="Maven">
+		<location includeDependencyDepth="direct" includeDependencyScopes="compile,provided,runtime,test,system,import" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
