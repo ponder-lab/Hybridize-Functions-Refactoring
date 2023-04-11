@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -12,6 +13,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
@@ -90,7 +92,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
-	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
+	private RefactoringStatus checkFunctions(IProgressMonitor monitor) throws CoreException, OperationCanceledException {
 		RefactoringStatus status = new RefactoringStatus();
 		SubMonitor subMonitor = SubMonitor.convert(monitor, Messages.Analyzing, IProgressMonitor.UNKNOWN);
 		TimeCollector timeCollector = this.getExcludedTimeCollector();
@@ -105,15 +107,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
 
 		for (IProject project : projectToFunctions.keySet()) {
-
 			// create the analysis engine for the project.
 			// exclude from the analysis because the IR will be built here.
 			timeCollector.start();
 			try {
 				PythonTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
-			} catch (Exception e) {
-				LOG.error("Could not create analysis engine for: " + project.getName(), e);
-				throw e;
+			} catch (IOException e) {
+				throw new CoreException(Status.error("Could not create analysis engine for: " + project.getName(), e));
 			}
 			timeCollector.stop();
 

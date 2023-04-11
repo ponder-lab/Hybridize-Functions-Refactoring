@@ -11,6 +11,24 @@
 					<version>0.0.1-SNAPSHOT</version>
 					<type>jar</type>
 				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.cast.python</artifactId>
+					<version>0.0.1-SNAPSHOT</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.cast</artifactId>
+					<version>1.6.0</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.core</artifactId>
+					<version>1.6.0</version>
+					<type>jar</type>
+				</dependency>
 			</dependencies>
 			<repositories>
 				<repository>
