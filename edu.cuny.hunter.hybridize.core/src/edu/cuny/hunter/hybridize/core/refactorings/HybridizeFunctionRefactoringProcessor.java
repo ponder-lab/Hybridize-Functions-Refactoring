@@ -119,6 +119,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
 
+			subMonitor.checkCanceled();
+
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor = SubMonitor.convert(monitor, Messages.CheckingFunctions, allFunctions.size());
 
@@ -131,7 +133,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// formulate the preconditions. Have a look at the stream refactoring paper.
 
 				status.merge(checkParameters(func));
+				subMonitor.checkCanceled();
+
 				status.merge(checkDecorators(func));
+				subMonitor.checkCanceled();
 
 				subMonitor.worked(1);
 			}
