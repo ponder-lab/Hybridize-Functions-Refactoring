@@ -129,6 +129,11 @@
 			<layout>p2</layout>
 			<url>https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite</url>
 		</repository>
+		<repository>
+			<id>WALA</id>
+			<layout>p2</layout>
+			<url>https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository</url>
+		</repository>
 	</repositories>
 	<build>
 		<plugins>
