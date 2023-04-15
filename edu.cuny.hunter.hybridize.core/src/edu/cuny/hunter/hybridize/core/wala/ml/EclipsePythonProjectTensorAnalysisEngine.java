@@ -11,7 +11,19 @@ import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
 import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
+@SuppressWarnings("unchecked")
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
+
+	private static final String ANALYSIS_ENGINE_FQN = "com.ibm.wala.cast.python.client.PythonAnalysisEngine";
+
+	static {
+		// Ensure that the following class is loaded to invoke the static initializer.
+		try {
+			Class.forName(ANALYSIS_ENGINE_FQN);
+		} catch (ClassNotFoundException e) {
+			throw new RuntimeException("Can't load: " + ANALYSIS_ENGINE_FQN, e);
+		}
+	}
 
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
 		IPath projectPath = project.getFullPath();
