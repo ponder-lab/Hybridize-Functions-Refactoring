@@ -28,12 +28,6 @@
 			<dependencies>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
-					<artifactId>com.ibm.wala.cast.python</artifactId>
-					<version>0.0.1</version>
-					<type>jar</type>
-				</dependency>
-				<dependency>
-					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
 					<version>0.0.1</version>
 					<type>jar</type>
