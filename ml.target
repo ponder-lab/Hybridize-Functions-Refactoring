@@ -4,24 +4,12 @@
 	<locations>
 		<!-- The ordering of the locations seems to matter. Most likely, the problem has to do with the WALA dependencies that include JARs. -->
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-			<repository location="http://download.eclipse.org/releases/2022-09"/>
-			<unit id="org.eclipse.equinox.sdk.feature.group" version="3.23.500.v20220826-1025"/>
-			<unit id="org.eclipse.sdk.feature.group" version="4.25.0.v20220831-1800"/>
-		</location>
-		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
 			<repository location="http://download.eclipse.org/eclipse/updates/4.25"/>
 			<unit id="org.eclipse.equinox.p2.discovery.feature.feature.group" version="1.2.1100.v20220210-1157"/>
-			<unit id="org.eclipse.equinox.p2.sdk.feature.group" version="3.11.1700.v20220822-0443"/>
-			<unit id="org.eclipse.equinox.sdk.feature.group" version="3.23.500.v20220826-1025"/>
 			<unit id="org.eclipse.pde.feature.group" version="3.14.1300.v20220831-1800"/>
 			<unit id="org.eclipse.pde.source.feature.group" version="3.14.1300.v20220831-1800"/>
-			<unit id="org.eclipse.platform.ide" version="4.25.0.I20220831-1800"/>
-			<unit id="org.eclipse.platform.sdk" version="4.25.0.I20220831-1800"/>
 			<unit id="org.eclipse.rcp.feature.group" version="4.25.0.v20220831-1800"/>
 			<unit id="org.eclipse.rcp.source.feature.group" version="4.25.0.v20220831-1800"/>
-			<unit id="org.eclipse.sdk.feature.group" version="4.25.0.v20220831-1800"/>
-			<unit id="org.eclipse.sdk.ide" version="4.25.0.I20220831-1800"/>
-			<unit id="org.eclipse.sdk.tests.feature.group" version="4.25.0.v20220831-1800"/>
 			<unit id="org.eclipse.test.feature.group" version="3.8.200.v20220824-0342"/>
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
@@ -31,6 +19,10 @@
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
 			<repository location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite"/>
 			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="3.1.0.202208241149"/>
+		</location>
+		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository"/>
+			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.1.202304131119"/>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
@@ -47,10 +39,6 @@
 					<url>https://maven.pkg.github.com/ponder-lab/ML</url>
 				</repository>
 			</repositories>
-		</location>
-		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository"/>
-			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.1.202304121824"/>
 		</location>
 	</locations>
 	<environment>
