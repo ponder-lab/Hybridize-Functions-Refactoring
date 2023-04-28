@@ -1,20 +1,26 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
+import static org.eclipse.core.runtime.Platform.getLog;
+
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
 
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
 import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
-@SuppressWarnings("unchecked")
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
 
 	private static final String ANALYSIS_ENGINE_FQN = "com.ibm.wala.cast.python.client.PythonAnalysisEngine";
+
+	private static final ILog LOG = getLog(EclipsePythonProjectTensorAnalysisEngine.class);
 
 	static {
 		// Ensure that the following class is loaded to invoke the static initializer.
@@ -25,19 +31,19 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project) throws IllegalArgumentException, IOException {
 		IPath projectPath = project.getFullPath();
 		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
-		System.out.println(dirModule);
+		LOG.info("Creating engine from: " + dirModule);
 
 		this.setModuleFiles(Collections.singleton(dirModule));
 
-		for (Iterator<? extends ModuleEntry> entries2 = dirModule.getEntries(); entries2.hasNext();) {
-			ModuleEntry entry = entries2.next();
-			System.out.println(entry);
+		for (Iterator<? extends ModuleEntry> entries = dirModule.getEntries(); entries.hasNext();) {
+			ModuleEntry entry = entries.next();
+			LOG.info("Found entry: " + entry);
 		}
 
-		// PythonSSAPropagationCallGraphBuilder builder = this.defaultCallGraphBuilder();
-		// System.out.println(builder);
+		PythonSSAPropagationCallGraphBuilder builder = this.defaultCallGraphBuilder();
+		System.out.println(builder);
 	}
 }
