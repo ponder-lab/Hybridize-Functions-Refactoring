@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <?pde version="3.8"?>
-<target name="ML">
+<target name="Hybridize">
 	<locations>
 		<!-- The ordering of the locations seems to matter. Most likely, the problem has to do with the WALA dependencies that include JARs. -->
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
