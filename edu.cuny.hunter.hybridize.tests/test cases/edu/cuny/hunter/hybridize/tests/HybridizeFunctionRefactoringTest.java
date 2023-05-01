@@ -286,7 +286,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path requirements = path.resolve("requirements.txt");
 
 		// install requirements.
-		runCommand("pip3", "install", "-r", requirements.toString());
+		runCommand("pip3.10", "install", "-r", requirements.toString());
 	}
 
 	protected static boolean isPython3Test() {
@@ -318,7 +318,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private static void runPython(Path path) throws IOException, InterruptedException {
 		// run the code.
-		runCommand("python3", path.toString());
+		runCommand("python3.10", path.toString());
 	}
 
 	/**
