@@ -2,7 +2,6 @@ package edu.cuny.hunter.hybridize.core.wala.ml;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 
@@ -10,7 +9,6 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
 
-import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
@@ -22,6 +20,8 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 
 	private static final ILog LOG = getLog(EclipsePythonProjectTensorAnalysisEngine.class);
 
+	private IProject project;
+
 	static {
 		// Ensure that the following class is loaded to invoke the static initializer.
 		try {
@@ -31,7 +31,8 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project) throws IllegalArgumentException, IOException {
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
+		this.project = project;
 		IPath projectPath = project.getFullPath();
 		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
 		LOG.info("Creating engine from: " + dirModule);
@@ -42,8 +43,9 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 			ModuleEntry entry = entries.next();
 			LOG.info("Found entry: " + entry);
 		}
+	}
 
-		PythonSSAPropagationCallGraphBuilder builder = this.defaultCallGraphBuilder();
-		System.out.println(builder);
+	public IProject getProject() {
+		return project;
 	}
 }

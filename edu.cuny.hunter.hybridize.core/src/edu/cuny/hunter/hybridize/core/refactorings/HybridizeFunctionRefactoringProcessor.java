@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +26,14 @@ import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
+import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
+import com.ibm.wala.client.AnalysisEngine;
+import com.ibm.wala.ide.util.ProgressMonitorDelegate;
+import com.ibm.wala.ipa.callgraph.AnalysisOptions;
+import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.util.CancelException;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
@@ -58,6 +66,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	private Set<Function> functions = new LinkedHashSet<>();
+
+	/**
+	 * {@link AnalysisEngine}s that already have their {@link CallGraph}s built.
+	 */
+	private Set<AnalysisEngine> enginesWithBuiltCallGraphs = new HashSet<>();
+
+	/**
+	 * True iff the {@link CallGraph} should be displayed.
+	 */
+	private boolean dumpCallGraph = true;
 
 	public HybridizeFunctionRefactoringProcessor() {
 	}
@@ -108,16 +126,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		for (IProject project : projectToFunctions.keySet()) {
 			// create the analysis engine for the project.
-			// exclude from the analysis because the IR will be built here.
-			PythonTensorAnalysisEngine engine = null;
-			timeCollector.start();
+			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+
+			// build the call graph for the project.
 			try {
-				engine = new EclipsePythonProjectTensorAnalysisEngine(project);
-			} catch (IOException e) {
-				throw new CoreException(Status.error("Could not create analysis engine for: " + project.getName(), e));
+				this.buildCallGraph(engine, timeCollector, subMonitor.split(IProgressMonitor.UNKNOWN, SubMonitor.SUPPRESS_NONE));
+			} catch (IOException | CancelException e) {
+				throw new CoreException(Status.error("Could not build call graph for: " + project.getName(), e));
 			}
-			timeCollector.stop();
-			System.out.println(engine);
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
 
@@ -145,6 +161,39 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 
 		return status;
+	}
+
+	/**
+	 * Builds the call graph that is part of the given {@link AnalysisEngine}.
+	 *
+	 * @param engine The {@link AnalysisEngine} for which to build the call graph.
+	 * @param timeCollector A {@link TimeCollector} to exclude any entry point finding.
+	 * @param monitor An {@link IProgressMonitor} to track call graph building progress.
+	 * @apiNote This method involves caching of call graphs.
+	 */
+	private void buildCallGraph(PythonTensorAnalysisEngine engine, TimeCollector timeCollector, IProgressMonitor monitor)
+			throws IllegalArgumentException, IOException, CancelException {
+		Set<AnalysisEngine> enginesWithBuiltCallGraphs = this.getEnginesWithBuiltCallGraphs();
+
+		// if we haven't built the call graph yet.
+		if (!enginesWithBuiltCallGraphs.contains(engine)) {
+			// engine.getOptions();
+			PythonSSAPropagationCallGraphBuilder builder = engine.defaultCallGraphBuilder();
+			AnalysisOptions options = builder.getOptions();
+			SubMonitor subMonitor = SubMonitor.convert(monitor, "Building call graph.", 1);
+			ProgressMonitorDelegate monitorDelegate = ProgressMonitorDelegate.createProgressMonitorDelegate(subMonitor);
+			CallGraph callGraph = builder.makeCallGraph(options, monitorDelegate);
+
+			timeCollector.start();
+			if (this.shouldDumpCallGraph()) {
+				CAstCallGraphUtil.AVOID_DUMP = false;
+				CAstCallGraphUtil.dumpCG(builder.getCFAContextInterpreter(), builder.getPointerAnalysis(), callGraph);
+				// DotUtil.dotify(callGraph, null, PDFTypeHierarchy.DOT_FILE, "callgraph.pdf", "dot");
+			}
+			timeCollector.stop();
+
+			enginesWithBuiltCallGraphs.add(engine);
+		}
 	}
 
 	@Override
@@ -194,5 +243,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			throws CoreException {
 		// TODO Auto-generated method stub
 		return new RefactoringParticipant[0];
+	}
+
+	protected Set<AnalysisEngine> getEnginesWithBuiltCallGraphs() {
+		return enginesWithBuiltCallGraphs;
+	}
+
+	protected boolean shouldDumpCallGraph() {
+		return dumpCallGraph;
 	}
 }
