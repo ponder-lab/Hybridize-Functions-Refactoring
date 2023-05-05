@@ -108,33 +108,6 @@
 			</build>
 		</profile>
 	</profiles>
-	<repositories>
-		<repository>
-			<id>Eclipse current release</id>
-			<layout>p2</layout>
-			<url>http://download.eclipse.org/releases/${platform-version-name}</url>
-		</repository>
-		<repository>
-			<id>Eclipse current updates</id>
-			<layout>p2</layout>
-			<url>http://download.eclipse.org/eclipse/updates/${platform-version}</url>
-		</repository>
-		<repository>
-			<id>common-refactoring</id>
-			<layout>p2</layout>
-			<url>https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite</url>
-		</repository>
-		<repository>
-			<id>PyDev</id>
-			<layout>p2</layout>
-			<url>https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite</url>
-		</repository>
-		<repository>
-			<id>WALA</id>
-			<layout>p2</layout>
-			<url>https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository</url>
-		</repository>
-	</repositories>
 	<build>
 		<plugins>
 			<plugin>

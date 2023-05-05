@@ -2,6 +2,8 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.IOException;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -12,6 +14,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
@@ -23,7 +26,14 @@ import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
-import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
+import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.ide.util.ProgressMonitorDelegate;
+import com.ibm.wala.ipa.callgraph.AnalysisOptions;
+import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.CallGraphBuilderCancelException;
+import com.ibm.wala.util.CancelException;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
@@ -33,6 +43,7 @@ import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDe
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 
+@SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
@@ -57,13 +68,28 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private Set<Function> functions = new LinkedHashSet<>();
 
+	private Map<IProject, PythonSSAPropagationCallGraphBuilder> projectToCallGraphBuilder = new HashMap<>();
+
+	private Map<IProject, CallGraph> projectToCallGraph = new HashMap<>();
+
+	private Map<IProject, TensorTypeAnalysis> projectToTensorTypeAnalysis = new HashMap<>();
+
+	/**
+	 * True iff the {@link CallGraph} should be displayed.
+	 */
+	private boolean dumpCallGraph = true;
+
 	public HybridizeFunctionRefactoringProcessor() {
+		// Force the use of typeshed. It's an experimental feature of PyDev.
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+
+		// Have WALA dump the call graph if appropriate.
+		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, IProgressMonitor monitor)
 			throws TooManyMatchesException, BadLocationException {
-		// Force the use of typeshed. It's an experimental feature of PyDev.
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+		this();
 
 		// Convert the FunctionDefs to Functions.
 		if (functions != null) {
@@ -90,7 +116,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
-	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
+	private RefactoringStatus checkFunctions(IProgressMonitor monitor) throws OperationCanceledException, CoreException {
 		RefactoringStatus status = new RefactoringStatus();
 		SubMonitor subMonitor = SubMonitor.convert(monitor, Messages.Analyzing, IProgressMonitor.UNKNOWN);
 		TimeCollector timeCollector = this.getExcludedTimeCollector();
@@ -105,17 +131,44 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
 
 		for (IProject project : projectToFunctions.keySet()) {
-
 			// create the analysis engine for the project.
-			// exclude from the analysis because the IR will be built here.
-			timeCollector.start();
+			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+
+			// build the call graph for the project.
+			PythonSSAPropagationCallGraphBuilder builder;
 			try {
-				PythonTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
-			} catch (Exception e) {
-				LOG.error("Could not create analysis engine for: " + project.getName(), e);
-				throw e;
+				builder = computeCallGraphBuilder(engine);
+			} catch (IOException e) {
+				throw new CoreException(Status.error("Could not compute call graph builder for: " + project.getName(), e));
+			}
+
+			subMonitor.subTask("Building call graph.");
+			SubMonitor splitMonitor = subMonitor.split(IProgressMonitor.UNKNOWN, SubMonitor.SUPPRESS_NONE);
+			CallGraph callGraph;
+			try {
+				callGraph = computeCallGraph(project, builder, splitMonitor);
+			} catch (CallGraphBuilderCancelException e) {
+				throw new CoreException(Status.error("Could not build call graph for: " + project.getName(), e));
+			}
+
+			timeCollector.start();
+			if (this.shouldDumpCallGraph()) {
+				CAstCallGraphUtil.dumpCG(builder.getCFAContextInterpreter(), builder.getPointerAnalysis(), callGraph);
+				// DotUtil.dotify(callGraph, null, PDFTypeHierarchy.DOT_FILE, "callgraph.pdf", "dot");
 			}
 			timeCollector.stop();
+
+			TensorTypeAnalysis analysis;
+			try {
+				analysis = computeTensorTypeAnalysis(engine, builder);
+			} catch (CancelException e) {
+				throw new CoreException(Status.error("Could not analyze tensors for: " + project.getName(), e));
+			}
+			System.out.println(analysis);
+
+			analysis.forEach(t -> {
+				System.out.println(t);
+			});
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
 
@@ -145,6 +198,46 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return status;
 	}
 
+	private TensorTypeAnalysis computeTensorTypeAnalysis(EclipsePythonProjectTensorAnalysisEngine engine,
+			PythonSSAPropagationCallGraphBuilder builder) throws CancelException {
+		Map<IProject, TensorTypeAnalysis> projectToTensorTypeAnalysis = this.getProjectToTensorTypeAnalysis();
+		IProject project = engine.getProject();
+
+		if (!projectToTensorTypeAnalysis.containsKey(project)) {
+			TensorTypeAnalysis analysis = engine.performAnalysis(builder);
+			projectToTensorTypeAnalysis.put(project, analysis);
+		}
+
+		return projectToTensorTypeAnalysis.get(project);
+	}
+
+	private CallGraph computeCallGraph(IProject project, PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor)
+			throws CallGraphBuilderCancelException {
+		Map<IProject, CallGraph> projectToCallGraph = this.getProjectToCallGraph();
+
+		if (!projectToCallGraph.containsKey(project)) {
+			ProgressMonitorDelegate monitorDelegate = ProgressMonitorDelegate.createProgressMonitorDelegate(monitor);
+			AnalysisOptions options = builder.getOptions();
+			CallGraph callGraph = builder.makeCallGraph(options, monitorDelegate);
+			projectToCallGraph.put(project, callGraph);
+		}
+
+		return projectToCallGraph.get(project);
+	}
+
+	private PythonSSAPropagationCallGraphBuilder computeCallGraphBuilder(EclipsePythonProjectTensorAnalysisEngine engine)
+			throws IOException {
+		Map<IProject, PythonSSAPropagationCallGraphBuilder> projectToCallGraphBuilder = this.getProjectToCallGraphBuilder();
+		IProject project = engine.getProject();
+
+		if (!projectToCallGraphBuilder.containsKey(project)) {
+			PythonSSAPropagationCallGraphBuilder builder = engine.defaultCallGraphBuilder();
+			projectToCallGraphBuilder.put(project, builder);
+		}
+
+		return projectToCallGraphBuilder.get(project);
+	}
+
 	@Override
 	public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
 		return super.checkInitialConditions(pm);
@@ -152,7 +245,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	@Override
 	protected void clearCaches() {
-		// NOTE: Nothing right now.
+		this.getProjectToCallGraphBuilder().clear();
+		this.getProjectToCallGraph().clear();
+		this.getProjectToTensorTypeAnalysis().clear();
 	}
 
 	@Override
@@ -192,5 +287,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			throws CoreException {
 		// TODO Auto-generated method stub
 		return new RefactoringParticipant[0];
+	}
+
+	protected Map<IProject, PythonSSAPropagationCallGraphBuilder> getProjectToCallGraphBuilder() {
+		return projectToCallGraphBuilder;
+	}
+
+	protected Map<IProject, CallGraph> getProjectToCallGraph() {
+		return projectToCallGraph;
+	}
+
+	protected boolean shouldDumpCallGraph() {
+		return dumpCallGraph;
+	}
+
+	public Map<IProject, TensorTypeAnalysis> getProjectToTensorTypeAnalysis() {
+		return projectToTensorTypeAnalysis;
 	}
 }

@@ -2,13 +2,34 @@
 <?pde version="3.8"?>
 <target name="ML">
 	<locations>
-		<location path="${eclipse_home}" type="Profile"/>
-		<location includeDependencyDepth="direct" includeDependencyScopes="compile,provided,runtime,test,system,import" includeSource="true" missingManifest="generate" type="Maven">
+		<!-- The ordering of the locations seems to matter. Most likely, the problem has to do with the WALA dependencies that include JARs. -->
+		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+			<repository location="http://download.eclipse.org/eclipse/updates/4.25"/>
+			<unit id="org.eclipse.equinox.p2.discovery.feature.feature.group" version="1.2.1100.v20220210-1157"/>
+			<unit id="org.eclipse.pde.feature.group" version="3.14.1300.v20220831-1800"/>
+			<unit id="org.eclipse.pde.source.feature.group" version="3.14.1300.v20220831-1800"/>
+			<unit id="org.eclipse.rcp.feature.group" version="4.25.0.v20220831-1800"/>
+			<unit id="org.eclipse.rcp.source.feature.group" version="4.25.0.v20220831-1800"/>
+			<unit id="org.eclipse.test.feature.group" version="3.8.200.v20220824-0342"/>
+		</location>
+		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+			<repository location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite"/>
+			<unit id="org.python.pydev.feature.feature.group" version="9.3.2.202211141243"/>
+		</location>
+		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+			<repository location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite"/>
+			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="3.1.0.202208241149"/>
+		</location>
+		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
+			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository"/>
+			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.1.202304131119"/>
+		</location>
+		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
-					<version>0.0.1-SNAPSHOT</version>
+					<version>0.1.0</version>
 					<type>jar</type>
 				</dependency>
 			</dependencies>
@@ -16,6 +37,9 @@
 				<repository>
 					<id>github</id>
 					<url>https://maven.pkg.github.com/ponder-lab/ML</url>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
 				</repository>
 			</repositories>
 		</location>
