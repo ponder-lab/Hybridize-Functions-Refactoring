@@ -154,7 +154,7 @@
 				<configuration>
 					<pomDependencies>consider</pomDependencies>
 					<target>
-						<file>../ml.target</file>
+						<file>../hybridize.target</file>
 					</target>
 					<environments>
 						<environment>
