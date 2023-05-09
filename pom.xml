@@ -154,7 +154,7 @@
 				<configuration>
 					<pomDependencies>consider</pomDependencies>
 					<target>
-						<file>../ml.target</file>
+						<file>../target.target</file>
 					</target>
 					<environments>
 						<environment>
