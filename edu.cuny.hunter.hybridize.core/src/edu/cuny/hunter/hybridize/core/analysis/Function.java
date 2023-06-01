@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Objects;
 
 import org.eclipse.core.runtime.ILog;
@@ -14,7 +15,12 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.List;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Str;
+import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -23,6 +29,7 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
+import edu.cuny.hunter.hybridize.core.analysis.TensorSpec.Dtype;
 
 /**
  * A representation of a Python function.
@@ -33,9 +40,17 @@ import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 public class Function extends RefactorableProgramEntity {
 
 	/**
+	 * Enumeration represents optional conversion options for tf.function argument experimental_autograph_options.
+	 * https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/autograph/experimental/Feature
+	 */
+	public enum TfAutographExperimentalFeature {
+		ALL, AUTO_CONTROL_DEPS, ASSERT_STATEMENTS, BUILTIN_FUNCTIONS, EQUALITY_OPERATORS, LISTS, NAME_SCOPES
+	}
+
+	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
-	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in
-	 * the documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
+	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in the
+	 * documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/tf.function-parameter's-version-information to see more
 	 * information about the tf.function parameters according to the versions.
 	 */
@@ -62,44 +77,52 @@ public class Function extends RefactorableProgramEntity {
 		private static final String FUNC = "func";
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter autograph. The values could be True or False. Setting it as
+		 * true because that is the default value of autograph.
 		 */
-		private boolean autoGraphParamExists;
+		private boolean autoGraphParam = true;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints. The values could be None, False
+		 * or True. null represents the value of None.
 		 */
-		private boolean experimentaFollowTypeHintsParamExists;
+		private Boolean experimentaFollowTypeHintsParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options. The values could be an optional
+		 * tuple or value of tf.autograph.experimental.Feature values (e.g.
+		 * <code>tf.autograph.experimental.Feature.EQUALITY_OPERATORS</code>) or None.
 		 */
-		private boolean experimentalAutographOptionsParamExists;
+		private java.util.List<TfAutographExperimentalFeature> experimentalAutographOptionsParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter experimental_implements. The value could be None or a name of a
+		 * "known" function this implements (e.g. <code>embedded_matmul</code>).
 		 */
-		private boolean experimentalImplementsParamExists;
+		private String experimentalImplementsParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter func. The value could be None, or the function name to be
+		 * compiled.
 		 */
-		private boolean funcParamExists;
+		private String funcParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter input_signature. The value could be None, or a possibly nested
+		 * sequence of tf.TensorSpec objects specifying the shapes and dtypes of the Tensors that will be supplied to this function.
 		 */
-		private boolean inputSignatureParamExists;
+		private java.util.List<TensorSpec> inputSignatureParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
+		 * Value of this {@link Function}'s {@link decoratorsType} parameter jit_compile. The values could be None, False or True. null
+		 * represents the value of None.
 		 */
-		private boolean jitCompileParamExists;
+		private Boolean jitCompileParam;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 * Value of this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing. The values could be False or True.
 		 */
-		private boolean reduceRetracingParamExists;
+		private boolean reduceRetracingParam;
 
 		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
@@ -133,40 +156,311 @@ public class Function extends RefactorableProgramEntity {
 					for (keywordType keyword : keywords) {
 						if (keyword.arg instanceof NameTok) {
 							NameTok name = (NameTok) keyword.arg;
-							if (name.id.equals(FUNC))
+							if (name.id.equals(FUNC)) {
 								// Found parameter func
-								this.funcParamExists = true;
-							else if (name.id.equals(INPUT_SIGNATURE))
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id != "None") // Checking only literals
+										throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
+								} else {
+									throw new IllegalArgumentException("Unable to process " + FUNC + " argument.");
+								}
+							} else if (name.id.equals(INPUT_SIGNATURE)) {
 								// Found parameter input_signature
-								this.inputSignatureParamExists = true;
-							else if (name.id.equals(AUTOGRAPH))
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id != "None") // Checking only literals
+										throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+								} else if (keyword.value instanceof Tuple) {
+									Tuple value = (Tuple) keyword.value;
+									exprType[] valueElements = value.elts;
+									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
+									this.inputSignatureParam = tensorSpecList;
+								} else if (keyword.value instanceof List) {
+									List value = (List) keyword.value;
+									exprType[] valueElements = value.elts;
+									ArrayList<TensorSpec> tensorSpecList = processTensorSpecs(valueElements);
+									this.inputSignatureParam = tensorSpecList;
+								} else {
+									throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+								}
+							} else if (name.id.equals(AUTOGRAPH)) {
 								// Found parameter autograph
-								this.autoGraphParamExists = true;
-							// The version of the API we are using allows
-							// parameter names jit_compile and
-							// deprecated name experimental_compile
-							else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
-								// Found parameter jit_compile/experimental_compile
-								this.jitCompileParamExists = true;
-							// The version of the API we are using allows
-							// parameter names reduce_retracing
-							// and deprecated name experimental_relax_shapes
-							else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-								// Found parameter reduce_retracing
-								// or experimental_relax_shapes
-								this.reduceRetracingParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id == "False")
+										this.autoGraphParam = false;
+									else if (value.id != "True")
+										throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
+								} else {
+									throw new IllegalArgumentException("Unable to process " + AUTOGRAPH + " argument.");
+								}
+								// The version of the API we are using allows
+								// parameter names jit_compile and
+								// deprecated name experimental_compile
+							} else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE)) {
+								// Found parameter jit_compile or experimental_compile
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id == "True") // Checking only literals
+										this.jitCompileParam = true;
+									else if (value.id == "False")
+										this.jitCompileParam = false;
+									else if (value.id != "None")
+										throw new IllegalArgumentException(
+												"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + JIT_COMPILE + "/" + EXPERIMENTAL_COMPILE + " argument.");
+								}
+								// The version of the API we are using allows
+								// parameter names reduce_retracing
+								// and deprecated name experimental_relax_shapes
+							} else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES)) {
+								// Found parameter reduce_retracing or experimental_relax_shapes
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id == "True") // Checking only literals
+										this.reduceRetracingParam = true;
+									else if (value.id != "False") // Checking only literals
+										throw new IllegalArgumentException(
+												"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + REDUCE_RETRACING + "/" + EXPERIMENTAL_RELAX_SHAPES + " argument.");
+								}
+							} else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS)) {
 								// Found parameter experimental_implements
-								this.experimentalImplementsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+								if (keyword.value instanceof Str) {
+									Str value = (Str) keyword.value;
+									this.experimentalImplementsParam = value.s;
+								} else if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id != "None") // Checking only literals
+										throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
+								} else {
+									throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_IMPLEMENTS + " argument.");
+								}
+							} else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS)) {
+								java.util.List<TfAutographExperimentalFeature> autographExperimental = new ArrayList<>();
 								// Found parameter experimental_autograph_options
-								this.experimentalAutographOptionsParamExists = true;
-							else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+								if (keyword.value instanceof Attribute) {
+									Attribute keywordAttribute = (Attribute) keyword.value;
+									autographExperimental.add(processAttributeForAutographOptions(keywordAttribute));
+									this.experimentalAutographOptionsParam = autographExperimental;
+									// Example of value: (tf.autograph.experimental.Feature.EQUALITY_OPERATORS,
+								} else if (keyword.value instanceof Tuple) {
+									Tuple keywordTuple = (Tuple) keyword.value;
+									exprType[] keywordExpr = keywordTuple.elts;
+									for (exprType expr : keywordExpr) {
+										if (expr instanceof Attribute) {
+											Attribute keywordAttribute = (Attribute) expr;
+											autographExperimental.add(processAttributeForAutographOptions(keywordAttribute));
+										} else {
+											throw new IllegalArgumentException(
+													"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
+										}
+									}
+									this.experimentalAutographOptionsParam = autographExperimental;
+								} else if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id != "None") // Checking only literals
+										throw new IllegalArgumentException(
+												"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " arguments");
+								}
+							} else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS)) {
 								// Found parameter experimental_follow_type_hints
-								this.experimentaFollowTypeHintsParamExists = true;
+								if (keyword.value instanceof Name) {
+									Name value = (Name) keyword.value;
+									if (value.id == "True")
+										this.experimentaFollowTypeHintsParam = true;
+									else if (value.id == "False")
+										this.experimentaFollowTypeHintsParam = false;
+									else if (value.id != "None")
+										throw new IllegalArgumentException(
+												"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " argument.");
+								} else {
+									throw new IllegalArgumentException(
+											"Unable to process " + EXPERIMENTAL_FOLLOW_TYPE_HINTS + " arguments");
+								}
+							}
 						}
 					}
 				} // else, tf.function is used without parameters.
+		}
+
+		/**
+		 * Parses expressions to return a string of the shape of a TensorSpec for input signature.
+		 *
+		 * @return TensorSpec shape.
+		 */
+		private java.util.List<Object> processTupleOrListForShape(exprType[] exprTupleOrList) {
+			java.util.List<Object> shape = new ArrayList<>();
+
+			for (exprType expr : exprTupleOrList) {
+				if (expr instanceof Num) {
+					shape.add(Integer.parseInt(((Num) expr).num));
+				} else if (expr instanceof Name) {
+					if (((Name) expr).id == "None")
+						shape.add((((Name) expr).id));
+					else
+						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+				} else
+					throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+			}
+
+			return shape;
+
+		}
+
+		/**
+		 * Parses attributes to return a string of the autograph options.
+		 *
+		 * @return Autograph options that contains various attributes.
+		 */
+		private TfAutographExperimentalFeature processAttributeForAutographOptions(Attribute keywordAttribute) {
+			String attributeEnum;
+			Attribute tempAttr = keywordAttribute;
+
+			if (tempAttr.value instanceof Attribute) {
+				NameTok valueAttribute = (NameTok) tempAttr.attr;
+				attributeEnum = valueAttribute.id;
+			} else
+				throw new IllegalArgumentException("Unable to process " + EXPERIMENTAL_AUTOGRAPH_OPTIONS + " argument.");
+
+			if (attributeEnum.equals("ALL"))
+				return TfAutographExperimentalFeature.ALL;
+			else if (attributeEnum.equals("AUTO_CONTROL_DEPS"))
+				return TfAutographExperimentalFeature.AUTO_CONTROL_DEPS;
+			else if (attributeEnum.equals("ASSERT_STATEMENTS"))
+				return TfAutographExperimentalFeature.ASSERT_STATEMENTS;
+			else if (attributeEnum.equals("BUILTIN_FUNCTIONS"))
+				return TfAutographExperimentalFeature.BUILTIN_FUNCTIONS;
+			else if (attributeEnum.equals("EQUALITY_OPERATORS"))
+				return TfAutographExperimentalFeature.EQUALITY_OPERATORS;
+			else if (attributeEnum.equals("LISTS"))
+				return TfAutographExperimentalFeature.LISTS;
+			else if (attributeEnum.equals("NAME_SCOPES"))
+				return TfAutographExperimentalFeature.NAME_SCOPES;
+			else
+				return null;
+		}
+
+		/**
+		 * Classifies the dtype of TensorSpec to return a dtype of the TensorSpec autograph options.
+		 *
+		 * @return Dtype of TensorSpec.
+		 */
+		private Dtype determineDtypeForAutographOptions(String typeString) {
+
+			if (typeString.equals("bfloat16"))
+				return Dtype.bfloat16;
+			else if (typeString.equals("bool"))
+				return Dtype.bool;
+			else if (typeString.equals("complex128"))
+				return Dtype.complex128;
+			else if (typeString.equals("complex64"))
+				return Dtype.complex64;
+			else if (typeString.equals("float16"))
+				return Dtype.float16;
+			else if (typeString.equals("float32"))
+				return Dtype.float32;
+			else if (typeString.equals("float64"))
+				return Dtype.float64;
+			else if (typeString.equals("half"))
+				return Dtype.half;
+			else if (typeString.equals("int16"))
+				return Dtype.int16;
+			else if (typeString.equals("int32"))
+				return Dtype.int32;
+			else if (typeString.equals("int64"))
+				return Dtype.int64;
+			else if (typeString.equals("int8"))
+				return Dtype.int8;
+			else if (typeString.equals("qint16"))
+				return Dtype.qint16;
+			else if (typeString.equals("qint32"))
+				return Dtype.qint32;
+			else if (typeString.equals("qint8"))
+				return Dtype.qint8;
+			else if (typeString.equals("quint16"))
+				return Dtype.quint16;
+			else if (typeString.equals("quint8"))
+				return Dtype.quint8;
+			else if (typeString.equals("resource"))
+				return Dtype.resource;
+			else if (typeString.equals("string"))
+				return Dtype.string;
+			else if (typeString.equals("uint16"))
+				return Dtype.uint16;
+			else if (typeString.equals("uint32"))
+				return Dtype.uint32;
+			else if (typeString.equals("uint64"))
+				return Dtype.uint64;
+			else if (typeString.equals("uint8"))
+				return Dtype.uint8;
+			else if (typeString.equals("variant"))
+				return Dtype.variant;
+			else
+				return null;
+
+		}
+
+		/**
+		 * Parses expressions to retrieve information about the TensorSpecs for input signature.
+		 *
+		 * @return Array of TensorSpecs with the parsed information.
+		 */
+		private ArrayList<TensorSpec> processTensorSpecs(exprType[] valueElements) {
+			ArrayList<TensorSpec> tensorSpecList = new ArrayList<>();
+			for (exprType expr : valueElements) {
+				if (expr instanceof Call) {
+					Call callTuple = (Call) expr;
+
+					if (((NameTok) ((Attribute) callTuple.func).attr).id.equals("TensorSpec")) {
+						TensorSpec tensor = new TensorSpec();
+
+						// Positional arguments for TensorSpecs
+						exprType[] tensorArgs = callTuple.args;
+						for (exprType tensorArg : tensorArgs) {
+							if (tensorArg instanceof Tuple)
+								tensor.setShape(processTupleOrListForShape(((Tuple) tensorArg).elts));
+							else if (tensorArg instanceof List)
+								tensor.setShape(processTupleOrListForShape(((List) tensorArg).elts));
+							else if (tensorArg instanceof Attribute) {
+								Attribute attrValue = (Attribute) tensorArg;
+								Dtype dtype = determineDtypeForAutographOptions(((NameTok) attrValue.attr).id);
+								tensor.setDType(dtype);
+							} else
+								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+						}
+						// Keyword Arguments for TensorSpecs
+						keywordType[] keywordsCall = callTuple.keywords;
+						for (keywordType keyword : keywordsCall) {
+							if (keyword.value instanceof Tuple)
+								tensor.setShape(processTupleOrListForShape(((Tuple) keyword.value).elts));
+							else if (keyword.value instanceof List)
+								tensor.setShape(processTupleOrListForShape(((List) keyword.value).elts));
+							else if (keyword.value instanceof Attribute) {
+								Attribute attrValue = (Attribute) keyword.value;
+								Dtype dtype = determineDtypeForAutographOptions(((NameTok) attrValue.attr).id);
+								tensor.setDType(dtype);
+							} else {
+								throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+							}
+						}
+						tensorSpecList.add(tensor);
+					} else {
+						throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+					}
+				} else {
+					throw new IllegalArgumentException("Unable to process " + INPUT_SIGNATURE + " argument.");
+				}
+			}
+			return tensorSpecList;
 		}
 
 		/**
@@ -175,7 +469,9 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
 		public boolean hasAutoGraphParam() {
-			return this.autoGraphParamExists;
+			// True is the default value
+			return (this.autoGraphParam != true);
+
 		}
 
 		/**
@@ -184,7 +480,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
 		public boolean hasExperimentalAutographOptParam() {
-			return this.experimentalAutographOptionsParamExists;
+			// None is the default value
+			return (this.experimentalAutographOptionsParam != null);
 		}
 
 		/**
@@ -193,7 +490,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
 		public boolean hasExperimentalImplementsParam() {
-			return this.experimentalImplementsParamExists;
+			// None is the default value
+			return (this.experimentalImplementsParam != null);
 		}
 
 		/**
@@ -202,16 +500,18 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean hasExperimentalFollowTypeHintsParam() {
-			return this.experimentaFollowTypeHintsParamExists;
+			// None is the default value
+			return (this.experimentaFollowTypeHintsParam != null);
 		}
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter has parameter func.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
 		 *
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
 		public boolean hasFuncParam() {
-			return this.funcParamExists;
+			// None is the default value
+			return (this.funcParam != null);
 		}
 
 		/**
@@ -220,7 +520,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
 		public boolean hasInputSignatureParam() {
-			return this.inputSignatureParamExists;
+			// None is the default value
+			return (this.inputSignatureParam != null);
 		}
 
 		/**
@@ -229,7 +530,8 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
 		public boolean hasJitCompileParam() {
-			return this.jitCompileParamExists;
+			// None is the default value
+			return (this.jitCompileParam != null);
 		}
 
 		/**
@@ -238,7 +540,98 @@ public class Function extends RefactorableProgramEntity {
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
 		public boolean hasReduceRetracingParam() {
-			return this.reduceRetracingParamExists;
+			// False is the default value
+			return (this.reduceRetracingParam != false);
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter autograph.
+		 *
+		 * @return boolean of this {@link decoratorType} parameter autograph.
+		 */
+		public boolean getAutoGraphArg() {
+			return this.autoGraphParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_autograph_options.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_autograph_options.
+		 */
+		public java.util.List<TfAutographExperimentalFeature> getExperimentalAutographOptArg() {
+			return this.experimentalAutographOptionsParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_implements.
+		 *
+		 * @return String of this {@link decoratorType} parameter experimental_implements.
+		 */
+		public String getExperimentalImplementsArg() {
+			return this.experimentalImplementsParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_follow_type_hints.
+		 *
+		 * @return Boolean of this {@link decoratorType} parameter experimental_follow_type_hints.
+		 */
+		public Boolean getExperimentalFollowTypeHintsArg() {
+			return this.experimentaFollowTypeHintsParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter func.
+		 *
+		 * @return String of this {@link decoratorType} parameter func.
+		 */
+		public String getFuncArg() {
+			return this.funcParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter input_signature.
+		 *
+		 * @return ArrayList of TensorSpecs of this {@link decoratorType} parameter input_signature.
+		 */
+		public java.util.List<TensorSpec> getInputSignatureArg() {
+			return this.inputSignatureParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter jit_compile.
+		 *
+		 * @return Boolean of this {@link decoratorType} parameter jit_compile.
+		 */
+		public Boolean getJitCompileArg() {
+			return this.jitCompileParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter reduce_retracing.
+		 *
+		 * @return boolean of this {@link Function} parameter reduce_retracing.
+		 */
+		public boolean getReduceRetracingArg() {
+			return this.reduceRetracingParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_compile.
+		 *
+		 * @return Boolean of this {@link decoratorType} parameter experimental_compile.
+		 */
+		public Boolean getExperimentalCompileArg() {
+			return this.jitCompileParam;
+		}
+
+		/**
+		 * Value of {@link Function}'s {@link decoratorsType} parameter experimental_relax_shapes.
+		 *
+		 * @return boolean of this {@link Function} parameter experimental_relax_shapes.
+		 */
+		public boolean getExperimentalRelaxShapeArg() {
+			return this.reduceRetracingParam;
 		}
 	}
 
