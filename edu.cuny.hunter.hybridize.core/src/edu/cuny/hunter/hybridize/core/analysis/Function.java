@@ -92,12 +92,15 @@ public class Function extends RefactorableProgramEntity {
 		private boolean inputSignatureParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile and deprecated name experimental_compile. For
+		 * more information, you can see this https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#jit_compile.
 		 */
 		private boolean jitCompileParamExists;
 
 		/**
-		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing and deprecated name
+		 * experimental_relax_shapes. For more information, you can see this
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#reduce_retracing
 		 */
 		private boolean reduceRetracingParamExists;
 
@@ -240,6 +243,31 @@ public class Function extends RefactorableProgramEntity {
 		public boolean hasReduceRetracingParam() {
 			return this.reduceRetracingParamExists;
 		}
+
+		/**
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_compile. Since jit_compile and
+		 * experimental_compile (deprecated) have the same functionalities, when we parse these parameters together it is stored into the
+		 * same boolean variable. For more information, you can see this link
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_compile
+		 *
+		 * @return True iff this {@link Function} has parameter experimental_compile.
+		 */
+		public boolean hasExperimentalCompileParam() {
+			return this.jitCompileParamExists;
+		}
+
+		/**
+		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_relax_shapes. Since reduce_retracing and
+		 * experimental_relax_shapes (deprecated) have the same functionalities, when we parse these parameters together it is stored into
+		 * the same boolean variable. For more information, you can see this link
+		 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function#experimental_relax_shapes
+		 *
+		 * @return True iff this {@link Function} has parameter experimental_relax_shapes.
+		 */
+		public boolean hasExperimentalRelaxShapesParam() {
+			return this.reduceRetracingParamExists;
+		}
+
 	}
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
