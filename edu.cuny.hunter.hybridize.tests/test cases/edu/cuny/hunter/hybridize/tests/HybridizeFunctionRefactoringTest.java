@@ -564,7 +564,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
-			assertFalse(function.likelyHasTensorParameter());
+			assertFalse(function.getLikelyHasTensorParameter());
 
 		}
 	}
@@ -1283,7 +1283,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1310,7 +1310,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1338,7 +1338,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1366,7 +1366,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1386,7 +1386,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1410,7 +1410,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1449,7 +1449,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		exprType annotationExpr = annotations[0];
 		assertNull(annotationExpr);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1493,7 +1493,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertFalse(function.likelyHasTensorParameter());
+		assertFalse(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1539,7 +1539,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertTrue(function.likelyHasTensorParameter());
+		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1589,7 +1589,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("tf.Tensor", attributeName);
 
 		// TODO: Set to assertFalse() when #111 is fixed.
-		assertTrue(function.likelyHasTensorParameter());
+		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1622,7 +1622,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1656,7 +1656,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.likelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -1703,7 +1703,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 
@@ -1747,7 +1747,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 
@@ -1791,7 +1791,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 
@@ -1819,7 +1819,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 
@@ -1848,7 +1848,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 
@@ -1881,7 +1881,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			// NOTE: Not sure about this. Does WALA find closures? What really is the difference between having explicit parameters and
 			// implicit ones? We still need to examine the calling contexts to get any info.
-			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.likelyHasTensorParameter());
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
 

@@ -547,7 +547,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
-	public boolean likelyHasTensorParameter() {
+	public boolean getLikelyHasTensorParameter() {
 		return this.likelyHasTensorParameter;
 	}
 
