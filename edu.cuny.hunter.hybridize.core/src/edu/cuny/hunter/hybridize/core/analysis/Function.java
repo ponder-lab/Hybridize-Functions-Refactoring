@@ -361,7 +361,10 @@ public class Function extends RefactorableProgramEntity {
 		monitor.done();
 	}
 
-	public void computeHybridization(IProgressMonitor monitor) {
+	/**
+	 * Discovers if this {@link Function} is hybrid. If so, populated this {@link Function}'s {@link HybridizationParameters}.
+	 */
+	public void computeHybridization(IProgressMonitor monitor) throws BadLocationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
@@ -423,6 +426,12 @@ public class Function extends RefactorableProgramEntity {
 				if (hybrid) {
 					this.isHybrid = Boolean.TRUE;
 					LOG.info(this + " is hybrid.");
+
+					// Compute the hybridization parameters since we know now that this function is hybrid.
+					LOG.info("Computing hybridization parameters.");
+					this.hybridizationParameters = new HybridizationParameters();
+					this.hybridizationParameters.computeParameterExistance(monitor);
+
 					monitor.done();
 					return;
 				}
@@ -555,9 +564,5 @@ public class Function extends RefactorableProgramEntity {
 
 	public argumentsType getParameters() {
 		return getFunctionDefinition().getFunctionDef().args;
-	}
-
-	public void computeHybridizationParameterExistance(IProgressMonitor monitor) throws BadLocationException {
-		this.getHybridizationParameters().computeParameterExistance(monitor);
 	}
 }
