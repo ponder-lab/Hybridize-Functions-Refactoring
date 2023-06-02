@@ -19,8 +19,6 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
-import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
@@ -124,8 +122,8 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 		Shell shell = getActiveShellChecked(event);
 
 		try {
-			HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell, new NullProgressMonitor());
-		} catch (TooManyMatchesException | BadLocationException e) {
+			HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell);
+		} catch (TooManyMatchesException e) {
 			throw new ExecutionException("Unable to start refactoring.", e);
 		}
 

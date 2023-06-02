@@ -507,7 +507,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @return The set of {@link Function}s analyzed.
 	 */
 	private Set<Function> getFunctions() throws Exception {
-		NullProgressMonitor monitor = new NullProgressMonitor();
 		File inputTestFile = this.getInputTestFile();
 
 		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
@@ -518,7 +517,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions, monitor);
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
