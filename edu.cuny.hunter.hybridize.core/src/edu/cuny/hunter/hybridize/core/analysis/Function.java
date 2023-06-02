@@ -361,7 +361,7 @@ public class Function extends RefactorableProgramEntity {
 		monitor.done();
 	}
 
-	public void inferHybridization(IProgressMonitor monitor) {
+	public void computeHybridization(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
@@ -557,7 +557,7 @@ public class Function extends RefactorableProgramEntity {
 		return getFunctionDefinition().getFunctionDef().args;
 	}
 
-	public void inferHybridizationParameterExistance(IProgressMonitor monitor) throws BadLocationException {
+	public void computeHybridizationParameterExistance(IProgressMonitor monitor) throws BadLocationException {
 		this.getHybridizationParameters().computeParameterExistance(monitor);
 	}
 }

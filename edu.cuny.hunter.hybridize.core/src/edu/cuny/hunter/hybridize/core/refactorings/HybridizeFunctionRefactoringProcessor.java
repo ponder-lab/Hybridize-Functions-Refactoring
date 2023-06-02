@@ -102,12 +102,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking function: " + func + ".");
 
 			// Find out if it's hybrid via the tf.function decorator.
-			func.inferHybridization(monitor);
+			func.computeHybridization(monitor);
 
 			// If function is hybrid, then parse the existence of the parameters.
 			if (func.isHybrid()) {
 				LOG.info("Checking the hybridization parameters ...");
-				func.inferHybridizationParameterExistance(monitor);
+				func.computeHybridizationParameterExistance(monitor);
 			}
 
 			func.inferTensorTensorParameters(monitor);
