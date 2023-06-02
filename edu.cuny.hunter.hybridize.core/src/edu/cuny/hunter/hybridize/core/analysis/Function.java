@@ -174,7 +174,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter autograph.
 		 */
-		public boolean hasAutoGraphParam() {
+		public boolean getAutoGraphParamExists() {
 			return this.autoGraphParamExists;
 		}
 
@@ -183,7 +183,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
 		 */
-		public boolean hasExperimentalAutographOptParam() {
+		public boolean getExperimentalAutographOptParamExists() {
 			return this.experimentalAutographOptionsParamExists;
 		}
 
@@ -192,7 +192,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
 		 */
-		public boolean hasExperimentalImplementsParam() {
+		public boolean getExperimentalImplementsParamExists() {
 			return this.experimentalImplementsParamExists;
 		}
 
@@ -201,7 +201,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
 		 */
-		public boolean hasExperimentalFollowTypeHintsParam() {
+		public boolean getExperimentalFollowTypeHintsParamExists() {
 			return this.experimentaFollowTypeHintsParamExists;
 		}
 
@@ -210,7 +210,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter func.
 		 */
-		public boolean hasFuncParam() {
+		public boolean getFuncParamExists() {
 			return this.funcParamExists;
 		}
 
@@ -219,7 +219,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter input_signature.
 		 */
-		public boolean hasInputSignatureParam() {
+		public boolean getInputSignatureParamExists() {
 			return this.inputSignatureParamExists;
 		}
 
@@ -228,7 +228,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link decoratorType} has parameter jit_compile.
 		 */
-		public boolean hasJitCompileParam() {
+		public boolean getJitCompileParamExists() {
 			return this.jitCompileParamExists;
 		}
 
@@ -237,7 +237,7 @@ public class Function extends RefactorableProgramEntity {
 		 *
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
-		public boolean hasReduceRetracingParam() {
+		public boolean getReduceRetracingParamExists() {
 			return this.reduceRetracingParamExists;
 		}
 	}
@@ -319,7 +319,7 @@ public class Function extends RefactorableProgramEntity {
 					if (this.getHybridizationParameters() != null) {
 						// if we are considering type hints.
 						// TODO: Actually get the value here (#111).
-						if (this.getHybridizationParameters().hasExperimentalFollowTypeHintsParam()) {
+						if (this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists()) {
 							LOG.info("Following type hints for: " + this + ".");
 
 							// try to get its type from the AST.
