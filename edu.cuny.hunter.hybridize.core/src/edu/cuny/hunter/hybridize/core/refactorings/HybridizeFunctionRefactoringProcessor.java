@@ -8,7 +8,9 @@ import java.util.Set;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
@@ -63,7 +65,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd, monitor);
+				Function function = new Function(fd);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -78,12 +80,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100);
 		// TODO: Adjust amount of work later.
 
-		status.merge(this.checkFunctions(progress.split(1)));
+		try {
+			status.merge(this.checkFunctions(progress.split(1)));
+		} catch (OperationCanceledException | BadLocationException e) {
+			IStatus error = Status.error("Can't check functions.", e);
+			LOG.log(error);
+			throw new CoreException(error);
+		}
 
 		return status;
 	}
 
-	private RefactoringStatus checkFunctions(IProgressMonitor monitor) {
+	private RefactoringStatus checkFunctions(IProgressMonitor monitor) throws BadLocationException {
 		RefactoringStatus status = new RefactoringStatus();
 		Set<Function> functions = this.getFunctions();
 		@SuppressWarnings("unused")
@@ -92,6 +100,17 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		for (Function func : functions) {
 			LOG.info("Checking function: " + func + ".");
+
+			// Find out if it's hybrid via the tf.function decorator.
+			func.inferHybridization(monitor);
+
+			// If function is hybrid, then parse the existence of the parameters.
+			if (func.isHybrid()) {
+				LOG.info("Checking the hybridization parameters ...");
+				func.inferHybridizationParameterExistance(monitor);
+			}
+
+			func.inferTensorTensorParameters(monitor);
 
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.

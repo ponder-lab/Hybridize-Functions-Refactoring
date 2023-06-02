@@ -34,8 +34,8 @@ public class Function extends RefactorableProgramEntity {
 
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
-	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in
-	 * the documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
+	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in the
+	 * documentation. Users can still use these deprecated parameters. Therefore we need to be able to account for them. Please refer to
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/tf.function-parameter's-version-information to see more
 	 * information about the tf.function parameters according to the versions.
 	 */
@@ -101,7 +101,7 @@ public class Function extends RefactorableProgramEntity {
 		 */
 		private boolean reduceRetracingParamExists;
 
-		public HybridizationParameters(IProgressMonitor monitor) throws BadLocationException {
+		public void computeParameterExistance(IProgressMonitor monitor) throws BadLocationException {
 			FunctionDefinition functionDefinition = Function.this.getFunctionDefinition();
 			decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
@@ -167,7 +167,6 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				} // else, tf.function is used without parameters.
-
 			throw new IllegalStateException("No decorator exists. Can't compute decorator parameter existance.");
 		}
 
@@ -263,12 +262,12 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * True iff this {@link Function} is decorated with tf.function.
 	 */
-	private boolean isHybrid;
+	private Boolean isHybrid;
 
 	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
-	private boolean likelyHasTensorParameter;
+	private Boolean likelyHasTensorParameter;
 
 	/**
 	 * Module name of {@link FunctionDefinition}.
@@ -285,22 +284,11 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private IPythonNature nature;
 
-	public Function(FunctionDefinition fd, IProgressMonitor monitor) throws BadLocationException {
+	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
-
-		// Find out if it's hybrid via the tf.function decorator.
-		this.computeIsHybrid(monitor);
-
-		// If function is hybrid, then parse the existence of the parameters.
-		if (this.isHybrid()) {
-			LOG.info("Checking the hybridization parameters ...");
-			this.hybridizationParameters = this.new HybridizationParameters(monitor);
-		}
-
-		this.computeHasTensorParameter(monitor);
 	}
 
-	private void computeHasTensorParameter(IProgressMonitor monitor) throws BadLocationException {
+	public void inferTensorTensorParameters(IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -354,7 +342,7 @@ public class Function extends RefactorableProgramEntity {
 								LOG.info("Found FQN: " + fqn + ".");
 
 								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
-									this.likelyHasTensorParameter = true;
+									this.likelyHasTensorParameter = Boolean.TRUE;
 									LOG.info(this + " likely has a tensor parameter.");
 									monitor.done();
 									return;
@@ -367,12 +355,12 @@ public class Function extends RefactorableProgramEntity {
 			}
 		}
 
-		this.likelyHasTensorParameter = false;
+		this.likelyHasTensorParameter = Boolean.FALSE;
 		LOG.info(this + " does not likely have a tensor parameter.");
 		monitor.done();
 	}
 
-	private void computeIsHybrid(IProgressMonitor monitor) {
+	public void inferHybridization(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
@@ -432,7 +420,7 @@ public class Function extends RefactorableProgramEntity {
 				}
 
 				if (hybrid) {
-					this.isHybrid = true;
+					this.isHybrid = Boolean.TRUE;
 					LOG.info(this + " is hybrid.");
 					monitor.done();
 					return;
@@ -441,7 +429,7 @@ public class Function extends RefactorableProgramEntity {
 			}
 		}
 
-		this.isHybrid = false;
+		this.isHybrid = Boolean.FALSE;
 		LOG.info(this + " is not hybrid.");
 		monitor.done();
 	}
@@ -525,7 +513,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return True iff this {@link Function} is hybrid, i.e., whether it is decorated with tf.function.
 	 */
-	public boolean isHybrid() {
+	public Boolean isHybrid() {
 		return this.isHybrid;
 	}
 
@@ -534,7 +522,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
-	public boolean likelyHasTensorParameter() {
+	public Boolean likelyHasTensorParameter() {
 		return this.likelyHasTensorParameter;
 	}
 
@@ -566,5 +554,9 @@ public class Function extends RefactorableProgramEntity {
 
 	public argumentsType getParameters() {
 		return getFunctionDefinition().getFunctionDef().args;
+	}
+
+	public void inferHybridizationParameterExistance(IProgressMonitor monitor) throws BadLocationException {
+		this.getHybridizationParameters().computeParameterExistance(monitor);
 	}
 }
