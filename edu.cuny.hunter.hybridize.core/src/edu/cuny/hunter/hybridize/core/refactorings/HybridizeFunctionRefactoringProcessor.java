@@ -164,18 +164,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			} catch (CancelException e) {
 				throw new CoreException(Status.error("Could not analyze tensors for: " + project.getName(), e));
 			}
-			System.out.println(analysis);
-
-			analysis.forEach(t -> {
-				System.out.println(t);
-			});
-
-			Set<Function> projectFunctions = projectToFunctions.get(project);
 
 			subMonitor.checkCanceled();
 
+			Set<Function> projectFunctions = projectToFunctions.get(project);
+
+			// analyze Python functions.
+			LOG.info("Analyzing" + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
+			subMonitor.beginTask(Messages.AnalyzingFunctions, projectFunctions.size());
+
+			// check preconditions.
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
-			subMonitor = SubMonitor.convert(monitor, Messages.CheckingFunctions, allFunctions.size());
+			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
 			for (Function func : projectFunctions) {
 				LOG.info("Checking function: " + func + ".");
