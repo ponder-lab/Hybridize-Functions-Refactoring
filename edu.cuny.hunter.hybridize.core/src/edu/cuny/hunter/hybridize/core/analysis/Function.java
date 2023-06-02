@@ -167,6 +167,8 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				} // else, tf.function is used without parameters.
+
+			throw new IllegalStateException("No decorator exists. Can't compute decorator parameter existance.");
 		}
 
 		/**
