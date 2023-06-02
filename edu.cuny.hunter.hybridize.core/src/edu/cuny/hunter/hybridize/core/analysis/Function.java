@@ -25,6 +25,10 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
 /**
@@ -305,7 +309,7 @@ public class Function extends RefactorableProgramEntity {
 		this.functionDefinition = fd;
 	}
 
-	public void inferTensorTensorParameters(IProgressMonitor monitor) throws BadLocationException {
+	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -367,6 +371,18 @@ public class Function extends RefactorableProgramEntity {
 							}
 						}
 					}
+
+					// TODO: Check the tensor type analysis. Can we check the stream project for how we matched the WALA IR to AST nodes?
+					// Also, check that the methods are the same, the parameters, and so on? If we match the pointer key, then we know it's
+					// a tensor if the TensorType is not null. Not much else to check right now, right?
+					analysis.forEach(t -> {
+						PointerKey fst = t.fst;
+						System.out.println(fst);
+
+						TensorVariable snd = t.snd;
+						System.out.println(snd);
+					});
+
 					monitor.worked(1);
 				}
 			}
