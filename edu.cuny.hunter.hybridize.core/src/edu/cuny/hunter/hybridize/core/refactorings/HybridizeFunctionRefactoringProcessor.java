@@ -13,6 +13,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
@@ -87,8 +88,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, IProgressMonitor monitor)
-			throws TooManyMatchesException, BadLocationException {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) throws TooManyMatchesException {
 		this();
 
 		// Convert the FunctionDefs to Functions.
@@ -96,7 +96,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd, monitor);
+				Function function = new Function(fd);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -180,8 +180,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			for (Function func : projectFunctions) {
 				LOG.info("Checking function: " + func + ".");
 
+				// Find out if it's hybrid via the tf.function decorator.
+				try {
+					func.computeHybridization(monitor);
+				} catch (BadLocationException e) {
+					throw new CoreException(Status.error("Could not compute hybridization for: : " + func, e));
+				}
+
 				// TODO: Whether a function has a tensor argument should probably be an initial
 				// condition: functions w/o such arguments should not be candidates.
+				try {
+					func.inferTensorTensorParameters(monitor);
+				} catch (BadLocationException e) {
+					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
+				}
+
 				// TODO: It might be time to now go back to the paper to see how we can
 				// formulate the preconditions. Have a look at the stream refactoring paper.
 
