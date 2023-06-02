@@ -126,7 +126,7 @@ public class Function extends RefactorableProgramEntity {
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
 
-			if (tfFunctionDecorator != null)
+			if (tfFunctionDecorator != null) {
 				// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 				if (tfFunctionDecorator.func instanceof Call) {
 					Call callFunction = (Call) tfFunctionDecorator.func;
@@ -170,6 +170,8 @@ public class Function extends RefactorableProgramEntity {
 						}
 					}
 				} // else, tf.function is used without parameters.
+			} else
+				throw new IllegalStateException("No decorator exists. Can't compute decorator parameter existance.");
 		}
 
 		/**

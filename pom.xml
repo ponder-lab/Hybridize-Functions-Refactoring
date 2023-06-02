@@ -32,9 +32,9 @@
 	<properties>
 		<tycho-version>2.7.5</tycho-version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<jacoco-version>0.8.8</jacoco-version>
-		<maven-checkstyle-plugin-version>3.2.1</maven-checkstyle-plugin-version>
-		<checkstyle-version>10.9.3</checkstyle-version>
+		<jacoco-version>0.8.10</jacoco-version>
+		<maven-checkstyle-plugin-version>3.2.2</maven-checkstyle-plugin-version>
+		<checkstyle-version>10.12.0</checkstyle-version>
 		<junit-version>4.13.2</junit-version>
 		<eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
 		<platform-version-name>2022-09</platform-version-name>
