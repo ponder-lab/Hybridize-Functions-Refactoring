@@ -104,19 +104,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// Find out if it's hybrid via the tf.function decorator.
 			func.computeHybridization(monitor);
 
-			// If function is hybrid, then parse the existence of the parameters.
-			if (func.isHybrid()) {
-				LOG.info("Checking the hybridization parameters ...");
-				func.computeHybridizationParameterExistance(monitor);
-			}
-
-			func.inferTensorTensorParameters(monitor);
-
 			// TODO: Whether a function has a tensor argument should probably be an initial
 			// condition: functions w/o such arguments should not be candidates.
+			func.inferTensorTensorParameters(monitor);
+
 			// TODO: It might be time to now go back to the paper to see how we can
 			// formulate the preconditions. Have a look at the stream refactoring paper.
-
 			status.merge(checkParameters(func));
 			status.merge(checkDecorators(func));
 		}
