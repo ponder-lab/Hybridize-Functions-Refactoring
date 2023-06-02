@@ -251,7 +251,7 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
-	 * Information about this {@link Function} tf.function's parameters.
+	 * This {@link Function}'s associated hybridization parameters.
 	 */
 	private Function.HybridizationParameters hybridizationParameters;
 
