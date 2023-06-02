@@ -518,9 +518,10 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Accessor for private member variable isHybrid.
+	 * True iff this {@link Function} is hybrid. Note that this only checks the decorator, i.e., whether all invocations of this
+	 * {@link Function} are hybridized.
 	 *
-	 * @return Boolean that states if this {@link Function} is decorated with tf.function.
+	 * @return True iff this {@link Function} is hybrid, i.e., whether it is decorated with tf.function.
 	 */
 	public boolean isHybrid() {
 		return this.isHybrid;
