@@ -353,7 +353,7 @@ public class Function extends RefactorableProgramEntity {
 
 								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
 									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter.");
+									LOG.info(this + " likely has a tensor parameter due to a type hint.");
 									monitor.done();
 									return;
 								}
