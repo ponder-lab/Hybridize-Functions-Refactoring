@@ -343,7 +343,7 @@ public class Function extends RefactorableProgramEntity {
 									LOG.warn(String.format(
 											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
 											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
-											nature.getProject()), e);
+											this.getProject()), e);
 
 									monitor.worked(1);
 									continue; // next parameter.
