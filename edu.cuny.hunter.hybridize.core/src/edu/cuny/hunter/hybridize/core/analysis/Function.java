@@ -122,8 +122,8 @@ public class Function extends RefactorableProgramEntity {
 
 				// Save the hybrid decorator
 				try {
-					if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-							Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
+					if (Function.isHybrid(decorator, Function.this.getContainingModuleName(), Function.this.getContainingFile(), selection,
+							Function.this.getNature(), monitor)) // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
@@ -277,24 +277,9 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Boolean likelyHasTensorParameter;
 
-	/**
-	 * Module name of {@link FunctionDefinition}.
-	 */
-	private String containingModuleName;
-
-	/**
-	 * File of {@link FunctionDefinition}.
-	 */
-	private File containingFile;
-
 	private Set<Transformation> transformationSet;
 
 	// private InstanceKey instanceKey;
-
-	/**
-	 * Nature of {@link FunctionDefinition}.
-	 */
-	private IPythonNature nature;
 
 	private PreconditionSuccess passingPrecondition;
 
@@ -320,6 +305,10 @@ public class Function extends RefactorableProgramEntity {
 			exprType[] actualParams = params.args;
 
 			if (actualParams != null) {
+				String containingModuleName = this.getContainingModuleName();
+				File containingFile = this.getContainingFile();
+				String containingFileName = containingFile.getName();
+
 				// for each parameter.
 				for (exprType paramExpr : actualParams) {
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
@@ -348,8 +337,8 @@ public class Function extends RefactorableProgramEntity {
 
 								String fqn;
 								try {
-									fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
-											this.nature, monitor);
+									fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
+											this.getNature(), monitor);
 								} catch (AmbiguousDeclaringModuleException e) {
 									LOG.warn(String.format(
 											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
@@ -404,9 +393,11 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
-			this.containingModuleName = this.getContainingModuleName();
-			this.containingFile = this.getContainingFile();
-			this.nature = this.getNature();
+			String containingModuleName = this.getContainingModuleName();
+			File containingFile = this.getContainingFile();
+			String containingFileName = containingFile.getName();
+			IPythonNature nature = this.getNature();
+			IProject project = this.getProject();
 
 			for (decoratorsType decorator : decoratorArray) {
 				String decoratorFunctionRepresentation = NodeUtils.getFullRepresentationString(decorator.func);
@@ -420,7 +411,7 @@ public class Function extends RefactorableProgramEntity {
 
 				try {
 					selection = Util.getSelection(decorator, document);
-					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
+					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
 				} catch (AmbiguousDeclaringModuleException | BadLocationException | RuntimeException e) {
 					String selectedText = null;
 					try {
@@ -434,21 +425,19 @@ public class Function extends RefactorableProgramEntity {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()));
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
 						// TODO: Add info status here (#120).
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
 						LOG.info(String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()));
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
 						// TODO: Add info status here (#120).
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()), e);
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
+								nature.getProject()), e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
 						// status entry would fail the entire function.
@@ -508,7 +497,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public IPythonNature getNature() {
-		return this.functionDefinition.nature;
+		return this.getFunctionDefinition().getNature();
 	}
 
 	public File getContainingFile() {
