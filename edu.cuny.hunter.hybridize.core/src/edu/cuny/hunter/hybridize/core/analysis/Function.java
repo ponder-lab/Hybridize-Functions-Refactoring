@@ -496,14 +496,29 @@ public class Function extends RefactorableProgramEntity {
 		return this.getFunctionDefinition().containingDocument;
 	}
 
+	/**
+	 * Returns the {@link IPythonNature} for this {@link Function}.
+	 *
+	 * @return This {@link Function}'s {@link IPythonNature}.
+	 */
 	public IPythonNature getNature() {
 		return this.getFunctionDefinition().getNature();
 	}
 
+	/**
+	 * Returns the {@link File} of where this {@link Function} is found.
+	 *
+	 * @return The {@link File} of where this {@link Function} is found.
+	 */
 	public File getContainingFile() {
 		return this.getFunctionDefinition().containingFile;
 	}
 
+	/**
+	 * Returns the Python module name of this {@link Function}.
+	 *
+	 * @return This {@link Function}'s Python module.
+	 */
 	public String getContainingModuleName() {
 		return this.getFunctionDefinition().containingModuleName;
 	}
