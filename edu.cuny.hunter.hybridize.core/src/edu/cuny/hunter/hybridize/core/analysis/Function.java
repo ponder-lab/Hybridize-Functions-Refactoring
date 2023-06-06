@@ -18,6 +18,7 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.NameTokType;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -25,9 +26,20 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.ibm.wala.cast.ir.ssa.AstIRFactory.AstIR;
+import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.loader.AstMethod.DebuggingInformation;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.types.TypeReference;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -365,11 +377,30 @@ public class Function extends RefactorableProgramEntity {
 					// Also, check that the methods are the same, the parameters, and so on? If we match the pointer key, then we know it's
 					// a tensor if the TensorType is not null. Not much else to check right now, right?
 					analysis.forEach(t -> {
-						PointerKey fst = t.fst;
-						System.out.println(fst);
+						PointerKey pointerKey = t.fst;
 
-						TensorVariable snd = t.snd;
-						System.out.println(snd);
+						if (!(pointerKey instanceof LocalPointerKey))
+							throw new IllegalStateException("Expecting LocalPointerKey for: " + pointerKey);
+
+						LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
+
+						if (localPointerKey.isParameter()) {
+							// Does the pointer key match the parameter?
+							if (matches(paramExpr, paramName, localPointerKey)) {
+								// then, check the existence of the tensor variable.
+								TensorVariable tensorVariable = t.snd;
+
+								if (tensorVariable != null) {
+									this.likelyHasTensorParameter = Boolean.TRUE;
+									LOG.info(this + " likely has a tensor parameter due to tensor analysis.");
+									monitor.done();
+									return;
+								} // else
+									// throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
+							} // else
+								// LOG.info(paramExpr + " does not match: " + pointerKey + ".");
+						} else
+							LOG.info(localPointerKey + " is not a parameter.");
 					});
 
 					monitor.worked(1);
@@ -380,6 +411,69 @@ public class Function extends RefactorableProgramEntity {
 		this.likelyHasTensorParameter = Boolean.FALSE;
 		LOG.info(this + " does not likely have a tensor parameter.");
 		monitor.done();
+	}
+
+	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
+		File containingFile = this.getContainingFile();
+		CGNode cgNode = rhsPointerKey.getNode();
+		IMethod method = cgNode.getMethod();
+		IClass declaringClass = method.getDeclaringClass();
+		String sourceFileName = declaringClass.getSourceFileName();
+
+		// are they in the same file?
+		if (containingFile.getAbsolutePath().equals(sourceFileName)) {
+			// that also means that the module is the same according to https://bit.ly/3NcOvnz.
+
+			// we know that rhsPointerKey is a parameter.
+			assert rhsPointerKey.isParameter();
+
+			// since we know that they are in the same file, it should suffice to know whether the source positions match.
+			int lhsBeginColumn = lhsParamExpr.beginColumn;
+			int lhsBeginLine = lhsParamExpr.beginLine;
+			int lhsLength = lhsParamName.length();
+
+			int valueNumber = rhsPointerKey.getValueNumber();
+			System.out.println(valueNumber);
+
+			SSAInstruction def = cgNode.getDU().getDef(valueNumber);
+
+			IR ir = cgNode.getIR();
+
+			AstIR astIR = (AstIR) ir;
+			System.out.println(astIR);
+
+			AstMethod astMethod = astIR.getMethod();
+			System.out.println(astMethod);
+
+			int parameterPositionNumber = valueNumber - 1;
+			Position parameterPosition = astMethod.getParameterPosition(parameterPositionNumber);
+			System.out.println(parameterPosition);
+			
+			int rhsBeginColumn = parameterPosition.getFirstCol();
+			int rhsBeginLine = parameterPosition.getFirstLine();
+			int rhsLength = parameterPosition.getLastCol() - rhsBeginColumn;
+			
+			DebuggingInformation debugInfo = astMethod.debugInfo();
+			Position codeBodyPosition = debugInfo.getCodeBodyPosition();
+			System.out.println(codeBodyPosition);
+			
+			
+			
+			String string = ir.toString();
+			System.out.println(ir);
+			int[] parameterValueNumbers = ir.getSymbolTable().getParameterValueNumbers();
+			System.out.println("RAFFI: " + parameterValueNumbers);
+
+			// are the method/function names the same?
+			NameTokType lhsName = this.getFunctionDefinition().getFunctionDef().name;
+
+			TypeReference parameterType = method.getParameterType(0);
+			System.out.println(parameterType);
+
+		} else
+			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
+
+		return false;
 	}
 
 	/**
