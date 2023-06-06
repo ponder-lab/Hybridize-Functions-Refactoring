@@ -435,10 +435,10 @@ public class Function extends RefactorableProgramEntity {
 			int rhsLength = rhsEndColumn - rhsBeginColumn;
 
 			return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine && lhsLength == rhsLength;
-		} else {
-			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
-			return false;
 		}
+
+		LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
+		return false;
 	}
 
 	/**
