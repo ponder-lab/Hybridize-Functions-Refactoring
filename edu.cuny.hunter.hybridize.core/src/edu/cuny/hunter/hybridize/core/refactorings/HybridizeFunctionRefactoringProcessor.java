@@ -169,7 +169,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
 
 			// analyze Python functions.
-			LOG.info("Analyzing" + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
+			LOG.info("Analyzing " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.AnalyzingFunctions, projectFunctions.size());
 
 			// check preconditions.
