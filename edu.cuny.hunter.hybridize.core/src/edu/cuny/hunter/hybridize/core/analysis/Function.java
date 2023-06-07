@@ -368,27 +368,32 @@ public class Function extends RefactorableProgramEntity {
 					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
 					// pointer key, then we know it's a tensor if the TensorType is not null.
 					for (Pair<PointerKey, TensorVariable> pair : analysis) {
-						LocalPointerKey localPointerKey = (LocalPointerKey) pair.fst;
+						PointerKey pointerKey = pair.fst;
 
-						if (localPointerKey.isParameter()) {
-							// Does the pointer key match the parameter?
-							if (matches(paramExpr, paramName, localPointerKey)) {
-								LOG.info(paramExpr + " matches: " + localPointerKey + ".");
+						if (pointerKey instanceof LocalPointerKey) {
+							LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 
-								// check the existence of the tensor variable.
-								TensorVariable tensorVariable = pair.snd;
+							if (localPointerKey.isParameter()) {
+								// Does the pointer key match the parameter?
+								if (matches(paramExpr, paramName, localPointerKey)) {
+									LOG.info(paramExpr + " matches: " + localPointerKey + ".");
 
-								if (tensorVariable != null) {
-									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter due to tensor analysis.");
-									monitor.done();
-									return;
+									// check the existence of the tensor variable.
+									TensorVariable tensorVariable = pair.snd;
+
+									if (tensorVariable != null) {
+										this.likelyHasTensorParameter = Boolean.TRUE;
+										LOG.info(this + " likely has a tensor parameter due to tensor analysis.");
+										monitor.done();
+										return;
+									}
+									throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
 								}
-								throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
-							}
-							LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
+								LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
+							} else
+								LOG.info(localPointerKey + " is not a parameter.");
 						} else
-							LOG.info(localPointerKey + " is not a parameter.");
+							LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
 					}
 					monitor.worked(1);
 				}
