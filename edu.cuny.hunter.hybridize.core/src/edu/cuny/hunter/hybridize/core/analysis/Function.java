@@ -373,6 +373,8 @@ public class Function extends RefactorableProgramEntity {
 						if (pointerKey instanceof LocalPointerKey) {
 							LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 
+							System.out.println("Is Parameter: " + localPointerKey.isParameter());
+
 							if (localPointerKey.isParameter()) {
 								// Does the pointer key match the parameter?
 								if (matches(paramExpr, paramName, localPointerKey)) {
@@ -415,7 +417,7 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
 		File containingFile = this.getContainingFile();
-		System.out.println("DEBUG: " + rhsPointerKey.getNode());
+		System.out.println("DEBUG: " + rhsPointerKey.getNode() + " lhsParamExpr: " + lhsParamExpr + " lhsParamName: " + lhsParamName);
 		AstMethod method = (AstMethod) rhsPointerKey.getNode().getMethod();
 		String sourceFileName = method.getDeclaringClass().getSourceFileName();
 
