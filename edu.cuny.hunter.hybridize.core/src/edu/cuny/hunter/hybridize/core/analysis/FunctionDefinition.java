@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import java.io.File;
 import java.util.Objects;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.parser.jython.ast.FunctionDef;
@@ -75,8 +76,7 @@ public final class FunctionDefinition {
 				return Objects.equals(this.containingModuleName, other.containingModuleName)
 						&& Objects.equals(this.containingFile, other.containingFile)
 						&& Objects.equals(this.containingDocument, other.containingDocument)
-						&& lhsFunctionDef.beginColumn == rhsFunctionDef.beginColumn
-						&& lhsFunctionDef.beginLine == rhsFunctionDef.beginLine
+						&& lhsFunctionDef.beginColumn == rhsFunctionDef.beginColumn && lhsFunctionDef.beginLine == rhsFunctionDef.beginLine
 						&& lhsId == rhsId;
 			}
 		}
@@ -92,5 +92,13 @@ public final class FunctionDefinition {
 
 	public FunctionDef getFunctionDef() {
 		return functionDef;
+	}
+
+	public IPythonNature getNature() {
+		return nature;
+	}
+
+	public IProject getProject() {
+		return this.getNature().getProject();
 	}
 }

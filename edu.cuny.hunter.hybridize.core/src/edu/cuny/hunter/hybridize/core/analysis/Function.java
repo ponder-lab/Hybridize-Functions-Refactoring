@@ -4,11 +4,14 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Objects;
+import java.util.Set;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -21,6 +24,16 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
+
+import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.util.collections.Pair;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
@@ -115,8 +128,8 @@ public class Function extends RefactorableProgramEntity {
 
 				// Save the hybrid decorator
 				try {
-					if (Function.isHybrid(decorator, Function.this.containingModuleName, Function.this.containingFile, selection,
-							Function.this.nature, monitor)) // TODO: Cache this from a previous call (#118).
+					if (Function.isHybrid(decorator, Function.this.getContainingModuleName(), Function.this.getContainingFile(), selection,
+							Function.this.getNature(), monitor)) // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
 				} catch (AmbiguousDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
@@ -270,26 +283,24 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Boolean likelyHasTensorParameter;
 
-	/**
-	 * Module name of {@link FunctionDefinition}.
-	 */
-	private String containingModuleName;
+	private Set<Transformation> transformationSet;
+
+	// private InstanceKey instanceKey;
+
+	private PreconditionSuccess passingPrecondition;
 
 	/**
-	 * File of {@link FunctionDefinition}.
+	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive.
 	 */
-	private File containingFile;
+	private Refactoring refactoring;
 
-	/**
-	 * Nature of {@link FunctionDefinition}.
-	 */
-	private IPythonNature nature;
+	private RefactoringStatus status = new RefactoringStatus();
 
 	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
 	}
 
-	public void inferTensorTensorParameters(IProgressMonitor monitor) throws BadLocationException {
+	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
@@ -300,6 +311,10 @@ public class Function extends RefactorableProgramEntity {
 			exprType[] actualParams = params.args;
 
 			if (actualParams != null) {
+				String containingModuleName = this.getContainingModuleName();
+				File containingFile = this.getContainingFile();
+				String containingFileName = containingFile.getName();
+
 				// for each parameter.
 				for (exprType paramExpr : actualParams) {
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
@@ -328,13 +343,13 @@ public class Function extends RefactorableProgramEntity {
 
 								String fqn;
 								try {
-									fqn = Util.getFullyQualifiedName(typeHintExpr, this.containingModuleName, containingFile, selection,
-											this.nature, monitor);
+									fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
+											this.getNature(), monitor);
 								} catch (AmbiguousDeclaringModuleException e) {
 									LOG.warn(String.format(
 											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
 											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
-											nature.getProject()), e);
+											this.getProject()), e);
 
 									monitor.worked(1);
 									continue; // next parameter.
@@ -344,12 +359,43 @@ public class Function extends RefactorableProgramEntity {
 
 								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
 									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter.");
+									LOG.info(this + " likely has a tensor parameter due to a type hint.");
 									monitor.done();
 									return;
 								}
 							}
 						}
+					}
+
+					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
+					// pointer key, then we know it's a tensor if the TensorType is not null.
+					for (Pair<PointerKey, TensorVariable> pair : analysis) {
+						PointerKey pointerKey = pair.fst;
+
+						if (pointerKey instanceof LocalPointerKey) {
+							LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
+
+							if (localPointerKey.isParameter()) {
+								// Does the pointer key match the parameter?
+								if (matches(paramExpr, paramName, localPointerKey)) {
+									LOG.info(paramExpr + " matches: " + localPointerKey + ".");
+
+									// check the existence of the tensor variable.
+									TensorVariable tensorVariable = pair.snd;
+
+									if (tensorVariable != null) {
+										this.likelyHasTensorParameter = Boolean.TRUE;
+										LOG.info(this + " likely has a tensor parameter due to tensor analysis.");
+										monitor.done();
+										return;
+									}
+									throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
+								}
+								LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
+							} else
+								LOG.info(localPointerKey + " is not a parameter.");
+						} else
+							LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
 					}
 					monitor.worked(1);
 				}
@@ -359,6 +405,54 @@ public class Function extends RefactorableProgramEntity {
 		this.likelyHasTensorParameter = Boolean.FALSE;
 		LOG.info(this + " does not likely have a tensor parameter.");
 		monitor.done();
+	}
+
+	/**
+	 * Returns true iff lhsParamExpr corresponds to rhsPointerKey.
+	 *
+	 * @param lhsParamExpr The "left hand side" expression to compare. Should represent a function parameter.
+	 * @param lhsParamName The name of the parameter represented by lhsParamExpr.
+	 * @param rhsPointerKey The rhsPointerKey representing the parameter.
+	 * @return True iff lhsParamExpr corresponds to rhsPointerKey.
+	 */
+	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
+		File containingFile = this.getContainingFile();
+		CGNode node = rhsPointerKey.getNode();
+		IMethod nodeMethod = node.getMethod();
+
+		if (nodeMethod instanceof AstMethod) {
+			AstMethod astMethod = (AstMethod) nodeMethod;
+			String sourceFileName = astMethod.getDeclaringClass().getSourceFileName();
+
+			// are they in the same file?
+			if (containingFile.getAbsolutePath().equals(sourceFileName)) {
+				// that also means that the module is the same according to https://bit.ly/3NcOvnz.
+
+				// we know that rhsPointerKey is a parameter.
+				assert rhsPointerKey.isParameter();
+
+				// since we know that they are in the same file, it should suffice to know whether the source positions match.
+				int lhsBeginColumn = lhsParamExpr.beginColumn;
+				int lhsBeginLine = lhsParamExpr.beginLine;
+				int lhsLength = lhsParamName.length();
+
+				int paramIndex = rhsPointerKey.getValueNumber() - 1;
+				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
+				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
+
+				int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
+				int rhsEndColumn = parameterPosition.getLastCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
+				int rhsBeginLine = parameterPosition.getFirstLine();
+				int rhsLength = rhsEndColumn - rhsBeginColumn;
+
+				return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine && lhsLength == rhsLength;
+			}
+
+			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
+		} else
+			LOG.warn("Encountered non-AST method: " + nodeMethod + ".");
+
+		return false;
 	}
 
 	/**
@@ -372,9 +466,11 @@ public class Function extends RefactorableProgramEntity {
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
 		if (decoratorArray != null) {
-			this.containingModuleName = this.getContainingModuleName();
-			this.containingFile = this.getContainingFile();
-			this.nature = this.getNature();
+			String containingModuleName = this.getContainingModuleName();
+			File containingFile = this.getContainingFile();
+			String containingFileName = containingFile.getName();
+			IPythonNature nature = this.getNature();
+			IProject project = this.getProject();
 
 			for (decoratorsType decorator : decoratorArray) {
 				String decoratorFunctionRepresentation = NodeUtils.getFullRepresentationString(decorator.func);
@@ -388,7 +484,7 @@ public class Function extends RefactorableProgramEntity {
 
 				try {
 					selection = Util.getSelection(decorator, document);
-					hybrid = isHybrid(decorator, this.containingModuleName, this.containingFile, selection, this.nature, monitor);
+					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
 				} catch (AmbiguousDeclaringModuleException | BadLocationException | RuntimeException e) {
 					String selectedText = null;
 					try {
@@ -402,21 +498,19 @@ public class Function extends RefactorableProgramEntity {
 						// Since tf.function isn't generated, skip generated decorators.
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()));
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
 						// TODO: Add info status here (#120).
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
 						LOG.info(String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()));
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
 						// TODO: Add info status here (#120).
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
-								decoratorFunctionRepresentation, selectedText, this.containingModuleName, this.containingFile.getName(),
-								this.nature.getProject()), e);
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
+								nature.getProject()), e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
 						// status entry would fail the entire function.
@@ -475,14 +569,29 @@ public class Function extends RefactorableProgramEntity {
 		return this.getFunctionDefinition().containingDocument;
 	}
 
+	/**
+	 * Returns the {@link IPythonNature} for this {@link Function}.
+	 *
+	 * @return This {@link Function}'s {@link IPythonNature}.
+	 */
 	public IPythonNature getNature() {
-		return this.functionDefinition.nature;
+		return this.getFunctionDefinition().getNature();
 	}
 
+	/**
+	 * Returns the {@link File} of where this {@link Function} is found.
+	 *
+	 * @return The {@link File} of where this {@link Function} is found.
+	 */
 	public File getContainingFile() {
 		return this.getFunctionDefinition().containingFile;
 	}
 
+	/**
+	 * Returns the Python module name of this {@link Function}.
+	 *
+	 * @return This {@link Function}'s Python module.
+	 */
 	public String getContainingModuleName() {
 		return this.getFunctionDefinition().containingModuleName;
 	}
@@ -532,7 +641,7 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
-	public Boolean likelyHasTensorParameter() {
+	public Boolean getLikelyHasTensorParameter() {
 		return this.likelyHasTensorParameter;
 	}
 
@@ -564,5 +673,13 @@ public class Function extends RefactorableProgramEntity {
 
 	public argumentsType getParameters() {
 		return getFunctionDefinition().getFunctionDef().args;
+	}
+
+	public RefactoringStatus getStatus() {
+		return this.status;
+	}
+
+	public IProject getProject() {
+		return this.getFunctionDefinition().getProject();
 	}
 }
