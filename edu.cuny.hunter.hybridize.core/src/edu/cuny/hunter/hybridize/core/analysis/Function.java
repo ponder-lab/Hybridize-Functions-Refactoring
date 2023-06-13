@@ -418,6 +418,7 @@ public class Function extends RefactorableProgramEntity {
 	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
 		File containingFile = this.getContainingFile();
 		System.out.println("DEBUG: " + rhsPointerKey.getNode() + " lhsParamExpr: " + lhsParamExpr + " lhsParamName: " + lhsParamName);
+		System.out.println("DEBUG (this is having problem with cast): " + rhsPointerKey.getNode().getMethod());
 		AstMethod method = (AstMethod) rhsPointerKey.getNode().getMethod();
 		String sourceFileName = method.getDeclaringClass().getSourceFileName();
 
