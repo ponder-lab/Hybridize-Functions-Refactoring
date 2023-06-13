@@ -29,6 +29,8 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.util.collections.Pair;
@@ -415,34 +417,41 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
 		File containingFile = this.getContainingFile();
-		AstMethod method = (AstMethod) rhsPointerKey.getNode().getMethod();
-		String sourceFileName = method.getDeclaringClass().getSourceFileName();
+		CGNode node = rhsPointerKey.getNode();
+		IMethod nodeMethod = node.getMethod();
 
-		// are they in the same file?
-		if (containingFile.getAbsolutePath().equals(sourceFileName)) {
-			// that also means that the module is the same according to https://bit.ly/3NcOvnz.
+		if (nodeMethod instanceof AstMethod) {
+			AstMethod astMethod = (AstMethod) nodeMethod;
+			String sourceFileName = astMethod.getDeclaringClass().getSourceFileName();
 
-			// we know that rhsPointerKey is a parameter.
-			assert rhsPointerKey.isParameter();
+			// are they in the same file?
+			if (containingFile.getAbsolutePath().equals(sourceFileName)) {
+				// that also means that the module is the same according to https://bit.ly/3NcOvnz.
 
-			// since we know that they are in the same file, it should suffice to know whether the source positions match.
-			int lhsBeginColumn = lhsParamExpr.beginColumn;
-			int lhsBeginLine = lhsParamExpr.beginLine;
-			int lhsLength = lhsParamName.length();
+				// we know that rhsPointerKey is a parameter.
+				assert rhsPointerKey.isParameter();
 
-			int paramIndex = rhsPointerKey.getValueNumber() - 1;
-			Position parameterPosition = method.getParameterPosition(paramIndex);
-			LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
+				// since we know that they are in the same file, it should suffice to know whether the source positions match.
+				int lhsBeginColumn = lhsParamExpr.beginColumn;
+				int lhsBeginLine = lhsParamExpr.beginLine;
+				int lhsLength = lhsParamName.length();
 
-			int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
-			int rhsEndColumn = parameterPosition.getLastCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
-			int rhsBeginLine = parameterPosition.getFirstLine();
-			int rhsLength = rhsEndColumn - rhsBeginColumn;
+				int paramIndex = rhsPointerKey.getValueNumber() - 1;
+				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
+				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
 
-			return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine && lhsLength == rhsLength;
-		}
+				int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
+				int rhsEndColumn = parameterPosition.getLastCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
+				int rhsBeginLine = parameterPosition.getFirstLine();
+				int rhsLength = rhsEndColumn - rhsBeginColumn;
 
-		LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
+				return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine && lhsLength == rhsLength;
+			}
+
+			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
+		} else
+			LOG.warn("Encountered non-AST method: " + nodeMethod + ".");
+
 		return false;
 	}
 
