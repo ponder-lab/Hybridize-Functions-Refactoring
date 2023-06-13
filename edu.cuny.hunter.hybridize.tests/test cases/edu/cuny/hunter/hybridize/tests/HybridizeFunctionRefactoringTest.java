@@ -801,7 +801,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & args.getAutoGraphParamExists() && !args.getJitCompileParamExists()
 				&& !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists() && !args.getExperimentalAutographOptParamExists()
 				&& !args.getExperimentalFollowTypeHintsParamExists());
-
 	}
 
 	/**
@@ -823,7 +822,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists() && args.getJitCompileParamExists()
 				&& !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists() && !args.getExperimentalAutographOptParamExists()
 				&& !args.getExperimentalFollowTypeHintsParamExists());
-
 	}
 
 	/**
