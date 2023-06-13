@@ -1,4 +1,6 @@
-os: linux
+os:
+  - linux
+  - osx
 dist: focal
 language: java
 jdk: openjdk11
