@@ -18,6 +18,7 @@ addons:
       - sourceline: "ppa:deadsnakes/ppa"
     packages:
       - python3.10
+      - python3.10-distutils
     update: true
 services:
 - xvfb
