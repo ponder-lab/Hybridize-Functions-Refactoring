@@ -77,7 +77,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	/**
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
-	private boolean dumpCallGraph = true;
+	private boolean dumpCallGraph;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
