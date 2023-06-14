@@ -1,9 +1,10 @@
 os:
   - linux
   - osx
-dist: focal
+dist: jammy
 language: java
 jdk: openjdk11
+python: 3.10
 cache:
   apt: true
   pip: true
@@ -13,17 +14,6 @@ cache:
   - $HOME/.cache/pip
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
-  - sudo apt install -y software-properties-common
-  - sudo add-apt-repository -y ppa:deadsnakes/ppa
-  - sudo apt install -y python3.10
-  - sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
-  - sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 2
-  - sudo update-alternatives --auto python3
-  - sudo apt install -y python3.10-distutils
-  - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/opt/pyenv/shims" | tr "\n" ":"` # Removing pyenv path from PATH which was being used by command python3.
-  - export PATH=`echo $PATH | tr ":" "\n" | grep -v "/home/travis/.phpenv/shims" | tr "\n" ":"` # Removing the remaining pyenv path from PATH to make sure we are not using pyenv.
-  - PATH="$PATH:/usr/bin/python3.10" # Adding our Python version to PATH.
 services:
 - xvfb
 install:

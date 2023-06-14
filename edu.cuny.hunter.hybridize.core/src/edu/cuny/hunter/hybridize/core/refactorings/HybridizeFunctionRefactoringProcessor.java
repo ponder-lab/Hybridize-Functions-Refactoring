@@ -77,7 +77,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	/**
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
-	private boolean dumpCallGraph = true;
+	private boolean dumpCallGraph;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
@@ -151,7 +151,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			}
 
 			timeCollector.start();
-			if (this.shouldDumpCallGraph()) {
+			if (this.getDumpCallGraph()) {
 				CAstCallGraphUtil.dumpCG(builder.getCFAContextInterpreter(), builder.getPointerAnalysis(), callGraph);
 				// DotUtil.dotify(callGraph, null, PDFTypeHierarchy.DOT_FILE, "callgraph.pdf", "dot");
 			}
@@ -309,7 +309,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return projectToCallGraph;
 	}
 
-	protected boolean shouldDumpCallGraph() {
+	protected boolean getDumpCallGraph() {
 		return dumpCallGraph;
 	}
 

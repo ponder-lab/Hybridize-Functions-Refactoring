@@ -169,7 +169,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static Entry<SimpleNode, IDocument> createPythonNode(String moduleName, File file, String contents)
 			throws MisconfigurationException {
 		LOG.info("Creating PythonNode for " + moduleName + " in " + file);
-		LOG.info("Contents: " + contents);
 
 		IDocument document = new Document(contents);
 
