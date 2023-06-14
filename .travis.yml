@@ -12,6 +12,16 @@ cache:
   - $HOME/.cache/pip
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
+addons:
+  apt:
+    sources:
+      - deadsnakes
+    packages:
+      - software-properties-common
+      - python3.10
+      - python3.10-distutils
+      - python3-pip
+    update: true
 services:
 - xvfb
 install:
