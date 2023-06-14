@@ -18,7 +18,8 @@ Having PyDev in your workspace in its own "working set" is helpful to visualize 
 <!-- Checkout a particular release (e.g., `git checkout pydev_9_3_0`), then-->
 Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
 
-In order to have access to the [Ariadne: PONDER branch][Ariadne] packages in order to build this project, you need to create a new ~/.m2/settings.xml file or modify it and add the following:
+To gain access to the [Ariadne: PONDER branch][Ariadne] packages for building your project, you'll need to create a new file or modify the existing in `~/.m2/settings.xml`. In `settings.xml`, you should have the following:
+
 ```
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -57,7 +58,7 @@ In order to have access to the [Ariadne: PONDER branch][Ariadne] packages in ord
   </servers>
 </settings>
 ```
-You need to fill in the `GITHUBUSERNAME` and `GITHUBPASSWORD` with your GitHub username and GitHub personal token. For the GitHub personal token, please ensure at least you have the `read:packages` scope selected.
+You'll need to replace the `GITHUBUSERNAME` and `GITHUBPASSWORD` with your GitHub credentions which include the username and personal token. For the GitHub personal token, please ensure at least you have the `read:packages` scope selected.
 
 <!-- It's also possible just to use `mvn install` if you do not intend on changing any of the dependencies. Alternatively, -->
 You may use the following update sites to install some of the appropriate plugins into your Eclipse installation:
