@@ -285,7 +285,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path requirements = path.resolve("requirements.txt");
 
 		// install requirements.
-		runCommand("pip3.10", "install", "-r", requirements.toString());
+		runCommand("python3.10", "-m", "pip", "install", "-r", requirements.toString());
 	}
 
 	protected static boolean isPython3Test() {
