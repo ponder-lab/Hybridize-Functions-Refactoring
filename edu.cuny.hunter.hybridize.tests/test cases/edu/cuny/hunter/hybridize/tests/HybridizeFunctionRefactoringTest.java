@@ -169,7 +169,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static Entry<SimpleNode, IDocument> createPythonNode(String moduleName, File file, String contents)
 			throws MisconfigurationException {
 		LOG.info("Creating PythonNode for " + moduleName + " in " + file);
-		LOG.info("Contents: " + contents);
 
 		IDocument document = new Document(contents);
 
@@ -286,7 +285,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path requirements = path.resolve("requirements.txt");
 
 		// install requirements.
-		runCommand("pip3.10", "install", "-r", requirements.toString());
+		runCommand("python3.10", "-m", "pip", "install", "-r", requirements.toString());
 	}
 
 	protected static boolean isPython3Test() {
