@@ -2067,9 +2067,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 
 		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
 		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			case "__call__":
+				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
 	}
 
 	/**
@@ -2082,9 +2099,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(functions);
 
 		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
 		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			case "call":
+				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
 	}
 
 	/**
