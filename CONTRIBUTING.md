@@ -18,7 +18,7 @@ Having PyDev in your workspace in its own "working set" is helpful to visualize 
 <!-- Checkout a particular release (e.g., `git checkout pydev_9_3_0`), then-->
 Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
 
-To gain access to the [Ariadne: PONDER branch][Ariadne] packages for building your project, you'll need to create a new file or modify the existing in `~/.m2/settings.xml`. In `settings.xml`, you should have the following:
+To gain access to the [Ariadne] packages for building your project, you'll need to create a new file or modify the existing in `~/.m2/settings.xml`. In `settings.xml`, you should have the following:
 
 ```
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
