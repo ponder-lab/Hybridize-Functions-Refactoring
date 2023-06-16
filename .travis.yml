@@ -9,7 +9,7 @@ cache:
   directories:
   - "$HOME/.m2"
   - "$HOME/.p2"
-  - $HOME/.cache/pip
+  - "$HOME/.cache/pip"
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
@@ -20,7 +20,6 @@ addons:
     packages:
       - python3.10
       - python3.10-distutils
-    update: true
 services:
 - xvfb
 install:
