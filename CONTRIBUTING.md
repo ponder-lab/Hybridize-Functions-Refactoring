@@ -12,7 +12,7 @@ You should have the following projects in your workspace:
 
 1. [Common Eclipse Refactoring Framework](https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework).
 1. [PyDev 9.3 branch][PyDev].
-1. [Ariadne: PONDER branch][Ariadne]
+1. [Ariadne ponder-lab fork][Ariadne]
 
 Having PyDev in your workspace in its own "working set" is helpful to visualize the structure of the project.
 <!-- Checkout a particular release (e.g., `git checkout pydev_9_3_0`), then-->
