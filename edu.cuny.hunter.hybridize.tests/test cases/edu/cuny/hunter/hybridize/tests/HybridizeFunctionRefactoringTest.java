@@ -2179,7 +2179,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		});
 	}
-	
+
 	/**
 	 * Test a model w/o client code (use contexts). No tf.function in this one.
 	 */
