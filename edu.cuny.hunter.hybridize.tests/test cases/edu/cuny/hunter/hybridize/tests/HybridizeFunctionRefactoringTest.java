@@ -2054,7 +2054,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
-	// TODO: Model code w/o client code (use contexts).
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
 	// those to be refactored?
 
@@ -2174,6 +2173,68 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
+	}
+	
+	/**
+	 * Test a model w/o client code (use contexts). No tf.function in this one.
+	 */
+	@Test
+	public void testModel5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 2, functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			case "call":
+				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
+	}
+
+	/**
+	 * Test a model w/o client code (use contexts). No tf.function in this one.
+	 */
+	@Test
+	public void testModel6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 2, functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			case "__call__":
+				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
