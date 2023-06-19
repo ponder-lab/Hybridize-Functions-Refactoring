@@ -19,7 +19,7 @@ Having PyDev in your workspace in its own "working set" is helpful to visualize 
 <!-- Checkout a particular release (e.g., `git checkout pydev_9_3_0`), then-->
 Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
 
-To access the [Ariadne] packages for building your project, refer to [GitHub Packages Documentation] for instructions.
+To access the [Ariadne packages] for building your project, refer to [GitHub Packages Documentation] for instructions.
 
 <!-- It's also possible just to use `mvn install` if you do not intend on changing any of the dependencies. Alternatively, -->
 You may use the following update sites to install some of the appropriate plugins into your Eclipse installation:
@@ -34,5 +34,6 @@ Dependency | Update Site
 [PyDev]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
 [Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
 [Ariadne]: https://github.com/ponder-lab/ML
+[Ariadne packages]: https://github.com/orgs/ponder-lab/packages?repo_name=ML
 [WALA]: https://github.com/ponder-lab/WALA/tree/v1.6
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
