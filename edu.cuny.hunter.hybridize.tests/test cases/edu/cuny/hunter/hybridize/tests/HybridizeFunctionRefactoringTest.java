@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -2996,18 +2997,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
-		
-		// First function
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-		
-		// Second function 
-		function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
 
 		// one param.
 		exprType[] actualParams = params.args;
@@ -3019,7 +3019,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+
 	}
 	
 	
@@ -3031,18 +3032,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
-		
-		// First function
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-		
-		// Second function 
-		function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
 
 		// one param.
 		exprType[] actualParams = params.args;
@@ -3054,7 +3054,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+
 	}
 	
 	
@@ -3066,18 +3067,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size());
-		
-		// First function
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-		
-		// Second function 
-		function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
 
 		// one param.
 		exprType[] actualParams = params.args;
@@ -3089,7 +3089,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+
 	}
 	
 	
