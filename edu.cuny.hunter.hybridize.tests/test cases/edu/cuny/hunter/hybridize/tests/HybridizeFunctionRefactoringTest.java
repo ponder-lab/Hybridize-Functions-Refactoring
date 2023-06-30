@@ -2316,7 +2316,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `ones`.
 	 */
@@ -2349,7 +2349,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `ones`.
 	 */
@@ -2382,7 +2382,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `random.uniform`.
 	 */
@@ -2415,7 +2415,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `random.uniform`.
 	 */
@@ -2448,7 +2448,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `random.uniform`.
 	 */
@@ -2481,7 +2481,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2514,7 +2514,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2547,7 +2547,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2580,7 +2580,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2613,8 +2613,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2647,8 +2646,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `Variable`.
 	 */
@@ -2681,8 +2679,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `constant`.
 	 */
@@ -2715,8 +2712,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `constant`.
 	 */
@@ -2749,8 +2745,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `zeros`.
 	 */
@@ -2783,8 +2778,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `SparseTensor`.
 	 */
@@ -2817,8 +2811,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `fill`.
 	 */
@@ -2851,8 +2844,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `zeros_like`.
 	 */
@@ -2885,8 +2877,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `one_hot`.
 	 */
@@ -2919,8 +2910,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `convert_tensor`.
 	 */
@@ -2953,8 +2943,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `range`.
 	 */
@@ -2987,7 +2976,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Tensor`.
 	 */
@@ -3021,7 +3010,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
 		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Tensor`.
 	 */
@@ -3055,7 +3044,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
 		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `Tensor`.
 	 */
@@ -3089,7 +3078,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
 		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
-	
+
 	/**
 	 * Test for #2 for TF API `eye`.
 	 */
@@ -3122,8 +3111,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `Tensor`.
 	 */
@@ -3156,8 +3144,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `SparseTensor`.
 	 */
@@ -3190,8 +3177,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
-	
-	
+
 	/**
 	 * Test for #2 for TF API `ones`.
 	 */
