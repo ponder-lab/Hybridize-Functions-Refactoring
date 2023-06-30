@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -2288,6 +2289,914 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter31() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `ones`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter32() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `ones`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter33() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `random.uniform`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter34() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `random.uniform`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter35() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `random.uniform`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter36() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter37() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter38() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter39() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter40() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter41() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `Variable`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter42() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `constant`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter43() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `constant`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter44() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `zeros`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter45() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `SparseTensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter46() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `fill`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter47() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `zeros_like`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter48() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `one_hot`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter49() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `convert_tensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter50() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter51() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Tensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter52() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Tensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter53() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `Tensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter54() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+	
+	/**
+	 * Test for #2 for TF API `eye`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter55() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `Tensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter56() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `SparseTensor`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter57() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+	
+	
+	/**
+	 * Test for #2 for TF API `ones`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter58() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
