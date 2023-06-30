@@ -3018,9 +3018,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		// TODO: Uncomment when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
-		// assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
-
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
 	
 	/**
@@ -3053,9 +3052,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		// TODO: Uncomment when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
-		// assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
-
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
 	
 	/**
@@ -3088,9 +3086,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		// TODO: Uncomment when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
-		// assertTrue("Expecting function with likely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
-
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
 	
 	/**
