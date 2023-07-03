@@ -30,7 +30,7 @@
 		<url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues</url>
 	</issueManagement>
 	<properties>
-		<tycho-version>2.7.5</tycho-version>
+		<tycho-version>4.0.0</tycho-version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<jacoco-version>0.8.10</jacoco-version>
 		<maven-checkstyle-plugin-version>3.2.2</maven-checkstyle-plugin-version>
