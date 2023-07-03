@@ -39,6 +39,12 @@
         <putfield class="LRoot" field="layers" fieldType="LRoot" ref="x" value="layers" />
         <new def="random" class="Lobject" />
         <putfield class="LRoot" field="random" fieldType="LRoot" ref="x" value="random" />
+        <new def="sparse" class="Lobject" />
+        <putfield class="LRoot" field="sparse" fieldType="LRoot" ref="x" value="sparse" />
+        <new def="linalg" class="Lobject" />
+        <putfield class="LRoot" field="linalg" fieldType="LRoot" ref="x" value="linalg" />
+        <new def="keras" class="Lobject" />
+        <putfield class="LRoot" field="keras" fieldType="LRoot" ref="x" value="keras" />
 
         <new def="app" class="Lobject" />
         <putfield class="LRoot" field="app" fieldType="LRoot" ref="x" value="app" />
@@ -57,44 +63,8 @@
         <new def="reshape" class="Ltensorflow/functions/reshape" />
         <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="x" value="reshape" />
 
-        <new def="ones" class="Ltensorflow/functions/ones" />
-        <putfield class="LRoot" field="ones" fieldType="LRoot" ref="x" value="ones" />
-
-        <new def="Variable" class="Ltensorflow/functions/Variable" />
-        <putfield class="LRoot" field="Variable" fieldType="LRoot" ref="x" value="Variable" />
-
-        <new def="constant" class="Ltensorflow/functions/constant" />
-        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
-
-        <new def="zeros" class="Ltensorflow/functions/zeros" />
-        <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
-
-        <new def="SparseTensor" class="Ltensorflow/functions/SparseTensor" />
-        <putfield class="LRoot" field="SparseTensor" fieldType="LRoot" ref="x" value="SparseTensor" />
-
-        <new def="fill" class="Ltensorflow/functions/fill" />
-        <putfield class="LRoot" field="fill" fieldType="LRoot" ref="x" value="fill" />
-
-        <new def="zeros_like" class="Ltensorflow/functions/zeros_like" />
-        <putfield class="LRoot" field="zeros_like" fieldType="LRoot" ref="x" value="zeros_like" />
-
-        <new def="one_hot" class="Ltensorflow/functions/one_hot" />
-        <putfield class="LRoot" field="one_hot" fieldType="LRoot" ref="x" value="one_hot" />
-
-        <new def="convert_to_tensor" class="Ltensorflow/functions/convert_to_tensor" />
-        <putfield class="LRoot" field="convert_to_tensor" fieldType="LRoot" ref="x" value="convert_to_tensor" />
-
-        <new def="range" class="Ltensorflow/functions/range" />
-        <putfield class="LRoot" field="range" fieldType="LRoot" ref="x" value="range" />
-
-        <new def="Tensor" class="Ltensorflow/functions/Tensor" />
-        <putfield class="LRoot" field="Tensor" fieldType="LRoot" ref="x" value="Tensor" />
-
-        <new def="eye" class="Ltensorflow/functions/eye" />
-        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="x" value="eye" />
-
-        <new def="uniform" class="Ltensorflow/functions/uniform" />
-        <putfield class="LRoot" field="uniform" fieldType="LRoot" ref="random" value="uniform" />
+        <new def="Input" class="Ltensorflow/functions/Input" />
+        <putfield class="LRoot" field="Input" fieldType="LRoot" ref="keras" value="Input" />
 
         <new def="conv2d" class="Ltensorflow/functions/conv2d" />
         <putfield class="LRoot" field="conv2d" fieldType="LRoot" ref="x" value="conv2d" />
@@ -125,11 +95,16 @@
         <new def="python" class="Lobject" />
         <putfield class="LRoot" field="python" fieldType="LRoot" ref="x" value="python" />
 
-        <new def="ops" class="Lobject" />
-        <putfield class="LRoot" field="ops" fieldType="LRoot" ref="python" value="ops" />
-
         <new def="framework" class="Lobject" />
         <putfield class="LRoot" field="framework" fieldType="LRoot" ref="python" value="framework" />
+
+        <new def="ops" class="Lobject" />
+        <putfield class="LRoot" field="ops" fieldType="LRoot" ref="python" value="ops" />
+        <putfield class="LRoot" field="ops" fieldType="LRoot" ref="framework" value="ops" />
+
+        <new def="ragged" class="Lobject" />
+        <putfield class="LRoot" field="ragged" fieldType="LRoot" ref="x" value="ragged" />
+        <putfield class="LRoot" field="ragged" fieldType="LRoot" ref="ops" value="ragged" />
 
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
@@ -143,11 +118,11 @@
         <new def="linalg_ops" class="Lobject" />
         <putfield class="LRoot" field="linalg_ops" fieldType="LRoot" ref="ops" value="linalg_ops" />
 
+        <new def="sparse_ops" class="Lobject" />
+        <putfield class="LRoot" field="sparse_ops" fieldType="LRoot" ref="ops" value="sparse_ops" />
+
         <new def="variables" class="Lobject" />
         <putfield class="LRoot" field="variables" fieldType="LRoot" ref="ops" value="variables" />
-
-        <new def="ops2" class="Lobject" />
-        <putfield class="LRoot" field="ops" fieldType="LRoot" ref="framework" value="ops2" />
 
         <new def="sparse_tensor" class="Lobject" />
         <putfield class="LRoot" field="sparse_tensor" fieldType="LRoot" ref="framework" value="sparse_tensor" />
@@ -155,50 +130,150 @@
         <new def="constant_op" class="Lobject" />
         <putfield class="LRoot" field="constant_op" fieldType="LRoot" ref="framework" value="constant_op" />
 
-        <new def="fqn_Variable" class="Ltensorflow/python/ops/variables/Variable" />
-        <putfield class="LRoot" field="Variable" fieldType="LRoot" ref="variables" value="fqn_Variable" />
+        <new def="ragged_factory_ops" class="Lobject" />
+        <putfield class="LRoot" field="ragged_factory_ops" fieldType="LRoot" ref="ragged" value="ragged_factory_ops" />
 
-        <new def="fqn_ones" class="Ltensorflow/python/ops/array_ops/ones" />
-        <putfield class="LRoot" field="ones" fieldType="LRoot" ref="array_ops" value="fqn_ones" />
+        <new def="ragged_math_ops" class="Lobject" />
+        <putfield class="LRoot" field="ragged_math_ops" fieldType="LRoot" ref="ragged" value="ragged_math_ops" />
 
-        <new def="fqn_zeros" class="Ltensorflow/python/ops/array_ops/zeros" />
-        <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="fqn_zeros" />
+        <new def="ragged_tensor" class="Lobject" />
+        <putfield class="LRoot" field="ragged_tensor" fieldType="LRoot" ref="ragged" value="ragged_tensor" />
 
-        <new def="fqn_fill" class="Ltensorflow/python/ops/array_ops/fill" />
-        <putfield class="LRoot" field="fill" fieldType="LRoot" ref="array_ops" value="fqn_fill" />
+        <new def="Variable" class="Ltensorflow/functions/Variable" />
+        <putfield class="LRoot" field="Variable" fieldType="LRoot" ref="x" value="Variable" />
+        <putfield class="LRoot" field="Variable" fieldType="LRoot" ref="variables" value="Variable" />
 
-        <new def="fqn_zeros_like" class="Ltensorflow/python/ops/array_ops/zeros_like" />
-        <putfield class="LRoot" field="zeros_like" fieldType="LRoot" ref="array_ops" value="fqn_zeros_like" />
+        <new def="ones" class="Ltensorflow/functions/ones" />
+        <putfield class="LRoot" field="ones" fieldType="LRoot" ref="x" value="ones" />
+        <putfield class="LRoot" field="ones" fieldType="LRoot" ref="array_ops" value="ones" />
 
-        <new def="fqn_one_hot" class="Ltensorflow/python/ops/array_ops/one_hot" />
-        <putfield class="LRoot" field="one_hot" fieldType="LRoot" ref="array_ops" value="fqn_one_hot" />
+        <new def="zeros" class="Ltensorflow/functions/zeros" />
+        <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
+        <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
 
-        <new def="fqn_random_uniform" class="Ltensorflow/python/ops/random_ops/random_uniform" />
-        <putfield class="LRoot" field="random_uniform" fieldType="LRoot" ref="random_ops" value="fqn_ones" />
+        <new def="fill" class="Ltensorflow/functions/fill" />
+        <putfield class="LRoot" field="fill" fieldType="LRoot" ref="x" value="fill" />
+        <putfield class="LRoot" field="fill" fieldType="LRoot" ref="array_ops" value="fill" />
 
-        <new def="fqn_range" class="Ltensorflow/python/ops/math_ops/range" />
-        <putfield class="LRoot" field="range" fieldType="LRoot" ref="math_ops" value="fqn_range" />
+        <new def="zeros_like" class="Ltensorflow/functions/zeros_like" />
+        <putfield class="LRoot" field="zeros_like" fieldType="LRoot" ref="x" value="zeros_like" />
+        <putfield class="LRoot" field="zeros_like" fieldType="LRoot" ref="array_ops" value="zeros_like" />
 
-        <new def="fqn_eye" class="Ltensorflow/python/ops/linalg_ops/eye" />
-        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg_ops" value="fqn_eye" />
+        <new def="one_hot" class="Ltensorflow/functions/one_hot" />
+        <putfield class="LRoot" field="one_hot" fieldType="LRoot" ref="x" value="one_hot" />
+        <putfield class="LRoot" field="one_hot" fieldType="LRoot" ref="array_ops" value="one_hot" />
 
-        <new def="fqn_constant" class="Ltensorflow/python/framework/constant_op/constant" />
-        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="fqn_constant" />
+        <new def="uniform" class="Ltensorflow/functions/uniform" />
+        <putfield class="LRoot" field="uniform" fieldType="LRoot" ref="random" value="uniform" />
+        <putfield class="LRoot" field="random_uniform" fieldType="LRoot" ref="random_ops" value="uniform" />
 
-        <new def="fqn_SparseTensor" class="Ltensorflow/python/framework/sparse_tensor/SparseTensor" />
-        <putfield class="LRoot" field="SparseTensor" fieldType="LRoot" ref="sparse_tensor" value="fqn_SparseTensor" />
+        <new def="gamma" class="Ltensorflow/functions/gamma" />
+        <putfield class="LRoot" field="gamma" fieldType="LRoot" ref="random" value="gamma" />
+        <putfield class="LRoot" field="random_gamma" fieldType="LRoot" ref="random_ops" value="gamma" />
 
-        <new def="fqn_convert_to_tensor" class="Ltensorflow/python/framework/ops/convert_to_tensor" />
-        <putfield class="LRoot" field="convert_to_tensor" fieldType="LRoot" ref="ops2" value="fqn_convert_to_tensor" />
+        <new def="normal" class="Ltensorflow/functions/normal" />
+        <putfield class="LRoot" field="normal" fieldType="LRoot" ref="random" value="normal" />
+        <putfield class="LRoot" field="random_normal" fieldType="LRoot" ref="random_ops" value="normal" />
 
-        <new def="fqn_Tensor" class="Ltensorflow/python/framework/ops/Tensor" />
-        <putfield class="LRoot" field="Tensor" fieldType="LRoot" ref="ops2" value="fqn_Tensor" />
+        <new def="poisson" class="Ltensorflow/functions/poisson" />
+        <putfield class="LRoot" field="poisson" fieldType="LRoot" ref="random" value="poisson" />
+        <putfield class="LRoot" field="random_poisson_v2" fieldType="LRoot" ref="random_ops" value="poisson" />
+
+        <new def="truncated_normal" class="Ltensorflow/functions/truncated_normal" />
+        <putfield class="LRoot" field="truncated_normal" fieldType="LRoot" ref="random" value="truncated_normal" />
+        <putfield class="LRoot" field="truncated_normal" fieldType="LRoot" ref="random_ops" value="truncated_normal" />
+
+        <new def="range" class="Ltensorflow/functions/range" />
+        <putfield class="LRoot" field="range" fieldType="LRoot" ref="x" value="range" />
+        <putfield class="LRoot" field="range" fieldType="LRoot" ref="math_ops" value="range" />
+
+        <new def="ragged_range" class="Ltensorflow/functions/ragged_range" />
+        <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged" value="ragged_range" />
+        <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged_math_ops" value="ragged_range" />
+
+        <new def="eye" class="Ltensorflow/functions/eye" />
+        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="x" value="eye" />
+        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg" value="eye" />
+        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg_ops" value="eye" />
+
+        <new def="constant" class="Ltensorflow/functions/constant" />
+        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
+        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
+
+        <new def="ragged_constant" class="Ltensorflow/functions/ragged_constant" />
+        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="ragged" value="ragged_constant" />
+        <putfield class="LRoot" field="constant" fieldType="LRoot" ref="ragged_factory_ops" value="ragged_constant" />
+
+        <new def="SparseTensor" class="Ltensorflow/functions/SparseTensor" />
+        <putfield class="LRoot" field="SparseTensor" fieldType="LRoot" ref="x" value="SparseTensor" />
+        <putfield class="LRoot" field="SparseTensor" fieldType="LRoot" ref="sparse" value="SparseTensor" />
+        <putfield class="LRoot" field="SparseTensor" fieldType="LRoot" ref="sparse_tensor" value="SparseTensor" />
+
+        <new def="sparse_eye" class="Ltensorflow/functions/sparse_eye" />
+        <putfield class="LRoot" field="eye" fieldType="LRoot" ref="sparse" value="sparse_eye" />
+        <putfield class="LRoot" field="sparse_eye" fieldType="LRoot" ref="sparse_ops" value="sparse_eye" />
+
+        <new def="convert_to_tensor" class="Ltensorflow/functions/convert_to_tensor" />
+        <putfield class="LRoot" field="convert_to_tensor" fieldType="LRoot" ref="x" value="convert_to_tensor" />
+        <putfield class="LRoot" field="convert_to_tensor" fieldType="LRoot" ref="ops" value="convert_to_tensor" />
+
+        <new def="Tensor" class="Ltensorflow/functions/Tensor" />
+        <putfield class="LRoot" field="Tensor" fieldType="LRoot" ref="x" value="Tensor" />
+        <putfield class="LRoot" field="Tensor" fieldType="LRoot" ref="ops" value="Tensor" />
+
+        <new def="RaggedTensor" class="Lobject" />
+        <putfield class="LRoot" field="RaggedTensor" fieldType="LRoot" ref="x" value="RaggedTensor" />
+        <putfield class="LRoot" field="RaggedTensor" fieldType="LRoot" ref="ragged_tensor" value="RaggedTensor" />
+
+        <new def="from_nested_row_lengths" class="Ltensorflow/functions/from_nested_row_lengths" />
+        <putfield class="LRoot" field="from_nested_row_lengths" fieldType="LRoot" ref="RaggedTensor" value="from_nested_row_lengths" />
+
+        <new def="from_nested_row_splits" class="Ltensorflow/functions/from_nested_row_splits" />
+        <putfield class="LRoot" field="from_nested_row_splits" fieldType="LRoot" ref="RaggedTensor" value="from_nested_row_splits" />
+
+        <new def="from_nested_value_rowids" class="Ltensorflow/functions/from_nested_value_rowids" />
+        <putfield class="LRoot" field="from_nested_value_rowids" fieldType="LRoot" ref="RaggedTensor" value="from_nested_value_rowids" />
+
+        <new def="from_row_lengths" class="Ltensorflow/functions/from_row_lengths" />
+        <putfield class="LRoot" field="from_row_lengths" fieldType="LRoot" ref="RaggedTensor" value="from_row_lengths" />
+
+        <new def="from_row_limits" class="Ltensorflow/functions/from_row_limits" />
+        <putfield class="LRoot" field="from_row_limits" fieldType="LRoot" ref="RaggedTensor" value="from_row_limits" />
+
+        <new def="from_row_splits" class="Ltensorflow/functions/from_row_splits" />
+        <putfield class="LRoot" field="from_row_splits" fieldType="LRoot" ref="RaggedTensor" value="from_row_splits" />
+
+        <new def="from_row_starts" class="Ltensorflow/functions/from_row_starts" />
+        <putfield class="LRoot" field="from_row_starts" fieldType="LRoot" ref="RaggedTensor" value="from_row_starts" />
+
+        <new def="from_value_rowids" class="Ltensorflow/functions/from_value_rowids" />
+        <putfield class="LRoot" field="from_value_rowids" fieldType="LRoot" ref="RaggedTensor" value="from_value_rowids" />
 
         <return value="x" />
       </method>
     </class>
 
+    <class name="keras" allocatable="true">
+      <method name="import" static="true" descriptor="()Lkeras;">
+        <new def="x" class="Lkeras" />
+
+        <new def="engine" class="Lobject" />
+        <putfield class="LRoot" field="engine" fieldType="LRoot" ref="x" value="engine" />
+
+        <new def="input_layer" class="Lobject" />
+        <putfield class="LRoot" field="input_layer" fieldType="LRoot" ref="engine" value="input_layer" />
+
+        <new def="Input" class="Lkeras/engine/input_layer/Input" />
+        <putfield class="LRoot" field="Input" fieldType="LRoot" ref="input_layer" value="Input" />
+        <return value="x" />
+      </method>
+    </class>
+
     <package name="tensorflow/objects">
+      <class name="feature" allocatable="true" />
+    </package>
+
+    <package name="keras/objects">
       <class name="feature" allocatable="true" />
     </package>
 
@@ -318,6 +393,17 @@
         </method>
       </class>
 
+      <class name="sparse_eye" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/framework/sparse_tensor/sparse_eye" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="num_rows num_columns dtype name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
       <class name="fill" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/array_ops/fill" />
@@ -384,6 +470,28 @@
         </method>
       </class>
 
+      <class name="ragged_range" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_math_ops/range" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="starts limits deltas dtype name row_splits_dtype">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="ragged_constant" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_factory_ops/constant" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="pylist dtype ragged_rank inner_shape name row_splits_dtype">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
       <class name="eye" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/linalg_ops/eye" />
@@ -401,6 +509,149 @@
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape minval maxval dtype seed name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="gamma" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/random_ops/gamma" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape alpha beta dtype seed name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="normal" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/random_ops/normal" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape mean stddev dtype seed name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="poisson" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/random_ops/poisson" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="shape lam dtype seed name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="truncated_normal" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/random_ops/truncated_normal" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape mean stddev dtype seed name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="Input" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/functions/Input" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="8" paramNames="shape batch_size name dtype sparse tensor ragged type_spec">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_nested_row_lengths" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_nested_row_lengths" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="flat_values nested_row_lengths name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_nested_row_splits" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_nested_row_splits" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="flat_values nested_row_splits name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_nested_value_rowids" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_nested_value_rowids" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="flat_values nested_value_rowids nested_nrows name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_row_lengths" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_lengths" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_lengths name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_row_limits" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_limits" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_limits name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_row_splits" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_splits" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_splits name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_row_starts" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_starts" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_starts name validate">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+
+      <class name="from_value_rowids" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_value_rowids" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="values value_rowids nrows name validate">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
@@ -521,160 +772,6 @@
       </class>
     </package>
 
-    <package name="tensorflow/python/ops/array_ops">
-      <class name="ones" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/array_ops/ones" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="shape dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-      <class name="zeros" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/array_ops/zeros" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="shape dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-      <class name="fill" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/array_ops/fill" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="dims value name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-      <class name="zeros_like" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/array_ops/zeros_like" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="input dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-      <class name="one_hot" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/array_ops/one_hot" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="indices depth on_value off_value axis dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/ops/random_ops">
-      <class name="random_uniform" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/random_ops/random_uniform" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape minval maxval dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/ops/math_ops">
-      <class name="range" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/math_ops/range" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="limit delta dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/ops/linalg_ops">
-      <class name="eye" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/linalg_ops/eye" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="num_rows num_columns batch_shape dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/ops/variables">
-      <class name="Variable" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/variables/Variable" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="12" paramNames="initial_value trainable validate_shape caching_device name variable_def dtype import_scope constraint synchronization aggregation shape">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/framework/constant_op">
-      <class name="constant" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/framework/constant_op/constant" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="value dtype shape name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/framework/sparse_tensor">
-      <class name="SparseTensor" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/framework/sparse_tensor/SparseTensor" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="indices values dense_shape">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
-    <package name="tensorflow/python/framework/ops">
-      <class name="convert_to_tensor" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/framework/ops/convert_to_tensor" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="value dtype dtype_hint name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-      <class name="Tensor" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/framework/ops/Tensor" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="op value_index dtype">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
-    </package>
-
     <package name="tensorflow/examples/tutorials">
       <class name="mnist" allocatable="true">
         <method name="import" static="true" descriptor="()Ltensorflow/examples/tutorials/mnist;">
@@ -687,6 +784,19 @@
           <new def="y" class="Ltensorflow/examples/tutorials/mnist/read_data_sets" />
           <putfield class="Ltensorflow/examples/tutorials/mnist" field="input_data" fieldType="LRoot" ref="arg0" value="x" />
           <putfield class="Ltensorflow/examples/tutorials/mnist/input_data" field="read_data_sets" fieldType="LRoot" ref="x" value="y" />
+        </method>
+      </class>
+    </package>
+
+    <package name="keras/engine/input_layer">
+      <class name="Input" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Lkeras/engine/input_layer/Input" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="8" paramNames="shape batch_size name dtype sparse tensor ragged type_spec">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
         </method>
       </class>
     </package>
