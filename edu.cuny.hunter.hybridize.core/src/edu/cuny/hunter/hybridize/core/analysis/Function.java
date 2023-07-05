@@ -313,7 +313,6 @@ public class Function extends RefactorableProgramEntity {
 			if (actualParams != null) {
 				String containingModuleName = this.getContainingModuleName();
 				File containingFile = this.getContainingFile();
-				String containingFileName = containingFile.getName();
 
 				// for each parameter.
 				for (exprType paramExpr : actualParams) {
