@@ -2320,7 +2320,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `tf.range`.
 	 */
 	@Test
-	public void testHasLikelyTensorParameter32() throws Exception {
+	public void testHasLikelyTensorParameter59() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
