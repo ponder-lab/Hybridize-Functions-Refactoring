@@ -283,15 +283,25 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Boolean likelyHasTensorParameter;
 
+	/**
+	 * TODO: Populate.
+	 */
+	@SuppressWarnings("unused")
 	private Set<Transformation> transformationSet;
 
 	// private InstanceKey instanceKey;
 
+	/**
+	 * TODO: Populate.
+	 */
+	@SuppressWarnings("unused")
 	private PreconditionSuccess passingPrecondition;
 
 	/**
-	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive.
+	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive. TODO:
+	 * Populate.
 	 */
+	@SuppressWarnings("unused")
 	private Refactoring refactoring;
 
 	private RefactoringStatus status = new RefactoringStatus();
@@ -313,7 +323,6 @@ public class Function extends RefactorableProgramEntity {
 			if (actualParams != null) {
 				String containingModuleName = this.getContainingModuleName();
 				File containingFile = this.getContainingFile();
-				String containingFileName = containingFile.getName();
 
 				// for each parameter.
 				for (exprType paramExpr : actualParams) {
