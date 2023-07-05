@@ -3211,11 +3211,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
-  	/**
+	/**
 	 * Test for #2 for TF API `tf.range`.
 	 */
 	@Test
-	public void testHasLikelyTensorParameter59() throws Exception {
+	public void testHasLikelyTensorParameter123() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
