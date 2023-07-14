@@ -3786,6 +3786,190 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
+	/**
+	 * Test for #2 for TF API `tf.keras.layers.Input`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter124() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.keras.layers.Input`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter125() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter126() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.keras.layers.Input`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter127() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter128() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter129() throws Exception {
+		testHasLikelyTensorParameterHelper();
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter130() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter131() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter132() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter133() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Function functionToBeEvaluated = null;
+
+		for (Function func : functions) {
+			if (Objects.equals(func.getSimpleName(), "func2"))
+				functionToBeEvaluated = func;
+		}
+
+		assertNotNull(functionToBeEvaluated);
+
+		argumentsType params = functionToBeEvaluated.getParameters();
+
+		// one param.
+		exprType[] actualParams = params.args;
+		assertEquals(1, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("t", paramName);
+
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
+		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
