@@ -3970,6 +3970,74 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
 	}
 
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter134() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter135() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but the tf.function has a parenthesis.
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+
+		argumentsType params = function.getParameters();
+
+		// two params.
+		exprType[] actualParams = params.args;
+		assertEquals(2, actualParams.length);
+
+		exprType actualParameter = actualParams[0];
+		assertNotNull(actualParameter);
+
+		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("a", paramName);
+
+		actualParameter = actualParams[1];
+		assertNotNull(actualParameter);
+
+		paramName = NodeUtils.getRepresentationString(actualParameter);
+		assertEquals("b", paramName);
+
+		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
