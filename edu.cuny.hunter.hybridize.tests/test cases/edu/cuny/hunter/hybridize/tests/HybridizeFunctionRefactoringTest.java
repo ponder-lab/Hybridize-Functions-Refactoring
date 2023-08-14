@@ -3240,12 +3240,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
+	private void testHasLikelyTensorParameterHelper() throws Exception {
+		testHasLikelyTensorParameterHelper(false);
+	}
+
 	/**
 	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter59() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3253,7 +3257,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter60() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3261,7 +3265,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter61() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3269,7 +3273,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter62() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3277,7 +3281,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter63() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3285,7 +3289,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter64() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3293,7 +3297,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter65() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3301,7 +3305,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter66() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3309,7 +3313,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter67() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3317,7 +3321,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter68() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3325,7 +3329,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter69() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3333,7 +3337,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter70() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3341,7 +3345,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter71() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3349,7 +3353,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter72() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3357,7 +3361,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter73() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3365,7 +3369,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter74() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3373,7 +3377,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter75() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3381,7 +3385,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter76() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3389,7 +3393,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter77() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3397,7 +3401,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter78() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3405,7 +3409,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter79() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3413,7 +3417,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter80() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3421,7 +3425,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter81() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3429,7 +3433,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter82() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3437,7 +3441,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter83() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3445,7 +3449,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter84() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3453,7 +3457,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter85() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3461,7 +3465,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter86() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3469,7 +3473,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter87() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3477,7 +3481,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter88() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3485,7 +3489,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter89() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3493,7 +3497,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter90() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3501,7 +3505,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter91() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3509,7 +3513,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter92() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3517,7 +3521,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter93() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3525,7 +3529,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3533,7 +3537,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3541,7 +3545,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3549,7 +3553,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter97() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3557,7 +3561,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter98() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3565,7 +3569,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter99() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3573,7 +3577,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter100() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3581,7 +3585,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter101() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3589,7 +3593,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter102() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3597,7 +3601,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter103() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3605,7 +3609,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter104() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3613,7 +3617,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter105() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3621,7 +3625,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter106() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3629,7 +3633,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter107() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3637,7 +3641,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter108() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3645,7 +3649,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3653,7 +3657,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3661,7 +3665,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3669,7 +3673,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter112() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3677,7 +3681,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter113() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3685,7 +3689,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter114() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3693,7 +3697,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter115() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3701,7 +3705,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter116() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3709,7 +3713,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter117() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3717,7 +3721,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter118() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3725,7 +3729,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter119() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3733,7 +3737,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter120() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3741,7 +3745,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter121() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3749,7 +3753,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter122() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3791,7 +3795,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter124() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3799,7 +3803,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter125() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3807,7 +3811,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter126() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3815,7 +3819,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter127() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3823,7 +3827,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter128() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
@@ -3831,7 +3835,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter129() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper();
 	}
 
 	/**
