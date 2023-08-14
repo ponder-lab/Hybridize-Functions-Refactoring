@@ -3211,13 +3211,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
-	private void testHasLikelyTensorParameterHelper() throws Exception {
+	private void testHasLikelyTensorParameterHelper(boolean hybridized) throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.isHybrid());
+		assertEquals(hybridized, function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3238,6 +3238,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+	}
+
+	private void testHasLikelyTensorParameterHelper() throws Exception {
+		testHasLikelyTensorParameterHelper(false);
 	}
 
 	/**
@@ -3968,6 +3972,96 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/236 is fixed.
 		assertFalse("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter134() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter135() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but the tf.function has a parenthesis.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter136() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter137() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter138() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter139() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter140() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter141() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter142() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
+	}
+
+	/**
+	 * Test for #2 for TF API `tf.range`.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter143() throws Exception {
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
+		testHasLikelyTensorParameterHelper(true);
 	}
 
 	// TODO: Test arbitrary expression.
