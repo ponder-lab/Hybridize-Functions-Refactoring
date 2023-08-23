@@ -284,6 +284,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private static void installRequirements(Path path) throws IOException, InterruptedException {
 		Path requirements = path.resolve("requirements.txt");
+		assertTrue("Requirements file must be present.", requirements.toFile().exists());
 
 		// install requirements.
 		runCommand("python3.10", "-m", "pip", "install", "-r", requirements.toString());
@@ -421,20 +422,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		PythonModuleManager.setTesting(false);
 	}
 
-	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileName) throws IOException, MisconfigurationException {
-		return this.createPythonNodeFromTestFile(fileName, true);
+	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
+			throws IOException, MisconfigurationException {
+		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
 	}
 
-	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileName, boolean input)
+	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension, boolean input)
 			throws IOException, MisconfigurationException {
-		String inputTestFileName = this.getInputTestFileName(fileName);
+		String inputTestFileName = this.getInputTestFileName(fileNameWithoutExtension);
 
-		String contents = input ? this.getFileContents(inputTestFileName) : this.getFileContents(this.getOutputTestFileName(fileName));
+		String contents = input ? this.getFileContents(inputTestFileName)
+				: this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
 
 		Path path = getAbsolutionPath(inputTestFileName);
 		File file = path.toFile();
 
-		return createPythonNode(fileName, file, contents);
+		return createPythonNode(fileNameWithoutExtension, file, contents);
 	}
 
 	@Override
@@ -450,17 +453,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringCore.getUndoManager().flush();
 
-		String inputTestFileName = this.getInputTestFileName("A");
-		Path inputTestFileAbsolutionPath = getAbsolutionPath(inputTestFileName);
+		String inputTestFileName = this.getInputTestFileName("A"); // There must at least be an A.py file.
+		Path inputTestFileAbsolutePath = getAbsolutionPath(inputTestFileName);
+		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutePath.getParent();
 
-		boolean validSourceFile = PythonPathHelper.isValidSourceFile(inputTestFileAbsolutionPath.toString());
-		assertTrue("Source file must be valid.", validSourceFile);
-
-		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutionPath.getParent();
-
-		// Run the Python test file.
+		// install dependencies.
 		installRequirements(inputTestFileDirectoryAbsolutePath);
-		runPython(inputTestFileAbsolutionPath);
+
+		// the number of Python files executed.
+		int filesRun = 0;
+
+		File[] pythonFilesInTestFileDirectory = inputTestFileDirectoryAbsolutePath.toFile().listFiles((dir, name) -> name.endsWith(".py"));
+
+		// for each Python file in the test file directory.
+		for (File file : pythonFilesInTestFileDirectory) {
+			Path path = file.toPath();
+
+			boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());
+			assertTrue("Source file must be valid.", validSourceFile);
+
+			// Run the Python test file.
+			runPython(path);
+			++filesRun;
+		}
+
+		assertTrue("Must have executed at least A.py.", filesRun > 0);
 
 		// Project Python path.
 		String projectPath = inputTestFileDirectoryAbsolutePath.toString();
@@ -480,13 +497,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the refactoring available {@link FunctionDef}s found in the test file A.py. The {@link IDocument} represents the contents of
-	 * A.py.
+	 * Returns the refactoring available {@link FunctionDef}s found in the test file X.py, where X is fileNameWithoutExtension. The
+	 * {@link IDocument} represents the contents of X.py.
 	 *
-	 * @return The refactoring available {@link FunctionDef}s in A.py represented by the {@link IDocument}.
+	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
+	 * @return The refactoring available {@link FunctionDef}s in X.py, where X is fileNameWithoutExtension, represented by the
+	 *         {@link IDocument}.
 	 */
-	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions() throws Exception {
-		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile("A");
+	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(String fileNameWithoutExtension)
+			throws Exception {
+		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile(fileNameWithoutExtension);
 
 		// extract function definitions.
 		FunctionExtractor functionExtractor = new FunctionExtractor();
@@ -505,18 +525,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Returns the {@link Function}s in the test file.
 	 *
+	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
 	 * @return The set of {@link Function}s analyzed.
 	 */
-	private Set<Function> getFunctions() throws Exception {
-		File inputTestFile = this.getInputTestFile();
+	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
+		File inputTestFile = this.getInputTestFile(fileNameWithoutExtension);
 
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
 
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, "A", inputTestFile, document, nature)).collect(Collectors.toSet());
+				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions);
 
@@ -529,12 +551,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Return the {@link File} representing A.py.
+	 * Returns the {@link Function}s in the test file A.py.
 	 *
-	 * @return The {@link File} representing A.py.
+	 * @return The set of {@link Function}s analyzed.
 	 */
-	private File getInputTestFile() {
-		String fileName = this.getInputTestFileName("A");
+	private Set<Function> getFunctions() throws Exception {
+		return getFunctions("A");
+	}
+
+	/**
+	 * Return the {@link File} representing X.py, where X is fileNameWithoutExtension.
+	 *
+	 * @param fileNameWithoutExtension The filename not including the file extension.
+	 * @return The {@link File} representing X.py, where X is fileNameWithoutExtension.
+	 */
+	private File getInputTestFile(String fileNameWithoutExtension) {
+		String fileName = this.getInputTestFileName(fileNameWithoutExtension);
 		Path path = getAbsolutionPath(fileName);
 		File file = path.toFile();
 		assertTrue("Test file must exist.", file.exists());
@@ -564,7 +596,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
 			assertFalse(function.getLikelyHasTensorParameter());
-
 		}
 	}
 
@@ -881,7 +912,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this.getDocumentToAvailableFunctionDefinitions();
+		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+				.getDocumentToAvailableFunctionDefinitions("A");
 
 		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
 		assertNotNull(functionDefinitions);
@@ -903,7 +935,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String representationString = NodeUtils.getFullRepresentationString(decoratorFunction);
 		assertEquals("tf.function", representationString);
 
-		File inputTestFile = this.getInputTestFile();
+		File inputTestFile = this.getInputTestFile("A");
 
 		IDocument document = documentToAvailableFunctionDefinitions.getKey();
 
