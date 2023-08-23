@@ -129,7 +129,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String REFACTORING_PATH = "HybridizeFunction/";
 
-	private static final String TEST_FILE_EXTENION = "py";
+	private static final String TEST_FILE_EXTENSION = "py";
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -548,7 +548,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Override
 	protected String getTestFileExtension() {
-		return TEST_FILE_EXTENION;
+		return TEST_FILE_EXTENSION;
 	}
 
 	/**
