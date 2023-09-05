@@ -1252,6 +1252,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			for (FunctionUnderTest funcUnderTest : functionsToTest) {
 				if (funcUnderTest.getName().equals(func.getIdentifer())
+						&& Objects.equals(funcUnderTest.getModuleName(), func.getContainingModuleName())
 						&& funcUnderTest.getParameters().size() == func.getNumberOfParameters()) {
 					// found it.
 					fut = funcUnderTest;

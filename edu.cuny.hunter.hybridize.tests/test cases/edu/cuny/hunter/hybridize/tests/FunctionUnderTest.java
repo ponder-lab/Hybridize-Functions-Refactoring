@@ -28,6 +28,11 @@ public class FunctionUnderTest {
 	private String name;
 
 	/**
+	 * The name of the containing module.
+	 */
+	private String moduleName;
+
+	/**
 	 * The names of the parameters of this function under test.
 	 */
 	private List<String> parameters = new ArrayList<>();
@@ -66,12 +71,22 @@ public class FunctionUnderTest {
 		this.likelyHasTensorParameter = likelyHasTensorParameter;
 	}
 
+	public FunctionUnderTest(String name, String moduleName, boolean hybrid, boolean likelyHasTensorParameter, String... parameters) {
+		this(name, hybrid, parameters);
+		this.moduleName = moduleName;
+		this.likelyHasTensorParameter = likelyHasTensorParameter;
+	}
+
 	public boolean addParameters(String... parameters) {
 		return this.parameters.addAll(Arrays.asList(parameters));
 	}
 
 	public String getName() {
 		return name;
+	}
+
+	public String getModuleName() {
+		return this.moduleName;
 	}
 
 	public List<String> getParameters() {
@@ -88,7 +103,7 @@ public class FunctionUnderTest {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(name, parameters, hybrid);
+		return Objects.hash(name, moduleName, parameters, hybrid, likelyHasTensorParameter);
 	}
 
 	@Override
@@ -100,7 +115,9 @@ public class FunctionUnderTest {
 		if (getClass() != obj.getClass())
 			return false;
 		FunctionUnderTest other = (FunctionUnderTest) obj;
-		return Objects.equals(name, other.name) && Objects.equals(parameters, other.parameters) && Objects.equals(hybrid, other.hybrid);
+		return Objects.equals(name, other.name) && Objects.equals(moduleName, other.moduleName)
+				&& Objects.equals(parameters, other.parameters) && Objects.equals(hybrid, other.hybrid)
+				&& Objects.equals(likelyHasTensorParameter, other.likelyHasTensorParameter);
 	}
 
 	/**
