@@ -684,6 +684,10 @@ public class Function extends RefactorableProgramEntity {
 		return getFunctionDefinition().getFunctionDef().args;
 	}
 
+	public int getNumberOfParameters() {
+		return getFunctionDefinition().getFunctionDef().args.args.length;
+	}
+
 	public RefactoringStatus getStatus() {
 		return this.status;
 	}

@@ -1243,16 +1243,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals(functionsToTest.size(), functions.size());
 
-		Map<String, List<FunctionUnderTest>> nameToFunctions = functionsToTest.stream()
-				.collect(Collectors.groupingBy(FunctionUnderTest::getName));
-
 		for (Function func : functions) {
 			assertNotNull(func);
 
-			List<FunctionUnderTest> futList = nameToFunctions.get(func.getIdentifer());
-			assertEquals(1, futList.size());
+			// find the corresponding FUT.
+			FunctionUnderTest fut = null;
+			int foundCount = 0;
 
-			FunctionUnderTest fut = futList.iterator().next();
+			for (FunctionUnderTest funcUnderTest : functionsToTest) {
+				if (funcUnderTest.getName().equals(func.getIdentifer())
+						&& funcUnderTest.getParameters().size() == func.getNumberOfParameters()) {
+					// found it.
+					fut = funcUnderTest;
+					++foundCount;
+				}
+			}
+
+			assertEquals("Ambiguous FUTs.", 1, foundCount);
+
 			fut.compareTo(func);
 
 			assertEquals(fut.isHybrid(), func.isHybrid());
