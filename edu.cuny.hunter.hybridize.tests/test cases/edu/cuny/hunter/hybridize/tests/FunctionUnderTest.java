@@ -28,7 +28,7 @@ public class FunctionUnderTest {
 	private String name;
 
 	/**
-	 * The names of the parameteres of this function under test.
+	 * The names of the parameters of this function under test.
 	 */
 	private List<String> parameters = new ArrayList<>();
 
