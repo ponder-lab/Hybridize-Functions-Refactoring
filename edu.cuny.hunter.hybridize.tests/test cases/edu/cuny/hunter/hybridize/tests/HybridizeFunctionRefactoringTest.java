@@ -1228,6 +1228,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectedNumberOfFunctionNames, functionNames.size());
 	}
 
+	private void testDifferentFileSameNameHelper(Set<FunctionUnderTest> functionsToTest, int expectedNumberOfFunctionNames)
+			throws Exception {
+		final String[] testFileNamesWithoutExtensions = { "A", "B" };
+		Set<Function> functions = new HashSet<>();
+
+		for (String fileName : testFileNamesWithoutExtensions) {
+			Set<Function> functionsFromFile = this.getFunctions(fileName);
+			assertNotNull(functionsFromFile);
+			assertEquals(1, functionsFromFile.size());
+
+			functions.addAll(functionsFromFile);
+		}
+
+		assertEquals(functionsToTest.size(), functions.size());
+
+		Map<String, List<FunctionUnderTest>> nameToFunctions = functionsToTest.stream()
+				.collect(Collectors.groupingBy(FunctionUnderTest::getName));
+
+		for (Function func : functions) {
+			assertNotNull(func);
+
+			List<FunctionUnderTest> futList = nameToFunctions.get(func.getIdentifer());
+			assertEquals(1, futList.size());
+
+			FunctionUnderTest fut = futList.iterator().next();
+			fut.compareTo(func);
+
+			assertEquals(fut.isHybrid(), func.isHybrid());
+			assertEquals(fut.getLikelyHasTensorParameter(), func.getLikelyHasTensorParameter());
+		}
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		assertEquals(expectedNumberOfFunctionNames, functionNames.size());
+	}
+
 	/**
 	 * Tests #104. This simply tests whether two functions with the same names in different files are processed individually.
 	 */
@@ -1268,6 +1309,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testDifferentFileSameName5() throws Exception {
 		testDifferentFileSameNameHelper(2, 2, true, true);
+	}
+
+	/**
+	 * Tests #104. This simply tests whether two functions with the same names in different files are processed individually.
+	 */
+	@Test
+	public void testDifferentFileSameName6() throws Exception {
+		Set<FunctionUnderTest> functionsToTest = new LinkedHashSet<>();
+
+		functionsToTest.add(new FunctionUnderTest("Test.b", true, false, "self"));
+		functionsToTest.add(new FunctionUnderTest("Test2.b", false, false, "self"));
+
+		testDifferentFileSameNameHelper(functionsToTest, 2);
 	}
 
 	@Test

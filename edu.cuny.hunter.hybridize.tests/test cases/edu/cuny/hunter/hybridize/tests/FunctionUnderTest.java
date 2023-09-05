@@ -37,6 +37,11 @@ public class FunctionUnderTest {
 	 */
 	private boolean hybrid;
 
+	/**
+	 * True iff this {@link FunctionUnderTest} likely has a tensor parameter.
+	 */
+	private boolean likelyHasTensorParameter;
+
 	public FunctionUnderTest(String name) {
 		this.name = name;
 	}
@@ -49,6 +54,16 @@ public class FunctionUnderTest {
 	public FunctionUnderTest(String name, String... parameters) {
 		this.name = name;
 		this.addParameters(parameters);
+	}
+
+	public FunctionUnderTest(String name, boolean hybrid, String... parameters) {
+		this(name, hybrid);
+		this.addParameters(parameters);
+	}
+
+	public FunctionUnderTest(String name, boolean hybrid, boolean likelyHasTensorParameter, String... parameters) {
+		this(name, hybrid, parameters);
+		this.likelyHasTensorParameter = likelyHasTensorParameter;
 	}
 
 	public boolean addParameters(String... parameters) {
@@ -65,6 +80,10 @@ public class FunctionUnderTest {
 
 	public boolean isHybrid() {
 		return hybrid;
+	}
+
+	public boolean getLikelyHasTensorParameter() {
+		return likelyHasTensorParameter;
 	}
 
 	@Override
