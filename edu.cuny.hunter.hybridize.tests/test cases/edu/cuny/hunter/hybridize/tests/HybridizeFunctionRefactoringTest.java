@@ -1198,7 +1198,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private void testDifferentFileSameNameHelper(int expectedNumberOfFunctions, int expectedNumberOfFunctionNames, boolean expectedIsHybrid,
 			boolean expectedHasTensorParameter) throws Exception {
-		String[] testFileNamesWithoutExtensions = { "A", "B" };
+		final String[] testFileNamesWithoutExtensions = { "A", "B" };
 		Set<Function> functions = new HashSet<>();
 
 		for (String fileName : testFileNamesWithoutExtensions) {
