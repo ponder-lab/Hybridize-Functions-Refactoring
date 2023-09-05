@@ -1196,6 +1196,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functionNames.size());
 	}
 
+	private void testDifferentFileSameNameHelper(int expectedNumberOfFunctions, int expectedNumberOfFunctionNames, boolean expectedIsHybrid,
+			boolean expectedHasTensorParameter) throws Exception {
+		String[] testFileNamesWithoutExtensions = { "A", "B" };
+		Set<Function> functions = new HashSet<>();
+
+		for (String fileName : testFileNamesWithoutExtensions) {
+			Set<Function> functionsFromFile = this.getFunctions(fileName);
+			assertNotNull(functionsFromFile);
+			assertEquals(1, functionsFromFile.size());
+
+			functions.addAll(functionsFromFile);
+		}
+
+		assertEquals(expectedNumberOfFunctions, functions.size());
+
+		for (Function func : functions) {
+			assertNotNull(func);
+
+			assertEquals(expectedIsHybrid, func.isHybrid());
+			assertEquals(expectedHasTensorParameter, func.getLikelyHasTensorParameter());
+		}
+
+		Set<String> functionNames = new HashSet<>();
+
+		for (Function func : functions) {
+			assertNotNull(func);
+			functionNames.add(func.getIdentifer());
+		}
+
+		assertEquals(expectedNumberOfFunctionNames, functionNames.size());
+	}
+
+	/**
+	 * Tests #104. This simply tests whether two functions with the same names in different files are processed individually.
+	 */
+	@Test
+	public void testDifferentFileSameName() throws Exception {
+		testDifferentFileSameNameHelper(2, 2, false, false);
+	}
+
+	/**
+	 * Tests #104. This simply tests whether two functions with the same names in different files are processed individually.
+	 */
+	@Test
+	public void testDifferentFileSameName2() throws Exception {
+		// NOTE: Both of these functions have the same qualified name.
+		testDifferentFileSameNameHelper(2, 1, false, false);
+	}
+
 	@Test
 	public void testFunctionEquality() throws Exception {
 		Set<Function> functions = this.getFunctions();
