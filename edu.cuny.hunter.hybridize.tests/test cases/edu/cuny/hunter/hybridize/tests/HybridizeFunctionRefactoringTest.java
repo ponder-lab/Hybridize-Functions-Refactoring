@@ -1245,6 +1245,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testDifferentFileSameNameHelper(2, 1, false, false);
 	}
 
+	/**
+	 * Tests #104. This simply tests whether two functions with the same names in different files are processed individually.
+	 */
+	@Test
+	public void testDifferentFileSameName3() throws Exception {
+		// NOTE: Both of these functions have the same qualified name.
+		testDifferentFileSameNameHelper(2, 1, false, false);
+	}
+
 	@Test
 	public void testFunctionEquality() throws Exception {
 		Set<Function> functions = this.getFunctions();
