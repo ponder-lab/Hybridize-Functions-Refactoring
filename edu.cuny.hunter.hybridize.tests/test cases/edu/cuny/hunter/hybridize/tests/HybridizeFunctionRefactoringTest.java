@@ -1260,6 +1260,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				}
 			}
 
+			assertNotNull(fut);
 			assertEquals("Ambiguous FUTs.", 1, foundCount);
 
 			fut.compareTo(func);
