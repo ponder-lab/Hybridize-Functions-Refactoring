@@ -52,7 +52,7 @@ public class FunctionUnderTest {
 	}
 
 	public FunctionUnderTest(String name, String... parameters) {
-		this.name = name;
+		this(name);
 		this.addParameters(parameters);
 	}
 
