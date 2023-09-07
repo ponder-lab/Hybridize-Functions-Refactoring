@@ -28,7 +28,12 @@ public class FunctionUnderTest {
 	private String name;
 
 	/**
-	 * The names of the parameteres of this function under test.
+	 * The name of the containing module.
+	 */
+	private String moduleName;
+
+	/**
+	 * The names of the parameters of this function under test.
 	 */
 	private List<String> parameters = new ArrayList<>();
 
@@ -36,6 +41,11 @@ public class FunctionUnderTest {
 	 * Whether this function under test should be a hybrid function.
 	 */
 	private boolean hybrid;
+
+	/**
+	 * True iff this {@link FunctionUnderTest} likely has a tensor parameter.
+	 */
+	private boolean likelyHasTensorParameter;
 
 	public FunctionUnderTest(String name) {
 		this.name = name;
@@ -47,8 +57,24 @@ public class FunctionUnderTest {
 	}
 
 	public FunctionUnderTest(String name, String... parameters) {
-		this.name = name;
+		this(name);
 		this.addParameters(parameters);
+	}
+
+	public FunctionUnderTest(String name, boolean hybrid, String... parameters) {
+		this(name, hybrid);
+		this.addParameters(parameters);
+	}
+
+	public FunctionUnderTest(String name, boolean hybrid, boolean likelyHasTensorParameter, String... parameters) {
+		this(name, hybrid, parameters);
+		this.likelyHasTensorParameter = likelyHasTensorParameter;
+	}
+
+	public FunctionUnderTest(String name, String moduleName, boolean hybrid, boolean likelyHasTensorParameter, String... parameters) {
+		this(name, hybrid, parameters);
+		this.moduleName = moduleName;
+		this.likelyHasTensorParameter = likelyHasTensorParameter;
 	}
 
 	public boolean addParameters(String... parameters) {
@@ -59,6 +85,10 @@ public class FunctionUnderTest {
 		return name;
 	}
 
+	public String getModuleName() {
+		return this.moduleName;
+	}
+
 	public List<String> getParameters() {
 		return Collections.unmodifiableList(parameters);
 	}
@@ -67,9 +97,13 @@ public class FunctionUnderTest {
 		return hybrid;
 	}
 
+	public boolean getLikelyHasTensorParameter() {
+		return likelyHasTensorParameter;
+	}
+
 	@Override
 	public int hashCode() {
-		return Objects.hash(name, parameters, hybrid);
+		return Objects.hash(name, moduleName, parameters, hybrid, likelyHasTensorParameter);
 	}
 
 	@Override
@@ -81,7 +115,9 @@ public class FunctionUnderTest {
 		if (getClass() != obj.getClass())
 			return false;
 		FunctionUnderTest other = (FunctionUnderTest) obj;
-		return Objects.equals(name, other.name) && Objects.equals(parameters, other.parameters) && Objects.equals(hybrid, other.hybrid);
+		return Objects.equals(name, other.name) && Objects.equals(moduleName, other.moduleName)
+				&& Objects.equals(parameters, other.parameters) && Objects.equals(hybrid, other.hybrid)
+				&& Objects.equals(likelyHasTensorParameter, other.likelyHasTensorParameter);
 	}
 
 	/**
