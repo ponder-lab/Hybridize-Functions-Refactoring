@@ -1,6 +1,5 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
-import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IProject;
@@ -10,7 +9,9 @@ import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
-public class EvaluateHybridizeFunctionRefactoringHandler extends AbstractHandler {
+import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
+
+public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {

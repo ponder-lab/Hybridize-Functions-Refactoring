@@ -7,7 +7,8 @@ Bundle-Version: 1.0.0.qualifier
 Require-Bundle: org.eclipse.ui,
  org.eclipse.core.runtime;bundle-version="3.26.0",
  org.eclipse.core.resources;bundle-version="3.18.0",
- org.python.pydev;bundle-version="[9.3.2,10.0.0)"
+ org.python.pydev;bundle-version="[9.3.2,10.0.0)",
+ edu.cuny.citytech.refactoring.common.eval;bundle-version="3.1.0"
 Automatic-Module-Name: edu.cuny.hunter.hybridize.eval
 Bundle-Activator: edu.cuny.hunter.hybridize.eval.ui.plugins.EvaluateHybridizeFunctionRefactoringPlugin
 Bundle-RequiredExecutionEnvironment: JavaSE-11
