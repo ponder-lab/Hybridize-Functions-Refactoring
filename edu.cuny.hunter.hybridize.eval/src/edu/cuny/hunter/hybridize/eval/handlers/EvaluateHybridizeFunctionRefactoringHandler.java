@@ -5,6 +5,7 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
@@ -13,12 +14,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends AbstractHandler
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
-		IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
+		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
+			IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
 
-		for (Object obj : selection) {
-			IProject project = getProject(obj);
-			System.out.println(project.getName());
-		}
+			for (Object obj : selection) {
+				IProject project = getProject(obj);
+				System.out.println(project.getName());
+			}
+		}).schedule();
 
 		return null;
 	}
