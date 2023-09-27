@@ -1,9 +1,16 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
+import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
+
+import java.util.LinkedHashSet;
+import java.util.stream.Stream;
+
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
@@ -16,15 +23,30 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
-			IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
+			IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
-			for (Object obj : selection) {
-				IProject project = getProject(obj);
-				System.out.println(project.getName());
-			}
 		}).schedule();
 
 		return null;
+	}
+
+	private IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException {
+		IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
+		java.util.Set<IProject> ret = new LinkedHashSet<>();
+
+		for (Object obj : selection) {
+			IProject project = getProject(obj);
+
+			if (project != null) {
+				IProjectNature nature = project.getNature(PYTHON_NATURE_ID);
+
+				if (nature != null)
+					// We have a Python project.
+					ret.add(project);
+			}
+		}
+
+		return ret.toArray(IProject[]::new);
 	}
 
 	private static IProject getProject(Object obj) {
@@ -39,6 +61,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			return project;
 		}
 
-		throw new IllegalArgumentException("Unknown entity type: " + obj.getClass() + " for argument: " + obj + ".");
+		return null;
 	}
 }
