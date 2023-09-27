@@ -2,7 +2,6 @@
   <modelVersion>4.0.0</modelVersion>
   <artifactId>edu.cuny.hunter.hybridize.eval</artifactId>
   <packaging>eclipse-plugin</packaging>
-  <name>Evaluate Hybridize Functions Refactoring</name>
   <description>Evaluation plugin for the Hybridize Functions refactoring.</description>
   <parent>
 	<groupId>edu.cuny.hunter.hybridize</groupId>
