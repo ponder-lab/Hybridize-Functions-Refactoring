@@ -3,7 +3,6 @@ package edu.cuny.hunter.hybridize.eval.handlers;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.util.LinkedHashSet;
-import java.util.stream.Stream;
 
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
@@ -29,7 +28,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends AbstractHandler
 		return null;
 	}
 
-	private IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException {
+	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException {
 		IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
 		java.util.Set<IProject> ret = new LinkedHashSet<>();
 
