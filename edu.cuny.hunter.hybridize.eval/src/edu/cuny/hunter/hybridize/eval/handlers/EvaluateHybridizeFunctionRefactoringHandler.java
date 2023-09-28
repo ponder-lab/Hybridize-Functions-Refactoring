@@ -48,10 +48,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// overall results time.
 					resultsPrinter.print(
-					// TODO:
-//							(
+							// TODO:
+							// (
 							resultsTimeCollector.getCollectedTime()
-//							- processor.getExcludedTimeCollector().getCollectedTime())
+									// - processor.getExcludedTimeCollector().getCollectedTime())
 									/ 1000.0);
 
 					// end the record.
