@@ -25,6 +25,9 @@
                   <instanceof
                         value="org.eclipse.core.resources.IProject">
                   </instanceof>
+                  <instanceof
+                        value="org.python.pydev.navigator.elements.PythonSourceFolder">
+                  </instanceof>
                </iterate>
             </with>
          </activeWhen>
