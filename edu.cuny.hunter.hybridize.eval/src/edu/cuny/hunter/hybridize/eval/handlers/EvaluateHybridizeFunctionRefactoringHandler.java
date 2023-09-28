@@ -2,13 +2,10 @@ package edu.cuny.hunter.hybridize.eval.handlers;
 
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 
-import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
-import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IProject;
@@ -23,7 +20,9 @@ import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
-public class EvaluateHybridizeFunctionRefactoringHandler extends AbstractHandler {
+import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
+
+public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
@@ -56,10 +55,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends AbstractHandler
 		}).schedule();
 
 		return null;
-	}
-
-	private static CSVPrinter createCSVPrinter(String fileName, String[] header) throws IOException {
-		return new CSVPrinter(new FileWriter(fileName, true), CSVFormat.EXCEL.builder().setHeader(header).build());
 	}
 
 	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException {
