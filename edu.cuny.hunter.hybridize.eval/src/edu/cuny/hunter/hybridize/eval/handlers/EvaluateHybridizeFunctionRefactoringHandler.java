@@ -21,6 +21,7 @@ import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
+import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
@@ -37,12 +38,20 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// subject.
 					resultsPrinter.print(project.getName());
 
-					// TODO: overall results time.
-					/*
-					resultsPrinter.print((resultsTimeCollector.getCollectedTime()
-							- processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
-					*/
-					resultsPrinter.print(0);
+					// set up analysis for single project.
+					TimeCollector resultsTimeCollector = new TimeCollector();
+
+					resultsTimeCollector.start();
+					// TODO
+					resultsTimeCollector.stop();
+
+					// overall results time.
+					resultsPrinter.print(
+					// TODO:
+//							(
+							resultsTimeCollector.getCollectedTime()
+//							- processor.getExcludedTimeCollector().getCollectedTime())
+									/ 1000.0);
 
 					// end the record.
 					resultsPrinter.println();
