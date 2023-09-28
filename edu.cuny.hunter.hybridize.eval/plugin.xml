@@ -4,12 +4,17 @@
    <extension
          point="org.eclipse.ui.commands">
       <command
-            categoryId="org.python.pydev.ui.category.source"
+            categoryId="edu.cuny.hunter.hybridize.eval.category"
             defaultHandler="edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler"
             description="Evaluates the Hybridize Functions refactoring."
             id="edu.cuny.hunter.hybridize.eval.commands.evaluate"
             name="Evaluate Hybridize Functions Refactoring">
       </command>
+      <category
+            description="Evaluation fo the Hybridize Functions refactoring."
+            id="edu.cuny.hunter.hybridize.eval.category"
+            name="Evaluate Hybridize Functions Refactoring">
+      </category>
    </extension>
    <extension
          point="org.eclipse.ui.handlers">
