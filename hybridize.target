@@ -43,6 +43,16 @@
 				</repository>
 			</repositories>
 		</location>
+		<location includeDependencyDepth="none" includeSource="true" missingManifest="generate" type="Maven">
+			<dependencies>
+				<dependency>
+					<groupId>org.apache.commons</groupId>
+					<artifactId>commons-csv</artifactId>
+					<version>1.10.0</version>
+					<type>jar</type>
+				</dependency>
+			</dependencies>
+		</location>
 	</locations>
 	<environment>
 		<arch>x86_64</arch>
