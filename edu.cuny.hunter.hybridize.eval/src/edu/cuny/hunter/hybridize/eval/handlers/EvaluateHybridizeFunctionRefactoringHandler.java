@@ -12,7 +12,6 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
@@ -47,8 +46,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsPrinter.println();
 				}
 			} catch (IOException e) {
-				IStatus status = Status.error("Encountered error with evaluation.", e);
-				throw new CoreException(status);
+				throw new CoreException(Status.error("Encountered error with evaluation.", e));
 			} finally {
 				SubMonitor.done(monitor);
 			}
