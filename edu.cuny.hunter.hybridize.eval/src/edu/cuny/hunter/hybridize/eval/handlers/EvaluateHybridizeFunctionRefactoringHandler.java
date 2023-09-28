@@ -4,6 +4,7 @@ import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.IOException;
 import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.apache.commons.csv.CSVPrinter;
 import org.eclipse.core.commands.ExecutionEvent;
@@ -67,8 +68,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException, ExecutionException {
+		Set<IProject> ret = new LinkedHashSet<>();
 		IStructuredSelection selection = getCurrentStructuredSelectionChecked(event);
-		java.util.Set<IProject> ret = new LinkedHashSet<>();
 
 		for (Object obj : selection) {
 			IProject project = getProject(obj);
