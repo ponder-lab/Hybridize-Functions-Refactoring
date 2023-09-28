@@ -15,7 +15,9 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
@@ -28,9 +30,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
-			IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
-
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, new String[] { "subject", "time (s)" })) {
+				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
+
 				for (IProject project : pythonProjectsFromEvent) {
 					// subject.
 					resultsPrinter.print(project.getName());
@@ -45,7 +47,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// end the record.
 					resultsPrinter.println();
 				}
-			} catch (IOException e) {
+			} catch (IOException | ExecutionException e) {
 				throw new CoreException(Status.error("Encountered error with evaluation.", e));
 			} finally {
 				SubMonitor.done(monitor);
@@ -55,8 +57,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return null;
 	}
 
-	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException {
-		IStructuredSelection selection = HandlerUtil.getCurrentStructuredSelection(event);
+	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException, ExecutionException {
+		IStructuredSelection selection = getCurrentStructuredSelectionChecked(event);
 		java.util.Set<IProject> ret = new LinkedHashSet<>();
 
 		for (Object obj : selection) {
@@ -72,6 +74,25 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}
 
 		return ret.toArray(IProject[]::new);
+	}
+
+	/**
+	 * Return the current structured selection.
+	 *
+	 * @param event The execution event that contains the application context.
+	 * @return The current IStructuredSelection.Will not return <code>null</code>.
+	 * @throws ExecutionException If the current selection variable is not found.
+	 */
+	private static IStructuredSelection getCurrentStructuredSelectionChecked(ExecutionEvent event) throws ExecutionException {
+		ISelection selection = HandlerUtil.getCurrentSelectionChecked(event);
+
+		if (selection instanceof IStructuredSelection)
+			return (IStructuredSelection) selection;
+
+		throw new ExecutionException("Incorrect type for " //$NON-NLS-1$
+				+ ISources.ACTIVE_CURRENT_SELECTION_NAME + " found while executing " //$NON-NLS-1$
+				+ event.getCommand().getId() + ", expected " + IStructuredSelection.class.getName() //$NON-NLS-1$
+				+ " found " + selection.getClass()); //$NON-NLS-1$
 	}
 
 	private static IProject getProject(Object obj) {
