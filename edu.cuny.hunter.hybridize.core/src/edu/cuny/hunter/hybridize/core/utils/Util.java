@@ -49,7 +49,7 @@ public class Util {
 		return new ProcessorBasedRefactoring(new HybridizeFunctionRefactoringProcessor(functionDefinitions));
 	}
 
-	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects, IProgressMonitor monitor)
+	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects)
 			throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(functionDefinitions);

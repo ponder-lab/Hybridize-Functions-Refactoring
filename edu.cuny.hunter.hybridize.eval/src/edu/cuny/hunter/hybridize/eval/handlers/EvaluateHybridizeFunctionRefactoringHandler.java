@@ -70,8 +70,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
-					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
-							monitor);
+					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project });
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
