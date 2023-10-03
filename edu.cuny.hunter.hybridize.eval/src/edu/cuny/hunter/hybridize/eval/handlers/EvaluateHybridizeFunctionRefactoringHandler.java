@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
 import static edu.cuny.hunter.hybridize.core.utils.Util.createHybridizeFunctionRefactoring;
+import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.IOException;
@@ -17,6 +18,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
@@ -37,6 +39,8 @@ import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
+
+	private static final ILog LOG = getLog(EvaluateHybridizeFunctionRefactoringHandler.class);
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
@@ -77,6 +81,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsTimeCollector.start();
 					RefactoringStatus status = new ProcessorBasedRefactoring(processor).checkAllConditions(monitor);
 					resultsTimeCollector.stop();
+
+					LOG.info("Result of the precondition checking: " + status + ".");
 
 					// functions.
 					Set<Function> functions = processor.getFunctions();
