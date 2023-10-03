@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.csv.CSVPrinter;
 import org.eclipse.core.commands.ExecutionEvent;
@@ -37,6 +38,7 @@ import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
+import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
@@ -87,6 +89,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// functions.
 					Set<Function> functions = processor.getFunctions();
 					resultsPrinter.print(functions.size());
+
+					// optimization available functions. These are the "filtered" functions.
+					Set<Function> candidates = functions.stream().filter(f -> f.isHybridizationAvailable()).collect(Collectors.toSet());
+					resultsPrinter.print(candidates.size()); // number.
 
 					// overall results time.
 					resultsPrinter.print(

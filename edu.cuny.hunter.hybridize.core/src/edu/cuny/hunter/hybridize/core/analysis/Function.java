@@ -37,6 +37,8 @@ import com.ibm.wala.util.collections.Pair;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 
+import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
+
 /**
  * A representation of a Python function.
  *
@@ -694,5 +696,9 @@ public class Function extends RefactorableProgramEntity {
 
 	public IProject getProject() {
 		return this.getFunctionDefinition().getProject();
+	}
+
+	public boolean isHybridizationAvailable() {
+		return RefactoringAvailabilityTester.isHybridizationAvailable(this.getFunctionDefinition().getFunctionDef());
 	}
 }
