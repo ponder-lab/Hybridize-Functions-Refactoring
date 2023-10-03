@@ -33,33 +33,37 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 	 */
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
-		Set<FunctionDefinition> functions = null;
 		ISelection currentSelection = HandlerUtil.getCurrentSelectionChecked(event);
 
 		if (currentSelection instanceof IStructuredSelection) {
+			Set<FunctionDefinition> functions = null;
 			List<?> list = ((IStructuredSelection) currentSelection).toList();
 
-			if (list != null)
+			try {
+				functions = getFunctionDefinitions(list);
+			} catch (CoreException | IOException e) {
+				throw new ExecutionException("Unable to get functions from selections.", e);
+			}
+
+			if (functions != null) {
+				LOG.info("Found " + functions.size() + " function definition(s).");
+
+				Set<FunctionDefinition> availableFunctions = functions.stream()
+						.filter(f -> RefactoringAvailabilityTester.isHybridizationAvailable(f.getFunctionDef()))
+						.collect(Collectors.toSet());
+				LOG.info("Found " + availableFunctions.size() + " available functions.");
+
+				Shell shell = getActiveShellChecked(event);
+
 				try {
-					functions = getFunctionDefinitions(list);
-				} catch (CoreException | IOException e) {
-					throw new ExecutionException("Unable to get functions from selections.", e);
+					HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell);
+				} catch (TooManyMatchesException e) {
+					throw new ExecutionException("Unable to start refactoring.", e);
 				}
-		}
-
-		LOG.info("Found " + functions.size() + " function definition(s).");
-
-		Set<FunctionDefinition> availableFunctions = functions.stream()
-				.filter(f -> RefactoringAvailabilityTester.isHybridizationAvailable(f.getFunctionDef())).collect(Collectors.toSet());
-		LOG.info("Found " + availableFunctions.size() + " available functions.");
-
-		Shell shell = getActiveShellChecked(event);
-
-		try {
-			HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell);
-		} catch (TooManyMatchesException e) {
-			throw new ExecutionException("Unable to start refactoring.", e);
-		}
+			} else
+				throw new ExecutionException("Unable to extract function definitions.");
+		} else
+			throw new ExecutionException("Can't extract selection: " + currentSelection + ".");
 
 		return null;
 	}
