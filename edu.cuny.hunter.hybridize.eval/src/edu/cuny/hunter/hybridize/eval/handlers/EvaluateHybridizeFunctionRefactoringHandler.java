@@ -1,9 +1,13 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
+import static edu.cuny.hunter.hybridize.core.utils.Util.createHybridizeFunctionRefactoring;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.csv.CSVPrinter;
@@ -18,12 +22,19 @@ import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
+import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
+import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
+import edu.cuny.hunter.hybridize.core.analysis.Transformation;
+import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
@@ -32,8 +43,24 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
-			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, new String[] { "subject", "time (s)" })) {
+			List<String> resultsHeader = new ArrayList<>(Arrays.asList("subject", "functions", "optimization available functions",
+					"optimizable functions", "failed preconditions"));
+
+			for (Refactoring refactoring : Refactoring.values())
+				resultsHeader.add(refactoring.toString());
+
+			for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
+				resultsHeader.add(preconditionSuccess.toString());
+
+			for (Transformation transformation : Transformation.values())
+				resultsHeader.add(transformation.toString());
+
+			resultsHeader.add("time (s)");
+
+			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new))) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
+
+				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
 
 				for (IProject project : pythonProjectsFromEvent) {
 					// subject.
@@ -43,8 +70,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
-					// TODO
+					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
+							monitor);
 					resultsTimeCollector.stop();
+
+					// run the precondition checking.
+					resultsTimeCollector.start();
+					RefactoringStatus status = new ProcessorBasedRefactoring(processor).checkAllConditions(monitor);
+					resultsTimeCollector.stop();
+
+					// functions.
+					Set<Function> functions = processor.getFunctions();
+					resultsPrinter.print(functions.size());
 
 					// overall results time.
 					resultsPrinter.print(
@@ -56,6 +93,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// end the record.
 					resultsPrinter.println();
+
+					monitor.worked(1);
 				}
 			} catch (IOException | ExecutionException e) {
 				throw new CoreException(Status.error("Encountered error with evaluation.", e));
