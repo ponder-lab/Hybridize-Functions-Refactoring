@@ -52,8 +52,7 @@ public class Util {
 	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects)
 			throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(functionDefinitions);
-		return processor;
+		return new HybridizeFunctionRefactoringProcessor(functionDefinitions);
 	}
 
 	public static Set<FunctionDefinition> getFunctionDefinitions(Iterable<?> iterable)
