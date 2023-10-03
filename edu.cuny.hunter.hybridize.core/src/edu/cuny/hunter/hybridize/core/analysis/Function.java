@@ -36,7 +36,6 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.util.collections.Pair;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
-
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 /**
