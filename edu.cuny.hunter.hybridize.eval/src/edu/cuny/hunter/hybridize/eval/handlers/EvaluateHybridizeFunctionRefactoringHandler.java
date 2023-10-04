@@ -83,7 +83,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					RefactoringStatus status = new ProcessorBasedRefactoring(processor).checkAllConditions(monitor);
 					resultsTimeCollector.stop();
 
-					LOG.info("Precondition checking suceeded? " + status.isOK() + ".");
+					LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
 
 					// functions.
 					Set<Function> functions = processor.getFunctions();
