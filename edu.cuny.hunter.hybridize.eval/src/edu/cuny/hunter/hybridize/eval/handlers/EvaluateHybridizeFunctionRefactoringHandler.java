@@ -76,8 +76,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add("time (s)");
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
-					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, new String[] { "subject", "function", "module",
-							"relative path", "parameters", "tensor parameter", "hybrid" })) {
+					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
+							new String[] { "subject", "function", "module", "relative path", "parameters", "tensor parameter", "hybrid",
+									"refactoring", "passingPrecondition", "status" })) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -112,10 +113,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// candidate functions.
 					for (Function function : candidates) {
 						Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
+						RefactoringStatus functionStatus = function.getStatus();
 
 						candidatePrinter.printRecord(project.getName(), function.getIdentifer(), function.getContainingModuleName(),
-								relativePath, function.getNumberOfParameters(), function.getLikelyHasTensorParameter(),
-								function.isHybrid());
+								relativePath, function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid(),
+								function.getRefactoring(), function.getPassingPrecondition(),
+								functionStatus.isOK() ? 0 : functionStatus.getEntryWithHighestSeverity().getSeverity());
 					}
 
 					// optimizable functions.
