@@ -7,6 +7,7 @@ import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,10 +27,14 @@ import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
+
+import com.google.common.collect.Sets;
+import com.google.common.collect.Sets.SetView;
 
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
@@ -92,6 +97,20 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions.
 					Set<Function> candidates = functions.stream().filter(f -> f.isHybridizationAvailable()).collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
+
+					// optimizable functions.
+					Set<Function> optimizableFunctions = processor.getOptimizableFunctions();
+					resultsPrinter.print(optimizableFunctions.size()); // number.
+
+					// failed functions.
+					SetView<Function> failures = Sets.difference(candidates, optimizableFunctions);
+
+					// failed preconditions.
+					Collection<RefactoringStatusEntry> errorEntries = failures.parallelStream().map(Function::getStatus)
+							.flatMap(s -> Arrays.stream(s.getEntries())).filter(RefactoringStatusEntry::isError)
+							.collect(Collectors.toSet());
+
+					resultsPrinter.print(errorEntries.size()); // number.
 
 					// overall results time.
 					resultsPrinter.print(
