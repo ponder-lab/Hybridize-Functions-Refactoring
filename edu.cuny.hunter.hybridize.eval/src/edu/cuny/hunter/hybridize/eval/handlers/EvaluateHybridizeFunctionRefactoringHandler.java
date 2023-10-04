@@ -22,11 +22,13 @@ import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
@@ -50,6 +52,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final ILog LOG = getLog(EvaluateHybridizeFunctionRefactoringHandler.class);
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
+
+	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -85,8 +89,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
+					ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 					resultsTimeCollector.start();
-					RefactoringStatus status = new ProcessorBasedRefactoring(processor).checkAllConditions(monitor);
+					RefactoringStatus status = refactoring.checkAllConditions(monitor);
 					resultsTimeCollector.stop();
 
 					LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
@@ -114,9 +119,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsPrinter.print(errorEntries.size()); // number.
 
 					// Refactoring type counts.
-					for (Refactoring refactoring : Refactoring.values())
+					for (Refactoring refactoringKind : Refactoring.values())
 						resultsPrinter.print(functions.parallelStream().map(Function::getRefactoring)
-								.filter(r -> Objects.equals(r, refactoring)).count());
+								.filter(r -> Objects.equals(r, refactoringKind)).count());
 
 					// Precondition success counts.
 					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
@@ -127,6 +132,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Transformation transformation : Transformation.values())
 						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
+
+					if (Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY) && !status.hasFatalError()) {
+						resultsTimeCollector.start();
+						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
+						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
+						resultsTimeCollector.stop();
+					}
 
 					// overall results time.
 					resultsPrinter.print(
