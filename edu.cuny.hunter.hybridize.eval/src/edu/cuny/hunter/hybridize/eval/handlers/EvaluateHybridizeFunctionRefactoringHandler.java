@@ -5,6 +5,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,6 +54,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
+	private static final String CANDIDATE_CSV_FILENAME = "candidate_functions.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	@Override
@@ -72,7 +75,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			resultsHeader.add("time (s)");
 
-			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new))) {
+			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
+					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, new String[] { "subject", "function", "module",
+							"relative path", "parameters", "tensor parameter", "hybrid" })) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -104,6 +109,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<Function> candidates = functions.stream().filter(f -> f.isHybridizationAvailable()).collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
+					// candidate functions.
+					for (Function function : candidates) {
+						Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
+
+						candidatePrinter.printRecord(project.getName(), function.getIdentifer(), function.getContainingModuleName(),
+								relativePath, function.getNumberOfParameters(), function.getLikelyHasTensorParameter(),
+								function.isHybrid());
+					}
+
 					// optimizable functions.
 					Set<Function> optimizableFunctions = processor.getOptimizableFunctions();
 					resultsPrinter.print(optimizableFunctions.size()); // number.
@@ -118,17 +132,17 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					resultsPrinter.print(errorEntries.size()); // number.
 
-					// Refactoring type counts.
+					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
 						resultsPrinter.print(functions.parallelStream().map(Function::getRefactoring)
 								.filter(r -> Objects.equals(r, refactoringKind)).count());
 
-					// Precondition success counts.
+					// precondition success counts.
 					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
 						resultsPrinter.print(functions.parallelStream().map(Function::getPassingPrecondition)
 								.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
 
-					// Transformation counts.
+					// transformation counts.
 					for (Transformation transformation : Transformation.values())
 						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
