@@ -287,22 +287,19 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * TODO: Populate.
 	 */
-	@SuppressWarnings("unused")
-	private Set<Transformation> transformationSet;
+	private Set<Transformation> transformations;
 
 	// private InstanceKey instanceKey;
 
 	/**
 	 * TODO: Populate.
 	 */
-	@SuppressWarnings("unused")
 	private PreconditionSuccess passingPrecondition;
 
 	/**
 	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive. TODO:
 	 * Populate.
 	 */
-	@SuppressWarnings("unused")
 	private Refactoring refactoring;
 
 	private RefactoringStatus status = new RefactoringStatus();
