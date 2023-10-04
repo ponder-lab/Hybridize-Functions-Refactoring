@@ -700,4 +700,16 @@ public class Function extends RefactorableProgramEntity {
 	public boolean isHybridizationAvailable() {
 		return RefactoringAvailabilityTester.isHybridizationAvailable(this.getFunctionDefinition().getFunctionDef());
 	}
+
+	public Set<Transformation> getTransformations() {
+		return transformations;
+	}
+
+	public PreconditionSuccess getPassingPrecondition() {
+		return passingPrecondition;
+	}
+
+	public Refactoring getRefactoring() {
+		return refactoring;
+	}
 }

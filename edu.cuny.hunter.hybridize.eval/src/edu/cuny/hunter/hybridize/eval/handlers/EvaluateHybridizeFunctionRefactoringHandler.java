@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -111,6 +112,21 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							.collect(Collectors.toSet());
 
 					resultsPrinter.print(errorEntries.size()); // number.
+
+					// Refactoring type counts.
+					for (Refactoring refactoring : Refactoring.values())
+						resultsPrinter.print(functions.parallelStream().map(Function::getRefactoring)
+								.filter(r -> Objects.equals(r, refactoring)).count());
+
+					// Precondition success counts.
+					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
+						resultsPrinter.print(functions.parallelStream().map(Function::getPassingPrecondition)
+								.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
+
+					// Transformation counts.
+					for (Transformation transformation : Transformation.values())
+						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
+								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
 					// overall results time.
 					resultsPrinter.print(
