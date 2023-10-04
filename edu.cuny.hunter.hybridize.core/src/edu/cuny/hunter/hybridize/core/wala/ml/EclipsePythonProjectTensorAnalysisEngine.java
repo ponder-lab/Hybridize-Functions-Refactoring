@@ -50,7 +50,7 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
 		this.project = project;
-		IPath projectPath = project.getFullPath();
+		IPath projectPath = getPath(project);
 		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
 		LOG.info("Creating engine from: " + dirModule);
 
@@ -60,6 +60,15 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 			ModuleEntry entry = entries.next();
 			LOG.info("Found entry: " + entry);
 		}
+	}
+
+	private static IPath getPath(IProject project) {
+		IPath path = project.getFullPath();
+
+		if (!path.toFile().exists())
+			path = project.getLocation();
+
+		return path;
 	}
 
 	public IProject getProject() {
