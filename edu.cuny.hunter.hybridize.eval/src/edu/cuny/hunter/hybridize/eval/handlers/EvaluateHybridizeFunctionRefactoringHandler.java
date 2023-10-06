@@ -58,6 +58,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
 
+	private static final String OPTMIZABLE_CSV_FILENAME = "optimizable.csv";
+
+	private static final String NONOPTMIZABLE_CSV_FILENAME = "nonoptimizable.csv";
+
+	private static final String FAILED_PRECONDITIONS_CSV_FILENAME = "failed_preconditions.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -99,7 +105,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "refactoring", "passing precondition",
 									"status"));
 					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
-							buildAttributeColumnNames("transformation"))) {
+							buildAttributeColumnNames("transformation"));
+					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
+					CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
+					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
+							buildAttributeColumnNames("code", "message"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -149,8 +159,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<Function> optimizableFunctions = processor.getOptimizableFunctions();
 					resultsPrinter.print(optimizableFunctions.size()); // number.
 
+					for (Function function : optimizableFunctions)
+						optimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
+
 					// failed functions.
 					SetView<Function> failures = Sets.difference(candidates, optimizableFunctions);
+
+					for (Function function : failures)
+						nonOptimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
 
 					// failed preconditions.
 					Collection<RefactoringStatusEntry> errorEntries = failures.parallelStream().map(Function::getStatus)
@@ -158,6 +174,21 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							.collect(Collectors.toSet());
 
 					resultsPrinter.print(errorEntries.size()); // number.
+
+					for (RefactoringStatusEntry entry : errorEntries) {
+						if (!entry.isFatalError()) {
+							Object correspondingElement = entry.getData();
+
+							if (!(correspondingElement instanceof Function))
+								throw new IllegalStateException("The element: " + correspondingElement
+										+ " corresponding to a failed precondition is not a Function. Instead, it is a: "
+										+ correspondingElement.getClass());
+
+							Function failedFunction = (Function) correspondingElement;
+
+							errorPrinter.printRecord(buildAttributeColumnValues(failedFunction, entry.getCode(), entry.getMessage()));
+						}
+					}
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
@@ -174,6 +205,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
+					// actually perform the refactoring if there are no fatal errors.
 					if (Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY) && !status.hasFatalError()) {
 						resultsTimeCollector.start();
 						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
