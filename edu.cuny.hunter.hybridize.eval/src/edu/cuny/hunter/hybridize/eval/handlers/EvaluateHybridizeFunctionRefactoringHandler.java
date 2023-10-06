@@ -95,7 +95,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add("time (s)");
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
-					@SuppressWarnings("indentation")
 					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
 							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "refactoring", "passing precondition",
 									"status"));
