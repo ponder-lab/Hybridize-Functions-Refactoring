@@ -65,6 +65,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return ret.toArray(String[]::new);
 	}
 
+	private static Object[] buildAttributeColumnValues(Function function, Object... additioanlColumnValues) {
+		IProject project = function.getProject();
+		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
+		String[] primaryColumns = new String[] { project.getName(), function.getIdentifer(), function.getContainingModuleName(),
+				relativePath.toString() };
+		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
+		ret.addAll(Arrays.asList(additioanlColumnValues));
+		return ret.toArray(Object[]::new);
+	}
+
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
@@ -119,13 +129,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// candidate functions.
 					for (Function function : candidates) {
-						Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 						RefactoringStatus functionStatus = function.getStatus();
 
-						candidatePrinter.printRecord(project.getName(), function.getIdentifer(), function.getContainingModuleName(),
-								relativePath, function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid(),
-								function.getRefactoring(), function.getPassingPrecondition(),
-								functionStatus.isOK() ? 0 : functionStatus.getEntryWithHighestSeverity().getSeverity());
+						candidatePrinter.printRecord(buildAttributeColumnValues(function, function.getNumberOfParameters(),
+								function.getLikelyHasTensorParameter(), function.isHybrid(), function.getRefactoring(),
+								function.getPassingPrecondition(),
+								functionStatus.isOK() ? 0 : functionStatus.getEntryWithHighestSeverity().getSeverity()));
 					}
 
 					// optimizable functions.
