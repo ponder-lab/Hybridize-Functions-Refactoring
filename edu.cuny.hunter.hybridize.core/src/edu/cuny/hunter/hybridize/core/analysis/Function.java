@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -287,7 +288,7 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * TODO: Populate.
 	 */
-	private Set<Transformation> transformations;
+	private Set<Transformation> transformations = new HashSet<>();
 
 	// private InstanceKey instanceKey;
 
