@@ -54,7 +54,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
-	private static final String CANDIDATE_CSV_FILENAME = "candidate_functions.csv";
+	private static final String CANDIDATE_CSV_FILENAME = "candidates.csv";
 
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
 
