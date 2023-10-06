@@ -56,6 +56,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String CANDIDATE_CSV_FILENAME = "candidate_functions.csv";
 
+	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -94,8 +96,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					@SuppressWarnings("indentation")
-					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, buildAttributeColumnNames("parameters",
-							"tensor parameter", "hybrid", "refactoring", "passing precondition", "status"));) {
+					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
+							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "refactoring", "passing precondition",
+									"status"));
+					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
+							buildAttributeColumnNames("transformation"))) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -135,6 +140,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 								function.getLikelyHasTensorParameter(), function.isHybrid(), function.getRefactoring(),
 								function.getPassingPrecondition(),
 								functionStatus.isOK() ? 0 : functionStatus.getEntryWithHighestSeverity().getSeverity()));
+
+						// transformations.
+						for (Transformation transformation : function.getTransformations())
+							transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation));
 					}
 
 					// optimizable functions.
