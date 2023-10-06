@@ -43,6 +43,7 @@ import com.google.common.collect.Sets.SetView;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -102,8 +103,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
-							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "refactoring", "passing precondition",
-									"status"));
+							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph",
+									"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
+									"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status"));
 					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 							buildAttributeColumnNames("transformation"));
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -143,12 +145,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// candidate functions.
 					for (Function function : candidates) {
-						RefactoringStatus functionStatus = function.getStatus();
-
-						candidatePrinter.printRecord(buildAttributeColumnValues(function, function.getNumberOfParameters(),
-								function.getLikelyHasTensorParameter(), function.isHybrid(), function.getRefactoring(),
-								function.getPassingPrecondition(),
-								functionStatus.isOK() ? 0 : functionStatus.getEntryWithHighestSeverity().getSeverity()));
+						printFunction(candidatePrinter, function);
 
 						// transformations.
 						for (Transformation transformation : function.getTransformations())
@@ -214,7 +211,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					}
 
 					// overall results time.
-					resultsPrinter.print((resultsTimeCollector.getCollectedTime() - processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
+					resultsPrinter.print(
+							(resultsTimeCollector.getCollectedTime() - processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
 
 					// end the record.
 					resultsPrinter.println();
@@ -229,6 +227,32 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}).schedule();
 
 		return null;
+	}
+
+	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
+		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getNumberOfParameters(),
+				function.getLikelyHasTensorParameter(), function.isHybrid());
+
+		for (Object columnValue : initialColumnValues)
+			printer.print(columnValue);
+
+		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
+
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getAutoGraphParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalAutographOptParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalFollowTypeHintsParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalImplementsParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getFuncParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getInputSignatureParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getJitCompileParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getReduceRetracingParamExists());
+
+		printer.print(function.getRefactoring());
+		printer.print(function.getPassingPrecondition());
+		printer.print(function.getStatus().isOK() ? 0 : function.getStatus().getEntryWithHighestSeverity().getSeverity());
+
+		// end the record.
+		printer.println();
 	}
 
 	private static IProject[] getSelectedPythonProjectsFromEvent(ExecutionEvent event) throws CoreException, ExecutionException {
