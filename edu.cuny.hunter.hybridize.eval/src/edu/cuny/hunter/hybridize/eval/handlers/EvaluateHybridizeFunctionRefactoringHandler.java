@@ -58,6 +58,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
+	private static String[] buildAttributeColumns(String... attributes) {
+		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
+		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
+		ret.addAll(Arrays.asList(attributes));
+		return ret.toArray(String[]::new);
+	}
+
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
@@ -77,9 +84,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					@SuppressWarnings("indentation")
-					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
-							new String[] { "subject", "function", "module", "relative path", "parameters", "tensor parameter", "hybrid",
-									"refactoring", "passingPrecondition", "status" })) {
+					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, buildAttributeColumns("parameters",
+							"tensor parameter", "hybrid", "refactoring", "passingPrecondition", "status"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
