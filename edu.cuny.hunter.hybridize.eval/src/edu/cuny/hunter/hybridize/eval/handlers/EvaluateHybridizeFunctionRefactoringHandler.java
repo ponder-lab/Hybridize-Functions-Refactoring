@@ -85,7 +85,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					@SuppressWarnings("indentation")
 					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, buildAttributeColumns("parameters",
-							"tensor parameter", "hybrid", "refactoring", "passingPrecondition", "status"));) {
+							"tensor parameter", "hybrid", "refactoring", "passing precondition", "status"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
