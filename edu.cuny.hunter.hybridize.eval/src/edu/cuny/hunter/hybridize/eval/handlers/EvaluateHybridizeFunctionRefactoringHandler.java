@@ -58,10 +58,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
-	private static String[] buildAttributeColumns(String... attributes) {
+	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
-		ret.addAll(Arrays.asList(attributes));
+		ret.addAll(Arrays.asList(additionalColumnNames));
 		return ret.toArray(String[]::new);
 	}
 
@@ -84,7 +84,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					@SuppressWarnings("indentation")
-					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, buildAttributeColumns("parameters",
+					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME, buildAttributeColumnNames("parameters",
 							"tensor parameter", "hybrid", "refactoring", "passing precondition", "status"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
