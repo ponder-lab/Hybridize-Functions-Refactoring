@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension
+         point="org.eclipse.ui.commands">
+      <command
+            categoryId="edu.cuny.hunter.hybridize.eval.category"
+            defaultHandler="edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler"
+            description="Evaluates the Hybridize Functions refactoring."
+            id="edu.cuny.hunter.hybridize.eval.commands.evaluate"
+            name="Evaluate Hybridize Functions Refactoring">
+      </command>
+      <category
+            description="Evaluation fo the Hybridize Functions refactoring."
+            id="edu.cuny.hunter.hybridize.eval.category"
+            name="Evaluate Hybridize Functions Refactoring">
+      </category>
+   </extension>
+   <extension
+         point="org.eclipse.ui.handlers">
+      <handler
+            class="edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler"
+            commandId="edu.cuny.hunter.hybridize.eval.commands.evaluate">
+         <activeWhen>
+            <with
+                  variable="selection">
+               <iterate
+                     ifEmpty="false"
+                     operator="or">
+                  <instanceof
+                        value="org.eclipse.core.resources.IProject">
+                  </instanceof>
+                  <instanceof
+                        value="org.python.pydev.navigator.elements.PythonSourceFolder">
+                  </instanceof>
+               </iterate>
+            </with>
+         </activeWhen>
+      </handler>
+   </extension>
+   <extension
+         point="org.eclipse.ui.bindings">
+      <key
+            commandId="edu.cuny.hunter.hybridize.eval.commands.evaluate"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            contextId="org.eclipse.ui.contexts.window"
+            sequence="M1+6">
+      </key>
+   </extension>
+   <extension
+         point="org.eclipse.ui.menus">
+      <menuContribution
+            locationURI="menu:org.eclipse.ui.main.menu?after=additions">
+         <menu
+               id="edu.cuny.hunter.hybridize.eval.menus.evaluate"
+               label="Evaluate Hybridize Functions"
+               mnemonic="E">
+            <command
+                  commandId="edu.cuny.hunter.hybridize.eval.commands.evaluate"
+                  icon="icons/sample.png"
+                  label="Evaluate Hybridize Functions refactoring"
+                  mnemonic="E"
+                  style="push"
+                  tooltip="Evaluate Hybridize Functions refactoring">
+            </command>
+         </menu>
+      </menuContribution>
+      <menuContribution
+            locationURI="toolbar:org.eclipse.ui.main.toolbar?after=additions">
+         <toolbar
+               id="edu.cuny.hunter.hybridize.eval.toolbars.evaluate"
+               label="Evaluate Hybridize Functions Refactoring">
+            <command
+                  id="edu.cuny.hunter.hybridize.eval.toolbars.evaluate"
+                  commandId="edu.cuny.hunter.hybridize.eval.commands.evaluate"
+                  icon="icons/sample.png"
+                  tooltip="Evaluate Hybridize Functions refactoring">
+            </command>
+         </toolbar>
+      </menuContribution>
+   </extension>
+</plugin>

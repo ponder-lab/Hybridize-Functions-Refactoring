@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -36,6 +37,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.util.collections.Pair;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
+import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 /**
  * A representation of a Python function.
@@ -286,22 +288,19 @@ public class Function extends RefactorableProgramEntity {
 	/**
 	 * TODO: Populate.
 	 */
-	@SuppressWarnings("unused")
-	private Set<Transformation> transformationSet;
+	private Set<Transformation> transformations = new HashSet<>();
 
 	// private InstanceKey instanceKey;
 
 	/**
 	 * TODO: Populate.
 	 */
-	@SuppressWarnings("unused")
 	private PreconditionSuccess passingPrecondition;
 
 	/**
 	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive. TODO:
 	 * Populate.
 	 */
-	@SuppressWarnings("unused")
 	private Refactoring refactoring;
 
 	private RefactoringStatus status = new RefactoringStatus();
@@ -694,5 +693,21 @@ public class Function extends RefactorableProgramEntity {
 
 	public IProject getProject() {
 		return this.getFunctionDefinition().getProject();
+	}
+
+	public boolean isHybridizationAvailable() {
+		return RefactoringAvailabilityTester.isHybridizationAvailable(this.getFunctionDefinition().getFunctionDef());
+	}
+
+	public Set<Transformation> getTransformations() {
+		return transformations;
+	}
+
+	public PreconditionSuccess getPassingPrecondition() {
+		return passingPrecondition;
+	}
+
+	public Refactoring getRefactoring() {
+		return refactoring;
 	}
 }

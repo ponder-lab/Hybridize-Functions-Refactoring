@@ -278,6 +278,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return this.functions;
 	}
 
+	public Set<Function> getOptimizableFunctions() {
+		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).collect(Collectors.toSet());
+	}
+
 	@Override
 	public String getIdentifier() {
 		return HybridizeFunctionRefactoringDescriptor.REFACTORING_ID;

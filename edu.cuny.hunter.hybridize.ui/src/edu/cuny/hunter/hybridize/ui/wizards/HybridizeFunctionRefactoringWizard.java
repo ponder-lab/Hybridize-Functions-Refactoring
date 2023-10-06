@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.ui.wizards;
 
 import static edu.cuny.hunter.hybridize.core.messages.Messages.Name;
+import static edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring;
 
 import java.util.Set;
 
@@ -63,7 +64,7 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell)
 			throws TooManyMatchesException {
-		Refactoring refactoring = edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring(functionDefinitions);
+		Refactoring refactoring = createRefactoring(functionDefinitions);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 
 		new RefactoringStarter().activate(wizard, shell, RefactoringMessages.OpenRefactoringWizardAction_refactoring,
