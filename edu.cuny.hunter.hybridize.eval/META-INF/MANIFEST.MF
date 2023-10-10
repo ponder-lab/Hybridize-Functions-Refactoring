@@ -4,6 +4,8 @@ Bundle-Name: %Bundle-Name
 Bundle-SymbolicName: edu.cuny.hunter.hybridize.eval;singleton:=true
 Bundle-Vendor: %Bundle-Vendor
 Bundle-Version: 1.0.0.qualifier
+Export-Package: edu.cuny.hunter.hybridize.eval.handlers,
+ edu.cuny.hunter.hybridize.eval.ui.plugins
 Import-Package: com.google.common.collect,
  org.python.pydev.parser.jython.ast,
  org.python.pydev.plugin.nature
