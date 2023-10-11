@@ -22,7 +22,7 @@
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
 			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository"/>
-			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.1.202304131119"/>
+			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.2.202310101608"/>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
