@@ -4285,6 +4285,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(true);
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 */
 	@Test
 	public void testHasLikelyTensorParameter144() throws Exception {
 		// TODO: Change to false, true once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265 is fixed.
