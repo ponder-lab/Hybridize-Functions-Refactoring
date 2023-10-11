@@ -3433,13 +3433,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
 	}
 
-	private void testHasLikelyTensorParameterHelper(boolean hybridized) throws Exception {
+	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter) throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertEquals(hybridized, function.isHybrid());
+		assertEquals(expectingHybridFunction, function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3459,11 +3459,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertEquals(expectingTensorParameter, function.getLikelyHasTensorParameter());
 	}
 
 	private void testHasLikelyTensorParameterHelper() throws Exception {
-		testHasLikelyTensorParameterHelper(false);
+		testHasLikelyTensorParameterHelper(false, true);
+	}
+
+	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction) throws Exception {
+		testHasLikelyTensorParameterHelper(expectingHybridFunction, true);
 	}
 
 	/**
