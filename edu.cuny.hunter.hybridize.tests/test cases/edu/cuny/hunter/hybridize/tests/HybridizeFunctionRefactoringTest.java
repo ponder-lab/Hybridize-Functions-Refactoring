@@ -4302,6 +4302,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper();
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter146() throws Exception {
+		testHasLikelyTensorParameterHelper(false, false);
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
