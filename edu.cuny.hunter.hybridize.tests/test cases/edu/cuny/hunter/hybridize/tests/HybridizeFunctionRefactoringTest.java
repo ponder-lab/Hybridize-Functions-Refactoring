@@ -4309,6 +4309,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter146() throws Exception {
 		testHasLikelyTensorParameterHelper(false, false);
 	}
+	
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter147() throws Exception {
+		testHasLikelyTensorParameterHelper(false, false);
+	}
 
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
