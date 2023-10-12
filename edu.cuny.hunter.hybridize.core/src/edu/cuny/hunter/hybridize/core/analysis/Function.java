@@ -18,6 +18,8 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -578,10 +580,28 @@ public class Function extends RefactorableProgramEntity {
 		return false;
 	}
 
+	private void addStatusEntry(PreconditionFailure failure, String message) {
+		RefactoringStatusContext context = new RefactoringStatusContext() {
+
+			@Override
+			public Object getCorrespondingElement() {
+				return Function.this.getFunctionDefinition().getFunctionDef();
+			}
+		};
+
+		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, FrameworkUtil.getBundle(Function.class).getSymbolicName(),
+				failure.getCode(), this);
+	}
+
 	/**
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
+		// we can't refactor it if either it doesn't have a tensor parameter or it's not currently hybrid.
+		if (!(this.getLikelyHasTensorParameter() || this.isHybrid()))
+			this.addStatusEntry(PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE,
+					"This function is not available for optimization. Either the function must have a tensor-like parameter or be currently hybrid.");
+
 		// if this is not a hybrid function.
 		if (!this.isHybrid()) {
 			// but it likely has a tensor parameter.

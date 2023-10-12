@@ -35,6 +35,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
+import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
 import com.google.common.collect.Sets;
@@ -44,6 +45,7 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -139,8 +141,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<Function> functions = processor.getFunctions();
 					resultsPrinter.print(functions.size());
 
-					// optimization available functions. These are the "filtered" functions.
-					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable).collect(Collectors.toSet());
+					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
+					// have a tensor-like parameter or are currently hybrid.
+					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
+							.filter(f -> f.getStatus().getEntryMatchingCode(FrameworkUtil.getBundle(Function.class).getSymbolicName(),
+									PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode()) == null)
+							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
 					// candidate functions.
