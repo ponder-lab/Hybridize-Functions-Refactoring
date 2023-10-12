@@ -1,5 +1,8 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
+import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
@@ -573,6 +576,22 @@ public class Function extends RefactorableProgramEntity {
 		return false;
 	}
 
+	/**
+	 * Check refactoring preconditions.
+	 */
+	public void check() {
+		// if this is a hybrid function.
+		if (this.isHybrid()) {
+			// but it does not likely have a tensor parameter.
+			if (!this.getLikelyHasTensorParameter()) {
+				// de-hybridize it.
+				this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
+				this.addTransformation(CONVERT_TO_EAGER);
+				this.setPassingPrecondition(P1);
+			}
+		}
+	}
+
 	public IDocument getContainingDocument() {
 		return this.getFunctionDefinition().containingDocument;
 	}
@@ -703,11 +722,23 @@ public class Function extends RefactorableProgramEntity {
 		return transformations;
 	}
 
+	protected void addTransformation(Transformation transformation) {
+		this.transformations.add(transformation);
+	}
+
 	public PreconditionSuccess getPassingPrecondition() {
 		return passingPrecondition;
 	}
 
+	protected void setPassingPrecondition(PreconditionSuccess passingPrecondition) {
+		this.passingPrecondition = passingPrecondition;
+	}
+
 	public Refactoring getRefactoring() {
 		return refactoring;
+	}
+
+	public void setRefactoring(Refactoring refactoring) {
+		this.refactoring = refactoring;
 	}
 }

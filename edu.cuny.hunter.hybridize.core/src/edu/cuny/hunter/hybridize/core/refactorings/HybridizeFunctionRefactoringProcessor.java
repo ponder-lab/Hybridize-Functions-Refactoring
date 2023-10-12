@@ -194,8 +194,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
 				}
 
-				// TODO: It might be time to now go back to the paper to see how we can formulate the preconditions. Have a look at the
-				// stream refactoring paper.
+				// check the function preconditions.
+				func.check();
+				status.merge(func.getStatus());
 
 				status.merge(checkParameters(func));
 				subMonitor.checkCanceled();
