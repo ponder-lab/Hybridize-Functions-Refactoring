@@ -140,7 +140,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsPrinter.print(functions.size());
 
 					// optimization available functions. These are the "filtered" functions.
-					Set<Function> candidates = functions.stream().filter(f -> f.isHybridizationAvailable()).collect(Collectors.toSet());
+					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable).collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
 					// candidate functions.
