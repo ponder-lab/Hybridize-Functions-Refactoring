@@ -92,6 +92,9 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
+import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
+import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -4509,4 +4512,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	// TODO: Test models that have tf.functions.
+
+	@Test
+	public void testPreconditionChecking() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+
+		Set<Transformation> transformationSet = function.getTransformations();
+		assertNotNull(transformationSet);
+		assertEquals(1, transformationSet.size());
+		Iterator<Transformation> it = transformationSet.iterator();
+		assertTrue(it.hasNext());
+		Transformation transformation = it.next();
+		assertEquals(Transformation.CONVERT_TO_EAGER, transformation);
+
+		assertEquals(PreconditionSuccess.P1, function.getPassingPrecondition());
+		assertTrue(function.getStatus().isOK());
+	}
 }
