@@ -1,6 +1,8 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static org.eclipse.core.runtime.Platform.getLog;
@@ -580,14 +582,22 @@ public class Function extends RefactorableProgramEntity {
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		// if this is a hybrid function.
-		if (this.isHybrid()) {
+		// if this is not a hybrid function.
+		if (!this.isHybrid()) {
+			// but it likely has a tensor parameter.
+			if (this.getLikelyHasTensorParameter()) {
+				// hybridize it.
+				this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
+				this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+				this.setPassingPrecondition(P1);
+			}
+		} else { // this is a hybrid function.
 			// but it does not likely have a tensor parameter.
 			if (!this.getLikelyHasTensorParameter()) {
 				// de-hybridize it.
 				this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 				this.addTransformation(CONVERT_TO_EAGER);
-				this.setPassingPrecondition(P1);
+				this.setPassingPrecondition(P2);
 			}
 		}
 	}

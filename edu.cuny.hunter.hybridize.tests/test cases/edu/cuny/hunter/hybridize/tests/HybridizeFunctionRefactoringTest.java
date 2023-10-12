@@ -1,5 +1,9 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -4513,18 +4517,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	// TODO: Test models that have tf.functions.
 
-	@Test
-	public void testPreconditionChecking() throws Exception {
+	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,
+			Transformation expectedTransformation, PreconditionSuccess precondition) throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.isHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertEquals(expectedHybrid, function.isHybrid());
+		assertEquals(expectedTensorParameter, function.getLikelyHasTensorParameter());
 
-		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertEquals(expectedRefactoring, function.getRefactoring());
 
 		Set<Transformation> transformationSet = function.getTransformations();
 		assertNotNull(transformationSet);
@@ -4532,9 +4536,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Iterator<Transformation> it = transformationSet.iterator();
 		assertTrue(it.hasNext());
 		Transformation transformation = it.next();
-		assertEquals(Transformation.CONVERT_TO_EAGER, transformation);
+		assertEquals(expectedTransformation, transformation);
 
-		assertEquals(PreconditionSuccess.P1, function.getPassingPrecondition());
+		assertEquals(precondition, function.getPassingPrecondition());
 		assertTrue(function.getStatus().isOK());
+	}
+
+	@Test
+	public void testPreconditionChecking() throws Exception {
+		testPreconditionCheckingHelper(true, false, OPTIMIZE_HYBRID_FUNCTION, CONVERT_TO_EAGER, P2);
+	}
+
+	@Test
+	public void testPreconditionChecking2() throws Exception {
+		// it's not hybrid but it has a tensor parameter. Let's make it hybrid.
+		testPreconditionCheckingHelper(false, true, Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, Transformation.CONVERT_TO_HYBRID, P1);
 	}
 }
