@@ -292,6 +292,8 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Boolean likelyHasTensorParameter;
 
+	private boolean hasPythonSideEffects;
+
 	/**
 	 * TODO: Populate.
 	 */
@@ -770,5 +772,9 @@ public class Function extends RefactorableProgramEntity {
 
 	public void setRefactoring(Refactoring refactoring) {
 		this.refactoring = refactoring;
+	}
+
+	public boolean getHasPythonSideEffects() {
+		return this.hasPythonSideEffects;
 	}
 }

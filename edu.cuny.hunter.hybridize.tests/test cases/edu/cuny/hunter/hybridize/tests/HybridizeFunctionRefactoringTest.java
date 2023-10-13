@@ -4556,4 +4556,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// it's not hybrid but it has a tensor parameter. Let's make it hybrid.
 		testPreconditionCheckingHelper(false, true, Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, Transformation.CONVERT_TO_HYBRID, P1);
 	}
+
+	@Test
+	public void testPythonSideEffects() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	private Function getSingleFunction() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		return function;
+	}
 }

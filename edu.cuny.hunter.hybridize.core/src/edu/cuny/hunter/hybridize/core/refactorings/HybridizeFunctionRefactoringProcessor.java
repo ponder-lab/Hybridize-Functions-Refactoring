@@ -194,6 +194,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
 				}
 
+				// TODO: Check Python side-effects.
+
 				// check the function preconditions.
 				func.check();
 				status.merge(func.getStatus());
