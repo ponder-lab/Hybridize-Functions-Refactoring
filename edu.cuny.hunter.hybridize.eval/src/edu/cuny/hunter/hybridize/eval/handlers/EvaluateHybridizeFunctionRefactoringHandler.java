@@ -57,7 +57,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
-	private static final String CANDIDATE_CSV_FILENAME = "candidates.csv";
+	private static final String CANDIDATES_CSV_FILENAME = "candidate_functions.csv";
 
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
 
@@ -104,7 +104,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add("time (s)");
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
-					CSVPrinter candidatePrinter = createCSVPrinter(CANDIDATE_CSV_FILENAME,
+					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME,
 							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph",
 									"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
 									"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status"));
@@ -151,7 +151,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// candidate functions.
 					for (Function function : candidates) {
-						printFunction(candidatePrinter, function);
+						printFunction(candidatesPrinter, function);
 
 						// transformations.
 						for (Transformation transformation : function.getTransformations())
