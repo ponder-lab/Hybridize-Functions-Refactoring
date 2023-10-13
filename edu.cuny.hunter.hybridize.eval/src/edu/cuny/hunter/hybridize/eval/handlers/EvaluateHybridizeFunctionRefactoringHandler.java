@@ -238,7 +238,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return null;
 	}
 
-	private String[] buildFunctionAttributeColumnNames() {
+	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
 				"refactoring", "passing precondition", "status");
