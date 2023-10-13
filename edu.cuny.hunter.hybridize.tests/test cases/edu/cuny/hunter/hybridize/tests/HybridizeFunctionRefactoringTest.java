@@ -552,7 +552,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
 		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
-		
+
 		if (processor.getFunctions().stream().map(Function::getStatus).allMatch(RefactoringStatus::isOK))
 			assertTrue(status.isOK());
 		else
