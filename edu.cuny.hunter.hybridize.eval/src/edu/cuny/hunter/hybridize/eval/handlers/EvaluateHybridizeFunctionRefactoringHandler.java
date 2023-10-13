@@ -57,6 +57,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String RESULTS_CSV_FILENAME = "results.csv";
 
+	private static final String FUNCTIONS_CSV_FILENAME = "functions.csv";
+
 	private static final String CANDIDATES_CSV_FILENAME = "candidate_functions.csv";
 
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
@@ -104,10 +106,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add("time (s)");
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
-					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME,
-							buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph",
-									"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
-									"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status"));
+					CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
+					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildFunctionAttributeColumnNames());
 					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 							buildAttributeColumnNames("transformation"));
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -140,6 +140,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// functions.
 					Set<Function> functions = processor.getFunctions();
 					resultsPrinter.print(functions.size());
+
+					for (Function func : functions)
+						printFunction(functionsPrinter, func);
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
@@ -233,6 +236,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}).schedule();
 
 		return null;
+	}
+
+	private String[] buildFunctionAttributeColumnNames() {
+		return buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph", "experimental_autograph_options",
+				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
+				"refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
