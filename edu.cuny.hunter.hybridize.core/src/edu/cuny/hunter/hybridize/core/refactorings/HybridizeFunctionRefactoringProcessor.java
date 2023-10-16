@@ -181,7 +181,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Find out if it's hybrid via the tf.function decorator.
 				try {
-					func.computeHybridization(monitor);
+					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
 					throw new CoreException(Status.error("Could not compute hybridization for: : " + func, e));
 				}
@@ -189,7 +189,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// TODO: Whether a function has a tensor argument should probably be an initial
 				// condition: functions w/o such arguments should not be candidates.
 				try {
-					func.inferTensorTensorParameters(analysis, monitor);
+					func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
 					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
 				}
