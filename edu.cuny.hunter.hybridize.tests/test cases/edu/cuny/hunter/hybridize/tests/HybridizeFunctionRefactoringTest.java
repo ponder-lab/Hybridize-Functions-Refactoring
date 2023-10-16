@@ -4592,6 +4592,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This Python statement only modifies a local variable, so no side-effects.", function.getHasPythonSideEffects());
 	}
 
+	@Test
+	public void testPythonSideEffects5() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+	}
+
 	private Function getSingleFunction() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
