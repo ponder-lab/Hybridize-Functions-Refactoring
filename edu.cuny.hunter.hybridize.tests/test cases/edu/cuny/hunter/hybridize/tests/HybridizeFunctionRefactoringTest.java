@@ -4562,7 +4562,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects2() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a call to a TF operation. So, no "Python" side-effects.
+		assertFalse("TF operations shouldn't be considered Python side-effects.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects3() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a transitive Python side-effect.
+		assertTrue("Expecting a Python side-effect from a transitive local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects4() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a Python statement but no side-effect.
+		assertFalse("This Python statement only modifies a local variable, so no side-effects.", function.getHasPythonSideEffects());
 	}
 
 	private Function getSingleFunction() throws Exception {
