@@ -5,12 +5,16 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static java.lang.Boolean.FALSE;
+import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
@@ -36,12 +40,22 @@ import org.python.pydev.parser.visitors.TypeInfo;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.modref.PythonModRef;
+import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.modref.ModRef;
+import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -292,7 +306,10 @@ public class Function extends RefactorableProgramEntity {
 	 */
 	private Boolean likelyHasTensorParameter;
 
-	private boolean hasPythonSideEffects;
+	/**
+	 * True iff this {@link Function} has Python side-effects.
+	 */
+	private Boolean hasPythonSideEffects;
 
 	/**
 	 * TODO: Populate.
@@ -316,6 +333,73 @@ public class Function extends RefactorableProgramEntity {
 
 	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
+	}
+
+	/**
+	 * Infer the side-effects potentially produced by executing this {@link Function}.
+	 *
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @throws IllegalArgumentException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
+	 */
+	public void inferSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws IllegalArgumentException {
+		ModRef<InstanceKey> modRef = new PythonModRef();
+		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
+
+		// Get the nodes corresponding to this function.
+		Set<CGNode> nodes = getCallGraphNodes(callGraph);
+
+		// for each node.
+		for (CGNode cgNode : nodes) {
+			// Get the locations (pointers) modified by this function.
+			OrdinalSet<PointerKey> modSet = mod.get(cgNode);
+			LOG.info("Found " + modSet.size() + " modified location(s).");
+
+			if (!modSet.isEmpty()) {
+				modSet.forEach(pk -> LOG.info("Modified location: " + pk + "."));
+				this.hasPythonSideEffects = TRUE;
+				return;
+			}
+		}
+
+		this.hasPythonSideEffects = FALSE;
+		LOG.info(this + " does not have side-effects.");
+	}
+
+	/**
+	 * Get the {@link CallGraph} nodes corresponding to this {@link Function}.
+	 *
+	 * @param callGraph The {@link CallGraph} to search.
+	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
+	 * @throws IllegalArgumentException If this {@link Function} can't be found in the given {@link CallGraph}.
+	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
+	 */
+	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws IllegalArgumentException {
+		MethodReference methodReference = this.getMethodReference();
+		Set<CGNode> nodes = callGraph.getNodes(methodReference);
+
+		if (nodes.isEmpty()) {
+			LOG.error("Can't get call graph nodes for: " + this + ".");
+			LOG.info("Method reference is: " + methodReference + ".");
+			LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+
+			throw new IllegalArgumentException("Can't find: " + methodReference + " in call graph.");
+		}
+
+		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
+		return nodes;
+	}
+
+	public MethodReference getMethodReference() {
+		File containingFile = this.getContainingFile();
+		String filename = containingFile.getName();
+		String functionName = this.getSimpleName();
+
+		TypeReference typeReference = TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lscript " + filename + "/" + functionName);
+
+		MethodReference methodReference = MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
+		return methodReference;
+
 	}
 
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
@@ -774,7 +858,7 @@ public class Function extends RefactorableProgramEntity {
 		this.refactoring = refactoring;
 	}
 
-	public boolean getHasPythonSideEffects() {
+	public Boolean getHasPythonSideEffects() {
 		return this.hasPythonSideEffects;
 	}
 }

@@ -72,19 +72,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
-		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
+		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path", "method reference" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnNames));
 		return ret.toArray(String[]::new);
 	}
 
-	private static Object[] buildAttributeColumnValues(Function function, Object... additioanlColumnValues) {
+	private static Object[] buildAttributeColumnValues(Function function, Object... additionalColumnValues) {
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
-		String[] primaryColumns = new String[] { project.getName(), function.getIdentifer(), function.getContainingModuleName(),
-				relativePath.toString() };
+		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifer(), function.getContainingModuleName(),
+				relativePath, function.getMethodReference() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
-		ret.addAll(Arrays.asList(additioanlColumnValues));
+		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
 	}
 

@@ -194,7 +194,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
 				}
 
-				// TODO: Check Python side-effects.
+				// Check Python side-effects.
+				try {
+					func.inferSideEffects(callGraph, builder.getPointerAnalysis());
+				} catch (IllegalArgumentException e) {
+					throw new IllegalStateException("Can't infer side-effects of: " + this + ".", e);
+				}
 
 				// check the function preconditions.
 				func.check();
