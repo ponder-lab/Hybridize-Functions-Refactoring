@@ -763,7 +763,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @see <a href="https://peps.python.org/pep-3155">PEP 3155</a>
 	 * @return This {@link Function}'s QN.
 	 */
-	public String getIdentifer() {
+	public String getIdentifier() {
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
 		return Util.getQualifiedName(functionDef);
@@ -790,7 +790,7 @@ public class Function extends RefactorableProgramEntity {
 
 	@Override
 	public String toString() {
-		return this.getIdentifer() + "()";
+		return this.getIdentifier() + "()";
 	}
 
 	@Override

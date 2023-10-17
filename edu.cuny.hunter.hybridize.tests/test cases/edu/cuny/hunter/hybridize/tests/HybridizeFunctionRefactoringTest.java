@@ -898,7 +898,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			LOG.info("Expected signature: " + expectedSignature);
 
-			String actualSignature = func.getIdentifer();
+			String actualSignature = func.getIdentifier();
 
 			LOG.info("Actual signature: " + actualSignature);
 
@@ -1180,7 +1180,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			functionNames.add(func.getIdentifier());
 		}
 
 		assertEquals(2, functionNames.size());
@@ -1200,7 +1200,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			functionNames.add(func.getIdentifier());
 		}
 
 		// NOTE: Both of these functions have the same qualified name.
@@ -1233,7 +1233,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			functionNames.add(func.getIdentifier());
 		}
 
 		assertEquals(expectedNumberOfFunctionNames, functionNames.size());
@@ -1262,7 +1262,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			int foundCount = 0;
 
 			for (FunctionUnderTest funcUnderTest : functionsToTest) {
-				if (funcUnderTest.getName().equals(func.getIdentifer())
+				if (funcUnderTest.getName().equals(func.getIdentifier())
 						&& (funcUnderTest.getModuleName() == null || funcUnderTest.getModuleName().equals(func.getContainingModuleName()))
 						&& funcUnderTest.getParameters().size() == func.getNumberOfParameters()) {
 					// found it.
@@ -1284,7 +1284,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			functionNames.add(func.getIdentifer());
+			functionNames.add(func.getIdentifier());
 		}
 
 		assertEquals(expectedNumberOfFunctionNames, functionNames.size());
@@ -1408,7 +1408,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			String id = func.getIdentifer();
+			String id = func.getIdentifier();
 			assertNotNull(id);
 			assertTrue(id.equals("a") || id.equals("b"));
 		}
@@ -1420,7 +1420,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function func1 = iterator.next();
 		assertNotNull(func1);
 
-		String identifer1 = func1.getIdentifer();
+		String identifer1 = func1.getIdentifier();
 		assertNotNull(identifer1);
 
 		assertTrue(iterator.hasNext());
@@ -1428,7 +1428,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function func2 = iterator.next();
 		assertNotNull(func2);
 
-		String identifer2 = func2.getIdentifer();
+		String identifer2 = func2.getIdentifier();
 		assertNotNull(identifer2);
 
 		assertTrue(!identifer1.equals("a") || identifer2.equals("b"));
@@ -1449,7 +1449,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			String id = func.getIdentifer();
+			String id = func.getIdentifier();
 			assertNotNull(id);
 			assertTrue(id.equals("a"));
 		}
@@ -1461,7 +1461,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function func1 = iterator.next();
 		assertNotNull(func1);
 
-		String identifer1 = func1.getIdentifer();
+		String identifer1 = func1.getIdentifier();
 		assertNotNull(identifer1);
 
 		assertTrue(iterator.hasNext());
@@ -1469,7 +1469,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function func2 = iterator.next();
 		assertNotNull(func2);
 
-		String identifer2 = func2.getIdentifer();
+		String identifer2 = func2.getIdentifier();
 		assertNotNull(identifer2);
 
 		assertTrue(!func1.equals(func2));
@@ -1492,7 +1492,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function func = iterator.next();
 		assertNotNull(func);
 
-		String id = func.getIdentifer();
+		String id = func.getIdentifier();
 		assertNotNull(id);
 		assertTrue(id.equals("a"));
 
