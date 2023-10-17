@@ -387,19 +387,23 @@ public class Function extends RefactorableProgramEntity {
 		}
 
 		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
+		LOG.info("Nodes:\n" + nodes.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+
 		return nodes;
 	}
 
 	public MethodReference getMethodReference() {
+		TypeReference typeReference = getTypeReference();
+		return MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
+	}
+
+	public TypeReference getTypeReference() {
 		File containingFile = this.getContainingFile();
 		String filename = containingFile.getName();
-		String functionName = this.getSimpleName();
+		String modifiedIdentifier = this.getIdentifier().replace('.', '/');
+		String typeName = "Lscript " + filename + "/" + modifiedIdentifier;
 
-		TypeReference typeReference = TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lscript " + filename + "/" + functionName);
-
-		MethodReference methodReference = MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
-		return methodReference;
-
+		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
