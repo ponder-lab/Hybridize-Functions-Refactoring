@@ -198,7 +198,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				try {
 					func.inferSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (IllegalArgumentException e) {
-					throw new IllegalStateException("Can't infer side-effects of: " + this + ".", e);
+					throw new IllegalStateException("Can't infer side-effects of: " + func + ".", e);
 				}
 
 				// check the function preconditions.
