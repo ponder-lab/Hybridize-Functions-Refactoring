@@ -81,7 +81,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static Object[] buildAttributeColumnValues(Function function, Object... additioanlColumnValues) {
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
-		String[] primaryColumns = new String[] { project.getName(), function.getIdentifer(), function.getContainingModuleName(),
+		String[] primaryColumns = new String[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
 				relativePath.toString() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additioanlColumnValues));
