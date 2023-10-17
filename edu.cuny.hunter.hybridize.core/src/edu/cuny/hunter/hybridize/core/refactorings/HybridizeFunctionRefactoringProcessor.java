@@ -20,6 +20,8 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
@@ -39,12 +41,26 @@ import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 
 @SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
+
+	private final class FunctionStatusContext extends RefactoringStatusContext {
+		private final Function func;
+
+		private FunctionStatusContext(Function func) {
+			this.func = func;
+		}
+
+		@Override
+		public Object getCorrespondingElement() {
+			return func;
+		}
+	}
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
@@ -198,12 +214,17 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				try {
 					func.inferSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (IllegalArgumentException e) {
-					throw new IllegalStateException("Can't infer side-effects of: " + func + ".", e);
+					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
+					func.addStatusEntry(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
+							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
+					// next function.
+					status.merge(func.getStatus());
+					subMonitor.worked(1);
+					continue;
 				}
 
 				// check the function preconditions.
 				func.check();
-				status.merge(func.getStatus());
 
 				status.merge(checkParameters(func));
 				subMonitor.checkCanceled();
@@ -211,6 +232,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				status.merge(checkDecorators(func));
 				subMonitor.checkCanceled();
 
+				status.merge(func.getStatus());
 				subMonitor.worked(1);
 			}
 		}

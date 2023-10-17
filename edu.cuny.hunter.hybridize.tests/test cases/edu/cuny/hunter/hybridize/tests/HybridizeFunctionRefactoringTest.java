@@ -40,6 +40,7 @@ import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -96,6 +97,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -607,6 +609,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
 			assertFalse(function.getLikelyHasTensorParameter());
+
+			switch (function.getIdentifier()) {
+			case "Test.value":
+			case "Test.name":
+				checkSideEffectStatus(function);
+				break;
+			}
 		}
 	}
 
@@ -819,6 +828,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// to return False.
 
 		assertNull(args);
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -843,6 +853,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & args.getAutoGraphParamExists()
 				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
 				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+
+		checkSideEffectStatus(function);
+	}
+
+	private void checkSideEffectStatus(Function function) {
+		RefactoringStatus status = function.getStatus();
+		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
+		assertNull(function.getHasPythonSideEffects());
+		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
+		assertNotNull(entry);
 	}
 
 	/**
@@ -996,9 +1017,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size()); // one function is for the decorator.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+
+		functions.stream().forEach(f -> {
+			assertNotNull(f);
+			assertFalse(f.isHybrid());
+
+			if (f.getIdentifier().equals("func1"))
+				checkSideEffectStatus(f);
+		});
 	}
 
 	/**
@@ -1012,6 +1038,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1038,6 +1065,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1064,6 +1092,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1091,6 +1120,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.isHybrid());
+
+			if (func.getIdentifier().equals("dummy_func2"))
+				checkSideEffectStatus(func);
 		}
 	}
 
@@ -1106,6 +1138,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.isHybrid());
+			checkSideEffectStatus(func);
 		}
 	}
 
@@ -1121,6 +1154,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertTrue(func.isHybrid());
+			checkSideEffectStatus(func);
 		}
 	}
 
@@ -1164,6 +1198,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -4356,8 +4391,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			case "__call__":
-				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				// NOTE: Should be error-free once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4388,8 +4425,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			case "call":
-				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4479,8 +4518,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			case "call":
-				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
 				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4510,8 +4551,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			case "__call__":
-				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
 				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				// No invocation, so we won't be able to infer side-effects.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");

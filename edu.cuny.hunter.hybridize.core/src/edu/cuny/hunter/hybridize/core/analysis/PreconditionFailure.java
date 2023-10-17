@@ -3,7 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import java.util.Arrays;
 
 public enum PreconditionFailure {
-	CURRENTLY_NOT_HANDLED(1), OPTIMIZATION_NOT_AVAILABLE(2);
+	CURRENTLY_NOT_HANDLED(1), OPTIMIZATION_NOT_AVAILABLE(2), UNDETERMINABLE_SIDE_EFFECTS(3);
 
 	static {
 		// check that the codes are unique.

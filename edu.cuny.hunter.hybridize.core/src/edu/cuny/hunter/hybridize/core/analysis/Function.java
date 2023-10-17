@@ -68,6 +68,15 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  */
 public class Function extends RefactorableProgramEntity {
 
+	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
+
+	private final class FunctionStatusContext extends RefactoringStatusContext {
+		@Override
+		public Object getCorrespondingElement() {
+			return Function.this;
+		}
+	}
+
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
 	 * https://tensorflow.org/versions/r2.9/api_docs/python/tf/function Note: We are also parsing the deprecated parameters specified in the
@@ -670,17 +679,10 @@ public class Function extends RefactorableProgramEntity {
 		return false;
 	}
 
-	private void addStatusEntry(PreconditionFailure failure, String message) {
-		RefactoringStatusContext context = new RefactoringStatusContext() {
+	public void addStatusEntry(PreconditionFailure failure, String message) {
+		RefactoringStatusContext context = new FunctionStatusContext();
 
-			@Override
-			public Object getCorrespondingElement() {
-				return Function.this.getFunctionDefinition().getFunctionDef();
-			}
-		};
-
-		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, FrameworkUtil.getBundle(Function.class).getSymbolicName(),
-				failure.getCode(), this);
+		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
 	}
 
 	/**
