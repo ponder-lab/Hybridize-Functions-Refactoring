@@ -78,13 +78,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return ret.toArray(String[]::new);
 	}
 
-	private static Object[] buildAttributeColumnValues(Function function, Object... additioanlColumnValues) {
+	private static Object[] buildAttributeColumnValues(Function function, Object... additionalColumnValues) {
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 		String[] primaryColumns = new String[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
 				relativePath.toString() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
-		ret.addAll(Arrays.asList(additioanlColumnValues));
+		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
 	}
 
