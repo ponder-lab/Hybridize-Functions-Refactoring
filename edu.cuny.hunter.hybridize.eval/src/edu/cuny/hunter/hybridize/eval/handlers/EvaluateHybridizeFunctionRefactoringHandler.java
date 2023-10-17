@@ -82,7 +82,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifer(), function.getContainingModuleName(),
-							relativePath, function.getMethodReference() };
+				relativePath, function.getMethodReference() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
