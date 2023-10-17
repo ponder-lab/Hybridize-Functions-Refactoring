@@ -72,7 +72,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
-		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path", "method reference" };
+		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnNames));
 		return ret.toArray(String[]::new);
@@ -82,7 +82,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
-				relativePath, function.getMethodReference() };
+				relativePath };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
@@ -239,14 +239,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	private static String[] buildFunctionAttributeColumnNames() {
-		return buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph", "experimental_autograph_options",
-				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
-				"refactoring", "passing precondition", "status");
+		return buildAttributeColumnNames("method reference", "type reference", "parameters", "tensor parameter", "hybrid", "autograph",
+				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
+				"jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
-		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getNumberOfParameters(),
-				function.getLikelyHasTensorParameter(), function.isHybrid());
+		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getTypeReference(),
+				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
