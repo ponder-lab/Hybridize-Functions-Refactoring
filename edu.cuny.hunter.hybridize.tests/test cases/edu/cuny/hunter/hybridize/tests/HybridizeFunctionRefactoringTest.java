@@ -4660,7 +4660,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects7() throws Exception {
 		Set<Function> functionSet = getFunctions();
 		assertEquals(2, functionSet.size());
+		testTransitivePythonSideEffects(functionSet);
+	}
 
+	private void testTransitivePythonSideEffects(Set<Function> functionSet) {
 		functionSet.forEach(f -> {
 			assertFalse(f.isHybrid());
 			assertFalse(f.getLikelyHasTensorParameter());
