@@ -104,6 +104,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
+import junit.framework.Assert;
 
 @SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
@@ -4651,6 +4652,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasTensorParameter());
 		// there's a Python statement with side-effects. Multiple calls to the function.
 		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects7() throws Exception {
+		Set<Function> functionSet = getFunctions();
+		assertEquals(2, functionSet.size());
+
+		functionSet.forEach(f -> {
+			assertFalse(f.isHybrid());
+			assertFalse(f.getLikelyHasTensorParameter());
+
+			switch (f.getIdentifier()) {
+			case "f":
+			case "g":
+				// there's a Python statement with (transitive) side-effects.
+				assertTrue("This Python statement modifies a global variable, so it has side-effects.", f.getHasPythonSideEffects());
+				break;
+
+			default:
+				fail("Not expecting: " + f.getIdentifier() + ".");
+				break;
+			}
+		});
 	}
 
 	private Function getSingleFunction() throws Exception {
