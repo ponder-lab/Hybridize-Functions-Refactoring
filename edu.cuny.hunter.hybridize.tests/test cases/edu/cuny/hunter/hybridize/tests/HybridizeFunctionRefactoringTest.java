@@ -4688,7 +4688,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @return The only function defined in the default test file.
 	 */
 	private Function getSingleFunction() throws Exception {
-		Set<Function> functions = this.getFunctions();
+		return this.getSingleFunction(this.getFunctions());
+	}
+
+	/**
+	 * Returns the only function defined in the given test file.
+	 *
+	 * @param fileNameWithoutExtension The name of the file declaring the function without a file extension.
+	 * @return The only function defined in the test file.
+	 */
+	private Function getSingleFunction(String fileNameWithoutExtension) throws Exception {
+		return getSingleFunction(this.getFunctions(fileNameWithoutExtension));
+	}
+
+	/**
+	 * Returns the only function contained in the given set of functions.
+	 *
+	 * @param functions The set of functions containing only one function.
+	 * @return The sole function contained in the given set of functions.
+	 */
+	private Function getSingleFunction(Set<Function> functions) {
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
