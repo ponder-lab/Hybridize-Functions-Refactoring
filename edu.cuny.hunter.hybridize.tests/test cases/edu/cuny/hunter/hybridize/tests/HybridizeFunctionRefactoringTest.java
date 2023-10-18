@@ -4391,6 +4391,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
@@ -4425,6 +4426,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
 				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
@@ -4458,6 +4460,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
@@ -4466,6 +4469,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
 			}
 		});
+	}
+
+	private static void checkOptimizationNotAvailableStatus(Function f) {
+		RefactoringStatus status = f.getStatus();
+		assertTrue("Should not be available for optimization.", status.hasError());
+		Object entry = status.getEntryMatchingCode(Function.BUNDLE_SYMBOLIC_NAME, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode());
+		assertNotNull(entry);
 	}
 
 	/**
@@ -4488,6 +4498,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
@@ -4518,6 +4529,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
@@ -4551,6 +4563,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
