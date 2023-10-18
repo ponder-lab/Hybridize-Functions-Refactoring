@@ -4538,7 +4538,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "call":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
 				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
-				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				// Can't infer side-effects here because there's no invocation of this method.
 				checkSideEffectStatus(f);
 				break;
 			default:
