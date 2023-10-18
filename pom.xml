@@ -137,6 +137,7 @@
 						<arg>-err:-discouraged</arg>
 						<arg>-err:-emptyBlock</arg>
 						<arg>-err:-boxing</arg>
+						<arg>-err:-switchdefault</arg>
 					</compilerArgs>
 				</configuration>
 			</plugin>
