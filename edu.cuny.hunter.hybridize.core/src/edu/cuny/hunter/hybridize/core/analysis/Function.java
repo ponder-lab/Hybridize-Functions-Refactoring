@@ -68,7 +68,7 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  */
 public class Function extends RefactorableProgramEntity {
 
-	private static final String BUNDLE_SYMBOLIC_NAME = FrameworkUtil.getBundle(Function.class).getSymbolicName();
+	public static final String BUNDLE_SYMBOLIC_NAME = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override

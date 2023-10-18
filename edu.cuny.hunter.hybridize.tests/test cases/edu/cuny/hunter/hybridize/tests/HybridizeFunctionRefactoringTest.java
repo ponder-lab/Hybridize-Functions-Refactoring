@@ -861,7 +861,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
 		assertNull(function.getHasPythonSideEffects());
-		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
+		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.BUNDLE_SYMBOLIC_NAME,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
 		assertNotNull(entry);
 	}
