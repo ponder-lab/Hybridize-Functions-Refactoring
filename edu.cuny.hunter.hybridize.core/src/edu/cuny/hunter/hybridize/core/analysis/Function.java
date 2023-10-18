@@ -355,7 +355,8 @@ public class Function extends RefactorableProgramEntity {
 		ModRef<InstanceKey> modRef = new PythonModRef();
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
-		// Get the nodes corresponding to this function.
+		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
+		// the current representation. It seems that there is a declaration node for each call to the function.
 		Set<CGNode> nodes = getCallGraphNodes(callGraph);
 
 		// for each node.
