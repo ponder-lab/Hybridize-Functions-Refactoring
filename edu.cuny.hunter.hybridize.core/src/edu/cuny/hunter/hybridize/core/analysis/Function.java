@@ -68,8 +68,7 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  */
 public class Function extends RefactorableProgramEntity {
 
-	@SuppressWarnings("hiding")
-	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
+	private static final String BUNDLE_SYMBOLIC_NAME = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
@@ -683,7 +682,7 @@ public class Function extends RefactorableProgramEntity {
 	public void addStatusEntry(PreconditionFailure failure, String message) {
 		RefactoringStatusContext context = new FunctionStatusContext();
 
-		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
+		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, BUNDLE_SYMBOLIC_NAME, failure.getCode(), this);
 	}
 
 	/**
