@@ -4585,7 +4585,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test a model. No tf.function in this one. Explicit call method. Unlike testModel3, there are Python side-effects in
 	 * SequentialModel.__init__() and SequentialModel.call().
 	 *
-	 * @see testModel3.
+	 * @see HybridizeFunctionRefactoringTest#testModel3
 	 */
 	@Test
 	public void testModel7() throws Exception {
