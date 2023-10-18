@@ -858,7 +858,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		checkSideEffectStatus(function);
 	}
 
-	private void checkSideEffectStatus(Function function) {
+	private static void checkSideEffectStatus(Function function) {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
 		assertNull(function.getHasPythonSideEffects());
