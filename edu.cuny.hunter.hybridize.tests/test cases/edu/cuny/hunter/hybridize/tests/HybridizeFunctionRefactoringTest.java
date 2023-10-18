@@ -104,7 +104,6 @@ import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
-import junit.framework.Assert;
 
 @SuppressWarnings("restriction")
 public class HybridizeFunctionRefactoringTest extends RefactoringTest {
