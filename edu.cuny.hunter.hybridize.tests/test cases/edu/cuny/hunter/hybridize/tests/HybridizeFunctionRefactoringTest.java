@@ -4665,7 +4665,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testTransitivePythonSideEffects(functionSet);
 	}
 
-	private void testTransitivePythonSideEffects(Set<Function> functionSet) {
+	private static void testTransitivePythonSideEffects(Set<Function> functionSet) {
 		functionSet.forEach(f -> {
 			assertFalse(f.isHybrid());
 			assertFalse(f.getLikelyHasTensorParameter());
@@ -4709,7 +4709,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param functions The set of functions containing only one function.
 	 * @return The sole function contained in the given set of functions.
 	 */
-	private Function getSingleFunction(Set<Function> functions) {
+	private static Function getSingleFunction(Set<Function> functions) {
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
