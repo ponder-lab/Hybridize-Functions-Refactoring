@@ -4653,6 +4653,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * Test transitive side-effects in the same file.
+	 */
 	@Test
 	public void testPythonSideEffects7() throws Exception {
 		Set<Function> functionSet = getFunctions();
