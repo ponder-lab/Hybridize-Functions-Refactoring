@@ -68,6 +68,7 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  */
 public class Function extends RefactorableProgramEntity {
 
+	@SuppressWarnings("hiding")
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
