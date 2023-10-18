@@ -615,6 +615,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "Test.name":
 				checkSideEffectStatus(function);
 				break;
+			default:
+				break;
 			}
 		}
 	}
