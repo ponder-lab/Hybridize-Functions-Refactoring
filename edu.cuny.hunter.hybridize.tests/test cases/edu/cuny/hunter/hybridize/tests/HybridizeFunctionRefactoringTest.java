@@ -4581,6 +4581,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
+	/**
+	 * Test a model. No tf.function in this one. Explicit call method. Unlike testModel3, there are Python side-effects in
+	 * SequentialModel.__init__() and SequentialModel.call().
+	 *
+	 * @see testModel3.
+	 */
+	@Test
+	public void testModel7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 3, functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+			case "get_stuff":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				checkOptimizationNotAvailableStatus(f);
+				break;
+			case "call":
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should have python side-effects.", f.getHasPythonSideEffects());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
+	}
+
 	// TODO: Test models that have tf.functions.
 
 	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,
