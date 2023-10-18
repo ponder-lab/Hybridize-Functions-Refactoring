@@ -4464,6 +4464,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4502,6 +4504,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
