@@ -4714,4 +4714,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		return function;
 	}
+
+	/**
+	 * Test transitive side-effects in different files.
+	 */
+	@Test
+	public void testPythonSideEffects8() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("g", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		testTransitivePythonSideEffects(functionSet);
+	}
 }
