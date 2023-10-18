@@ -4683,9 +4683,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the only function defined in the test file.
+	 * Returns the only function defined in the default test file.
 	 *
-	 * @return The only function defined in the test file.
+	 * @return The only function defined in the default test file.
 	 */
 	private Function getSingleFunction() throws Exception {
 		Set<Function> functions = this.getFunctions();
