@@ -40,7 +40,6 @@ import org.python.pydev.parser.visitors.TypeInfo;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
-import com.ibm.wala.cast.python.modref.PythonModRef;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
@@ -59,6 +58,7 @@ import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
+import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
 /**
  * A representation of a Python function.
@@ -352,7 +352,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @throws IllegalArgumentException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
 	 */
 	public void inferSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws IllegalArgumentException {
-		ModRef<InstanceKey> modRef = new PythonModRef();
+		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
