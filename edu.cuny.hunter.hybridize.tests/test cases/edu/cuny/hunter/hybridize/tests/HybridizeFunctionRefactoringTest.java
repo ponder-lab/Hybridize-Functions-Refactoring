@@ -4784,4 +4784,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		testTransitivePythonSideEffects(functionSet);
 	}
+
+	/**
+	 * Like testPythonSideEffects but only a single call. Simplifies the call graph since there seems to be a node for each call to a
+	 * function.
+	 *
+	 * @see HybridizeFunctionRefactoringTest#testPythonSideEffects
+	 */
+	@Test
+	public void testPythonSideEffects9() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
 }
