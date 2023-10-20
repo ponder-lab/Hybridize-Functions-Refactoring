@@ -4798,4 +4798,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
 		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
 	}
+
+	/**
+	 * Test write().
+	 */
+	@Test
+	public void testPythonSideEffects10() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
+		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test writelines().
+	 */
+	@Test
+	public void testPythonSideEffects11() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// NOTE: This is passing, but it doesn't look like it's for the correct reason. I'm unsure why lists are being modeled as fields.
+		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
 }
