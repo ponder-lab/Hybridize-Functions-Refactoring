@@ -46,15 +46,12 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 					PointerKey pk = this.h.getPointerKeyForLocal(this.n, use);
 					OrdinalSet<T> pointsToSet = this.pa.getPointsToSet(pk);
 
-					pointsToSet.forEach(o -> {
-						if (o instanceof InstanceKey) {
-							InstanceKey ik = (InstanceKey) o;
-							IClass concreteType = ik.getConcreteType();
-							TypeReference reference = concreteType.getReference();
+					pointsToSet.forEach(ik -> {
+						IClass concreteType = ik.getConcreteType();
+						TypeReference reference = concreteType.getReference();
 
-							TypeReference strFunction = TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lwala/builtin/str");
-							System.out.println(reference.equals(strFunction));
-						}
+						TypeReference strFunction = TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lwala/builtin/str");
+						System.out.println(reference.equals(strFunction));
 
 					});
 				}
