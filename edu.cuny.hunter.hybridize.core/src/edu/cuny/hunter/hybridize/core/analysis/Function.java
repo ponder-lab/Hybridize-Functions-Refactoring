@@ -37,21 +37,29 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.ibm.wala.cast.ipa.callgraph.ReflectedFieldPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.classLoader.NewSiteReference;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.NormalAllocationInNode;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
@@ -363,10 +371,15 @@ public class Function extends RefactorableProgramEntity {
 		for (CGNode cgNode : nodes) {
 			// Get the locations (pointers) modified by this function.
 			OrdinalSet<PointerKey> modSet = mod.get(cgNode);
-			LOG.info("Found " + modSet.size() + " modified location(s).");
+			LOG.info("Found " + modSet.size() + " original modified location(s).");
+			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
-			if (!modSet.isEmpty()) {
-				modSet.forEach(pk -> LOG.info("Modified location: " + pk + "."));
+			// filter out the modified locations.
+			Set<PointerKey> filteredModSet = filterSideEffects(modSet, pointerAnalysis);
+			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
+			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
+
+			if (!filteredModSet.isEmpty()) {
 				this.hasPythonSideEffects = TRUE;
 				return;
 			}
@@ -374,6 +387,45 @@ public class Function extends RefactorableProgramEntity {
 
 		this.hasPythonSideEffects = FALSE;
 		LOG.info(this + " does not have side-effects.");
+	}
+
+	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, PointerAnalysis<InstanceKey> pa) {
+		Set<PointerKey> ret = new HashSet<>();
+
+		for (PointerKey pointerKey : modSet) {
+			if (pointerKey instanceof InstanceFieldKey) {
+				InstanceFieldKey ifk = (InstanceFieldKey) pointerKey;
+				IField manipulatedField = ifk.getField();
+				Atom manipulatedFieldName = manipulatedField.getName();
+
+				// let's assume that metaprogramming is done by the system and does not represent a Python side-effect.
+				if (manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$class"))
+						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$self")))
+					continue;
+			} else if (pointerKey instanceof ReflectedFieldPointerKey) {
+				ReflectedFieldPointerKey rfp = (ReflectedFieldPointerKey) pointerKey;
+				InstanceKey pointerInstanceKey = rfp.getInstanceKey();
+				IClass pointerConcreteType = pointerInstanceKey.getConcreteType();
+				TypeName pointerConcreteTypeName = pointerConcreteType.getName();
+
+				// Is it an allocation of the super class object?
+				if (pointerConcreteTypeName.equals(TypeName.findOrCreate("Lsuperfun"))
+						&& pointerInstanceKey instanceof NormalAllocationInNode) {
+					NormalAllocationInNode alloc = (NormalAllocationInNode) pointerInstanceKey;
+					NewSiteReference allocSite = alloc.getSite();
+					TypeReference allocDeclaredType = allocSite.getDeclaredType();
+					int allocPC = allocSite.getProgramCounter();
+
+					if (allocDeclaredType.equals(TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lsuperfun")) && allocPC == 0) {
+						continue;
+					}
+				}
+			}
+
+			ret.add(pointerKey);
+		}
+
+		return ret;
 	}
 
 	/**
