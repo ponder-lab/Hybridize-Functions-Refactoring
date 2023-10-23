@@ -211,7 +211,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check Python side-effects.
 				try {
-					func.inferSideEffects(callGraph, builder.getPointerAnalysis());
+					func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (IllegalArgumentException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addStatusEntry(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,

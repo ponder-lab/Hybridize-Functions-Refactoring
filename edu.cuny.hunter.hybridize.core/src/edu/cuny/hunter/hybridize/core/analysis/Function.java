@@ -345,13 +345,13 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	/**
-	 * Infer the side-effects potentially produced by executing this {@link Function}.
+	 * Infer Python side-effects potentially produced by executing this {@link Function}.
 	 *
 	 * @param callGraph The system {@link CallGraph}.
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @throws IllegalArgumentException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
 	 */
-	public void inferSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws IllegalArgumentException {
+	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws IllegalArgumentException {
 		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
