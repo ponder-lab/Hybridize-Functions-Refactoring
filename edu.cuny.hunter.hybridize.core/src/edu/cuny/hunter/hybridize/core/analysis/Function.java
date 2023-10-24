@@ -397,6 +397,7 @@ public class Function extends RefactorableProgramEntity {
 
 			if (!filteredModSet.isEmpty()) {
 				this.setHasPythonSideEffects(TRUE);
+				LOG.info(this + " has side-effects.");
 				return;
 			}
 		}
