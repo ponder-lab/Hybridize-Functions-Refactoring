@@ -11,6 +11,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -54,6 +55,7 @@ import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.NormalAllocationInNode;
@@ -384,7 +386,7 @@ public class Function extends RefactorableProgramEntity {
 			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
 			// Filter out the modified locations.
-			Set<PointerKey> filteredModSet = filterPointerKeys(modSet);
+			Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph);
 			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
 			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
@@ -403,47 +405,36 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info(this + " does not have side-effects.");
 	}
 
-	private static Set<PointerKey> filterPointerKeys(Iterable<PointerKey> modSet) {
+	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph) {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet) {
-			if (pointerKey instanceof InstanceFieldKey) {
-				InstanceFieldKey ifk = (InstanceFieldKey) pointerKey;
-				IField manipulatedField = ifk.getField();
-				Atom manipulatedFieldName = manipulatedField.getName();
+			if (pointerKey instanceof InstanceFieldPointerKey) {
+				InstanceFieldPointerKey fieldPointerKey = (InstanceFieldPointerKey) pointerKey;
+				InstanceKey instanceKey = fieldPointerKey.getInstanceKey();
 
-				// let's assume that metaprogramming is done by the system and does not represent a Python side-effect.
-				if (manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$class"))
-						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$self"))
-						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$function"))) {
-					LOG.info("Filtering out manipulated metaprogramming field: " + manipulatedFieldName + ".");
-					continue;
-				} else if (manipulatedFieldName.startsWith(Atom.findOrCreateAsciiAtom("$")))
-					LOG.warn("Encountered unfiltered manipulated potential metaprogramming field: " + manipulatedFieldName + ".");
-			} else if (pointerKey instanceof ReflectedFieldPointerKey) {
-				ReflectedFieldPointerKey rfp = (ReflectedFieldPointerKey) pointerKey;
-				InstanceKey pointerInstanceKey = rfp.getInstanceKey();
-				IClass pointerConcreteType = pointerInstanceKey.getConcreteType();
-				TypeName pointerConcreteTypeName = pointerConcreteType.getName();
-
-				// Is it an allocation of the super class object?
-				if (pointerConcreteTypeName.equals(TypeName.findOrCreate("Lsuperfun"))
-						&& pointerInstanceKey instanceof NormalAllocationInNode) {
-					NormalAllocationInNode alloc = (NormalAllocationInNode) pointerInstanceKey;
-					NewSiteReference allocSite = alloc.getSite();
-					TypeReference allocDeclaredType = allocSite.getDeclaredType();
-					int allocPC = allocSite.getProgramCounter();
-
-					if (allocDeclaredType.equals(TypeReference.findOrCreate(PythonTypes.pythonLoader, "Lsuperfun")) && allocPC == 0) {
-						continue;
-					}
-				}
+				if (allCreationsWithinThisFunction(instanceKey, callGraph))
+					continue; // next pointer.
 			}
 
 			ret.add(pointerKey);
 		}
 
 		return ret;
+	}
+
+	private boolean allCreationsWithinThisFunction(InstanceKey instanceKey, CallGraph callGraph) {
+		// for each creation site of the given instance.
+		for (Iterator<Pair<CGNode, NewSiteReference>> it = instanceKey.getCreationSites(callGraph); it.hasNext();) {
+			Pair<CGNode, NewSiteReference> creationSite = it.next();
+			CGNode creationNode = creationSite.fst;
+
+			// is this instance being created outside this function?
+			if (!this.getMethodReference().equals(creationNode.getMethod().getReference()))
+				return false;
+		}
+
+		return true;
 	}
 
 	/**

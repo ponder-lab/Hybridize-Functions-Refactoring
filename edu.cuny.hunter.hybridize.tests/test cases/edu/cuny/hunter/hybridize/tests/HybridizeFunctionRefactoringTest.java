@@ -4819,7 +4819,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getLikelyHasTensorParameter());
-		// NOTE: This is passing, but it doesn't look like it's for the correct reason. I'm unsure why lists are being modeled as fields.
-		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
+		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects12() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement modifies a local variable.", function.getHasPythonSideEffects());
 	}
 }
