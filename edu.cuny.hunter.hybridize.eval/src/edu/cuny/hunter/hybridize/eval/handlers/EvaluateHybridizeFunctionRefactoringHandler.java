@@ -36,7 +36,6 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
 import com.google.common.collect.Sets;
