@@ -363,9 +363,9 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @param callGraph The system {@link CallGraph}.
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
-	 * @throws IllegalArgumentException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
+	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
 	 */
-	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws IllegalArgumentException {
+	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws UndeterminablePythonSideEffectsException {
 		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
@@ -439,10 +439,10 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @param callGraph The {@link CallGraph} to search.
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
-	 * @throws IllegalArgumentException If this {@link Function} can't be found in the given {@link CallGraph}.
+	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws IllegalArgumentException {
+	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
 		MethodReference methodReference = this.getMethodReference();
 		Set<CGNode> nodes = callGraph.getNodes(methodReference);
 
@@ -454,7 +454,7 @@ public class Function extends RefactorableProgramEntity {
 				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
 			}
 
-			throw new IllegalArgumentException("Can't find: " + methodReference + " in call graph.");
+			throw new UndeterminablePythonSideEffectsException(methodReference, callGraph);
 		}
 
 		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");

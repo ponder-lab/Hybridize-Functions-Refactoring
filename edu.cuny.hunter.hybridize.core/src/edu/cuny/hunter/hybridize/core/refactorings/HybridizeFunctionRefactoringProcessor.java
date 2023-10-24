@@ -41,6 +41,7 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
+import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
@@ -212,7 +213,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check Python side-effects.
 				try {
 					func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
-				} catch (IllegalArgumentException e) {
+				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addStatusEntry(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
 							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
