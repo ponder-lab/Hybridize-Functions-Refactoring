@@ -23,6 +23,7 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -385,12 +386,12 @@ public class Function extends RefactorableProgramEntity {
 			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
 			if (!filteredModSet.isEmpty()) {
-				this.hasPythonSideEffects = TRUE;
+				this.setHasPythonSideEffects(TRUE);
 				return;
 			}
 		}
 
-		this.hasPythonSideEffects = FALSE;
+		this.setHasPythonSideEffects(FALSE);
 		LOG.info(this + " does not have side-effects.");
 	}
 
@@ -741,8 +742,11 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public void addStatusEntry(PreconditionFailure failure, String message) {
-		RefactoringStatusContext context = new FunctionStatusContext();
+		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
+		assert this.getHasPythonSideEffects() == null
+				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
+		RefactoringStatusContext context = new FunctionStatusContext();
 		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, BUNDLE_SYMBOLIC_NAME, failure.getCode(), this);
 	}
 
@@ -927,5 +931,12 @@ public class Function extends RefactorableProgramEntity {
 
 	public Boolean getHasPythonSideEffects() {
 		return this.hasPythonSideEffects;
+	}
+
+	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
+		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(BUNDLE_SYMBOLIC_NAME,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
+
+		this.hasPythonSideEffects = hasPythonSideEffects;
 	}
 }
