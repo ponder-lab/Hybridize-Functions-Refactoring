@@ -12,6 +12,10 @@
 	<scm>
 		<url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/tree/main/edu.cuny.hunter.hybridize.tests</url>
 	</scm>
+	<properties>
+		 <!-- Enable assertions for our project. -->
+		<tycho.testArgLine>-ea:edu.cuny.hunter.hybridize...</tycho.testArgLine>
+	</properties>
 	<profiles>
 		<profile>
 			<id>macosx</id>
