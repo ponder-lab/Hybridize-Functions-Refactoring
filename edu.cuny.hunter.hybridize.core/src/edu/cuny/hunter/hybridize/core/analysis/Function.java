@@ -384,7 +384,7 @@ public class Function extends RefactorableProgramEntity {
 			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
 			// Filter out the modified locations.
-			Set<PointerKey> filteredModSet = filterSideEffects(modSet);
+			Set<PointerKey> filteredModSet = filterPointerKeys(modSet);
 			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
 			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
@@ -403,7 +403,7 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info(this + " does not have side-effects.");
 	}
 
-	private static Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet) {
+	private static Set<PointerKey> filterPointerKeys(Iterable<PointerKey> modSet) {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet) {
