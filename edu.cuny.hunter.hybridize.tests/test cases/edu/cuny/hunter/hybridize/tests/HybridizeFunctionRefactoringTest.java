@@ -4831,4 +4831,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// there's a Python statement with no side-effects.
 		assertFalse("This Python statement modifies a local variable.", function.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects13() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects14() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects15() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+	}
 }
