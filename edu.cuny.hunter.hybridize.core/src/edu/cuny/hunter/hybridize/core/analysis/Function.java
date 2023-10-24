@@ -455,7 +455,7 @@ public class Function extends RefactorableProgramEntity {
 				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
 			}
 
-			throw new UndeterminablePythonSideEffectsException(methodReference, callGraph);
+			throw new UndeterminablePythonSideEffectsException(methodReference);
 		}
 
 		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
