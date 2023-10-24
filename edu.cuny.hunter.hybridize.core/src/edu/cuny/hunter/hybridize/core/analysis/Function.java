@@ -37,6 +37,8 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.google.common.collect.Sets;
+import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.ReflectedFieldPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -381,10 +383,15 @@ public class Function extends RefactorableProgramEntity {
 			LOG.info("Found " + modSet.size() + " original modified location(s).");
 			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
-			// filter out the modified locations.
+			// Filter out the modified locations.
 			Set<PointerKey> filteredModSet = filterSideEffects(modSet);
 			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
 			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
+
+			// Log the locations we are removing.
+			SetView<PointerKey> removed = Sets.difference(Sets.newHashSet(modSet), filteredModSet);
+			LOG.info("Removed " + removed.size() + " locations.");
+			removed.forEach(pk -> LOG.info("Removed modified location: " + pk + "."));
 
 			if (!filteredModSet.isEmpty()) {
 				this.setHasPythonSideEffects(TRUE);
