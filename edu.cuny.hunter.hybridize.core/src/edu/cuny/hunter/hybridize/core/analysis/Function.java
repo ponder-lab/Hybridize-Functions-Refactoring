@@ -946,6 +946,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
+		assert this.hasPythonSideEffects == null : "Can only set side-effects once.";
 		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(BUNDLE_SYMBOLIC_NAME,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
 
