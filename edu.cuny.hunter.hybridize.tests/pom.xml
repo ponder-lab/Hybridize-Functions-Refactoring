@@ -51,8 +51,6 @@
 					<useUIThread>false</useUIThread>
 					<failIfNoTests>true</failIfNoTests>
 					<showEclipseLog>true</showEclipseLog>
-					<skip>false</skip>
-					<skipTests>false</skipTests>
 					<trimStackTrace>false</trimStackTrace>
 					<explodedBundles>
 						<bundle>org.junit</bundle>
