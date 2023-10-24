@@ -23,7 +23,6 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
-import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
