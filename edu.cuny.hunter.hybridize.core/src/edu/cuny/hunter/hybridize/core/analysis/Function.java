@@ -362,9 +362,11 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @param callGraph The system {@link CallGraph}.
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
-	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given {@link CallGraph}.
+	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given
+	 *         {@link CallGraph}.
 	 */
-	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) throws UndeterminablePythonSideEffectsException {
+	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis)
+			throws UndeterminablePythonSideEffectsException {
 		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
