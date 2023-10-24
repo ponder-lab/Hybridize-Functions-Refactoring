@@ -407,8 +407,12 @@ public class Function extends RefactorableProgramEntity {
 
 				// let's assume that metaprogramming is done by the system and does not represent a Python side-effect.
 				if (manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$class"))
-						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$self")))
+						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$self"))
+						|| manipulatedFieldName.equals(Atom.findOrCreateAsciiAtom("$function"))) {
+					LOG.info("Filtering out manipulated metaprogramming field: " + manipulatedFieldName + ".");
 					continue;
+				} else if (manipulatedFieldName.startsWith(Atom.findOrCreateAsciiAtom("$")))
+					LOG.warn("Encountered unfiltered manipulated potential metaprogramming field: " + manipulatedFieldName + ".");
 			} else if (pointerKey instanceof ReflectedFieldPointerKey) {
 				ReflectedFieldPointerKey rfp = (ReflectedFieldPointerKey) pointerKey;
 				InstanceKey pointerInstanceKey = rfp.getInstanceKey();
