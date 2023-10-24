@@ -304,6 +304,11 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
+	 * True iff verbose output is desired.
+	 */
+	private static final boolean VERBOSE = false;
+
+	/**
 	 * This {@link Function}'s associated hybridization parameters.
 	 */
 	private Function.HybridizationParameters hybridizationParameters;
@@ -442,8 +447,11 @@ public class Function extends RefactorableProgramEntity {
 
 		if (nodes.isEmpty()) {
 			LOG.error("Can't get call graph nodes for: " + this + ".");
-			LOG.info("Method reference is: " + methodReference + ".");
-			LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+
+			if (VERBOSE) {
+				LOG.info("Method reference is: " + methodReference + ".");
+				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+			}
 
 			throw new IllegalArgumentException("Can't find: " + methodReference + " in call graph.");
 		}
