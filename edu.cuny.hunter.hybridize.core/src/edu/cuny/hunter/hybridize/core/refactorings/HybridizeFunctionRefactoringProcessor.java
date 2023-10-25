@@ -49,6 +49,8 @@ import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysis
 @SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
+	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
+
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		private final Function func;
 
@@ -93,7 +95,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	/**
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
-	private boolean dumpCallGraph;
+	private boolean dumpCallGraph = Boolean.getBoolean(DUMP_CALL_GRAPH_PROPERTY_KEY);
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
