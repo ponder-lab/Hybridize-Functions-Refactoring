@@ -573,6 +573,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Returns the first {@link Function} in the default test file with the given identifier.
+	 *
+	 * @param functionIndentifier The {@link Function} to return.
+	 * @return The first {@link Function} in the default test file with the given identifier.
+	 */
+	private Function getFunction(String functionIndentifier) throws Exception {
+		Set<Function> functions = this.getFunctions();
+		return functions.stream().filter(f -> f.getIdentifier().equals(functionIndentifier)).findFirst().orElseThrow();
+	}
+
+	/**
 	 * Return the {@link File} representing X.py, where X is fileNameWithoutExtension.
 	 *
 	 * @param fileNameWithoutExtension The filename not including the file extension.
@@ -4857,5 +4868,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasTensorParameter());
 		// there's a Python statement with no side-effects.
 		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects16() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("This Python statement uses a list comprehension to modify a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects17() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("This Python statement uses a lambda to modify a global variable.", function.getHasPythonSideEffects());
 	}
 }
