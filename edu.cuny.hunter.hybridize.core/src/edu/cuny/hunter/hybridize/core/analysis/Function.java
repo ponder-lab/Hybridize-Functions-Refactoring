@@ -422,9 +422,11 @@ public class Function extends RefactorableProgramEntity {
 		for (Iterator<Pair<CGNode, NewSiteReference>> it = instanceKey.getCreationSites(callGraph); it.hasNext();) {
 			Pair<CGNode, NewSiteReference> creationSite = it.next();
 			CGNode creationNode = creationSite.fst;
+			NewSiteReference newSiteReference = creationSite.snd;
 
 			// is this instance being created outside this function?
-			if (!this.getMethodReference().equals(creationNode.getMethod().getReference()))
+			if (!this.getMethodReference().equals(creationNode.getMethod().getReference())
+					&& !this.getTypeReference().equals(newSiteReference.getDeclaredType()))
 				return false;
 		}
 
