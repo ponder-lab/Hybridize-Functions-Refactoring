@@ -4626,10 +4626,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
 				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
+				break;
 			case "get_stuff":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
 				assertFalse(f.isHybrid());
+				assertFalse(f.getHasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
