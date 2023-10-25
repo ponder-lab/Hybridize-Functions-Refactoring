@@ -4906,4 +4906,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// there's a Python statement with side-effects.
 		assertTrue("This Python statement uses a lambda to modify a global variable.", function.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects18() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects19() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects20() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects21() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+	}
 }
