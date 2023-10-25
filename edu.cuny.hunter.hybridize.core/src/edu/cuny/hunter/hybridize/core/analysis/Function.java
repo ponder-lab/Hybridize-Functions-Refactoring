@@ -425,8 +425,8 @@ public class Function extends RefactorableProgramEntity {
 			NewSiteReference newSiteReference = creationSite.snd;
 
 			// is this instance being created outside this function?
-			if (!(this.getMethodReference().equals(creationNode.getMethod().getReference())
-					|| this.getTypeReference().equals(newSiteReference.getDeclaredType())))
+			if (!(creationNode.getMethod().getReference().equals(this.getMethodReference())
+					|| newSiteReference.getDeclaredType().equals(this.getTypeReference())))
 				return false;
 		}
 
