@@ -379,7 +379,7 @@ public class Function extends RefactorableProgramEntity {
 			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
 			// Filter out the modified locations.
-			Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph);
+			Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph, pointerAnalysis);
 			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
 			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
@@ -399,7 +399,8 @@ public class Function extends RefactorableProgramEntity {
 		LOG.info(this + " does not have side-effects.");
 	}
 
-	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph) {
+	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet) {
@@ -408,6 +409,17 @@ public class Function extends RefactorableProgramEntity {
 				InstanceKey instanceKey = fieldPointerKey.getInstanceKey();
 
 				if (allCreationsWithinThisFunction(instanceKey, callGraph))
+					continue; // next pointer.
+			} else if (pointerKey instanceof LocalPointerKey) {
+				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(localPointerKey);
+
+				boolean skipPointerKey = true;
+
+				for (InstanceKey ik : pointsToSet)
+					skipPointerKey &= allCreationsWithinThisFunction(ik, callGraph);
+
+				if (skipPointerKey)
 					continue; // next pointer.
 			}
 
