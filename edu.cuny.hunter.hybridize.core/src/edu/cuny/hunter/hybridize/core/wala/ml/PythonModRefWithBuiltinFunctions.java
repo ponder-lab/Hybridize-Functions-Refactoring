@@ -1,5 +1,8 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
+import static com.ibm.wala.cast.python.types.PythonTypes.list;
+import static com.ibm.wala.cast.python.types.PythonTypes.string;
+
 import java.util.Collection;
 
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
@@ -7,9 +10,11 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.modref.PythonModRef;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
@@ -58,6 +63,33 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 						}
 					});
 				}
+			} else if (def instanceof PythonPropertyRead) {
+				PythonPropertyRead read = (PythonPropertyRead) def;
+				int memberRef = read.getMemberRef();
+				PointerKey memberRefPK = this.h.getPointerKeyForLocal(this.n, memberRef);
+				OrdinalSet<T> memberRefPointsToSet = this.pa.getPointsToSet(memberRefPK);
+
+				memberRefPointsToSet.forEach(memberRefIK -> {
+					TypeReference typeReference = getTypeReference(memberRefIK);
+
+					if (typeReference.equals(string) && memberRefIK instanceof ConstantKey) {
+						ConstantKey<?> ck = (ConstantKey<?>) memberRefIK;
+						Object value = ck.getValue();
+
+						if (value.equals("append")) {
+							// check that the receiver is of type list.
+							int objectRef = read.getObjectRef();
+							PointerKey objectRefPK = this.h.getPointerKeyForLocal(this.n, objectRef);
+							OrdinalSet<T> objectRefPointsToSet = this.pa.getPointsToSet(objectRefPK);
+
+							objectRefPointsToSet.forEach(objectRefIK -> {
+								if (objectRefIK.getConcreteType().getReference().equals(list))
+									// it's a list. Add the instance to the results.
+									this.result.add(objectRefPK);
+							});
+						}
+					}
+				});
 			}
 
 			super.visitPythonInvoke(inst);
