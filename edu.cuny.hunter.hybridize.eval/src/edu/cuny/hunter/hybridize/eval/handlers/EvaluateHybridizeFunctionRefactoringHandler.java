@@ -244,7 +244,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
-		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getTypeReference(),
+		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid(),
 				function.getHasPythonSideEffects());
 

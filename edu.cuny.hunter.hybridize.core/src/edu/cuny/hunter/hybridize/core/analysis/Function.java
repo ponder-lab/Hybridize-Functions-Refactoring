@@ -450,7 +450,7 @@ public class Function extends RefactorableProgramEntity {
 
 			// is this instance being created outside this function?
 			if (!(creationNode.getMethod().getReference().equals(this.getMethodReference())
-					|| newSiteReference.getDeclaredType().equals(this.getTypeReference())))
+					|| newSiteReference.getDeclaredType().equals(this.getDeclaringClass())))
 				return false;
 		}
 
@@ -487,11 +487,11 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	public MethodReference getMethodReference() {
-		TypeReference typeReference = getTypeReference();
+		TypeReference typeReference = getDeclaringClass();
 		return MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
 	}
 
-	public TypeReference getTypeReference() {
+	public TypeReference getDeclaringClass() {
 		File containingFile = this.getContainingFile();
 		String filename = containingFile.getName();
 		String modifiedIdentifier = this.getIdentifier().replace('.', '/');
