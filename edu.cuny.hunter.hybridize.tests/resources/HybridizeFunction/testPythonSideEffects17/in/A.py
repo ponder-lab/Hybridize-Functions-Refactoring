@@ -10,7 +10,6 @@ def fun_with_side_effects(y):
 
 def f():
     squares = list(map(lambda x: fun_with_side_effects(x), range(10)))
-    print(squares)
 
 
 f()
