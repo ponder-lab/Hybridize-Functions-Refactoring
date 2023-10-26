@@ -4986,4 +4986,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 	}
+
+	@Test
+	public void testPythonSideEffects24() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse("This Python statement (transitively) uses a lambda to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects25() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement (transitively) uses a loop to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects26() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects27() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+	}
 }
