@@ -37,8 +37,8 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 
 		@Override
 		public void visitPythonInvoke(PythonInvokeInstruction inst) {
-			int use = inst.getUse(0);
-			SSAInstruction def = this.n.getDU().getDef(use);
+			int use = inst.getUse(0); // a reference to the invoked function.
+			SSAInstruction def = this.n.getDU().getDef(use); // the definition of the invoked function.
 
 			if (def instanceof AstLexicalRead) {
 				AstLexicalRead read = (AstLexicalRead) def;
