@@ -4950,4 +4950,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function g = getFunction("g");
 		assertFalse(g.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects22() throws Exception {
+		Set<Function> functionSet = getFunctions();
+
+		for (Function f : functionSet) {
+			assertFalse(f.isHybrid());
+			assertFalse(f.getLikelyHasTensorParameter());
+			assertFalse("This Python statement (transitively) uses a list comprehension to modify a local variable.",
+					f.getHasPythonSideEffects());
+		}
+	}
+
+	@Test
+	public void testPythonSideEffects23() throws Exception {
+		Set<Function> functionSet = getFunctions();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+			case "fun_with_side_effects":
+				assertFalse(function.isHybrid());
+				assertFalse(function.getLikelyHasTensorParameter());
+				// there's a Python statement with side-effects.
+				assertTrue("This Python statement (transitively) uses a list comprehension to modify a global variable.",
+						function.getHasPythonSideEffects());
+				break;
+			case "h":
+				assertFalse(function.getHasPythonSideEffects());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
+		}
+	}
 }
