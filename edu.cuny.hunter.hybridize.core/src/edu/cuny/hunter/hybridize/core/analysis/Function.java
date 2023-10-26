@@ -412,8 +412,8 @@ public class Function extends RefactorableProgramEntity {
 
 				if (allCreationsWithinThisFunction(instanceKey, callGraph))
 					continue; // filter this pointer out.
-				else
-					ret.add(fieldPointerKey);
+
+				ret.add(fieldPointerKey);
 			} else if (pointerKey instanceof LocalPointerKey) {
 				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(localPointerKey);
@@ -425,8 +425,8 @@ public class Function extends RefactorableProgramEntity {
 
 				if (skipPointerKey)
 					continue; // filter this pointer out.
-				else
-					ret.add(localPointerKey);
+
+				ret.add(localPointerKey);
 			} else if (pointerKey instanceof AstGlobalPointerKey) {
 				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
