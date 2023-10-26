@@ -26,7 +26,7 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 
 	public static class PythonModVisitorWithBuiltinFunctions<T extends InstanceKey> extends PythonModVisitor<T> {
 
-		private static final AstGlobalPointerKey GLOBAL_OUTPUT_STREAM_POINTER_KEY = new AstGlobalPointerKey(
+		public static final AstGlobalPointerKey GLOBAL_OUTPUT_STREAM_POINTER_KEY = new AstGlobalPointerKey(
 				PythonModVisitorWithBuiltinFunctions.class.getPackageName().replace('.', '/') + "/OUT");
 
 		private static final String PRINT_FUNCTION_VARIABLE_NAME = "print";

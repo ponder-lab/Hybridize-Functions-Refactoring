@@ -5,6 +5,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
@@ -40,6 +41,7 @@ import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
+import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
@@ -409,7 +411,9 @@ public class Function extends RefactorableProgramEntity {
 				InstanceKey instanceKey = fieldPointerKey.getInstanceKey();
 
 				if (allCreationsWithinThisFunction(instanceKey, callGraph))
-					continue; // next pointer.
+					continue; // filter this pointer out.
+				else
+					ret.add(fieldPointerKey);
 			} else if (pointerKey instanceof LocalPointerKey) {
 				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(localPointerKey);
@@ -420,10 +424,18 @@ public class Function extends RefactorableProgramEntity {
 					skipPointerKey &= allCreationsWithinThisFunction(ik, callGraph);
 
 				if (skipPointerKey)
-					continue; // next pointer.
-			}
+					continue; // filter this pointer out.
+				else
+					ret.add(localPointerKey);
+			} else if (pointerKey instanceof AstGlobalPointerKey) {
+				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
-			ret.add(pointerKey);
+				if (globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY))
+					ret.add(globalPointerKey);
+				else
+					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
+			} else
+				throw new IllegalArgumentException("Not expecting pointer key: " + pointerKey + " of type: " + pointerKey.getClass() + ".");
 		}
 
 		return ret;
