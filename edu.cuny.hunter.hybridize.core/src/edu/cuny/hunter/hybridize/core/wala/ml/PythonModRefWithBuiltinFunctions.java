@@ -49,8 +49,7 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 					OrdinalSet<T> pointsToSet = this.pa.getPointsToSet(pk);
 
 					pointsToSet.forEach(ik -> {
-						IClass concreteType = ik.getConcreteType();
-						TypeReference typeReference = concreteType.getReference();
+						TypeReference typeReference = getTypeReference(ik);
 
 						if (typeReference.equals(PRINT_FUNCTION_TYPE_REFERENCE)) {
 							// found a call to the built-in print function, which has side effects.
@@ -62,6 +61,10 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 			}
 
 			super.visitPythonInvoke(inst);
+		}
+
+		private TypeReference getTypeReference(T ik) {
+			return ik.getConcreteType().getReference();
 		}
 	}
 
