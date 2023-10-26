@@ -5028,7 +5028,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.groupingBy(Function::getIdentifier, Collectors.toSet()));
 
 		assertEquals(2, map.size());
-		assertEquals(2, map.keySet().size());
 
 		map.get("f").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertFalse(s));
 		map.get("g").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertTrue(s));
