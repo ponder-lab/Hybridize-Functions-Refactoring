@@ -57,6 +57,7 @@ import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
@@ -434,6 +435,13 @@ public class Function extends RefactorableProgramEntity {
 					ret.add(globalPointerKey);
 				else
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
+			} else if (pointerKey instanceof StaticFieldKey) {
+				StaticFieldKey staticFieldKey = (StaticFieldKey) pointerKey;
+				if (staticFieldKey.getField().getName().toString().startsWith("global"))
+					// it's a global variable. It's accessible from anywhere.
+					ret.add(staticFieldKey);
+				else
+					throw new IllegalArgumentException("Not expecting a non-global static field: " + staticFieldKey + ".");
 			} else
 				throw new IllegalArgumentException("Not expecting pointer key: " + pointerKey + " of type: " + pointerKey.getClass() + ".");
 		}

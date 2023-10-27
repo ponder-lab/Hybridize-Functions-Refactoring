@@ -5061,4 +5061,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function g = getFunction("g");
 		assertTrue(g.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects32() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+
+		Function h = this.getFunction("h");
+		assertTrue(h.getHasPythonSideEffects());
+	}
 }
