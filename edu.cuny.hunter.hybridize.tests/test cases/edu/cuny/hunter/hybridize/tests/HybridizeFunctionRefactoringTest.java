@@ -4934,10 +4934,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("f");
 		assertFalse(f.isHybrid());
 		assertFalse(f.getLikelyHasTensorParameter());
-		assertTrue(f.getHasPythonSideEffects());
+		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
+				f.getHasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertTrue(g.getHasPythonSideEffects());
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
 	}
 
 	@Test
@@ -5031,5 +5032,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		map.get("f").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertFalse(s));
 		map.get("g").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertTrue(s));
+	}
+
+	@Test
+	public void testPythonSideEffects29() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
+				f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects30() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Removed the global keyword from g().", f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse("Function g() modifies a lobal variable (removed the global keyword).", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects31() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasPythonSideEffects());
 	}
 }
