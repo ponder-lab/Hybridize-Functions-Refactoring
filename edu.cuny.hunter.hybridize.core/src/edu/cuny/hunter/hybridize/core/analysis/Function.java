@@ -464,6 +464,8 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private static boolean allCreationsWithin(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
+		int numCreations = 0;
+
 		// for each creation site of the given instance.
 		for (Iterator<Pair<CGNode, NewSiteReference>> it = instanceKey.getCreationSites(callGraph); it.hasNext();) {
 			Pair<CGNode, NewSiteReference> creationSite = it.next();
@@ -474,7 +476,13 @@ public class Function extends RefactorableProgramEntity {
 			if (!(creationNode.getMethod().getReference().equals(methodReference)
 					|| newSiteReference.getDeclaredType().equals(methodReference.getDeclaringClass())))
 				return false;
+
+			++numCreations;
 		}
+
+		if (numCreations == 0) // if there are no creations.
+			// then, they can't be within this method.
+			return false;
 
 		return true;
 	}
