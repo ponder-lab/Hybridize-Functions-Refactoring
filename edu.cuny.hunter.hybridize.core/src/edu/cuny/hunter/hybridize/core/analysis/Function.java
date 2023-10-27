@@ -424,7 +424,7 @@ public class Function extends RefactorableProgramEntity {
 				for (InstanceKey ik : pointsToSet)
 					skipPointerKey &= allCreationsWithinClosure(this.getMethodReference(), ik, callGraph);
 
-				if (skipPointerKey) // FIXME: What if the points-to set is empty?
+				if (skipPointerKey && !pointsToSet.isEmpty())
 					continue; // filter this pointer out.
 
 				ret.add(localPointerKey);
