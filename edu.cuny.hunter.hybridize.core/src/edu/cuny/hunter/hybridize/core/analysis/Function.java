@@ -436,12 +436,19 @@ public class Function extends RefactorableProgramEntity {
 				else
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
 			} else if (pointerKey instanceof StaticFieldKey) {
+				// FIXME: Looks too much like the LocalPointerKey case.
 				StaticFieldKey staticFieldKey = (StaticFieldKey) pointerKey;
-				if (staticFieldKey.getField().getName().toString().startsWith("global"))
-					// it's a global variable. It's accessible from anywhere.
-					ret.add(staticFieldKey);
-				else
-					throw new IllegalArgumentException("Not expecting a non-global static field: " + staticFieldKey + ".");
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(staticFieldKey);
+
+				boolean skipPointerKey = true;
+
+				for (InstanceKey ik : pointsToSet)
+					skipPointerKey &= allCreationsWithinClosure(this.getMethodReference(), ik, callGraph);
+
+				if (skipPointerKey && !pointsToSet.isEmpty())
+					continue; // filter this pointer out.
+
+				ret.add(staticFieldKey);
 			} else
 				throw new IllegalArgumentException("Not expecting pointer key: " + pointerKey + " of type: " + pointerKey.getClass() + ".");
 		}
@@ -502,8 +509,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}. FIXME: This
 	 *         needs to be generic.
-	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
-	 * FIXME: Change to getNodes().
+	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation. FIXME: Change to getNodes().
 	 */
 	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
 		return getCallGraphNodes(this.getMethodReference(), callGraph);
