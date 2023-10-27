@@ -424,7 +424,7 @@ public class Function extends RefactorableProgramEntity {
 				for (InstanceKey ik : pointsToSet)
 					skipPointerKey &= allCreationsWithinClosure(this.getMethodReference(), ik, callGraph);
 
-				if (skipPointerKey)
+				if (skipPointerKey) // FIXME: What if the points-to set is empty?
 					continue; // filter this pointer out.
 
 				ret.add(localPointerKey);
@@ -503,6 +503,7 @@ public class Function extends RefactorableProgramEntity {
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}. FIXME: This
 	 *         needs to be generic.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
+	 * FIXME: Change to getNodes().
 	 */
 	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
 		return getCallGraphNodes(this.getMethodReference(), callGraph);
