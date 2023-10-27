@@ -83,7 +83,7 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 
 							objectRefPointsToSet.forEach(objectRefIK -> {
 								if (objectRefIK.getConcreteType().getReference().equals(list))
-									// it's a list. Add the instance to the results.
+									// it's a list. Add the pointer to the results.
 									this.result.add(objectRefPK);
 							});
 						}
