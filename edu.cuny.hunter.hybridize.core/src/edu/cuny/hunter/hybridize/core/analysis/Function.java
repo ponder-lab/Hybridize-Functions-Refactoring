@@ -372,7 +372,7 @@ public class Function extends RefactorableProgramEntity {
 
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
 		// the current representation. It seems that there is a declaration node for each call to the function.
-		Set<CGNode> nodes = getCallGraphNodes(callGraph);
+		Set<CGNode> nodes = getNodes(callGraph);
 
 		// for each node.
 		for (CGNode cgNode : nodes) {
@@ -463,7 +463,7 @@ public class Function extends RefactorableProgramEntity {
 			return true;
 
 		// otherwise, check its callees.
-		Set<CGNode> cgNodes = getCallGraphNodes(methodReference, callGraph);
+		Set<CGNode> cgNodes = getNodes(methodReference, callGraph);
 
 		for (CGNode node : cgNodes)
 			// check the called functions.
@@ -509,10 +509,10 @@ public class Function extends RefactorableProgramEntity {
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}. FIXME: This
 	 *         needs to be generic.
-	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation. FIXME: Change to getNodes().
+	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private Set<CGNode> getCallGraphNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
-		return getCallGraphNodes(this.getMethodReference(), callGraph);
+	private Set<CGNode> getNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
+		return getNodes(this.getMethodReference(), callGraph);
 	}
 
 	/**
@@ -525,7 +525,7 @@ public class Function extends RefactorableProgramEntity {
 	 *         needs to be generic.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private static Set<CGNode> getCallGraphNodes(MethodReference methodReference, CallGraph callGraph)
+	private static Set<CGNode> getNodes(MethodReference methodReference, CallGraph callGraph)
 			throws UndeterminablePythonSideEffectsException {
 		Set<CGNode> nodes = callGraph.getNodes(methodReference);
 
