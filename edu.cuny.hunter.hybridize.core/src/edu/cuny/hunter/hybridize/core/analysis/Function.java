@@ -374,6 +374,9 @@ public class Function extends RefactorableProgramEntity {
 		// the current representation. It seems that there is a declaration node for each call to the function.
 		Set<CGNode> nodes = getNodes(callGraph);
 
+		if (nodes.isEmpty())
+			throw new UndeterminablePythonSideEffectsException(this.getMethodReference());
+
 		// for each node.
 		for (CGNode cgNode : nodes) {
 			// Get the locations (pointers) modified by this function.
@@ -403,7 +406,7 @@ public class Function extends RefactorableProgramEntity {
 	}
 
 	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis) throws UndeterminablePythonSideEffectsException {
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet) {
@@ -456,14 +459,16 @@ public class Function extends RefactorableProgramEntity {
 		return ret;
 	}
 
-	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph)
-			throws UndeterminablePythonSideEffectsException {
+	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
 		// check this function.
 		if (allCreationsWithin(methodReference, instanceKey, callGraph))
 			return true;
 
 		// otherwise, check its callees.
 		Set<CGNode> cgNodes = getNodes(methodReference, callGraph);
+
+		if (cgNodes.isEmpty())
+			throw new IllegalArgumentException("Can't find call graph nodes corresponding to: " + methodReference + ".");
 
 		for (CGNode node : cgNodes)
 			// check the called functions.
@@ -507,11 +512,9 @@ public class Function extends RefactorableProgramEntity {
 	 *
 	 * @param callGraph The {@link CallGraph} to search.
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
-	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}. FIXME: This
-	 *         needs to be generic.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private Set<CGNode> getNodes(CallGraph callGraph) throws UndeterminablePythonSideEffectsException {
+	private Set<CGNode> getNodes(CallGraph callGraph) {
 		return getNodes(this.getMethodReference(), callGraph);
 	}
 
@@ -521,12 +524,9 @@ public class Function extends RefactorableProgramEntity {
 	 * @param methodReference The method to search for.
 	 * @param callGraph The {@link CallGraph} to search.
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
-	 * @throws UndeterminablePythonSideEffectsException If this {@link Function} can't be found in the given {@link CallGraph}. FIXME: This
-	 *         needs to be generic.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private static Set<CGNode> getNodes(MethodReference methodReference, CallGraph callGraph)
-			throws UndeterminablePythonSideEffectsException {
+	private static Set<CGNode> getNodes(MethodReference methodReference, CallGraph callGraph) {
 		Set<CGNode> nodes = callGraph.getNodes(methodReference);
 
 		if (nodes.isEmpty()) {
@@ -536,8 +536,6 @@ public class Function extends RefactorableProgramEntity {
 				LOG.info("Method reference is: " + methodReference + ".");
 				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
 			}
-
-			throw new UndeterminablePythonSideEffectsException(methodReference);
 		}
 
 		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
