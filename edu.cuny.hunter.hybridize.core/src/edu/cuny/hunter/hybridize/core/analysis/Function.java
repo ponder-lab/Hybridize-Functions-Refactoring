@@ -372,7 +372,7 @@ public class Function extends RefactorableProgramEntity {
 
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
 		// the current representation. It seems that there is a declaration node for each call to the function.
-		Set<CGNode> nodes = getNodes(callGraph);
+		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		if (nodes.isEmpty())
 			throw new UndeterminablePythonSideEffectsException(this.getMethodReference());
