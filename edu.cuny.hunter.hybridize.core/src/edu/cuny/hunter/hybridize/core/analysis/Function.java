@@ -418,9 +418,8 @@ public class Function extends RefactorableProgramEntity {
 					continue; // filter this pointer out.
 
 				ret.add(fieldPointerKey);
-			} else if (pointerKey instanceof LocalPointerKey) {
-				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
-				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(localPointerKey);
+			} else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
 
 				boolean skipPointerKey = true;
 
@@ -430,7 +429,7 @@ public class Function extends RefactorableProgramEntity {
 				if (skipPointerKey && !pointsToSet.isEmpty())
 					continue; // filter this pointer out.
 
-				ret.add(localPointerKey);
+				ret.add(pointerKey);
 			} else if (pointerKey instanceof AstGlobalPointerKey) {
 				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
@@ -438,20 +437,6 @@ public class Function extends RefactorableProgramEntity {
 					ret.add(globalPointerKey);
 				else
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
-			} else if (pointerKey instanceof StaticFieldKey) {
-				// FIXME: Looks too much like the LocalPointerKey case.
-				StaticFieldKey staticFieldKey = (StaticFieldKey) pointerKey;
-				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(staticFieldKey);
-
-				boolean skipPointerKey = true;
-
-				for (InstanceKey ik : pointsToSet)
-					skipPointerKey &= allCreationsWithinClosure(this.getMethodReference(), ik, callGraph);
-
-				if (skipPointerKey && !pointsToSet.isEmpty())
-					continue; // filter this pointer out.
-
-				ret.add(staticFieldKey);
 			} else
 				throw new IllegalArgumentException("Not expecting pointer key: " + pointerKey + " of type: " + pointerKey.getClass() + ".");
 		}
