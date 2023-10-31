@@ -5133,4 +5133,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasTensorParameter());
 		assertTrue(function.getHasPythonSideEffects());
 	}
+
+	// TODO: Left off at https://www.tensorflow.org/guide/function#using_python_iterators_and_generators.
 }
