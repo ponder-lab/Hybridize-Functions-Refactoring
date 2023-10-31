@@ -5112,4 +5112,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("no_side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
 		assertFalse("no_side_effect() doesn't modifies a global list.", function.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects38() throws Exception {
+		Function function = getFunction("Model.__call__");
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// Change to assertTrue() once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+		assertNull(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects39() throws Exception {
+		Function function = getFunction("Model.__call__");
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
 }
