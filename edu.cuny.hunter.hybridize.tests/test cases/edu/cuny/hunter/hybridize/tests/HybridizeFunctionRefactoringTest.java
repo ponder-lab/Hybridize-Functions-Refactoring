@@ -5073,4 +5073,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function h = this.getFunction("h");
 		assertTrue(h.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects33() throws Exception {
+		Function g = getFunction("g");
+		assertFalse("g() only returns the parameter.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects34() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse("g() modifies a copy of a parameter.", g.getHasPythonSideEffects());
+	}
 }
