@@ -2133,9 +2133,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
-	// TODO: Left off at https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables. The model is not going to work
-	// because call() is called implicitly. See https://github.com/wala/ML/issues/24.
-
 	/**
 	 * Test for #2. From https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#features. Example with closures.
 	 */
@@ -5087,5 +5084,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function g = getFunction("g");
 		assertFalse("g() modifies a copy of a parameter.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects35() throws Exception {
+		Function function = getFunction("side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
 	}
 }
