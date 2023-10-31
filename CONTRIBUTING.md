@@ -2,6 +2,15 @@
 
 Please see our [wiki] for more information regarding development.
 
+## Eclipse Environment
+
+The plug-ins are being developed on the following Eclipse versions. Currently, newer versions of Eclipse will not resolve M2E dependencies:
+
+    Eclipse IDE for RCP and RAP Developers (includes Incubating components)
+
+    Version: 2023-03 (4.27.0)
+    Build id: 20230309-1520
+
 ## Building
 
 The project includes a maven configuration file using the Tycho plug-in, which is part of the [maven eclipse plugin](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using maven, this plugin depends on the [Common Eclipse Refactoring Framework], the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), [Ariadne], [WALA], and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse (choose to "work with" "The Eclipse Project Updates"). Others may need to be obtained from their respective update sites (see below).
