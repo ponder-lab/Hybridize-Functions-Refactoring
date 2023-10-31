@@ -5094,4 +5094,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
 		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
 	}
+
+	@Test
+	public void testPythonSideEffects36() throws Exception {
+		Function function = getFunction("side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects37() throws Exception {
+		Function function = getFunction("no_side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("no_side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertFalse("no_side_effect() doesn't modifies a global list.", function.getHasPythonSideEffects());
+	}
 }
