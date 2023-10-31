@@ -874,7 +874,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
 		assertNull(function.getHasPythonSideEffects());
-		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.BUNDLE_SYMBOLIC_NAME,
+		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
 		assertNotNull(entry);
 	}
@@ -4493,7 +4493,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static void checkOptimizationNotAvailableStatus(Function f) {
 		RefactoringStatus status = f.getStatus();
 		assertTrue("Should not be available for optimization.", status.hasError());
-		Object entry = status.getEntryMatchingCode(Function.BUNDLE_SYMBOLIC_NAME, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode());
+		Object entry = status.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode());
 		assertNotNull(entry);
 	}
 

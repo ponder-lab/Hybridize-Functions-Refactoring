@@ -1,6 +1,6 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
-import static edu.cuny.hunter.hybridize.core.analysis.Function.BUNDLE_SYMBOLIC_NAME;
+import static edu.cuny.hunter.hybridize.core.analysis.Function.PLUGIN_ID;
 import static edu.cuny.hunter.hybridize.core.utils.Util.createHybridizeFunctionRefactoring;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
@@ -147,7 +147,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
 					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable).filter(f -> f.getStatus()
-							.getEntryMatchingCode(BUNDLE_SYMBOLIC_NAME, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode()) == null)
+							.getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode()) == null)
 							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 

@@ -64,7 +64,6 @@ import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 
-import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
@@ -74,9 +73,9 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
-public class Function extends RefactorableProgramEntity {
+public class Function {
 
-	public static final String BUNDLE_SYMBOLIC_NAME = FrameworkUtil.getBundle(Function.class).getSymbolicName();
+	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
@@ -813,7 +812,7 @@ public class Function extends RefactorableProgramEntity {
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
 		RefactoringStatusContext context = new FunctionStatusContext();
-		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, BUNDLE_SYMBOLIC_NAME, failure.getCode(), this);
+		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
 	}
 
 	/**
@@ -1001,7 +1000,7 @@ public class Function extends RefactorableProgramEntity {
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
 		assert this.hasPythonSideEffects == null : "Can only set side-effects once.";
-		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(BUNDLE_SYMBOLIC_NAME,
+		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(PLUGIN_ID,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
 
 		this.hasPythonSideEffects = hasPythonSideEffects;
