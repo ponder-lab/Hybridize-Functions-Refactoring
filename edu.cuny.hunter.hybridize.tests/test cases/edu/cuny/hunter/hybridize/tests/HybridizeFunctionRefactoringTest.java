@@ -5120,7 +5120,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.isHybrid());
 		assertFalse(function.getLikelyHasTensorParameter());
-		// Change to assertTrue() once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+		// Change to assertTrue() once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed:
 		assertNull(function.getHasPythonSideEffects());
 	}
 
@@ -5134,5 +5134,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getHasPythonSideEffects());
 	}
 
-	// TODO: Left off at https://www.tensorflow.org/guide/function#using_python_iterators_and_generators.
+	@Test
+	public void testPythonSideEffects40() throws Exception {
+		Function function = getFunction("buggy_consume_next");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/278 is fixed:
+		assertFalse("next() moves the iterator's cursor, and the iterator is over a list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects41() throws Exception {
+		Function function = getFunction("good_consume_next");
+
+		assertTrue(function.isHybrid());
+		assertFalse("iterator still isn't a tensor. I wonder if you get speedup from that.", function.getLikelyHasTensorParameter());
+		assertFalse("next() moves the iterator's cursor, but the iterator is over a dataset.", function.getHasPythonSideEffects());
+	}
+
+	// TODO: Left off at https://www.tensorflow.org/guide/function#all_outputs_of_a_tffunction_must_be_return_values. THese are still
+	// side-effects, I believe.
 }
