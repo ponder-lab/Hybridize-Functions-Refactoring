@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -5151,6 +5152,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.isHybrid());
 		assertFalse("iterator still isn't a tensor. I wonder if you get speedup from that.", function.getLikelyHasTensorParameter());
 		assertFalse("next() moves the iterator's cursor, but the iterator is over a dataset.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects42() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects43() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects44() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+
+		assertTrue(function.getStatus().isOK());
+		assertTrue(function.getRefactoring() == Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID);
+		assertTrue(function.getPassingPrecondition() == PreconditionSuccess.P1);
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), function.getTransformations());
 	}
 
 	// TODO: Left off at https://www.tensorflow.org/guide/function#all_outputs_of_a_tffunction_must_be_return_values. THese are still
