@@ -5204,6 +5204,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getTransformations().isEmpty());
 	}
 
+	@Test
+	public void testPythonSideEffects46() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+
+		// We have an eager function with a tensor parameter but Python side-effects. Should be a P1 failure.
+		assertFalse(status.isOK());
+		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertEquals(Collections.emptySet(), function.getTransformations());
+	}
+
+	@Test
+	public void testPythonSideEffects49() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		// This is a P1 failure.
+		RefactoringStatus status = function.getStatus();
+		assertFalse(status.isOK());
+		assertTrue(status.hasError());
+		assertFalse(status.hasFatalError());
+
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
+		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, entry.getCode());
+		assertEquals(function, entry.getData());
+
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
 	// TODO: Left off at https://www.tensorflow.org/guide/function#all_outputs_of_a_tffunction_must_be_return_values. THese are still
 	// side-effects, I believe.
 }

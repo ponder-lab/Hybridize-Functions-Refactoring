@@ -3,7 +3,22 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import java.util.Arrays;
 
 public enum PreconditionFailure {
-	CURRENTLY_NOT_HANDLED(1), OPTIMIZATION_NOT_AVAILABLE(2), UNDETERMINABLE_SIDE_EFFECTS(3);
+	CURRENTLY_NOT_HANDLED(1),
+
+	/**
+	 * Not a candidate.
+	 */
+	OPTIMIZATION_NOT_AVAILABLE(2),
+
+	/**
+	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?
+	 */
+	UNDETERMINABLE_SIDE_EFFECTS(3),
+
+	/**
+	 * P1 failure.
+	 */
+	HAS_SIDE_EFFECTS(4);
 
 	static {
 		// check that the codes are unique.
