@@ -5186,6 +5186,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), function.getTransformations());
 	}
 
+	@Test
+	public void testPythonSideEffects45() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		// We have a hybrid function with a tensor parameter and Python side-effects. Issue a warning.
+		RefactoringStatusEntry entry = function.getStatus().getEntryWithHighestSeverity();
+		assertNotNull(entry);
+		assertEquals(RefactoringStatus.WARNING, entry.getSeverity());
+
+		assertNull(function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
 	// TODO: Left off at https://www.tensorflow.org/guide/function#all_outputs_of_a_tffunction_must_be_return_values. THese are still
 	// side-effects, I believe.
 }
