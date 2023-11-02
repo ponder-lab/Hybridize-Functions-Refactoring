@@ -23,7 +23,12 @@ public enum PreconditionFailure {
 	/**
 	 * P2 "failure."
 	 */
-	ALREADY_OPTIMAL(5);
+	ALREADY_OPTIMAL(5),
+
+	/**
+	 * P1 failure.
+	 */
+	HAS_NO_TENSOR_PARAMETERS(6);
 
 	static {
 		// check that the codes are unique.

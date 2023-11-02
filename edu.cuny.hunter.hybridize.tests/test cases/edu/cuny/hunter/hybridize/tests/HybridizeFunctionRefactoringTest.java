@@ -5355,6 +5355,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getTransformations().isEmpty());
 	}
 
-	// TODO: Left off at https://www.tensorflow.org/guide/function#all_outputs_of_a_tffunction_must_be_return_values. THese are still
-	// side-effects, I believe.
+	@Test
+	public void testPythonSideEffects50() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+		assertFalse("This is a P1 failure.", status.isOK());
+		assertTrue(status.hasError());
+		assertFalse(status.hasFatalError());
+
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
+		assertEquals(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS.getCode(), entry.getCode());
+		assertEquals(function, entry.getData());
+
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
 }
