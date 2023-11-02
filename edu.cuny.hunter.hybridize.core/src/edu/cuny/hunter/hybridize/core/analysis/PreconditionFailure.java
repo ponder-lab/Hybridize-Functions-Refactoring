@@ -11,7 +11,7 @@ public enum PreconditionFailure {
 	OPTIMIZATION_NOT_AVAILABLE(2),
 
 	/**
-	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?
+	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?.
 	 */
 	UNDETERMINABLE_SIDE_EFFECTS(3),
 
