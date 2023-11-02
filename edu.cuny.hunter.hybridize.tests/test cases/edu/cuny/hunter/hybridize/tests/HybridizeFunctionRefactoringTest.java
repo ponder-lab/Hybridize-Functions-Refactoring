@@ -5232,6 +5232,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testPythonSideEffects47() throws Exception {
+		Function leakyFunction = getFunction("leaky_function");
+
+		assertTrue(leakyFunction.isHybrid());
+		assertTrue(leakyFunction.getLikelyHasTensorParameter());
+		assertTrue(leakyFunction.getHasPythonSideEffects());
+
+		assertFalse("P2 \"failure.\"", leakyFunction.getStatus().isOK());
+		assertEquals(
+				"Should have one warning and one error. The warning is for running a hybrid function that has side-effects. The error is that it is already \"optimal\".",
+				2, leakyFunction.getStatus().getEntries().length);
+		assertEquals(RefactoringStatus.ERROR, leakyFunction.getStatus().getEntryWithHighestSeverity().getSeverity());
+		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), leakyFunction.getStatus().getEntryWithHighestSeverity().getCode());
+		assertNotNull(leakyFunction.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, leakyFunction.getRefactoring());
+		assertNull(leakyFunction.getPassingPrecondition());
+		assertTrue(leakyFunction.getTransformations().isEmpty());
+
+		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
+
+		assertTrue(capturesLeakedTensor.isHybrid());
+		assertTrue(capturesLeakedTensor.getLikelyHasTensorParameter());
+
+		// NOTE: This function doesn't have Python side-effects, but it does capture a "leaky" tensor. See
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281.
+		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
+
+		assertFalse(capturesLeakedTensor.getStatus().isOK());
+		assertTrue(capturesLeakedTensor.getStatus().hasError());
+		assertFalse(capturesLeakedTensor.getStatus().hasFatalError());
+		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
+		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), error.getCode());
+
+		assertNotNull(capturesLeakedTensor.getRefactoring());
+		assertEquals("P2 \"failure.\"", Refactoring.OPTIMIZE_HYBRID_FUNCTION, capturesLeakedTensor.getRefactoring());
+		assertNull(capturesLeakedTensor.getPassingPrecondition());
+		assertTrue(capturesLeakedTensor.getTransformations().isEmpty());
+
+		// NOTE: Change to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertFalse("We should warn about this.", capturesLeakedTensor.getStatus().hasWarning());
+
+		RefactoringStatusEntry warning = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING);
+		// NOTE: Change to assertNotNull when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		// NOTE: Add assertEquals(RefactoringStatus.WARNING, entry.getSeverity()) when
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertNull("Warn about a hybrid function that leaks as a potential tensor.", warning);
+	}
+
+	@Test
 	public void testPythonSideEffects49() throws Exception {
 		Function function = getFunction("leaky_function");
 
