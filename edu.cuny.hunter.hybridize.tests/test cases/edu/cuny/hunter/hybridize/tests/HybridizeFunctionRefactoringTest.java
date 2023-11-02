@@ -5243,6 +5243,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(
 				"Should have one warning and one error. The warning is for running a hybrid function that has side-effects. The error is that it is already \"optimal\".",
 				2, leakyFunction.getStatus().getEntries().length);
+
+		// TODO: Actually, it has a tensor paramter but has side-effects. Isn't that the reason?
+
 		assertEquals(RefactoringStatus.ERROR, leakyFunction.getStatus().getEntryWithHighestSeverity().getSeverity());
 		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), leakyFunction.getStatus().getEntryWithHighestSeverity().getCode());
 		assertNotNull(leakyFunction.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
