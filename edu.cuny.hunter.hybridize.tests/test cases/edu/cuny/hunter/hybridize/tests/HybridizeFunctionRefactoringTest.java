@@ -5422,7 +5422,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasTensorParameter());
 		assertTrue(function.getHasPythonSideEffects());
 
-		// TODO: We can't convert something to eager if it has side-effects because that will alter semantics.
+		RefactoringStatus status = function.getStatus();
+		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
+		assertEquals(1, status.getEntries().length);
+		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
 	}
 
 	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
