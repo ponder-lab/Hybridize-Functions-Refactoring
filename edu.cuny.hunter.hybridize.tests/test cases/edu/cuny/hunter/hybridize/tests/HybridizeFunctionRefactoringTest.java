@@ -5432,5 +5432,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getTransformations().isEmpty());
 	}
 
+	@Test
+	public void testPythonSideEffects55() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
+				status.hasError());
+		assertEquals(0, status.getEntries().length);
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(PreconditionSuccess.P2, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
+	}
+
 	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
 }
