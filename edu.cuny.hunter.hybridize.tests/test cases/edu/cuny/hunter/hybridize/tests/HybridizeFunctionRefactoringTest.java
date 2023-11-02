@@ -5386,4 +5386,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 	}
+
+	@Test
+	public void testPythonSideEffects51() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects52() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects53() throws Exception {
+		Function function = getFunction("not_leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects54() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		// TODO: We can't convert something to eager if it has side-effects because that will alter semantics.
+	}
+
+	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
 }

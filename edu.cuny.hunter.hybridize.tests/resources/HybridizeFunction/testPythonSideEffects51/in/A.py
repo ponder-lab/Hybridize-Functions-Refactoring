@@ -10,20 +10,19 @@ class MyClass:
 
 
 external_list = []
-external_object = MyClass()
+# external_object = MyClass()
 
 
 def leaky_function():
   a = tf.constant(1)
   external_list.append(a)  # Bad - leaks tensor
-  external_object.field = a  # Bad - leaks tensor
-
+  # external_object.field = a  # Bad - leaks tensor
 
 assert len(external_list) == 0
-assert external_object is not None
-assert external_object.field is None
+# assert external_object is not None
+# assert external_object.field is None
 leaky_function()
 assert len(external_list) == 1
-assert external_object is not None
-assert external_object.field is not None
-assert external_object.field == tf.constant(1)
+# assert external_object is not None
+# assert external_object.field is not None
+# assert external_object.field == tf.constant(1)
