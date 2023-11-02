@@ -5194,12 +5194,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertTrue(function.getHasPythonSideEffects());
 
-		// We have a hybrid function with a tensor parameter and Python side-effects. Issue a warning.
-		RefactoringStatusEntry entry = function.getStatus().getEntryWithHighestSeverity();
-		assertNotNull(entry);
-		assertEquals(RefactoringStatus.WARNING, entry.getSeverity());
+		RefactoringStatus status = function.getStatus();
 
-		assertNull(function.getRefactoring());
+		// We have a hybrid function with a tensor parameter and Python side-effects. Issue a warning.
+		RefactoringStatusEntry warning = status.getEntryMatchingSeverity(RefactoringStatus.WARNING);
+		assertNotNull(warning);
+		assertEquals(RefactoringStatus.WARNING, warning.getSeverity());
+
+		// This situation is already "optimal," so we can't refactor it.
+		assertFalse(status.isOK());
+		assertTrue(status.hasError());
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
+		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), entry.getCode());
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 	}
@@ -5216,7 +5225,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// We have an eager function with a tensor parameter but Python side-effects. Should be a P1 failure.
 		assertFalse(status.isOK());
-		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
+		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertEquals(Collections.emptySet(), function.getTransformations());

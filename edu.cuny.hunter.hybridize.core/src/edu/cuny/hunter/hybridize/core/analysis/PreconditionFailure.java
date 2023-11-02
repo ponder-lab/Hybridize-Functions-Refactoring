@@ -18,7 +18,12 @@ public enum PreconditionFailure {
 	/**
 	 * P1 failure.
 	 */
-	HAS_SIDE_EFFECTS(4);
+	HAS_SIDE_EFFECTS(4),
+
+	/**
+	 * P2 "failure."
+	 */
+	ALREADY_OPTIMAL(5);
 
 	static {
 		// check that the codes are unique.
