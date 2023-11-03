@@ -379,7 +379,7 @@ public class Function {
 		if (nodes.isEmpty())
 			throw new UndeterminablePythonSideEffectsException(this.getMethodReference());
 
-		// for each node.
+		// for each node. FIXME: Aren't these the same? Not exactly. Their calling contexts are different; one node per context.
 		for (CGNode cgNode : nodes) {
 			// Get the locations (pointers) modified by this function.
 			OrdinalSet<PointerKey> modSet = mod.get(cgNode);
@@ -457,7 +457,7 @@ public class Function {
 		if (cgNodes.isEmpty())
 			throw new IllegalArgumentException("Can't find call graph nodes corresponding to: " + methodReference + ".");
 
-		for (CGNode node : cgNodes)
+		for (CGNode node : cgNodes) // FIXME: I don't think we need multiple nodes here. Also, do we need to consider synthetic nodes?
 			// check the called functions.
 			for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
 				CGNode next = succNodes.next();
