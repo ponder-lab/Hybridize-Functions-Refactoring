@@ -196,17 +196,17 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getRefactoring)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getRefactoring)
 								.filter(r -> Objects.equals(r, refactoringKind)).count());
 
 					// precondition success counts.
 					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getPassingPrecondition)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getPassingPrecondition)
 								.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
 
 					// transformation counts.
 					for (Transformation transformation : Transformation.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
 					// actually perform the refactoring if there are no fatal errors.
