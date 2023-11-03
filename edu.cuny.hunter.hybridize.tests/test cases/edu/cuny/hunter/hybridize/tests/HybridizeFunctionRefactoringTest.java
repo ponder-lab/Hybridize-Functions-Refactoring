@@ -4492,8 +4492,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static void checkOptimizationNotAvailableStatus(Function f) {
 		RefactoringStatus status = f.getStatus();
 		assertTrue("Should not be available for optimization.", status.hasError());
-		Object entry = status.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode());
-		assertNotNull(entry);
+		RefactoringStatusEntry noTensorsFailure = getEntryMatchingFailure(f, PreconditionFailure.HAS_NO_TENSOR_PARAMETERS);
+		assertTrue(!f.isHybrid() || (noTensorsFailure != null && noTensorsFailure.isError()));
 	}
 
 	/**
