@@ -112,7 +112,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME, // TODO: Add a "warnings" file? Or non-zero?
-							buildAttributeColumnNames("code", "message"));) {
+							buildAttributeColumnNames("severity", "code", "message"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -190,7 +190,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 							Function failedFunction = (Function) correspondingElement;
 
-							errorPrinter.printRecord(buildAttributeColumnValues(failedFunction, entry.getCode(), entry.getMessage()));
+							errorPrinter.printRecord(
+									buildAttributeColumnValues(failedFunction, entry.getSeverity(), entry.getCode(), entry.getMessage()));
 						}
 					}
 
