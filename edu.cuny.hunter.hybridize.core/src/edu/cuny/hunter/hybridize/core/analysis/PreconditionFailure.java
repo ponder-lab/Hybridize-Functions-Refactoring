@@ -6,21 +6,11 @@ public enum PreconditionFailure {
 	CURRENTLY_NOT_HANDLED(1),
 
 	/**
-	 * Not a candidate.
-	 */
-	OPTIMIZATION_NOT_AVAILABLE(2),
-
-	/**
 	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?.
 	 */
 	UNDETERMINABLE_SIDE_EFFECTS(3),
 
 	HAS_PYTHON_SIDE_EFFECTS(4),
-
-	/**
-	 * P2 "failure."
-	 */
-	ALREADY_OPTIMAL(5),
 
 	HAS_NO_TENSOR_PARAMETERS(6),
 

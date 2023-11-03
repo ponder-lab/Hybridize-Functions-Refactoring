@@ -1049,4 +1049,16 @@ public class Function {
 
 		return true;
 	}
+
+	/**
+	 * Returns the first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in this {@link Function}'s
+	 * {@link RefactoringStatus}.
+	 *
+	 * @param failure The {@link PreconditionFailure} whose {@link RefactoringStatusEntry} to find.
+	 * @return The first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in this {@link Function}'s
+	 *         {@link RefactoringStatus}.
+	 */
+	public RefactoringStatusEntry getEntryMatchingFailure(PreconditionFailure failure) {
+		return this.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, failure.getCode());
+	}
 }

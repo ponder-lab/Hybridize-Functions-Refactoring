@@ -4492,7 +4492,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static void checkOptimizationNotAvailableStatus(Function f) {
 		RefactoringStatus status = f.getStatus();
 		assertTrue("Should not be available for optimization.", status.hasError());
-		RefactoringStatusEntry noTensorsFailure = getEntryMatchingFailure(f, PreconditionFailure.HAS_NO_TENSOR_PARAMETERS);
+		RefactoringStatusEntry noTensorsFailure = f.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS);
 		assertTrue(!f.isHybrid() || (noTensorsFailure != null && noTensorsFailure.isError()));
 	}
 
@@ -5197,30 +5197,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.getLikelyHasTensorParameter());
 		// In table 2, we need it not to have a tensor parameter to de-hybridize, so this is a "failure."
-		assertTrue(getEntryMatchingFailure(function, PreconditionFailure.HAS_TENSOR_PARAMETERS).isError());
+		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS).isError());
 
 		assertTrue(function.getHasPythonSideEffects());
 		// We also can't de-hybridize if it has Python side-effects. So, that's an error.
-		assertTrue(getEntryMatchingFailure(function, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS).isError());
+		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS).isError());
 		// Also, we have a hybrid function with Python side-effects. Let's warn about that.
 		assertEquals(1, Arrays.stream(function.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
 				.filter(s -> s == RefactoringStatus.WARNING).count());
 
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
-	}
-
-	/**
-	 * Returns the first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in the given
-	 * {@link Function}'s {@link RefactoringStatus}.
-	 *
-	 * @param function The {@link Function} being tested.
-	 * @param failure The {@link PreconditionFailure} whose {@link RefactoringStatusEntry} to find.
-	 * @return The first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in the given
-	 *         {@link Function}'s {@link RefactoringStatus}.
-	 */
-	private static RefactoringStatusEntry getEntryMatchingFailure(Function function, PreconditionFailure failure) {
-		return function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, failure.getCode());
 	}
 
 	@Test
