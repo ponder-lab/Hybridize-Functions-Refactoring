@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -5191,26 +5192,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getFunction("leaky_function");
 
 		assertTrue(function.isHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
-
-		RefactoringStatus status = function.getStatus();
-
-		// We have a hybrid function with a tensor parameter and Python side-effects. Issue a warning.
-		RefactoringStatusEntry warning = status.getEntryMatchingSeverity(RefactoringStatus.WARNING);
-		assertNotNull(warning);
-		assertEquals(RefactoringStatus.WARNING, warning.getSeverity());
-
-		// This situation is already "optimal," so we can't refactor it.
-		assertFalse(status.isOK());
-		assertTrue(status.hasError());
-		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
-		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
-		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), entry.getCode());
-
+		// This is a hybrid function, so the refactoring should be OPTIMIZE_HYBRID_FUNCTION.
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+
+		assertTrue(function.getLikelyHasTensorParameter());
+		// In table 2, we need it not to have a tensor parameter to de-hybridize, so this is a "failure."
+		assertTrue(getEntryMatchingFailure(function, PreconditionFailure.HAS_TENSOR_PARAMETERS).isError());
+
+		assertTrue(function.getHasPythonSideEffects());
+		// We also can't de-hybridize if it has Python side-effects. So, that's an error.
+		assertTrue(getEntryMatchingFailure(function, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS).isError());
+		// Also, we have a hybrid function with Python side-effects. Let's warn about that.
+		assertEquals(1, Arrays.stream(function.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
+				.filter(s -> s == RefactoringStatus.WARNING).count());
+
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
+	}
+
+	/**
+	 * Returns the first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in the given
+	 * {@link Function}'s {@link RefactoringStatus}.
+	 *
+	 * @param function The {@link Function} being tested.
+	 * @param failure The {@link PreconditionFailure} whose {@link RefactoringStatusEntry} to find.
+	 * @return The first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in the given
+	 *         {@link Function}'s {@link RefactoringStatus}.
+	 */
+	private static RefactoringStatusEntry getEntryMatchingFailure(Function function, PreconditionFailure failure) {
+		return function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, failure.getCode());
 	}
 
 	@Test
@@ -5239,21 +5249,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(leakyFunction.getLikelyHasTensorParameter());
 		assertTrue(leakyFunction.getHasPythonSideEffects());
 
-		assertFalse("P2 \"failure.\"", leakyFunction.getStatus().isOK());
-		assertEquals(
-				"Should have one warning and one error. The warning is for running a hybrid function that has side-effects. The error is that it is already \"optimal\".",
-				2, leakyFunction.getStatus().getEntries().length);
-
-		// TODO: Actually, it has a tensor paramter but has side-effects. Isn't that the reason?
-
-		assertEquals(RefactoringStatus.ERROR, leakyFunction.getStatus().getEntryWithHighestSeverity().getSeverity());
-		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), leakyFunction.getStatus().getEntryWithHighestSeverity().getCode());
-		assertNotNull(leakyFunction.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
-
-		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, leakyFunction.getRefactoring());
-		assertNull(leakyFunction.getPassingPrecondition());
-		assertTrue(leakyFunction.getTransformations().isEmpty());
-
 		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
 
 		assertTrue(capturesLeakedTensor.isHybrid());
@@ -5267,24 +5262,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(capturesLeakedTensor.getStatus().hasError());
 		assertFalse(capturesLeakedTensor.getStatus().hasFatalError());
 		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
-		assertEquals(PreconditionFailure.ALREADY_OPTIMAL.getCode(), error.getCode());
+		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
 
-		// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertFalse("We should warn that the hybrid function is capturing leaked tensors.", capturesLeakedTensor.getStatus().hasWarning());
+		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 0,
+				Arrays.stream(capturesLeakedTensor.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
+						.filter(s -> s == RefactoringStatus.WARNING).count());
 
 		assertNotNull(capturesLeakedTensor.getRefactoring());
 		assertEquals("P2 \"failure.\"", Refactoring.OPTIMIZE_HYBRID_FUNCTION, capturesLeakedTensor.getRefactoring());
 		assertNull(capturesLeakedTensor.getPassingPrecondition());
 		assertTrue(capturesLeakedTensor.getTransformations().isEmpty());
 
-		// NOTE: Change to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertFalse("We should warn about this.", capturesLeakedTensor.getStatus().hasWarning());
+		Optional<RefactoringStatusEntry> warning = Arrays.stream(capturesLeakedTensor.getStatus().getEntries())
+				.filter(e -> e.getSeverity() == RefactoringStatus.WARNING).findFirst();
 
-		RefactoringStatusEntry warning = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING);
-		// NOTE: Change to assertNotNull when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		// NOTE: Change to assertFalse when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
 		// NOTE: Add assertEquals(RefactoringStatus.WARNING, entry.getSeverity()) when
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertNull("Warn about a hybrid function that leaks as a potential tensor.", warning);
+		assertTrue("Warn about a hybrid function that leaks as a potential tensor.", warning.isEmpty());
 	}
 
 	@Test
@@ -5428,7 +5424,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
 		assertEquals(1, status.getEntries().length);
-		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
