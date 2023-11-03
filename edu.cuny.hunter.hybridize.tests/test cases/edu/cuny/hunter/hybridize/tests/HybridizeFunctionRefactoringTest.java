@@ -5350,7 +5350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
 		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
-		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, entry.getCode());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), entry.getCode());
 		assertEquals(function, entry.getData());
 
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
@@ -5382,8 +5382,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Map<Integer, List<RefactoringStatusEntry>> codeToEntry = Arrays.stream(statusEntries)
 				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
 
-		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS.getCode()));
-		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS.getCode()).size());
+		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()).size());
 
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
