@@ -5225,7 +5225,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// We have an eager function with a tensor parameter but Python side-effects. Should be a P1 failure.
 		assertFalse(status.isOK());
-		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertEquals(Collections.emptySet(), function.getTransformations());
@@ -5350,7 +5350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
 		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
-		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, entry.getCode());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, entry.getCode());
 		assertEquals(function, entry.getData());
 
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
@@ -5383,7 +5383,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
 
 		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS.getCode()));
-		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_SIDE_EFFECTS.getCode()));
+		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
@@ -5428,7 +5428,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
 		assertEquals(1, status.getEntries().length);
-		assertEquals(PreconditionFailure.HAS_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, status.getEntryWithHighestSeverity().getCode());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());

@@ -15,20 +15,16 @@ public enum PreconditionFailure {
 	 */
 	UNDETERMINABLE_SIDE_EFFECTS(3),
 
-	/**
-	 * P1 failure.
-	 */
-	HAS_SIDE_EFFECTS(4),
+	HAS_PYTHON_SIDE_EFFECTS(4),
 
 	/**
 	 * P2 "failure."
 	 */
 	ALREADY_OPTIMAL(5),
 
-	/**
-	 * P1 failure.
-	 */
-	HAS_NO_TENSOR_PARAMETERS(6);
+	HAS_NO_TENSOR_PARAMETERS(6),
+
+	HAS_TENSOR_PARAMETERS(7);
 
 	static {
 		// check that the codes are unique.

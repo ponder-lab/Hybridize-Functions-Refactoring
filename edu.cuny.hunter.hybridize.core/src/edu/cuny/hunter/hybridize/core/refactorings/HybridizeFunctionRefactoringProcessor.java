@@ -217,7 +217,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
-					func.addStatusEntry(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
 							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
 					// next function.
 					status.merge(func.getStatus());

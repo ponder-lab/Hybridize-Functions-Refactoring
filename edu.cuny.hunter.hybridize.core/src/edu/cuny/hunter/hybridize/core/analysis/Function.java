@@ -25,6 +25,7 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -806,7 +807,7 @@ public class Function {
 		return false;
 	}
 
-	public void addStatusEntry(PreconditionFailure failure, String message) {
+	public void addFailure(PreconditionFailure failure, String message) {
 		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
 		assert this.getHasPythonSideEffects() == null
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
@@ -815,31 +816,52 @@ public class Function {
 		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
 	}
 
+	public void addWarning(String message) {
+		RefactoringStatusContext context = new FunctionStatusContext();
+		this.getStatus().addEntry(RefactoringStatus.WARNING, message, context, PLUGIN_ID, RefactoringStatusEntry.NO_CODE, this);
+	}
+
 	/**
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		// we can't refactor it if either it doesn't have a tensor parameter or it's not currently hybrid.
-		if (!(this.getLikelyHasTensorParameter() || this.isHybrid()))
-			this.addStatusEntry(PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE,
-					"This function is not available for optimization. Either the function must have a tensor-like parameter or be currently hybrid.");
+		if (!this.isHybrid()) { // Eager. Table 1.
+			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
-		// if this is not a hybrid function.
-		if (!this.isHybrid()) {
-			// but it likely has a tensor parameter.
 			if (this.getLikelyHasTensorParameter()) {
-				// hybridize it.
-				this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
-				this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-				this.setPassingPrecondition(P1);
+				if (!this.getHasPythonSideEffects()) {
+					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+					this.setPassingPrecondition(P1);
+				} else
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+			} else { // no tensor parameters.
+				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
+						"This function has no tensor parameters and may not benefit from hybridization.");
+
+				if (this.hasPythonSideEffects)
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
-		} else { // this is a hybrid function.
-			// but it does not likely have a tensor parameter.
+		} else { // Hybrid. Use table 2.
+			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
+
 			if (!this.getLikelyHasTensorParameter()) {
-				// de-hybridize it.
-				this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
-				this.addTransformation(CONVERT_TO_EAGER);
-				this.setPassingPrecondition(P2);
+				if (!this.getHasPythonSideEffects()) {
+					this.addTransformation(CONVERT_TO_EAGER);
+					this.setPassingPrecondition(P2);
+				} else { // it has side-effects.
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+							"De-hybridizing a function with Python side-effects may alter semantics.");
+				}
+			} else { // it has a tensor parameter.
+				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
+						"Functions with tensor parameters may benefit from hybreidization.");
+
+				if (this.hasPythonSideEffects) {
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+							"De-hybridizing a function with Python side-effects may alter semantics.");
+
+					this.addWarning("This function is hybrid but potentially contains Python side-effects.");
+				}
 			}
 		}
 	}
