@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.commons.csv.CSVPrinter;
@@ -68,6 +69,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String FAILED_PRECONDITIONS_CSV_FILENAME = "failed_preconditions.csv";
 
+	private static final String STATUS_CSV_FILENAME = "statuses.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -111,7 +114,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							buildAttributeColumnNames("transformation"));
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
-					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME, // TODO: Add a "warnings" file? Or non-zero?
+					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
+							buildAttributeColumnNames("severity", "code", "message"));
+					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
 							buildAttributeColumnNames("severity", "code", "message"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
@@ -173,27 +178,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						nonOptimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
 
 					// failed preconditions.
-					Collection<RefactoringStatusEntry> errorEntries = failures.parallelStream().map(Function::getStatus)
-							.flatMap(s -> Arrays.stream(s.getEntries())).filter(RefactoringStatusEntry::isError)
-							.collect(Collectors.toSet());
+					Collection<RefactoringStatusEntry> errorEntries = getRefactoringStatusEntries(failures,
+							RefactoringStatusEntry::isError);
 
 					resultsPrinter.print(errorEntries.size()); // number.
 
-					for (RefactoringStatusEntry entry : errorEntries) {
-						if (!entry.isFatalError()) {
-							Object correspondingElement = entry.getData();
+					printStatusEntries(errorPrinter, errorEntries);
 
-							if (!(correspondingElement instanceof Function))
-								throw new IllegalStateException("The element: " + correspondingElement
-										+ " corresponding to a failed precondition is not a Function. Instead, it is a: "
-										+ correspondingElement.getClass());
-
-							Function failedFunction = (Function) correspondingElement;
-
-							errorPrinter.printRecord(
-									buildAttributeColumnValues(failedFunction, entry.getSeverity(), entry.getCode(), entry.getMessage()));
-						}
-					}
+					// general refactoring statuses.
+					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
+					printStatusEntries(statusPrinter, generalEntries);
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
@@ -235,6 +229,28 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}).schedule();
 
 		return null;
+	}
+
+	private static Set<RefactoringStatusEntry> getRefactoringStatusEntries(Set<Function> functionSet,
+			Predicate<? super RefactoringStatusEntry> predicate) {
+		return functionSet.parallelStream().map(Function::getStatus).flatMap(s -> Arrays.stream(s.getEntries())).filter(predicate)
+				.collect(Collectors.toSet());
+	}
+
+	private static void printStatusEntries(CSVPrinter printer, Collection<RefactoringStatusEntry> entries) throws IOException {
+		for (RefactoringStatusEntry entry : entries) {
+			if (!entry.isFatalError()) {
+				Object correspondingElement = entry.getData();
+
+				if (!(correspondingElement instanceof Function))
+					throw new IllegalStateException("The element: " + correspondingElement + " is not a Function. Instead, it is a: "
+							+ correspondingElement.getClass());
+
+				Function function = (Function) correspondingElement;
+
+				printer.printRecord(buildAttributeColumnValues(function, entry.getSeverity(), entry.getCode(), entry.getMessage()));
+			}
+		}
 	}
 
 	private static String[] buildFunctionAttributeColumnNames() {
