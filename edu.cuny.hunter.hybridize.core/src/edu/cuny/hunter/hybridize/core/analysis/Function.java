@@ -11,8 +11,10 @@ import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1026,5 +1028,25 @@ public class Function {
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
 
 		this.hasPythonSideEffects = hasPythonSideEffects;
+	}
+
+	/**
+	 * Returns true iff there is at most one {@link RefactoringStatusEntry} for a particular kind of failure.
+	 *
+	 * @apiNote This is to prevent counting a single kind of failure multiple times. Though that may be valid, I don't believe we have a
+	 *          situation like this currently.
+	 * @return True iff there is at most one failure per failure kind.
+	 */
+	public boolean hasOnlyOneFailurePerKind() {
+		Map<Integer, List<RefactoringStatusEntry>> failureCodeToEntries = Arrays.stream(this.getStatus().getEntries())
+				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
+
+		for (Integer code : failureCodeToEntries.keySet()) {
+			List<RefactoringStatusEntry> failuresForCode = failureCodeToEntries.get(code);
+			if (failuresForCode.size() > 1)
+				return false;
+		}
+
+		return true;
 	}
 }

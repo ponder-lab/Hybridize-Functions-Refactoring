@@ -236,6 +236,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				status.merge(func.getStatus());
 				subMonitor.worked(1);
+
+				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
 			}
 		}
 
