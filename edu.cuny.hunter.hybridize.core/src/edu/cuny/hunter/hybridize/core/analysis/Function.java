@@ -380,28 +380,28 @@ public class Function {
 		if (nodes.isEmpty())
 			throw new UndeterminablePythonSideEffectsException(this.getMethodReference());
 
-		// for each node. FIXME: Aren't these the same? Not exactly. Their calling contexts are different; one node per context.
-		for (CGNode cgNode : nodes) {
-			// Get the locations (pointers) modified by this function.
-			OrdinalSet<PointerKey> modSet = mod.get(cgNode);
-			LOG.info("Found " + modSet.size() + " original modified location(s).");
-			modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
+		// Only consider the first node. The calling context shouldn't matter for us right now.
+		CGNode cgNode = nodes.iterator().next();
 
-			// Filter out the modified locations.
-			Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph, pointerAnalysis);
-			LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
-			filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
+		// Get the locations (pointers) modified by this function.
+		OrdinalSet<PointerKey> modSet = mod.get(cgNode);
+		LOG.info("Found " + modSet.size() + " original modified location(s).");
+		modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
-			// Log the locations we are removing.
-			SetView<PointerKey> removed = Sets.difference(Sets.newHashSet(modSet), filteredModSet);
-			LOG.info("Removed " + removed.size() + " locations.");
-			removed.forEach(pk -> LOG.info("Removed modified location: " + pk + "."));
+		// Filter out the modified locations.
+		Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph, pointerAnalysis);
+		LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
+		filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
-			if (!filteredModSet.isEmpty()) {
-				this.setHasPythonSideEffects(TRUE);
-				LOG.info(this + " has side-effects.");
-				return;
-			}
+		// Log the locations we are removing.
+		SetView<PointerKey> removed = Sets.difference(Sets.newHashSet(modSet), filteredModSet);
+		LOG.info("Removed " + removed.size() + " locations.");
+		removed.forEach(pk -> LOG.info("Removed modified location: " + pk + "."));
+
+		if (!filteredModSet.isEmpty()) {
+			this.setHasPythonSideEffects(TRUE);
+			LOG.info(this + " has side-effects.");
+			return;
 		}
 
 		this.setHasPythonSideEffects(FALSE);
@@ -466,19 +466,21 @@ public class Function {
 		if (cgNodes.isEmpty())
 			throw new IllegalArgumentException("Can't find call graph nodes corresponding to: " + methodReference + ".");
 
-		for (CGNode node : cgNodes) // FIXME: I don't think we need multiple nodes here. Also, do we need to consider synthetic nodes?
-			// check the called functions.
-			for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
-				CGNode next = succNodes.next();
-				MethodReference reference = next.getMethod().getReference();
+		// Only consider the first node. The only difference should be the calling context, which shouldn't make a difference for us.
+		CGNode node = cgNodes.iterator().next();
 
-				if (!seen.contains(reference)) {
-					seen.add(reference);
+		// check the called functions.
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode next = succNodes.next();
+			MethodReference reference = next.getMethod().getReference();
 
-					if (allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
-						return true;
-				}
+			if (!seen.contains(reference)) {
+				seen.add(reference);
+
+				if (allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
+					return true;
 			}
+		}
 
 		return false;
 	}
