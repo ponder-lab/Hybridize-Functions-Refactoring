@@ -373,7 +373,8 @@ public class Function {
 		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
 
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
-		// the current representation. It seems that there is a declaration node for each call to the function.
+		// the current representation. It seems that there is a declaration node for each call to the function. Each node has a different
+		// calling context.
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		if (nodes.isEmpty())
