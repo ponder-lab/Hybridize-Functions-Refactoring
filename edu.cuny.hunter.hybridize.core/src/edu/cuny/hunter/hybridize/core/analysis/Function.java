@@ -870,7 +870,7 @@ public class Function {
 				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
 						"Functions with tensor parameters may benefit from hybreidization.");
 
-				if (this.hasPythonSideEffects) {
+				if (this.getHasPythonSideEffects()) {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 
