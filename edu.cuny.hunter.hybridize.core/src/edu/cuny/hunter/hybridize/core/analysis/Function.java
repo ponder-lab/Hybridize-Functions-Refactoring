@@ -447,6 +447,14 @@ public class Function {
 	}
 
 	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
+		Set<MethodReference> seen = Sets.newHashSet();
+		return allCreationsWithinClosureInteral(methodReference, instanceKey, callGraph, seen);
+	}
+
+	private static boolean allCreationsWithinClosureInteral(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
+			Set<MethodReference> seen) {
+		seen.add(methodReference);
+
 		// check this function.
 		if (allCreationsWithin(methodReference, instanceKey, callGraph))
 			return true;
@@ -463,8 +471,12 @@ public class Function {
 				CGNode next = succNodes.next();
 				MethodReference reference = next.getMethod().getReference();
 
-				if (allCreationsWithinClosure(reference, instanceKey, callGraph))
-					return true;
+				if (!seen.contains(reference)) {
+					seen.add(reference);
+
+					if (allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
+						return true;
+				}
 			}
 
 		return false;
