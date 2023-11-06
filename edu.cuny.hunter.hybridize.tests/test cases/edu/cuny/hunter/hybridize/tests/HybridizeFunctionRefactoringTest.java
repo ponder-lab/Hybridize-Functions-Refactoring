@@ -5250,8 +5250,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
 		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
 
-		// NOTE: Change to assertEquals(..., 2, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 1,
+		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 0,
 				Arrays.stream(capturesLeakedTensor.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
 						.filter(s -> s == RefactoringStatus.WARNING).count());
 

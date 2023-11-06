@@ -880,8 +880,8 @@ public class Function {
 				}
 			}
 
-			// if we are not de-hybridizing, issue a warning.
-			if (!this.willDehybridize())
+			// Warn if the function has side-effects.
+			if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
 	}
