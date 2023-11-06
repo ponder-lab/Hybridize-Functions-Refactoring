@@ -5251,8 +5251,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
 		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
 
-		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 0,
+		// NOTE: Change to assertEquals(..., 2, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 1,
 				Arrays.stream(capturesLeakedTensor.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
 						.filter(s -> s == RefactoringStatus.WARNING).count());
 
@@ -5261,13 +5261,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(capturesLeakedTensor.getPassingPrecondition());
 		assertTrue(capturesLeakedTensor.getTransformations().isEmpty());
 
-		Optional<RefactoringStatusEntry> warning = Arrays.stream(capturesLeakedTensor.getStatus().getEntries())
-				.filter(e -> e.getSeverity() == RefactoringStatus.WARNING).findFirst();
+		long warningCount = Arrays.stream(capturesLeakedTensor.getStatus().getEntries())
+				.filter(e -> e.getSeverity() == RefactoringStatus.WARNING).count();
 
-		// NOTE: Change to assertFalse when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		// NOTE: Change to assertEquals(..., 2, ...) when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
 		// NOTE: Add assertEquals(RefactoringStatus.WARNING, entry.getSeverity()) when
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertTrue("Warn about a hybrid function that leaks as a potential tensor.", warning.isEmpty());
+		assertEquals("Warn about a hybrid function that leaks as a potential tensor.", 1, warningCount);
 	}
 
 	@Test
@@ -5401,7 +5401,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
-		assertEquals(1, status.getEntries().length);
+		assertEquals(2, status.getEntries().length);
 		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());

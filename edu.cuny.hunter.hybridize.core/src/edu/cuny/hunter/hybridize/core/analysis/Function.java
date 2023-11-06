@@ -872,11 +872,17 @@ public class Function {
 				if (this.getHasPythonSideEffects()) {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
-
-					this.addWarning("This hybrid function potentially contains Python side-effects.");
 				}
 			}
+
+			// if we are not de-hybridizing, issue a warning.
+			if (!this.willDehybridize())
+				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
+	}
+
+	public boolean willDehybridize() {
+		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
 	public IDocument getContainingDocument() {
