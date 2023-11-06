@@ -862,10 +862,9 @@ public class Function {
 				if (!this.getHasPythonSideEffects()) {
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);
-				} else { // it has side-effects.
+				} else // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
-				}
 			} else { // it has a tensor parameter.
 				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
 						"Functions with tensor parameters may benefit from hybreidization.");
