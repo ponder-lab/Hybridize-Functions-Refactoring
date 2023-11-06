@@ -45,7 +45,6 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
-import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
