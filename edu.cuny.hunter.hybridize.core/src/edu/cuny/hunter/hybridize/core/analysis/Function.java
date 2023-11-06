@@ -538,7 +538,9 @@ public class Function {
 		}
 
 		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
-		LOG.info("Nodes:\n" + nodes.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+
+		if (VERBOSE)
+			LOG.info("Nodes:\n" + nodes.stream().map(Objects::toString).collect(Collectors.joining("\n")));
 
 		return nodes;
 	}
