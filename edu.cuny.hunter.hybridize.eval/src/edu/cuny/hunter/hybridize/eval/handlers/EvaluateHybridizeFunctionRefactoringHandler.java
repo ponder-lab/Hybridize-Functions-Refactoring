@@ -151,7 +151,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
 					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
-							.filter(f -> f.isHybrid() || f.getLikelyHasTensorParameter()).collect(Collectors.toSet());
+							.filter(f -> f.isHybrid() != null && f.isHybrid()
+									|| f.getLikelyHasTensorParameter() != null && f.getLikelyHasTensorParameter())
+							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
 					// candidate functions.
