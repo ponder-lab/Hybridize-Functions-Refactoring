@@ -115,9 +115,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
-							buildAttributeColumnNames("severity", "code", "message"));
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
-							buildAttributeColumnNames("severity", "code", "message"));) {
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -183,11 +183,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					resultsPrinter.print(errorEntries.size()); // number.
 
-					printStatusEntries(errorPrinter, errorEntries);
+					printStatuses(errorPrinter, errorEntries);
 
 					// general refactoring statuses.
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
-					printStatusEntries(statusPrinter, generalEntries);
+					printStatuses(statusPrinter, generalEntries);
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
@@ -237,7 +237,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				.collect(Collectors.toSet());
 	}
 
-	private static void printStatusEntries(CSVPrinter printer, Collection<RefactoringStatusEntry> entries) throws IOException {
+	private static void printStatuses(CSVPrinter printer, Collection<RefactoringStatusEntry> entries) throws IOException {
 		for (RefactoringStatusEntry entry : entries) {
 			if (!entry.isFatalError()) {
 				Object correspondingElement = entry.getData();
@@ -248,7 +248,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				Function function = (Function) correspondingElement;
 
-				printer.printRecord(buildAttributeColumnValues(function, entry.getSeverity(), entry.getCode(), entry.getMessage()));
+				printer.printRecord(buildAttributeColumnValues(function, function.getRefactoring(), entry.getSeverity(), entry.getCode(),
+						entry.getMessage()));
 			}
 		}
 	}
