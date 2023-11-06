@@ -874,7 +874,7 @@ public class Function {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 
-					this.addWarning("This function is hybrid but potentially contains Python side-effects.");
+					this.addWarning("This hybrid function potentially contains Python side-effects.");
 				}
 			}
 		}
