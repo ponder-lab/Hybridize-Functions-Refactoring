@@ -857,7 +857,7 @@ public class Function {
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
-				if (this.hasPythonSideEffects)
+				if (this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
 		} else { // Hybrid. Use table 2.
