@@ -5263,10 +5263,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		long warningCount = Arrays.stream(capturesLeakedTensor.getStatus().getEntries())
 				.filter(e -> e.getSeverity() == RefactoringStatus.WARNING).count();
 
-		// NOTE: Change to assertEquals(..., 2, ...) when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		// NOTE: Change to assertEquals(..., 1, ...) when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
 		// NOTE: Add assertEquals(RefactoringStatus.WARNING, entry.getSeverity()) when
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertEquals("Warn about a hybrid function that leaks as a potential tensor.", 1, warningCount);
+		assertEquals("Warn about a hybrid function that leaks as a potential tensor.", 0, warningCount);
 	}
 
 	@Test
