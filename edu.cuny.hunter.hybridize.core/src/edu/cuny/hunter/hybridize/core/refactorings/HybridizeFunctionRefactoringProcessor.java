@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
+import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.IOException;
@@ -101,7 +102,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
 
 		// Have WALA dump the call graph if appropriate.
 		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
