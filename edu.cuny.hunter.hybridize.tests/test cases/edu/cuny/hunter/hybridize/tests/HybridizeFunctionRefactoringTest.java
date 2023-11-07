@@ -144,6 +144,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
+	 * Check Python side-effects regardless if it's a candidate.
+	 */
+	private static final boolean ALWAYS_CHECK_PYTHON_SIDE_EFFECTS = true;
+
+	/**
 	 * Add a module to the given {@link IPythonNature}.
 	 *
 	 * @param ast the ast that defines the module
@@ -550,7 +555,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions);
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 

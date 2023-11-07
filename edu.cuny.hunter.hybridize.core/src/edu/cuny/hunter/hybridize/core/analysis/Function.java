@@ -887,33 +887,33 @@ public class Function {
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter()) {
-				if (!this.getHasPythonSideEffects()) {
+				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 					this.setPassingPrecondition(P1);
-				} else
+				} else if (this.getHasPythonSideEffects() != null)  // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			} else { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
-				if (this.getHasPythonSideEffects())
+				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (!this.getLikelyHasTensorParameter()) {
-				if (!this.getHasPythonSideEffects()) {
+				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);
-				} else // it has side-effects.
+				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 			} else { // it has a tensor parameter.
 				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
 						"Functions with tensor parameters may benefit from hybreidization.");
 
-				if (this.getHasPythonSideEffects()) {
+				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 				}

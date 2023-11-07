@@ -97,12 +97,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private boolean dumpCallGraph = Boolean.getBoolean(DUMP_CALL_GRAPH_PROPERTY_KEY);
 
+	private boolean alwaysCheckPythonSideEffects;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
 
 		// Have WALA dump the call graph if appropriate.
 		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects) {
+		this();
+		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) throws TooManyMatchesException {
@@ -119,6 +126,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				functionSet.add(function);
 			}
 		}
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects)
+			throws TooManyMatchesException {
+		this(functionDefinitionSet);
+		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
 	}
 
 	@Override
@@ -212,7 +225,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check Python side-effects.
 				try {
-					func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
+					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid() || func.getLikelyHasTensorParameter())
+						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
@@ -323,6 +337,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	@Override
 	public String getProcessorName() {
 		return Messages.Name;
+	}
+
+	private boolean getAlwaysCheckPythonSideEffects() {
+		return this.alwaysCheckPythonSideEffects;
 	}
 
 	@Override
