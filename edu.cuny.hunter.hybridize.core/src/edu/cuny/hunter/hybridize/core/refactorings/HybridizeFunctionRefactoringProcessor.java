@@ -294,6 +294,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.getProjectToCallGraphBuilder().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
+		Function.clearCaches();
 	}
 
 	@Override

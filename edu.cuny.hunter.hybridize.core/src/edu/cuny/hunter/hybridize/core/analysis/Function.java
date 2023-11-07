@@ -42,6 +42,7 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
@@ -355,6 +356,8 @@ public class Function {
 
 	private RefactoringStatus status = new RefactoringStatus();
 
+	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
+
 	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
 	}
@@ -450,9 +453,45 @@ public class Function {
 	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
 		Set<MethodReference> seen = Sets.newHashSet();
 		return allCreationsWithinClosureInteral(methodReference, instanceKey, callGraph, seen);
+
 	}
 
 	private static boolean allCreationsWithinClosureInteral(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
+			Set<MethodReference> seen) {
+		Map<InstanceKey, Map<CallGraph, Boolean>> cache2 = creationsCache.get(methodReference);
+
+		if (cache2 != null) {
+			Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
+
+			if (cache3 != null) {
+				Boolean result = cache3.get(callGraph);
+
+				if (result != null)
+					return result;
+			}
+		}
+
+		boolean result = allCreationsWithinClosureInteral2(methodReference, instanceKey, callGraph, seen);
+
+		if (cache2 == null) {
+			cache2 = Maps.newHashMap();
+			creationsCache.put(methodReference, cache2);
+		}
+
+		Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
+
+		if (cache3 == null) {
+			cache3 = Maps.newHashMap();
+			cache2.put(instanceKey, cache3);
+		}
+
+		Boolean previous = cache3.put(callGraph, result);
+		assert previous == null : "Should be a new key.";
+
+		return result;
+	}
+
+	private static boolean allCreationsWithinClosureInteral2(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
 			Set<MethodReference> seen) {
 		seen.add(methodReference);
 
@@ -1083,4 +1122,9 @@ public class Function {
 	public RefactoringStatusEntry getEntryMatchingFailure(PreconditionFailure failure) {
 		return this.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, failure.getCode());
 	}
+
+	public static void clearCaches() {
+		creationsCache.clear();
+	}
+
 }
