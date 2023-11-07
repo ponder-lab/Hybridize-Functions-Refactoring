@@ -508,7 +508,7 @@ public class Function {
 		// Only consider the first node. The only difference should be the calling context, which shouldn't make a difference for us.
 		CGNode node = cgNodes.iterator().next();
 
-		// check the called functions.
+		// check the callees.
 		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
 			CGNode next = succNodes.next();
 			MethodReference reference = next.getMethod().getReference();
