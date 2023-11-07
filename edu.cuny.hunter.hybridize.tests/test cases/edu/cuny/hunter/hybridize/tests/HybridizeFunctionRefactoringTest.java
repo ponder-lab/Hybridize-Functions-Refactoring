@@ -5434,5 +5434,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Collections.singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
 	}
 
+	@Test
+	public void testPythonSideEffects56() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Keyword argument assignments shouldn't be considered as heap writes.", f.getHasPythonSideEffects());
+	}
+
 	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
 }
