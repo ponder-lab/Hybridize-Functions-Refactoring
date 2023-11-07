@@ -194,22 +194,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
-			for (Function func : projectFunctions) {
+			projectFunctions.parallelStream().forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
 				// Find out if it's hybrid via the tf.function decorator.
 				try {
 					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
-					throw new CoreException(Status.error("Could not compute hybridization for: : " + func, e));
+					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
 				}
 
-				// TODO: Whether a function has a tensor argument should probably be an initial
-				// condition: functions w/o such arguments should not be candidates.
 				try {
 					func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
-					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
+					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
 				}
 
 				// Check Python side-effects.
@@ -222,7 +220,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					// next function.
 					status.merge(func.getStatus());
 					subMonitor.worked(1);
-					continue;
+					return;
 				}
 
 				// check the function preconditions.
@@ -238,7 +236,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				subMonitor.worked(1);
 
 				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
-			}
+			});
 		}
 
 		return status;
