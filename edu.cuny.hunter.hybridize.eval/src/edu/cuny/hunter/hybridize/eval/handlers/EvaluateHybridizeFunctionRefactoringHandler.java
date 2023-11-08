@@ -161,8 +161,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation));
 					}
 
-					// optimizable functions.
-					Set<Function> optimizableFunctions = processor.getOptimizableFunctions();
+					// optimizable candidate functions.
+					Set<Function> optimizableFunctions = Sets.intersection(candidates, processor.getOptimizableFunctions());
 					resultsPrinter.print(optimizableFunctions.size()); // number.
 
 					for (Function function : optimizableFunctions)
