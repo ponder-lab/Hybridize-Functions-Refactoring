@@ -5446,5 +5446,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Embedded functions aren't side-effects.", f.getHasPythonSideEffects());
 	}
 
+	@Test
+	public void testPythonSideEffects58() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Decorated embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+	}
+
 	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
 }

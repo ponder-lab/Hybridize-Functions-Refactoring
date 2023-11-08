@@ -1,5 +1,9 @@
+import tensorflow as tf
+
+
 def f():
 
+    @tf.function
     def g():
         return 5
 
