@@ -72,6 +72,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
+	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
+
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
@@ -88,6 +90,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
 	}
+
+	private boolean alwaysCheckPythonSideEffects = Boolean.getBoolean(ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -129,7 +133,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
-					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project });
+					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
+							this.getAlwaysCheckPythonSideEffects());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -338,5 +343,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}
 
 		return null;
+	}
+
+	public boolean getAlwaysCheckPythonSideEffects() {
+		return alwaysCheckPythonSideEffects;
 	}
 }
