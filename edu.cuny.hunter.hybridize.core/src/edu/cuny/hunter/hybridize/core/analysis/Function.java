@@ -882,11 +882,15 @@ public class Function {
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
+		RefactoringStatusContext context = new FunctionStatusContext();
+		this.addFailure(failure, message, context);
+	}
+
+	public void addFailure(PreconditionFailure failure, String message, RefactoringStatusContext context) {
 		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
 		assert this.getHasPythonSideEffects() == null
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
-		RefactoringStatusContext context = new FunctionStatusContext();
 		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
 	}
 
@@ -899,7 +903,7 @@ public class Function {
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		if (!this.getIsHybrid()) { // Eager. Table 1.
+		if (this.getIsHybrid() != null && !this.getIsHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter()) {
@@ -915,7 +919,7 @@ public class Function {
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
-		} else { // Hybrid. Use table 2.
+		} else if (this.isHybrid != null) { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (!this.getLikelyHasTensorParameter()) {
