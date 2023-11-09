@@ -48,10 +48,10 @@ public class Util {
 		return new ProcessorBasedRefactoring(new HybridizeFunctionRefactoringProcessor(functionDefinitions));
 	}
 
-	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects)
+	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects, boolean alwaysCheckPythonSideEffects)
 			throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
-		return new HybridizeFunctionRefactoringProcessor(functionDefinitions);
+		return new HybridizeFunctionRefactoringProcessor(functionDefinitions, alwaysCheckPythonSideEffects);
 	}
 
 	public static Set<FunctionDefinition> getFunctionDefinitions(Iterable<?> iterable)
