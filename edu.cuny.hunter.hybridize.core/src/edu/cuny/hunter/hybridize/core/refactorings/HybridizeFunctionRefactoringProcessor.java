@@ -43,6 +43,7 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
+import edu.cuny.hunter.hybridize.core.analysis.UndeterminableHybridizationException;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
@@ -231,6 +232,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
 					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
+				} catch (UndeterminableHybridizationException e) {
+					LOG.warn("Unable to infer hybridization of: " + func + ".", e);
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_HYBRID_DECORATOR, "Can't compute whether " + func + "is hybrid.");
 				}
 
 				try {

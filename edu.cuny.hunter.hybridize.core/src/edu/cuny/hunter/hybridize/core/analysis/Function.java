@@ -758,12 +758,17 @@ public class Function {
 	/**
 	 * Discovers if this {@link Function} is hybrid. If so, populated this {@link Function}'s {@link HybridizationParameters}.
 	 */
-	public void computeHybridization(IProgressMonitor monitor) throws BadLocationException {
+	public void computeHybridization(IProgressMonitor monitor) throws BadLocationException, UndeterminableHybridizationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
+
+		// if this function is decorated with "tf.function."
+		Boolean hybrid = null;
+
+		boolean issuedInfo = false;
 
 		if (decoratorArray != null) {
 			String containingModuleName = this.getContainingModuleName();
@@ -778,9 +783,6 @@ public class Function {
 
 				IDocument document = this.getContainingDocument();
 				PySelection selection = null;
-
-				// if this function is decorated with "tf.function."
-				boolean hybrid = false;
 
 				try {
 					selection = Util.getSelection(decorator, document);
@@ -799,23 +801,21 @@ public class Function {
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
+						issuedInfo = true;
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
 						LOG.info(String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-					} else {
+						issuedInfo = true;
+					} else
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
-
-						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
-						// status entry would fail the entire function.
-					}
 				}
 
-				if (hybrid) {
+				if (hybrid != null && hybrid) {
 					this.setIsHybrid(TRUE);
 					LOG.info(this + " is hybrid.");
 
@@ -830,6 +830,9 @@ public class Function {
 				monitor.worked(1);
 			}
 		}
+
+		if (hybrid == null && !issuedInfo)
+			throw new UndeterminableHybridizationException();
 
 		this.setIsHybrid(FALSE);
 		LOG.info(this + " is not hybrid.");
