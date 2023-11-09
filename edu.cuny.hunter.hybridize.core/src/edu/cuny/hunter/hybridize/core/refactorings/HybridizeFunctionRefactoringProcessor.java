@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
+import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
@@ -20,10 +22,11 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This exception sounds too low-level. */
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
@@ -39,12 +42,29 @@ import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
+import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 
 @SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
+
+	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
+
+	private final class FunctionStatusContext extends RefactoringStatusContext {
+		private final Function func;
+
+		private FunctionStatusContext(Function func) {
+			this.func = func;
+		}
+
+		@Override
+		public Object getCorrespondingElement() {
+			return func;
+		}
+	}
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
@@ -77,17 +97,32 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	/**
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
-	private boolean dumpCallGraph;
+	private boolean dumpCallGraph = Boolean.getBoolean(DUMP_CALL_GRAPH_PROPERTY_KEY);
+
+	private boolean alwaysCheckPythonSideEffects;
+
+	private boolean processFunctionsInParallel = true;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
 
 		// Have WALA dump the call graph if appropriate.
 		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) throws TooManyMatchesException {
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects) {
+		this();
+		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel) {
+		this(alwaysCheckPythonSideEffects);
+		this.processFunctionsInParallel = processFunctionsInParallel;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
 
 		// Convert the FunctionDefs to Functions.
@@ -101,6 +136,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				functionSet.add(function);
 			}
 		}
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet);
+		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects);
+		this.processFunctionsInParallel = processFunctionsInParallel;
 	}
 
 	@Override
@@ -176,27 +223,38 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
-			for (Function func : projectFunctions) {
+			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
 				// Find out if it's hybrid via the tf.function decorator.
 				try {
-					func.computeHybridization(monitor);
+					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
-					throw new CoreException(Status.error("Could not compute hybridization for: : " + func, e));
+					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
 				}
 
-				// TODO: Whether a function has a tensor argument should probably be an initial
-				// condition: functions w/o such arguments should not be candidates.
 				try {
-					func.inferTensorTensorParameters(analysis, monitor);
+					func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
-					throw new CoreException(Status.error("Could not infer tensor parameters for: : " + func, e));
+					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
+				}
+
+				// Check Python side-effects.
+				try {
+					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid() || func.getLikelyHasTensorParameter())
+						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
+				} catch (UndeterminablePythonSideEffectsException e) {
+					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
+							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
+					// next function.
+					status.merge(func.getStatus());
+					subMonitor.worked(1);
+					return;
 				}
 
 				// check the function preconditions.
 				func.check();
-				status.merge(func.getStatus());
 
 				status.merge(checkParameters(func));
 				subMonitor.checkCanceled();
@@ -204,11 +262,26 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				status.merge(checkDecorators(func));
 				subMonitor.checkCanceled();
 
+				status.merge(func.getStatus());
 				subMonitor.worked(1);
-			}
+
+				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
+			});
 		}
 
 		return status;
+	}
+
+	/**
+	 * Returns a {@link Stream} of {@link Function}s. Properties of the stream are dependent on the state of this
+	 * {@link HybridizeFunctionRefactoringProcessor}.
+	 *
+	 * @param functions The {@link Set} of {@link Function}s from which to derive a {@link Stream}.
+	 * @return A potentially parallel {@link Stream} of {@link Function}s.
+	 */
+	private Stream<Function> getStream(Set<Function> functions) {
+		Stream<Function> stream = functions.stream();
+		return this.getProcessFunctionsInParallel() ? stream.parallel() : stream;
 	}
 
 	private TensorTypeAnalysis computeTensorTypeAnalysis(EclipsePythonProjectTensorAnalysisEngine engine,
@@ -261,6 +334,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.getProjectToCallGraphBuilder().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
+		Function.clearCaches();
 	}
 
 	@Override
@@ -293,6 +367,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return Messages.Name;
 	}
 
+	private boolean getAlwaysCheckPythonSideEffects() {
+		return this.alwaysCheckPythonSideEffects;
+	}
+
 	@Override
 	public boolean isApplicable() throws CoreException {
 		// TODO Auto-generated method stub
@@ -320,5 +398,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public Map<IProject, TensorTypeAnalysis> getProjectToTensorTypeAnalysis() {
 		return projectToTensorTypeAnalysis;
+	}
+
+	/**
+	 * True iff project functions should be processed in parallel. Otherwise, they are processed sequentially.
+	 *
+	 * @return True iff project functions should be processed in parallel.
+	 */
+	private boolean getProcessFunctionsInParallel() {
+		return this.processFunctionsInParallel;
 	}
 }

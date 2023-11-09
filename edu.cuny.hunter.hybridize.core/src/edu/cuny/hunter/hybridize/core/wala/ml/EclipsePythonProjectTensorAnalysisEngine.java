@@ -52,13 +52,13 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		this.project = project;
 		IPath projectPath = getPath(project);
 		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
-		LOG.info("Creating engine from: " + dirModule);
+		LOG.info("Creating engine from: " + dirModule + ".");
 
 		this.setModuleFiles(Collections.singleton(dirModule));
 
 		for (Iterator<? extends ModuleEntry> entries = dirModule.getEntries(); entries.hasNext();) {
 			ModuleEntry entry = entries.next();
-			LOG.info("Found entry: " + entry);
+			LOG.info("Found entry: " + entry + ".");
 		}
 	}
 

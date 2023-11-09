@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.commons.csv.CSVPrinter;
@@ -35,7 +36,6 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
 
 import com.google.common.collect.Sets;
@@ -45,7 +45,6 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
-import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -69,7 +68,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String FAILED_PRECONDITIONS_CSV_FILENAME = "failed_preconditions.csv";
 
+	private static final String STATUS_CSV_FILENAME = "statuses.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
+
+	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
@@ -81,12 +84,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static Object[] buildAttributeColumnValues(Function function, Object... additionalColumnValues) {
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
-		String[] primaryColumns = new String[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
-				relativePath.toString() };
+		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
+				relativePath };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
 	}
+
+	private boolean alwaysCheckPythonSideEffects = Boolean.getBoolean(ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -113,7 +118,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
-							buildAttributeColumnNames("code", "message"));) {
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
+					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -126,7 +133,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
-					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project });
+					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
+							this.getAlwaysCheckPythonSideEffects());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -147,8 +155,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
 					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
-							.filter(f -> f.getStatus().getEntryMatchingCode(FrameworkUtil.getBundle(Function.class).getSymbolicName(),
-									PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE.getCode()) == null)
+							.filter(f -> f.isHybrid() != null && f.isHybrid()
+									|| f.getLikelyHasTensorParameter() != null && f.getLikelyHasTensorParameter())
 							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
@@ -175,40 +183,30 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						nonOptimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
 
 					// failed preconditions.
-					Collection<RefactoringStatusEntry> errorEntries = failures.parallelStream().map(Function::getStatus)
-							.flatMap(s -> Arrays.stream(s.getEntries())).filter(RefactoringStatusEntry::isError)
-							.collect(Collectors.toSet());
+					Collection<RefactoringStatusEntry> errorEntries = getRefactoringStatusEntries(failures,
+							RefactoringStatusEntry::isError);
 
 					resultsPrinter.print(errorEntries.size()); // number.
 
-					for (RefactoringStatusEntry entry : errorEntries) {
-						if (!entry.isFatalError()) {
-							Object correspondingElement = entry.getData();
+					printStatuses(errorPrinter, errorEntries);
 
-							if (!(correspondingElement instanceof Function))
-								throw new IllegalStateException("The element: " + correspondingElement
-										+ " corresponding to a failed precondition is not a Function. Instead, it is a: "
-										+ correspondingElement.getClass());
-
-							Function failedFunction = (Function) correspondingElement;
-
-							errorPrinter.printRecord(buildAttributeColumnValues(failedFunction, entry.getCode(), entry.getMessage()));
-						}
-					}
+					// general refactoring statuses.
+					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
+					printStatuses(statusPrinter, generalEntries);
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getRefactoring)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getRefactoring)
 								.filter(r -> Objects.equals(r, refactoringKind)).count());
 
 					// precondition success counts.
 					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getPassingPrecondition)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getPassingPrecondition)
 								.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
 
 					// transformation counts.
 					for (Transformation transformation : Transformation.values())
-						resultsPrinter.print(functions.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
+						resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
 					// actually perform the refactoring if there are no fatal errors.
@@ -238,15 +236,39 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return null;
 	}
 
+	private static Set<RefactoringStatusEntry> getRefactoringStatusEntries(Set<Function> functionSet,
+			Predicate<? super RefactoringStatusEntry> predicate) {
+		return functionSet.parallelStream().map(Function::getStatus).flatMap(s -> Arrays.stream(s.getEntries())).filter(predicate)
+				.collect(Collectors.toSet());
+	}
+
+	private static void printStatuses(CSVPrinter printer, Collection<RefactoringStatusEntry> entries) throws IOException {
+		for (RefactoringStatusEntry entry : entries) {
+			if (!entry.isFatalError()) {
+				Object correspondingElement = entry.getData();
+
+				if (!(correspondingElement instanceof Function))
+					throw new IllegalStateException("The element: " + correspondingElement + " is not a Function. Instead, it is a: "
+							+ correspondingElement.getClass());
+
+				Function function = (Function) correspondingElement;
+
+				printer.printRecord(buildAttributeColumnValues(function, function.getRefactoring(), entry.getSeverity(), entry.getCode(),
+						entry.getMessage()));
+			}
+		}
+	}
+
 	private static String[] buildFunctionAttributeColumnNames() {
-		return buildAttributeColumnNames("parameters", "tensor parameter", "hybrid", "autograph", "experimental_autograph_options",
-				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
-				"refactoring", "passing precondition", "status");
+		return buildAttributeColumnNames("method reference", "type reference", "parameters", "tensor parameter", "hybrid", "side-effects",
+				"autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
+				"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
-		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getNumberOfParameters(),
-				function.getLikelyHasTensorParameter(), function.isHybrid());
+		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
+				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid(),
+				function.getHasPythonSideEffects());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -321,5 +343,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}
 
 		return null;
+	}
+
+	public boolean getAlwaysCheckPythonSideEffects() {
+		return alwaysCheckPythonSideEffects;
 	}
 }

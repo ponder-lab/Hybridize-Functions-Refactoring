@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -40,6 +41,7 @@ import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -96,6 +98,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -139,6 +142,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String TEST_FILE_EXTENSION = "py";
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
+
+	/**
+	 * Check Python side-effects regardless if it's a candidate.
+	 */
+	private static final boolean ALWAYS_CHECK_PYTHON_SIDE_EFFECTS = true;
+
+	/**
+	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
+	 * much in way of speedup since each test has only a few {@link Function}s.
+	 */
+	private static final boolean PROCESS_FUNCTIONS_IN_PARALLEL = false;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -547,7 +561,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
 				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions);
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -568,6 +583,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private Set<Function> getFunctions() throws Exception {
 		return getFunctions("A");
+	}
+
+	/**
+	 * Returns the first {@link Function} in the default test file with the given identifier.
+	 *
+	 * @param functionIndentifier The {@link Function} to return.
+	 * @return The first {@link Function} in the default test file with the given identifier.
+	 */
+	private Function getFunction(String functionIndentifier) throws Exception {
+		Set<Function> functions = this.getFunctions();
+		return functions.stream().filter(f -> f.getIdentifier().equals(functionIndentifier)).findFirst().orElseThrow();
 	}
 
 	/**
@@ -607,6 +633,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertFalse(function.isHybrid());
 			assertFalse(function.getLikelyHasTensorParameter());
+
+			switch (function.getIdentifier()) {
+			case "Test.value":
+			case "Test.name":
+				checkSideEffectStatus(function);
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
@@ -819,6 +854,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// to return False.
 
 		assertNull(args);
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -843,6 +879,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & args.getAutoGraphParamExists()
 				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
 				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+
+		checkSideEffectStatus(function);
+	}
+
+	private static void checkSideEffectStatus(Function function) {
+		RefactoringStatus status = function.getStatus();
+		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
+		assertNull(function.getHasPythonSideEffects());
+		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
+		assertNotNull(entry);
 	}
 
 	/**
@@ -996,9 +1043,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(2, functions.size()); // one function is for the decorator.
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
+
+		functions.stream().forEach(f -> {
+			assertNotNull(f);
+			assertFalse(f.isHybrid());
+
+			if (f.getIdentifier().equals("func1"))
+				checkSideEffectStatus(f);
+		});
 	}
 
 	/**
@@ -1012,6 +1064,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1038,6 +1091,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1064,6 +1118,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1091,6 +1146,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.isHybrid());
+
+			if (func.getIdentifier().equals("dummy_func2"))
+				checkSideEffectStatus(func);
 		}
 	}
 
@@ -1106,6 +1164,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.isHybrid());
+			checkSideEffectStatus(func);
 		}
 	}
 
@@ -1121,6 +1180,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertTrue(func.isHybrid());
+			checkSideEffectStatus(func);
 		}
 	}
 
@@ -1164,6 +1224,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
+		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -2084,9 +2145,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
-
-	// TODO: Left off at https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables. The model is not going to work
-	// because call() is called implicitly. See https://github.com/wala/ML/issues/24.
 
 	/**
 	 * Test for #2. From https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#features. Example with closures.
@@ -4354,10 +4412,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				// NOTE: Should be error-free once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4386,10 +4449,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				// TODO: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4417,14 +4485,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
 			}
 		});
+	}
+
+	private static void checkOptimizationNotAvailableStatus(Function f) {
+		RefactoringStatus status = f.getStatus();
+		assertTrue("Should not be available for optimization.", status.hasError());
+		RefactoringStatusEntry noTensorsFailure = f.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS);
+		assertTrue(!f.isHybrid() || (noTensorsFailure != null && noTensorsFailure.isError()));
 	}
 
 	/**
@@ -4447,9 +4527,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4477,10 +4562,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
 				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				// Can't infer side-effects here because there's no invocation of this method.
+				checkSideEffectStatus(f);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4508,10 +4598,58 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (simpleName) {
 			case "__init__":
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				// TODO: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
+				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
 				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				// No invocation, so we won't be able to infer side-effects.
+				checkSideEffectStatus(f);
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
+	}
+
+	/**
+	 * Test a model. No tf.function in this one. Explicit call method. Unlike testModel3, there are Python side-effects in
+	 * SequentialModel.__init__() and SequentialModel.call().
+	 *
+	 * @see HybridizeFunctionRefactoringTest#testModel3
+	 */
+	@Test
+	public void testModel7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting two functions.", 3, functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
+				break;
+			case "get_stuff":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertFalse(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
+				break;
+			case "call":
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Should have python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4556,4 +4694,769 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// it's not hybrid but it has a tensor parameter. Let's make it hybrid.
 		testPreconditionCheckingHelper(false, true, Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, Transformation.CONVERT_TO_HYBRID, P1);
 	}
+
+	@Test
+	public void testPythonSideEffects() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects2() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a call to a TF operation. So, no "Python" side-effects.
+		assertFalse("TF operations shouldn't be considered Python side-effects.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects3() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a transitive Python side-effect.
+		assertTrue("Expecting a Python side-effect from a transitive local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects4() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		// there's a Python statement but no side-effect.
+		assertFalse("This Python statement only modifies a local variable, so no side-effects.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects5() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects6() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects. Multiple calls to the function.
+		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test transitive side-effects in the same file.
+	 */
+	@Test
+	public void testPythonSideEffects7() throws Exception {
+		Set<Function> functionSet = getFunctions();
+		assertEquals(2, functionSet.size());
+		testTransitivePythonSideEffects(functionSet);
+	}
+
+	private static void testTransitivePythonSideEffects(Set<Function> functionSet) {
+		functionSet.forEach(f -> {
+			assertFalse(f.isHybrid());
+			assertFalse(f.getLikelyHasTensorParameter());
+
+			switch (f.getIdentifier()) {
+			case "f":
+			case "g":
+				// there's a Python statement with (transitive) side-effects.
+				assertTrue("This Python statement modifies a global variable, so it has side-effects.", f.getHasPythonSideEffects());
+				break;
+
+			default:
+				fail("Not expecting: " + f.getIdentifier() + ".");
+				break;
+			}
+		});
+	}
+
+	/**
+	 * Returns the only function defined in the default test file.
+	 *
+	 * @return The only function defined in the default test file.
+	 */
+	private Function getSingleFunction() throws Exception {
+		return getSingleFunction(this.getFunctions());
+	}
+
+	/**
+	 * Returns the only function defined in the given test file.
+	 *
+	 * @param fileNameWithoutExtension The name of the file declaring the function without a file extension.
+	 * @return The only function defined in the test file.
+	 */
+	private Function getSingleFunction(String fileNameWithoutExtension) throws Exception {
+		return getSingleFunction(this.getFunctions(fileNameWithoutExtension));
+	}
+
+	/**
+	 * Returns the only function contained in the given set of functions.
+	 *
+	 * @param functions The set of functions containing only one function.
+	 * @return The sole function contained in the given set of functions.
+	 */
+	private static Function getSingleFunction(Set<Function> functions) {
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		return function;
+	}
+
+	/**
+	 * Test transitive side-effects in different files.
+	 */
+	@Test
+	public void testPythonSideEffects8() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("g", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		testTransitivePythonSideEffects(functionSet);
+	}
+
+	/**
+	 * Like testPythonSideEffects but only a single call. Simplifies the call graph since there seems to be a node for each call to a
+	 * function.
+	 *
+	 * @see HybridizeFunctionRefactoringTest#testPythonSideEffects
+	 */
+	@Test
+	public void testPythonSideEffects9() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test write().
+	 */
+	@Test
+	public void testPythonSideEffects10() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
+		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test writelines().
+	 */
+	@Test
+	public void testPythonSideEffects11() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
+		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects12() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement modifies a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects13() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects14() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a lambda to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects15() throws Exception {
+		Function function = getSingleFunction();
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement uses a loop to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects16() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("This Python statement uses a list comprehension to modify a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects17() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// NOTE: Switch to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/274 is fixed.
+		assertFalse("This Python statement uses a lambda to modify a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects18() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects19() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects20() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
+				f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects21() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.isHybrid());
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects22() throws Exception {
+		Set<Function> functionSet = getFunctions();
+
+		for (Function f : functionSet) {
+			assertFalse(f.isHybrid());
+			assertFalse(f.getLikelyHasTensorParameter());
+			assertFalse("This Python statement (transitively) uses a list comprehension to modify a local variable.",
+					f.getHasPythonSideEffects());
+		}
+	}
+
+	@Test
+	public void testPythonSideEffects23() throws Exception {
+		Set<Function> functionSet = getFunctions();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+			case "fun_with_side_effects":
+				assertFalse(function.isHybrid());
+				assertFalse(function.getLikelyHasTensorParameter());
+				// there's a Python statement with side-effects.
+				assertTrue("This Python statement (transitively) uses a list comprehension to modify a global variable.",
+						function.getHasPythonSideEffects());
+				break;
+			case "h":
+				assertFalse(function.getHasPythonSideEffects());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testPythonSideEffects24() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse("This Python statement (transitively) uses a lambda to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects25() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with no side-effects.
+		assertFalse("This Python statement (transitively) uses a loop to modify a local variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects26() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects27() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// there's a Python statement with side-effects.
+		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects28() throws Exception {
+		Map<String, Set<Function>> map = this.getFunctions().stream()
+				.collect(Collectors.groupingBy(Function::getIdentifier, Collectors.toSet()));
+
+		assertEquals(2, map.size());
+
+		map.get("f").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertFalse(s));
+		map.get("g").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertTrue(s));
+	}
+
+	@Test
+	public void testPythonSideEffects29() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
+				f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects30() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Removed the global keyword from g().", f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse("Function g() modifies a lobal variable (removed the global keyword).", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects31() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects32() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse(g.getHasPythonSideEffects());
+
+		Function h = this.getFunction("h");
+		assertTrue(h.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects33() throws Exception {
+		Function g = getFunction("g");
+		assertFalse("g() only returns the parameter.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects34() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getHasPythonSideEffects());
+
+		Function g = getFunction("g");
+		assertFalse("g() modifies a copy of a parameter.", g.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects35() throws Exception {
+		Function function = getFunction("side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects36() throws Exception {
+		Function function = getFunction("side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects37() throws Exception {
+		Function function = getFunction("no_side_effect");
+
+		assertTrue(function.isHybrid());
+		assertFalse("no_side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
+		assertFalse("no_side_effect() doesn't modifies a global list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects38() throws Exception {
+		Function function = getFunction("Model.__call__");
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// Change to assertTrue() once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed:
+		assertNull(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects39() throws Exception {
+		Function function = getFunction("Model.__call__");
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects40() throws Exception {
+		Function function = getFunction("buggy_consume_next");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/278 is fixed:
+		assertFalse("next() moves the iterator's cursor, and the iterator is over a list.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects41() throws Exception {
+		Function function = getFunction("good_consume_next");
+
+		assertTrue(function.isHybrid());
+		assertFalse("iterator still isn't a tensor. I wonder if you get speedup from that.", function.getLikelyHasTensorParameter());
+		assertFalse("next() moves the iterator's cursor, but the iterator is over a dataset.", function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects42() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects43() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects44() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+
+		assertTrue(function.getStatus().isOK());
+		assertTrue(function.getRefactoring() == Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID);
+		assertTrue(function.getPassingPrecondition() == PreconditionSuccess.P1);
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), function.getTransformations());
+	}
+
+	@Test
+	public void testPythonSideEffects45() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		// This is a hybrid function, so the refactoring should be OPTIMIZE_HYBRID_FUNCTION.
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+
+		assertTrue(function.getLikelyHasTensorParameter());
+		// In table 2, we need it not to have a tensor parameter to de-hybridize, so this is a "failure."
+		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS).isError());
+
+		assertTrue(function.getHasPythonSideEffects());
+		// We also can't de-hybridize if it has Python side-effects. So, that's an error.
+		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS).isError());
+		// Also, we have a hybrid function with Python side-effects. Let's warn about that.
+		assertEquals(1, Arrays.stream(function.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
+				.filter(s -> s == RefactoringStatus.WARNING).count());
+
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
+	@Test
+	public void testPythonSideEffects46() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+
+		// We have an eager function with a tensor parameter but Python side-effects. Should be a P1 failure.
+		assertFalse(status.isOK());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertEquals(Collections.emptySet(), function.getTransformations());
+	}
+
+	@Test
+	public void testPythonSideEffects47() throws Exception {
+		Function leakyFunction = getFunction("leaky_function");
+
+		assertTrue(leakyFunction.isHybrid());
+		assertTrue(leakyFunction.getLikelyHasTensorParameter());
+		assertTrue(leakyFunction.getHasPythonSideEffects());
+
+		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
+
+		assertTrue(capturesLeakedTensor.isHybrid());
+		assertTrue(capturesLeakedTensor.getLikelyHasTensorParameter());
+
+		// NOTE: This function doesn't have Python side-effects, but it does capture a "leaky" tensor. See
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281.
+		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
+
+		assertFalse(capturesLeakedTensor.getStatus().isOK());
+		assertTrue(capturesLeakedTensor.getStatus().hasError());
+		assertFalse(capturesLeakedTensor.getStatus().hasFatalError());
+		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
+		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
+
+		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 0,
+				Arrays.stream(capturesLeakedTensor.getStatus().getEntries()).map(RefactoringStatusEntry::getSeverity)
+						.filter(s -> s == RefactoringStatus.WARNING).count());
+
+		assertNotNull(capturesLeakedTensor.getRefactoring());
+		assertEquals("P2 \"failure.\"", Refactoring.OPTIMIZE_HYBRID_FUNCTION, capturesLeakedTensor.getRefactoring());
+		assertNull(capturesLeakedTensor.getPassingPrecondition());
+		assertTrue(capturesLeakedTensor.getTransformations().isEmpty());
+
+		long warningCount = Arrays.stream(capturesLeakedTensor.getStatus().getEntries())
+				.filter(e -> e.getSeverity() == RefactoringStatus.WARNING).count();
+
+		// NOTE: Change to assertEquals(..., 1, ...) when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		// NOTE: Add assertEquals(RefactoringStatus.WARNING, entry.getSeverity()) when
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertEquals("Warn about a hybrid function that leaks as a potential tensor.", 0, warningCount);
+	}
+
+	@Test
+	public void testPythonSideEffects48() throws Exception {
+		Function leakyFunction = getFunction("leaky_function");
+
+		assertTrue(leakyFunction.isHybrid());
+		assertTrue(leakyFunction.getLikelyHasTensorParameter());
+		assertTrue(leakyFunction.getHasPythonSideEffects());
+
+		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
+
+		assertFalse(capturesLeakedTensor.isHybrid());
+		assertTrue(capturesLeakedTensor.getLikelyHasTensorParameter());
+
+		// NOTE: This function doesn't have Python side-effects, but it does capture a "leaky" tensor. See
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281.
+		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
+
+		// NOTE: Change to assertFalse once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertTrue("Passes P1.", capturesLeakedTensor.getStatus().isOK());
+
+		assertFalse(capturesLeakedTensor.getStatus().hasWarning());
+		// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertFalse(capturesLeakedTensor.getStatus().hasError());
+
+		assertNotNull(capturesLeakedTensor.getRefactoring());
+		assertEquals("We shouldn't refactor this but we do currently. Nevertheless, the refactoring kind should remain intact.",
+				Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, capturesLeakedTensor.getRefactoring());
+
+		// NOTE: Change to assertNull once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertNotNull(capturesLeakedTensor.getPassingPrecondition());
+		assertEquals("We really shouldn't refactor this.", capturesLeakedTensor.getPassingPrecondition(), PreconditionSuccess.P1);
+
+		// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
+		assertFalse(capturesLeakedTensor.getTransformations().isEmpty());
+		assertEquals("We really shouldn't transform this.", Collections.singleton(Transformation.CONVERT_TO_HYBRID),
+				capturesLeakedTensor.getTransformations());
+	}
+
+	@Test
+	public void testPythonSideEffects49() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		// This is a P1 failure.
+		RefactoringStatus status = function.getStatus();
+		assertFalse(status.isOK());
+		assertTrue(status.hasError());
+		assertFalse(status.hasFatalError());
+
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertEquals(RefactoringStatus.ERROR, entry.getSeverity());
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), entry.getCode());
+		assertEquals(function, entry.getData());
+
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
+	@Test
+	public void testPythonSideEffects50() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+		assertFalse("This is a P1 failure.", status.isOK());
+		assertTrue(status.hasError());
+		assertFalse(status.hasFatalError());
+
+		RefactoringStatusEntry[] statusEntries = status.getEntries();
+		assertEquals(2, statusEntries.length);
+
+		assertTrue(Arrays.stream(statusEntries).map(RefactoringStatusEntry::getSeverity)
+				.allMatch(s -> Objects.equals(s, RefactoringStatus.ERROR)));
+
+		assertTrue(Arrays.stream(statusEntries).map(RefactoringStatusEntry::getData).allMatch(d -> Objects.equals(d, function)));
+
+		Map<Integer, List<RefactoringStatusEntry>> codeToEntry = Arrays.stream(statusEntries)
+				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
+
+		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS.getCode()).size());
+		assertEquals(1, codeToEntry.get(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()).size());
+
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
+	@Test
+	public void testPythonSideEffects51() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects52() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects53() throws Exception {
+		Function function = getFunction("not_leaky_function");
+
+		assertFalse(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects54() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
+		assertEquals(2, status.getEntries().length);
+		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+	}
+
+	@Test
+	public void testPythonSideEffects55() throws Exception {
+		Function function = getFunction("leaky_function");
+
+		assertTrue(function.isHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.getHasPythonSideEffects());
+
+		RefactoringStatus status = function.getStatus();
+		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
+				status.hasError());
+		assertEquals(0, status.getEntries().length);
+
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(PreconditionSuccess.P2, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
+	}
+
+	@Test
+	public void testPythonSideEffects56() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Keyword argument assignments shouldn't be considered as heap writes.", f.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects57() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+	}
+
+	@Test
+	public void testPythonSideEffects58() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("Decorated embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+	}
+
+	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
 }

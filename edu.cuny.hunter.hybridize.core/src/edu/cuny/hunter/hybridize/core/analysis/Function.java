@@ -5,12 +5,20 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
+import static java.lang.Boolean.FALSE;
+import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
@@ -19,6 +27,7 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -33,18 +42,34 @@ import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.google.common.collect.Sets.SetView;
+import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.modref.ModRef;
+import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.intset.OrdinalSet;
 
-import edu.cuny.citytech.refactoring.common.core.RefactorableProgramEntity;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
+import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
 /**
  * A representation of a Python function.
@@ -52,7 +77,16 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
-public class Function extends RefactorableProgramEntity {
+public class Function {
+
+	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
+
+	private final class FunctionStatusContext extends RefactoringStatusContext {
+		@Override
+		public Object getCorrespondingElement() {
+			return Function.this;
+		}
+	}
 
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
@@ -273,6 +307,11 @@ public class Function extends RefactorableProgramEntity {
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
+	 * True iff verbose output is desired.
+	 */
+	private static final boolean VERBOSE = false;
+
+	/**
 	 * This {@link Function}'s associated hybridization parameters.
 	 */
 	private Function.HybridizationParameters hybridizationParameters;
@@ -291,6 +330,11 @@ public class Function extends RefactorableProgramEntity {
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private Boolean likelyHasTensorParameter;
+
+	/**
+	 * True iff this {@link Function} has Python side-effects.
+	 */
+	private Boolean hasPythonSideEffects;
 
 	/**
 	 * TODO: Populate.
@@ -312,8 +356,249 @@ public class Function extends RefactorableProgramEntity {
 
 	private RefactoringStatus status = new RefactoringStatus();
 
+	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
+
 	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
+	}
+
+	/**
+	 * Infer Python side-effects potentially produced by executing this {@link Function}.
+	 *
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given
+	 *         {@link CallGraph}.
+	 */
+	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis)
+			throws UndeterminablePythonSideEffectsException {
+		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
+		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
+
+		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
+		// the current representation. It seems that there is a declaration node for each call to the function. Each node has a different
+		// calling context.
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		if (nodes.isEmpty())
+			throw new UndeterminablePythonSideEffectsException(this.getMethodReference());
+
+		// Only consider the first node. The calling context shouldn't matter for us right now.
+		CGNode cgNode = nodes.iterator().next();
+
+		// Get the locations (pointers) modified by this function.
+		OrdinalSet<PointerKey> modSet = mod.get(cgNode);
+		LOG.info("Found " + modSet.size() + " original modified location(s).");
+		modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
+
+		// Filter out the modified locations.
+		Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph, pointerAnalysis);
+		LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
+		filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
+
+		// Log the locations we are removing.
+		SetView<PointerKey> removed = Sets.difference(Sets.newHashSet(modSet), filteredModSet);
+		LOG.info("Removed " + removed.size() + " locations.");
+		removed.forEach(pk -> LOG.info("Removed modified location: " + pk + "."));
+
+		if (!filteredModSet.isEmpty()) {
+			this.setHasPythonSideEffects(TRUE);
+			LOG.info(this + " has side-effects.");
+			return;
+		}
+
+		this.setHasPythonSideEffects(FALSE);
+		LOG.info(this + " does not have side-effects.");
+	}
+
+	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<PointerKey> ret = new HashSet<>();
+
+		for (PointerKey pointerKey : modSet) {
+			if (pointerKey instanceof InstanceFieldPointerKey) {
+				InstanceFieldPointerKey fieldPointerKey = (InstanceFieldPointerKey) pointerKey;
+				InstanceKey instanceKey = fieldPointerKey.getInstanceKey();
+
+				if (allCreationsWithinClosure(this.getMethodReference(), instanceKey, callGraph))
+					continue; // filter this pointer out.
+
+				ret.add(fieldPointerKey);
+			} else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+				boolean skipPointerKey = true;
+
+				for (InstanceKey ik : pointsToSet)
+					skipPointerKey &= allCreationsWithinClosure(this.getMethodReference(), ik, callGraph);
+
+				if (skipPointerKey && !pointsToSet.isEmpty())
+					continue; // filter this pointer out.
+
+				ret.add(pointerKey);
+			} else if (pointerKey instanceof AstGlobalPointerKey) {
+				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
+
+				if (globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY))
+					ret.add(globalPointerKey);
+				else
+					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
+			} else
+				throw new IllegalArgumentException("Not expecting pointer key: " + pointerKey + " of type: " + pointerKey.getClass() + ".");
+		}
+
+		return ret;
+	}
+
+	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
+		Set<MethodReference> seen = Sets.newHashSet();
+		return allCreationsWithinClosureInteral(methodReference, instanceKey, callGraph, seen);
+
+	}
+
+	private static boolean allCreationsWithinClosureInteral(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
+			Set<MethodReference> seen) {
+		Map<InstanceKey, Map<CallGraph, Boolean>> cache2 = creationsCache.get(methodReference);
+
+		if (cache2 != null) {
+			Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
+
+			if (cache3 != null) {
+				Boolean result = cache3.get(callGraph);
+
+				if (result != null)
+					return result;
+			}
+		}
+
+		boolean result = allCreationsWithinClosureInteral2(methodReference, instanceKey, callGraph, seen);
+
+		if (cache2 == null) {
+			cache2 = Maps.newHashMap();
+			creationsCache.put(methodReference, cache2);
+		}
+
+		Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
+
+		if (cache3 == null) {
+			cache3 = Maps.newHashMap();
+			cache2.put(instanceKey, cache3);
+		}
+
+		Boolean previous = cache3.put(callGraph, result);
+		assert previous == null : "Should be a new key.";
+
+		return result;
+	}
+
+	private static boolean allCreationsWithinClosureInteral2(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
+			Set<MethodReference> seen) {
+		seen.add(methodReference);
+
+		// check this function.
+		if (allCreationsWithin(methodReference, instanceKey, callGraph))
+			return true;
+
+		// otherwise, check its callees.
+		Set<CGNode> cgNodes = getNodes(methodReference, callGraph);
+
+		if (cgNodes.isEmpty())
+			throw new IllegalArgumentException("Can't find call graph nodes corresponding to: " + methodReference + ".");
+
+		// Only consider the first node. The only difference should be the calling context, which shouldn't make a difference for us.
+		CGNode node = cgNodes.iterator().next();
+
+		// check the callees.
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode next = succNodes.next();
+			MethodReference reference = next.getMethod().getReference();
+
+			if (!seen.contains(reference)) {
+				seen.add(reference);
+
+				if (allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
+					return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static boolean allCreationsWithin(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
+		int numCreations = 0;
+
+		// for each creation site of the given instance.
+		for (Iterator<Pair<CGNode, NewSiteReference>> it = instanceKey.getCreationSites(callGraph); it.hasNext();) {
+			Pair<CGNode, NewSiteReference> creationSite = it.next();
+			CGNode creationNode = creationSite.fst;
+			NewSiteReference newSiteReference = creationSite.snd;
+
+			// is this instance being created outside this function?
+			if (!(creationNode.getMethod().getReference().equals(methodReference)
+					|| newSiteReference.getDeclaredType().equals(methodReference.getDeclaringClass())))
+				return false;
+
+			++numCreations;
+		}
+
+		if (numCreations == 0) // if there are no creations.
+			// then, they can't be within this method.
+			return false;
+
+		return true;
+	}
+
+	/**
+	 * Get the {@link CallGraph} nodes corresponding to this {@link Function}.
+	 *
+	 * @param callGraph The {@link CallGraph} to search.
+	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
+	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
+	 */
+	private Set<CGNode> getNodes(CallGraph callGraph) {
+		return getNodes(this.getMethodReference(), callGraph);
+	}
+
+	/**
+	 * Get the {@link CallGraph} nodes corresponding to the given {@link MethodReference}.
+	 *
+	 * @param methodReference The method to search for.
+	 * @param callGraph The {@link CallGraph} to search.
+	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
+	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
+	 */
+	private static Set<CGNode> getNodes(MethodReference methodReference, CallGraph callGraph) {
+		Set<CGNode> nodes = callGraph.getNodes(methodReference);
+
+		if (nodes.isEmpty()) {
+			LOG.error("Can't get call graph nodes for: " + methodReference + ".");
+
+			if (VERBOSE) {
+				LOG.info("Method reference is: " + methodReference + ".");
+				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+			}
+		}
+
+		LOG.info("Found " + nodes.size() + " node(s) corresponding to: " + methodReference + ".");
+
+		if (VERBOSE)
+			LOG.info("Nodes:\n" + nodes.stream().map(Objects::toString).collect(Collectors.joining("\n")));
+
+		return nodes;
+	}
+
+	public MethodReference getMethodReference() {
+		TypeReference typeReference = getDeclaringClass();
+		return MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
+	}
+
+	public TypeReference getDeclaringClass() {
+		File containingFile = this.getContainingFile();
+		String filename = containingFile.getName();
+		String modifiedIdentifier = this.getIdentifier().replace('.', '/');
+		String typeName = "Lscript " + filename + "/" + modifiedIdentifier;
+
+		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
@@ -580,46 +865,68 @@ public class Function extends RefactorableProgramEntity {
 		return false;
 	}
 
-	private void addStatusEntry(PreconditionFailure failure, String message) {
-		RefactoringStatusContext context = new RefactoringStatusContext() {
+	public void addFailure(PreconditionFailure failure, String message) {
+		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
+		assert this.getHasPythonSideEffects() == null
+				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
-			@Override
-			public Object getCorrespondingElement() {
-				return Function.this.getFunctionDefinition().getFunctionDef();
-			}
-		};
+		RefactoringStatusContext context = new FunctionStatusContext();
+		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
+	}
 
-		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, FrameworkUtil.getBundle(Function.class).getSymbolicName(),
-				failure.getCode(), this);
+	public void addWarning(String message) {
+		RefactoringStatusContext context = new FunctionStatusContext();
+		this.getStatus().addEntry(RefactoringStatus.WARNING, message, context, PLUGIN_ID, RefactoringStatusEntry.NO_CODE, this);
 	}
 
 	/**
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		// we can't refactor it if either it doesn't have a tensor parameter or it's not currently hybrid.
-		if (!(this.getLikelyHasTensorParameter() || this.isHybrid()))
-			this.addStatusEntry(PreconditionFailure.OPTIMIZATION_NOT_AVAILABLE,
-					"This function is not available for optimization. Either the function must have a tensor-like parameter or be currently hybrid.");
+		if (!this.isHybrid()) { // Eager. Table 1.
+			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
-		// if this is not a hybrid function.
-		if (!this.isHybrid()) {
-			// but it likely has a tensor parameter.
 			if (this.getLikelyHasTensorParameter()) {
-				// hybridize it.
-				this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
-				this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-				this.setPassingPrecondition(P1);
+				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+					this.setPassingPrecondition(P1);
+				} else if (this.getHasPythonSideEffects() != null)  // it has side-effects.
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+			} else { // no tensor parameters.
+				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
+						"This function has no tensor parameters and may not benefit from hybridization.");
+
+				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
-		} else { // this is a hybrid function.
-			// but it does not likely have a tensor parameter.
+		} else { // Hybrid. Use table 2.
+			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
+
 			if (!this.getLikelyHasTensorParameter()) {
-				// de-hybridize it.
-				this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
-				this.addTransformation(CONVERT_TO_EAGER);
-				this.setPassingPrecondition(P2);
+				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+					this.addTransformation(CONVERT_TO_EAGER);
+					this.setPassingPrecondition(P2);
+				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+							"De-hybridizing a function with Python side-effects may alter semantics.");
+			} else { // it has a tensor parameter.
+				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
+						"Functions with tensor parameters may benefit from hybreidization.");
+
+				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
+					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+							"De-hybridizing a function with Python side-effects may alter semantics.");
+				}
 			}
+
+			// Warn if the function has side-effects.
+			if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
+	}
+
+	public boolean willDehybridize() {
+		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
 	public IDocument getContainingDocument() {
@@ -771,4 +1078,53 @@ public class Function extends RefactorableProgramEntity {
 	public void setRefactoring(Refactoring refactoring) {
 		this.refactoring = refactoring;
 	}
+
+	public Boolean getHasPythonSideEffects() {
+		return this.hasPythonSideEffects;
+	}
+
+	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
+		assert this.hasPythonSideEffects == null : "Can only set side-effects once.";
+		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(PLUGIN_ID,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
+
+		this.hasPythonSideEffects = hasPythonSideEffects;
+	}
+
+	/**
+	 * Returns true iff there is at most one {@link RefactoringStatusEntry} for a particular kind of failure.
+	 *
+	 * @apiNote This is to prevent counting a single kind of failure multiple times. Though that may be valid, I don't believe we have a
+	 *          situation like this currently.
+	 * @return True iff there is at most one failure per failure kind.
+	 */
+	public boolean hasOnlyOneFailurePerKind() {
+		Map<Integer, List<RefactoringStatusEntry>> failureCodeToEntries = Arrays.stream(this.getStatus().getEntries())
+				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
+
+		for (Integer code : failureCodeToEntries.keySet()) {
+			List<RefactoringStatusEntry> failuresForCode = failureCodeToEntries.get(code);
+			if (failuresForCode.size() > 1)
+				return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Returns the first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in this {@link Function}'s
+	 * {@link RefactoringStatus}.
+	 *
+	 * @param failure The {@link PreconditionFailure} whose {@link RefactoringStatusEntry} to find.
+	 * @return The first {@link RefactoringStatusEntry} matching the given {@link PreconditionFailure}'s code in this {@link Function}'s
+	 *         {@link RefactoringStatus}.
+	 */
+	public RefactoringStatusEntry getEntryMatchingFailure(PreconditionFailure failure) {
+		return this.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, failure.getCode());
+	}
+
+	public static void clearCaches() {
+		creationsCache.clear();
+	}
+
 }

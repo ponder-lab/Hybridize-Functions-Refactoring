@@ -141,7 +141,6 @@
     <module name="OneStatementPerLine"/>
     <module name="MultipleVariableDeclarations"/>
     <module name="ArrayTypeStyle"/>
-    <module name="MissingSwitchDefault"/>
     <module name="FallThrough"/>
     <module name="UpperEll"/>
     <module name="ModifierOrder"/>
@@ -262,7 +261,7 @@
       <property name="caseIndent" value="0"/>
       <property name="throwsIndent" value="4"/>
       <property name="lineWrappingIndentation" value="4"/>
-      <property name="arrayInitIndent" value="2"/>
+      <property name="arrayInitIndent" value="16"/>
     </module>
     <module name="AbbreviationAsWordInName">
       <!-- <property name="ignoreFinal" value="false"/> -->
