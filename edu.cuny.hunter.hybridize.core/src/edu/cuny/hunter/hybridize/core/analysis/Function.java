@@ -81,6 +81,19 @@ public class Function {
 
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
+	private final class DecoratorContext extends RefactoringStatusContext {
+		private final decoratorsType decorator;
+
+		private DecoratorContext(decoratorsType decorator) {
+			this.decorator = decorator;
+		}
+
+		@Override
+		public Object getCorrespondingElement() {
+			return decorator;
+		}
+	}
+
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
 		public Object getCorrespondingElement() {
@@ -796,21 +809,24 @@ public class Function {
 
 					if (Util.isGenerated(decorator)) {
 						// Since tf.function isn't generated, skip generated decorators.
-						LOG.info(String.format(
+						String msg = String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-						// TODO: Add info status here (#120).
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project);
+						LOG.info(msg);
+						this.getStatus().addInfo(containingFileName, new DecoratorContext(decorator));
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
-						LOG.info(String.format(
+						String msg = String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
-								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-						// TODO: Add info status here (#120).
+								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project);
+						LOG.info(msg);
+						this.getStatus().addInfo(msg, new DecoratorContext(decorator));
 					} else {
-						LOG.warn(String.format(
+						String msg = String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
-								nature.getProject()), e);
+								nature.getProject());
+						LOG.warn(msg, e);
 
 						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
 						// status entry would fail the entire function.
