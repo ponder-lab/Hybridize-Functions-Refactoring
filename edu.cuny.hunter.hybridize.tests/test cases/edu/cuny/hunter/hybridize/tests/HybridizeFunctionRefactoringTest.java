@@ -149,6 +149,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean ALWAYS_CHECK_PYTHON_SIDE_EFFECTS = true;
 
 	/**
+	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
+	 * much in way of speedup since each test has only a few {@link Function}s.
+	 */
+	private static final boolean PROCESS_FUNCTIONS_IN_PARALLEL = false;
+
+	/**
 	 * Add a module to the given {@link IPythonNature}.
 	 *
 	 * @param ast the ast that defines the module
@@ -556,7 +562,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
-				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS);
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 

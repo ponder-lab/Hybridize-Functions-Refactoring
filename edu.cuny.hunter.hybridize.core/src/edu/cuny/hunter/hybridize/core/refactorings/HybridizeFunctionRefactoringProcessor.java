@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
@@ -25,7 +26,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
+import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This exception sounds too low-level. */
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
@@ -100,6 +101,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckPythonSideEffects;
 
+	private boolean processFunctionsInParallel = true;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
@@ -113,7 +116,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) throws TooManyMatchesException {
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel) {
+		this(alwaysCheckPythonSideEffects);
+		this.processFunctionsInParallel = processFunctionsInParallel;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
 
 		// Convert the FunctionDefs to Functions.
@@ -130,9 +139,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects)
-			throws TooManyMatchesException {
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this(functionDefinitionSet);
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects);
+		this.processFunctionsInParallel = processFunctionsInParallel;
 	}
 
 	@Override
@@ -208,7 +223,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
-			projectFunctions.parallelStream().forEach(func -> {
+			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
 				// Find out if it's hybrid via the tf.function decorator.
@@ -255,6 +270,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 
 		return status;
+	}
+
+	/**
+	 * Returns a {@link Stream} of {@link Function}s. Properties of the stream are dependent on the state of this
+	 * {@link HybridizeFunctionRefactoringProcessor}.
+	 *
+	 * @param functions The {@link Set} of {@link Function}s from which to derive a {@link Stream}.
+	 * @return A potentially parallel {@link Stream} of {@link Function}s.
+	 */
+	private Stream<Function> getStream(Set<Function> functions) {
+		Stream<Function> stream = functions.stream();
+		return this.getProcessFunctionsInParallel() ? stream.parallel() : stream;
 	}
 
 	private TensorTypeAnalysis computeTensorTypeAnalysis(EclipsePythonProjectTensorAnalysisEngine engine,
@@ -371,5 +398,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public Map<IProject, TensorTypeAnalysis> getProjectToTensorTypeAnalysis() {
 		return projectToTensorTypeAnalysis;
+	}
+
+	/**
+	 * True iff project functions should be processed in parallel. Otherwise, they are processed sequentially.
+	 *
+	 * @return True iff project functions should be processed in parallel.
+	 */
+	private boolean getProcessFunctionsInParallel() {
+		return this.processFunctionsInParallel;
 	}
 }
