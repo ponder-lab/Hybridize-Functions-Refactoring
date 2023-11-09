@@ -208,52 +208,50 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
-			projectFunctions.stream()
-					.filter(f -> f.getIdentifier().equals("main") && f.getContainingModuleName().equals("pretrain_paired_tf"))
-					.forEach(func -> {
-						LOG.info("Checking function: " + func + ".");
+			projectFunctions.parallelStream().forEach(func -> {
+				LOG.info("Checking function: " + func + ".");
 
-						// Find out if it's hybrid via the tf.function decorator.
-						try {
-							func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
-						} catch (BadLocationException e) {
-							throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
-						}
+				// Find out if it's hybrid via the tf.function decorator.
+				try {
+					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+				} catch (BadLocationException e) {
+					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
+				}
 
-						try {
-							func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
-						} catch (BadLocationException e) {
-							throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
-						}
+				try {
+					func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
+				} catch (BadLocationException e) {
+					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
+				}
 
-						// Check Python side-effects.
-						try {
-							if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid() || func.getLikelyHasTensorParameter())
-								func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
-						} catch (UndeterminablePythonSideEffectsException e) {
-							LOG.warn("Unable to infer side-effects of: " + func + ".", e);
-							func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
-									"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
-							// next function.
-							status.merge(func.getStatus());
-							subMonitor.worked(1);
-							return;
-						}
+				// Check Python side-effects.
+				try {
+					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid() || func.getLikelyHasTensorParameter())
+						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
+				} catch (UndeterminablePythonSideEffectsException e) {
+					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
+							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
+					// next function.
+					status.merge(func.getStatus());
+					subMonitor.worked(1);
+					return;
+				}
 
-						// check the function preconditions.
-						func.check();
+				// check the function preconditions.
+				func.check();
 
-						status.merge(checkParameters(func));
-						subMonitor.checkCanceled();
+				status.merge(checkParameters(func));
+				subMonitor.checkCanceled();
 
-						status.merge(checkDecorators(func));
-						subMonitor.checkCanceled();
+				status.merge(checkDecorators(func));
+				subMonitor.checkCanceled();
 
-						status.merge(func.getStatus());
-						subMonitor.worked(1);
+				status.merge(func.getStatus());
+				subMonitor.worked(1);
 
-						assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
-					});
+				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
+			});
 		}
 
 		return status;
