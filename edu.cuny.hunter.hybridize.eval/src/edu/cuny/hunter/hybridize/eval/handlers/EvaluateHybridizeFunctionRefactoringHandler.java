@@ -159,7 +159,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
 					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
-							.filter(f -> f.isHybrid() != null && f.isHybrid()
+							.filter(f -> f.getIsHybrid() != null && f.getIsHybrid()
 									|| f.getLikelyHasTensorParameter() != null && f.getLikelyHasTensorParameter())
 							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
@@ -271,7 +271,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
-				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.isHybrid(),
+				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.getIsHybrid(),
 				function.getHasPythonSideEffects());
 
 		for (Object columnValue : initialColumnValues)

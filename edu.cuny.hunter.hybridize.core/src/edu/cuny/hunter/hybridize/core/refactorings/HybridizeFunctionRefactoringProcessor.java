@@ -241,7 +241,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check Python side-effects.
 				try {
-					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid() || func.getLikelyHasTensorParameter())
+					if (this.getAlwaysCheckPythonSideEffects() || func.getIsHybrid() || func.getLikelyHasTensorParameter())
 						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);

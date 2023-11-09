@@ -818,7 +818,7 @@ public class Function {
 				}
 
 				if (hybrid) {
-					this.isHybrid = Boolean.TRUE;
+					this.setIsHybrid(TRUE);
 					LOG.info(this + " is hybrid.");
 
 					// Compute the hybridization parameters since we know now that this function is hybrid.
@@ -833,7 +833,7 @@ public class Function {
 			}
 		}
 
-		this.isHybrid = Boolean.FALSE;
+		this.setIsHybrid(FALSE);
 		LOG.info(this + " is not hybrid.");
 		monitor.done();
 	}
@@ -883,14 +883,14 @@ public class Function {
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		if (!this.isHybrid()) { // Eager. Table 1.
+		if (!this.getIsHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter()) {
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 					this.setPassingPrecondition(P1);
-				} else if (this.getHasPythonSideEffects() != null)  // it has side-effects.
+				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			} else { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
@@ -996,8 +996,12 @@ public class Function {
 	 *
 	 * @return True iff this {@link Function} is hybrid, i.e., whether it is decorated with tf.function.
 	 */
-	public Boolean isHybrid() {
+	public Boolean getIsHybrid() {
 		return this.isHybrid;
+	}
+
+	protected void setIsHybrid(Boolean isHybrid) {
+		this.isHybrid = isHybrid;
 	}
 
 	/**

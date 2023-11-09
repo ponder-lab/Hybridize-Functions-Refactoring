@@ -127,7 +127,7 @@ public class FunctionUnderTest {
 	 */
 	public void compareTo(Function function) {
 		assertNotNull(function);
-		assertEquals(this.isHybrid(), function.isHybrid());
+		assertEquals(this.isHybrid(), function.getIsHybrid());
 
 		argumentsType params = function.getParameters();
 
