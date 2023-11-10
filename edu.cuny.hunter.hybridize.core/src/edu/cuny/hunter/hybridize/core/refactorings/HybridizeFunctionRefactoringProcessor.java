@@ -234,7 +234,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
 				} catch (UndeterminableHybridizationException e) {
 					LOG.warn("Unable to infer hybridization of: " + func + ".", e);
-					func.addFailure(PreconditionFailure.UNDETERMINABLE_HYBRID_DECORATOR, "Can't compute whether " + func + "is hybrid.");
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_HYBRID_DECORATOR, "Can't compute whether " + func + " is hybrid.");
 				}
 
 				try {

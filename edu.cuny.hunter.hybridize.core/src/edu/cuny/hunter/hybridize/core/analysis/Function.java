@@ -904,7 +904,7 @@ public class Function {
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
-		} else if (this.isHybrid != null) { // Hybrid. Use table 2.
+		} else if (this.getIsHybrid() != null) { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (!this.getLikelyHasTensorParameter()) {
