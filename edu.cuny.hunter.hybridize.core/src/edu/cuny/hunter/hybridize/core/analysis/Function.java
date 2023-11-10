@@ -758,12 +758,17 @@ public class Function {
 	/**
 	 * Discovers if this {@link Function} is hybrid. If so, populated this {@link Function}'s {@link HybridizationParameters}.
 	 */
-	public void computeHybridization(IProgressMonitor monitor) throws BadLocationException {
+	public void computeHybridization(IProgressMonitor monitor) throws BadLocationException, UndeterminableHybridizationException {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
+
+		// if this function is decorated with "tf.function."
+		Boolean hybrid = null;
+
+		boolean issuedInfo = false;
 
 		if (decoratorArray != null) {
 			String containingModuleName = this.getContainingModuleName();
@@ -778,9 +783,6 @@ public class Function {
 
 				IDocument document = this.getContainingDocument();
 				PySelection selection = null;
-
-				// if this function is decorated with "tf.function."
-				boolean hybrid = false;
 
 				try {
 					selection = Util.getSelection(decorator, document);
@@ -799,20 +801,21 @@ public class Function {
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
+						issuedInfo = true;
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
 						LOG.info(String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-					} else {
+						issuedInfo = true;
+					} else
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
-					}
 				}
 
-				if (hybrid) {
+				if (hybrid != null && hybrid) {
 					this.setIsHybrid(TRUE);
 					LOG.info(this + " is hybrid.");
 
@@ -827,6 +830,9 @@ public class Function {
 				monitor.worked(1);
 			}
 		}
+
+		if (decoratorArray != null && decoratorArray.length > 0 && hybrid == null && !issuedInfo)
+			throw new UndeterminableHybridizationException();
 
 		this.setIsHybrid(FALSE);
 		LOG.info(this + " is not hybrid.");
@@ -861,11 +867,15 @@ public class Function {
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
+		RefactoringStatusContext context = new FunctionStatusContext();
+		this.addFailure(failure, message, context);
+	}
+
+	public void addFailure(PreconditionFailure failure, String message, RefactoringStatusContext context) {
 		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
 		assert this.getHasPythonSideEffects() == null
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
-		RefactoringStatusContext context = new FunctionStatusContext();
 		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
 	}
 
@@ -878,7 +888,7 @@ public class Function {
 	 * Check refactoring preconditions.
 	 */
 	public void check() {
-		if (!this.getIsHybrid()) { // Eager. Table 1.
+		if (this.getIsHybrid() != null && !this.getIsHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter()) {
@@ -894,7 +904,7 @@ public class Function {
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 			}
-		} else { // Hybrid. Use table 2.
+		} else if (this.getIsHybrid() != null) { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (!this.getLikelyHasTensorParameter()) {
