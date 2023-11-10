@@ -831,7 +831,7 @@ public class Function {
 			}
 		}
 
-		if (hybrid == null && !issuedInfo)
+		if (decoratorArray != null && decoratorArray.length > 0 && hybrid == null && !issuedInfo)
 			throw new UndeterminableHybridizationException();
 
 		this.setIsHybrid(FALSE);
