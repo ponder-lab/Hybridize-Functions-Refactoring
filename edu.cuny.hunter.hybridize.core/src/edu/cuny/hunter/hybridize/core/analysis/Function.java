@@ -799,21 +799,16 @@ public class Function {
 						LOG.info(String.format(
 								"Encountered potentially generated decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-						// TODO: Add info status here (#120).
 					} else if (Util.isBuiltIn(decorator)) {
 						// Since tf.function isn't built-in, skip built-in decorators.
 						LOG.info(String.format(
 								"Encountered potentially built-in decorator: %s in selection: %s, module: %s, file: %s, and project; %s.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName, project));
-						// TODO: Add info status here (#120).
 					} else {
 						LOG.warn(String.format(
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
-
-						// TODO: Add a failure status here? (#120). It could just be that we're taking the last defined one. A failure
-						// status entry would fail the entire function.
 					}
 				}
 
