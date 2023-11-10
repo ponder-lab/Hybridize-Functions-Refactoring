@@ -252,10 +252,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
 							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
-					// next function. FIXME: Why not continue?
-					status.merge(func.getStatus());
-					subMonitor.worked(1);
-					return;
 				}
 
 				// check the function preconditions.
