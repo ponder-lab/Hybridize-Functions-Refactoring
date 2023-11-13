@@ -5469,4 +5469,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("not_recursive_fn");
 		assertTrue(f.getStatus().isOK());
 	}
+
+	@Test
+	public void testRecursion3() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertFalse("No (transitive) recursive functions.", f.getStatus().isOK());
+	}
 }
