@@ -5465,6 +5465,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("recursive_fn");
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue("No recursive functions.", f.getStatus().hasError());
+		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
 
 	@Test
@@ -5472,6 +5473,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("not_recursive_fn");
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue(f.getStatus().isOK());
+		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 	}
 
 	@Test
@@ -5479,6 +5481,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("recursive_fn");
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue("No (transitive) recursive functions.", f.getStatus().hasError());
+		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
 
 	@Test
