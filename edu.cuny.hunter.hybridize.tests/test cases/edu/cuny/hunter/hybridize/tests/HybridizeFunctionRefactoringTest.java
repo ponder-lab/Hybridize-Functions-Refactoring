@@ -5461,7 +5461,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
-		assertFalse("No recursive functions.", f.getStatus().isOK());
+		assertTrue("No recursive functions.", f.getStatus().hasError());
 	}
 
 	@Test
@@ -5473,6 +5473,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRecursion3() throws Exception {
 		Function f = getFunction("recursive_fn");
-		assertFalse("No (transitive) recursive functions.", f.getStatus().isOK());
+		assertTrue("No (transitive) recursive functions.", f.getStatus().hasError());
 	}
 }
