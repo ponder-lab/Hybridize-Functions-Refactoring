@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
@@ -5486,5 +5487,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertTrue("Can't de-hybridize a recursive functions and generally preserve semantics.",
 				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+	}
+
+	@Test
+	public void testRecursion5() throws Exception {
+		Function f = getFunction("not_recursive_fn");
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertFalse("Already optimal.", f.getStatus().isOK());
+		assertEquals(HAS_TENSOR_PARAMETERS.getCode(), f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).getCode());
 	}
 }
