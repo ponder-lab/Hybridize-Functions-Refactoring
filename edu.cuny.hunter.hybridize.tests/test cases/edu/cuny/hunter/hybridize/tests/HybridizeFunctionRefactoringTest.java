@@ -5499,4 +5499,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Already optimal.", f.getStatus().isOK());
 		assertEquals(HAS_TENSOR_PARAMETERS.getCode(), f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).getCode());
 	}
+
+	@Test
+	public void testRecursion6() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertTrue("Can't de-hybridize a (transitively) recursive functions and generally preserve semantics.",
+				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+	}
 }
