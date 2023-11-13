@@ -1,9 +1,12 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static org.eclipse.core.runtime.Platform.getLog;
@@ -5506,5 +5509,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertTrue("Can't de-hybridize a (transitively) recursive functions and generally preserve semantics.",
 				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+	}
+
+	@Test
+	public void testRecursion7() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertTrue("No recursive functions.", f.getStatus().hasError());
+		assertTrue(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
+		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
+		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
 }
