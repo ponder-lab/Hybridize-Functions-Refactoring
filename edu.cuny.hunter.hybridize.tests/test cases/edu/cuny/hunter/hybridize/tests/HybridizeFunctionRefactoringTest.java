@@ -1882,7 +1882,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		// TODO: Set to assertFalse() when #111 is fixed.
+		// NOTE: Set to assertFalse() when #111 is fixed.
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
@@ -4359,7 +4359,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter144() throws Exception {
-		// TODO: Change to false, true once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265 is fixed.
+		// NOTE: Change to false, true once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265 is fixed.
 		testHasLikelyTensorParameterHelper(false, false);
 	}
 
