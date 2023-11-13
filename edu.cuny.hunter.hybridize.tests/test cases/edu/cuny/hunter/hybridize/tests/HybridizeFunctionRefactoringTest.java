@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -5474,5 +5475,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion3() throws Exception {
 		Function f = getFunction("recursive_fn");
 		assertTrue("No (transitive) recursive functions.", f.getStatus().hasError());
+	}
+
+	@Test
+	public void testRecursion4() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertTrue("Can't de-hybridize a recursive functions and generally preserve semantics.",
+				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
 }

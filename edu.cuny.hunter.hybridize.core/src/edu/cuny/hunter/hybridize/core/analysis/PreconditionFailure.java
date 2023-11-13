@@ -14,7 +14,12 @@ public enum PreconditionFailure {
 
 	HAS_NO_TENSOR_PARAMETERS(6),
 
-	HAS_TENSOR_PARAMETERS(7);
+	HAS_TENSOR_PARAMETERS(7),
+
+	/**
+	 * Functions that are recursive can't be hybridized. Also, de-hybridizing hybrid recursive functions may alter semantics.
+	 */
+	IS_RECURSIVE(8);
 
 	static {
 		// check that the codes are unique.
