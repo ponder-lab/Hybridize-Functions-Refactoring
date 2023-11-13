@@ -5458,5 +5458,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Decorated embedded functions aren't side-effects.", f.getHasPythonSideEffects());
 	}
 
-	// TODO: Left off at: https://www.tensorflow.org/guide/function#recursive_tffunctions_are_not_supported
+	@Test
+	public void testRecursion() throws Exception {
+		Function recursive_fn = getFunction("recursive_fn");
+		assertFalse("No recursive functions.", recursive_fn.getStatus().isOK());
+	}
 }
