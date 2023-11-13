@@ -5520,4 +5520,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
+
+	@Test
+	public void testRecursion8() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+
+	}
 }
