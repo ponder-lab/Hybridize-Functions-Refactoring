@@ -23,9 +23,8 @@ public enum PreconditionFailure {
 
 	static {
 		// check that the codes are unique.
-		if (Arrays.stream(PreconditionFailure.values()).map(PreconditionFailure::getCode).distinct()
-				.count() != PreconditionFailure.values().length)
-			throw new IllegalStateException("Codes aren't unique.");
+		assert Arrays.stream(PreconditionFailure.values()).map(PreconditionFailure::getCode).distinct()
+				.count() == PreconditionFailure.values().length : "Codes must be unique.";
 	}
 
 	public static void main(String[] args) {
