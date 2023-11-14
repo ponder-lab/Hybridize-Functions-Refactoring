@@ -4,6 +4,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
@@ -29,6 +30,10 @@ import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
+
+import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.types.MethodReference;
 
 public class Util {
 
@@ -247,5 +252,22 @@ public class Util {
 	public static boolean isBuiltIn(decoratorsType decorator) {
 		String decoratorRepresentation = NodeUtils.getRepresentationString(decorator.func);
 		return decoratorRepresentation.equals("property");
+	}
+
+	public static boolean calls(CGNode node, MethodReference methodReference, CallGraph callGraph) {
+		// check the callees.
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode next = succNodes.next();
+			MethodReference reference = next.getMethod().getReference();
+
+			if (methodReference.equals(reference))
+				return true;
+
+			// otherwise, check its callees.
+			if (calls(next, methodReference, callGraph))
+				return true;
+		}
+
+		return false;
 	}
 }

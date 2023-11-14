@@ -1,6 +1,5 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import static com.ibm.wala.ipa.callgraph.propagation.cfa.CallStringContextSelector.CALL_STRING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
@@ -58,14 +57,12 @@ import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
-import com.ibm.wala.ipa.callgraph.ContextItem;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
-import com.ibm.wala.ipa.callgraph.propagation.cfa.CallString;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
@@ -375,34 +372,17 @@ public class Function {
 		if (nodes.isEmpty())
 			throw new CantComputeRecursionException("Can't compute if " + this + " is recusive without a call graph node.");
 
-		// for each node.
-		for (CGNode cgNode : nodes) {
-			// get the call string. There's a node for each call to this function.
-			var context = cgNode.getContext();
-			ContextItem contextItem = context.get(CALL_STRING);
-			CallString callString = (CallString) contextItem;
+		CGNode cgNode = nodes.iterator().next();
 
-			// get the "methods" in the call string.
-			IMethod[] methods = callString.getMethods();
-
-			// for each "method."
-			for (IMethod meth : methods) {
-				// get the method reference.
-				MethodReference methodReference = meth.getReference();
-
-				// if the call string method reference equals this function's reference.
-				if (methodReference.equals(this.getMethodReference())) {
-					// it's recursive.
-					LOG.info(this + " is recursive.");
-					this.setIsRecursive(true);
-					return;
-				}
-			}
+		if (Util.calls(cgNode, this.getMethodReference(), callGraph)) {
+			// it's recursive.
+			LOG.info(this + " is recursive.");
+			this.setIsRecursive(true);
+		} else {
+			// not recursive.
+			LOG.info(this + " is not recursive.");
+			this.setIsRecursive(false);
 		}
-
-		// not recursive.
-		LOG.info(this + " is not recursive.");
-		this.setIsRecursive(false);
 	}
 
 	/**
