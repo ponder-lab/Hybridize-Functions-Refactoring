@@ -9,6 +9,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ltk.core.refactoring.RefactoringStatus.WARNING;
 import static org.junit.Assert.assertEquals;
@@ -5467,7 +5468,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
+
+		assertTrue(f.getIsRecursive());
+
+		assertFalse(f.getIsHybrid());
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
@@ -5475,9 +5481,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRecursion2() throws Exception {
 		Function f = getFunction("not_recursive_fn");
+
+		assertFalse(f.getIsHybrid()); // eag.
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+
+		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS));
+
+		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS));
+
+		assertFalse(f.getIsRecursive()); // F.
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
+
 		assertTrue(f.getStatus().isOK());
-		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	@Test

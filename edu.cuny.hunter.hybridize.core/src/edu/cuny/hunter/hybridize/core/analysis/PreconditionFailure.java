@@ -19,7 +19,12 @@ public enum PreconditionFailure {
 	/**
 	 * Functions that are recursive can't be hybridized. Also, de-hybridizing hybrid recursive functions may alter semantics.
 	 */
-	IS_RECURSIVE(8);
+	IS_RECURSIVE(8),
+
+	/**
+	 * Can't find the CG node corresponding to the function.
+	 */
+	CANT_APPROXIMATE_RECURSION(9);
 
 	static {
 		// check that the codes are unique.
