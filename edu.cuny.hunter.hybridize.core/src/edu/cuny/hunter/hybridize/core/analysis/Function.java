@@ -926,16 +926,26 @@ public class Function {
 
 			if (this.getLikelyHasTensorParameter()) {
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
-					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-					this.setPassingPrecondition(P1);
-				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+					if (this.getIsRecursive() != null && !this.getIsRecursive()) {
+						this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+						this.setPassingPrecondition(P1);
+					} else if (this.getIsRecursive() != null) // it's recursive.
+						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+				} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+
+					if (this.getIsRecursive() != null && this.getIsRecursive())
+						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+				}
 			} else { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+
+				if (this.getIsRecursive() != null && this.getIsRecursive())
+					this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 			}
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
