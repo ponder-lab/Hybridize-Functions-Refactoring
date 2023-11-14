@@ -369,20 +369,28 @@ public class Function {
 	}
 
 	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException {
+		// Get the nodes representing this function.
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		if (nodes.isEmpty())
 			throw new CantComputeRecursionException("Can't compute if " + this + " is recusive without a call graph node.");
 
+		// for each node.
 		for (CGNode cgNode : nodes) {
+			// get the call string. There's a node for each call to this function.
 			var context = cgNode.getContext();
 			ContextItem contextItem = context.get(CALL_STRING);
 			CallString callString = (CallString) contextItem;
+
+			// get the "methods" in the call string.
 			IMethod[] methods = callString.getMethods();
 
+			// for each "method."
 			for (IMethod meth : methods) {
+				// get the method reference.
 				MethodReference methodReference = meth.getReference();
 
+				// if the call string method reference equals this function's reference.
 				if (methodReference.equals(this.getMethodReference())) {
 					// it's recursive.
 					LOG.info(this + " is recursive.");
