@@ -9,7 +9,6 @@ import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunc
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
-import static org.eclipse.ltk.core.refactoring.RefactoringStatus.WARNING;
 
 import java.io.File;
 import java.util.Arrays;
