@@ -5658,4 +5658,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(P2, f.getPassingPrecondition());
 		assertEquals(Collections.singleton(CONVERT_TO_EAGER), f.getTransformations());
 	}
+
+	@Test
+	public void testRecursion11() throws Exception {
+		Function f = getFunction("recursive_fn");
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+
+		assertTrue(f.getIsRecursive());
+		assertTrue("No (transitively) recursive functions.", f.getStatus().hasError());
+		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+	}
 }
