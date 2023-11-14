@@ -965,6 +965,11 @@ public class Function {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 				}
+
+				// Here, we have a hybrid function with a tensor parameter.
+				if (this.getIsRecursive() != null && this.getIsRecursive()) // if it's recursive.
+					// issue a warning.
+					this.addWarning("Recursive tf.functions are not supported by TensorFlow.");
 			}
 
 			// Warn if the function has side-effects.
