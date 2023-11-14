@@ -6,7 +6,7 @@ import tensorflow as tf
 @tf.function
 def recursive_fn(n):
   if n > 0:
-    print('tracing')
+    tf.print('tracing')
     return recursive_fn(n - 1)
   else:
     return 1

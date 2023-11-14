@@ -9,6 +9,7 @@ import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunc
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.eclipse.ltk.core.refactoring.RefactoringStatus.WARNING;
 
 import java.io.File;
 import java.util.Arrays;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
@@ -355,6 +357,8 @@ public class Function {
 	private Refactoring refactoring;
 
 	private RefactoringStatus status = new RefactoringStatus();
+
+	private Boolean isRecursive;
 
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
@@ -1126,4 +1130,19 @@ public class Function {
 		creationsCache.clear();
 	}
 
+	public Boolean getIsRecursive() {
+		return this.isRecursive;
+	}
+
+	private Set<RefactoringStatusEntry> getRefactoringStatusEntries(Predicate<? super RefactoringStatusEntry> predicate) {
+		return Arrays.stream(this.getStatus().getEntries()).filter(predicate).collect(Collectors.toSet());
+	}
+
+	public Set<RefactoringStatusEntry> getWarnings() {
+		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isWarning);
+	}
+
+	public Set<RefactoringStatusEntry> getErrors() {
+		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isError);
+	}
 }

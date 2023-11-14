@@ -10,6 +10,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.eclipse.ltk.core.refactoring.RefactoringStatus.WARNING;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -5490,41 +5491,150 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRecursion4() throws Exception {
 		Function f = getFunction("recursive_fn");
+
+		assertTrue(f.getIsHybrid()); // hyb.
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
-		assertTrue("Can't de-hybridize a recursive functions and generally preserve semantics.",
-				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+
+		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+
+		assertTrue(f.getIsRecursive()); // T.
+		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
+
+		assertNotNull("We have a recursive hybrid function with a tensor parameter. Warn.",
+				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+
 	}
 
 	@Test
 	public void testRecursion5() throws Exception {
 		Function f = getFunction("not_recursive_fn");
+
+		assertTrue(f.getIsHybrid());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+
+		assertTrue(f.getLikelyHasTensorParameter());
 		assertFalse("Already optimal.", f.getStatus().isOK());
-		assertEquals(HAS_TENSOR_PARAMETERS.getCode(), f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).getCode());
+		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+
+		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+
+		assertFalse(f.getIsRecursive()); // F.
+		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
+
+		assertNull("We have a non-recursive hybrid function with a tensor parameter. No warning.",
+				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+
 	}
 
 	@Test
 	public void testRecursion6() throws Exception {
 		Function f = getFunction("recursive_fn");
+
+		assertTrue(f.getIsHybrid()); // hyb.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
-		assertTrue("Can't de-hybridize a (transitively) recursive functions and generally preserve semantics.",
-				f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertFalse("Already optimal.", f.getStatus().isOK());
+		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+
+		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+
+		assertTrue(f.getIsRecursive()); // T.
+		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
+
+		assertNotNull("We have a recursive hybrid function with a tensor parameter. Warn.",
+				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
 	}
 
 	@Test
 	public void testRecursion7() throws Exception {
 		Function f = getFunction("recursive_fn");
+
+		assertFalse(f.getIsHybrid());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
-		assertTrue("No recursive functions.", f.getStatus().hasError());
+
+		assertFalse(f.getLikelyHasTensorParameter());
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
+
+		assertTrue(f.getHasPythonSideEffects()); // T.
 		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
+
+		assertTrue(f.getIsRecursive());
+		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		assertNull(f.getStatus().getEntryMatchingSeverity(WARNING));
 	}
 
 	@Test
 	public void testRecursion8() throws Exception {
 		Function f = getFunction("recursive_fn");
-		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
+		assertTrue(f.getIsHybrid()); // hyb.
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+
+		assertFalse(f.getLikelyHasTensorParameter()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNull("Not having tensor parameters is not a failure for: " + OPTIMIZE_HYBRID_FUNCTION + ".",
+				f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
+
+		assertTrue(f.getHasPythonSideEffects()); // T.
+		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
+
+		assertTrue(f.getIsRecursive()); // T.
+		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
+				f.getEntryMatchingFailure(IS_RECURSIVE));
+
+		assertNull("No tensor parameter. No warning.", f.getStatus().getEntryMatchingSeverity(WARNING));
+	}
+
+	@Test
+	public void testRecursion9() throws Exception {
+		Function f = getFunction("recursive_fn");
+
+		assertFalse(f.getIsHybrid());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+
+		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
+
+		assertFalse(f.getHasPythonSideEffects());
+		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+
+		assertTrue(f.getIsRecursive());
+		assertTrue("No recursive functions.", f.getStatus().hasError());
+		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		assertTrue(f.getWarnings().isEmpty());
+	}
+
+	@Test
+	public void testRecursion10() throws Exception {
+		Function f = getFunction("recursive_fn");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+
+		assertFalse(f.getLikelyHasTensorParameter()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+
+		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+
+		assertTrue(f.getIsRecursive());
+		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
+				f.getEntryMatchingFailure(IS_RECURSIVE));
+
+		assertNull(f.getStatus().getEntryMatchingSeverity(WARNING));
+
+		assertEquals(P2, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_EAGER), f.getTransformations());
 	}
 }
