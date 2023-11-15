@@ -513,12 +513,8 @@ public class Function {
 			CGNode next = succNodes.next();
 			MethodReference reference = next.getMethod().getReference();
 
-			if (!seen.contains(reference)) {
-				seen.add(reference);
-
-				if (allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
-					return true;
-			}
+			if (!seen.contains(reference) && allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
+				return true;
 		}
 
 		return false;
