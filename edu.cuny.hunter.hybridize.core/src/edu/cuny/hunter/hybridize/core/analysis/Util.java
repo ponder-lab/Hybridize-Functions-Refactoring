@@ -31,6 +31,7 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
+import com.google.common.collect.Sets;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.types.MethodReference;
@@ -255,6 +256,13 @@ public class Util {
 	}
 
 	public static boolean calls(CGNode node, MethodReference methodReference, CallGraph callGraph) {
+		Set<MethodReference> seen = Sets.newHashSet();
+		return callsInternal(node, methodReference, callGraph, seen);
+	}
+
+	private static boolean callsInternal(CGNode node, MethodReference methodReference, CallGraph callGraph, Set<MethodReference> seen) {
+		seen.add(node.getMethod().getReference());
+
 		// check the callees.
 		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
 			CGNode next = succNodes.next();
@@ -264,7 +272,7 @@ public class Util {
 				return true;
 
 			// otherwise, check its callees.
-			if (calls(next, methodReference, callGraph))
+			if (!seen.contains(reference) && calls(next, methodReference, callGraph))
 				return true;
 		}
 
