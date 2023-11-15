@@ -5567,7 +5567,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getIsRecursive()); // T.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings());
+		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings().size());
 	}
 
 	@Test
@@ -5609,7 +5609,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
 				f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertTrue("No tensor parameter. No warning.", f.getWarnings().isEmpty());
+		assertEquals("No tensor parameter. No warning. The warning currently is from side-effects", 1, f.getWarnings().size());
 	}
 
 	@Test
