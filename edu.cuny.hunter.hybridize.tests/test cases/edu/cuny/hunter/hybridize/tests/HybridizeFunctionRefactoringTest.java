@@ -11,7 +11,6 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRI
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static org.eclipse.core.runtime.Platform.getLog;
-import static org.eclipse.ltk.core.refactoring.RefactoringStatus.WARNING;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -5267,6 +5266,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(capturesLeakedTensor.getStatus().hasError());
 		assertFalse(capturesLeakedTensor.getStatus().hasFatalError());
 		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
+		assertTrue(error.isError());
 		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
 
 		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
@@ -5525,8 +5525,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getIsRecursive()); // T.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertNotNull("We have a recursive hybrid function with a tensor parameter. Warn.",
-				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings().size());
 
 	}
 
@@ -5547,8 +5546,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getIsRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertNull("We have a non-recursive hybrid function with a tensor parameter. No warning.",
-				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+		assertTrue("We have a non-recursive hybrid function with a tensor parameter. No warning.", f.getWarnings().isEmpty());
 
 	}
 
@@ -5569,8 +5567,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getIsRecursive()); // T.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertNotNull("We have a recursive hybrid function with a tensor parameter. Warn.",
-				f.getStatus().getEntryMatchingSeverity(RefactoringStatus.WARNING));
+		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings());
 	}
 
 	@Test
@@ -5590,7 +5587,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 
-		assertNull(f.getStatus().getEntryMatchingSeverity(WARNING));
+		assertTrue(f.getWarnings().isEmpty());
 	}
 
 	@Test
@@ -5612,7 +5609,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
 				f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertNull("No tensor parameter. No warning.", f.getStatus().getEntryMatchingSeverity(WARNING));
+		assertTrue("No tensor parameter. No warning.", f.getWarnings().isEmpty());
 	}
 
 	@Test
@@ -5653,7 +5650,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
 				f.getEntryMatchingFailure(IS_RECURSIVE));
 
-		assertNull(f.getStatus().getEntryMatchingSeverity(WARNING));
+		assertTrue(f.getWarnings().isEmpty());
 
 		assertEquals(P2, f.getPassingPrecondition());
 		assertEquals(Collections.singleton(CONVERT_TO_EAGER), f.getTransformations());
