@@ -14,13 +14,22 @@ public enum PreconditionFailure {
 
 	HAS_NO_TENSOR_PARAMETERS(6),
 
-	HAS_TENSOR_PARAMETERS(7);
+	HAS_TENSOR_PARAMETERS(7),
+
+	/**
+	 * Functions that are recursive can't be hybridized. Also, de-hybridizing hybrid recursive functions may alter semantics.
+	 */
+	IS_RECURSIVE(8),
+
+	/**
+	 * Can't find the CG node corresponding to the function.
+	 */
+	CANT_APPROXIMATE_RECURSION(9);
 
 	static {
 		// check that the codes are unique.
-		if (Arrays.stream(PreconditionFailure.values()).map(PreconditionFailure::getCode).distinct()
-				.count() != PreconditionFailure.values().length)
-			throw new IllegalStateException("Codes aren't unique.");
+		assert Arrays.stream(PreconditionFailure.values()).map(PreconditionFailure::getCode).distinct()
+				.count() == PreconditionFailure.values().length : "Codes must be unique.";
 	}
 
 	public static void main(String[] args) {

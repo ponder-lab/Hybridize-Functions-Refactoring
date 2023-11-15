@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
@@ -356,10 +357,32 @@ public class Function {
 
 	private RefactoringStatus status = new RefactoringStatus();
 
+	private Boolean isRecursive;
+
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
 	public Function(FunctionDefinition fd) {
 		this.functionDefinition = fd;
+	}
+
+	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException {
+		// Get the nodes representing this function.
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		if (nodes.isEmpty())
+			throw new CantComputeRecursionException("Can't compute if " + this + " is recusive without a call graph node.");
+
+		CGNode cgNode = nodes.iterator().next();
+
+		if (Util.calls(cgNode, this.getMethodReference(), callGraph)) {
+			// it's recursive.
+			LOG.info(this + " is recursive.");
+			this.setIsRecursive(true);
+		} else {
+			// not recursive.
+			LOG.info(this + " is not recursive.");
+			this.setIsRecursive(false);
+		}
 	}
 
 	/**
@@ -879,16 +902,26 @@ public class Function {
 
 			if (this.getLikelyHasTensorParameter()) {
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
-					this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-					this.setPassingPrecondition(P1);
-				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+					if (this.getIsRecursive() != null && !this.getIsRecursive()) {
+						this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+						this.setPassingPrecondition(P1);
+					} else if (this.getIsRecursive() != null) // it's recursive.
+						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+				} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+
+					if (this.getIsRecursive() != null && this.getIsRecursive())
+						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+				}
 			} else { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+
+				if (this.getIsRecursive() != null && this.getIsRecursive())
+					this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 			}
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
@@ -908,6 +941,11 @@ public class Function {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 				}
+
+				// Here, we have a hybrid function with a tensor parameter.
+				if (this.getIsRecursive() != null && this.getIsRecursive()) // if it's recursive.
+					// issue a warning.
+					this.addWarning("Recursive tf.functions are not supported by TensorFlow.");
 			}
 
 			// Warn if the function has side-effects.
@@ -1122,4 +1160,23 @@ public class Function {
 		creationsCache.clear();
 	}
 
+	public Boolean getIsRecursive() {
+		return this.isRecursive;
+	}
+
+	protected void setIsRecursive(Boolean isRecursive) {
+		this.isRecursive = isRecursive;
+	}
+
+	private Set<RefactoringStatusEntry> getRefactoringStatusEntries(Predicate<? super RefactoringStatusEntry> predicate) {
+		return Arrays.stream(this.getStatus().getEntries()).filter(predicate).collect(Collectors.toSet());
+	}
+
+	public Set<RefactoringStatusEntry> getWarnings() {
+		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isWarning);
+	}
+
+	public Set<RefactoringStatusEntry> getErrors() {
+		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isError);
+	}
 }
