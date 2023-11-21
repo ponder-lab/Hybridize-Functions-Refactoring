@@ -5667,4 +5667,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("No (transitively) recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
+
+	// TODO: Left off at https://www.tensorflow.org/guide/function#depending_on_python_global_and_free_variables.
 }
