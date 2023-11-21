@@ -49,10 +49,11 @@ public class Util {
 	}
 
 	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects,
-			boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel)
+			boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel, boolean alwaysCheckRecusion)
 			throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
-		return new HybridizeFunctionRefactoringProcessor(functionDefinitions, alwaysCheckPythonSideEffects, processFunctionsInParallel);
+		return new HybridizeFunctionRefactoringProcessor(functionDefinitions, alwaysCheckPythonSideEffects, processFunctionsInParallel,
+				alwaysCheckRecusion);
 	}
 
 	public static Set<FunctionDefinition> getFunctionDefinitions(Iterable<?> iterable)

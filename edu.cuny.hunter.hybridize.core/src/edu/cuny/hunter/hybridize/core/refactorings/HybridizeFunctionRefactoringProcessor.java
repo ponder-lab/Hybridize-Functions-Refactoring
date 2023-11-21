@@ -40,6 +40,7 @@ import com.ibm.wala.util.CancelException;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
+import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -101,6 +102,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckPythonSideEffects;
 
+	private boolean alwaysCheckRecursion;
+
 	private boolean processFunctionsInParallel = true;
 
 	public HybridizeFunctionRefactoringProcessor() {
@@ -119,6 +122,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel) {
 		this(alwaysCheckPythonSideEffects);
 		this.processFunctionsInParallel = processFunctionsInParallel;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel);
+		this.alwaysCheckRecursion = alwaysCheckRecusion;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
@@ -148,6 +157,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			boolean processFunctionsInParallel) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects);
 		this.processFunctionsInParallel = processFunctionsInParallel;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel);
+		this.alwaysCheckRecursion = alwaysCheckRecursion;
 	}
 
 	@Override
@@ -247,6 +263,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
 							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
+				}
+
+				// Check recursion.
+				try {
+					// NOTE: Whether a hybrid function is recursive is irrelevant; if the function has no tensor parameter, de-hybridizing
+					// it does not violate semantics preservation as potential retracing happens regardless. We do, however, issue a
+					// refactoring warning when a hybrid function with a tensor parameter is recursive.
+					if (this.getAlwaysCheckRecursion() || func.getLikelyHasTensorParameter())
+						func.computeRecursion(callGraph);
+				} catch (CantComputeRecursionException e) {
+					LOG.warn("Unable to compute whether " + this + " is recursive.", e);
+					func.addFailure(PreconditionFailure.CANT_APPROXIMATE_RECURSION, "Can't compute whether this function is recursive.");
 				}
 
 				// check the function preconditions.
@@ -365,6 +393,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean getAlwaysCheckPythonSideEffects() {
 		return this.alwaysCheckPythonSideEffects;
+	}
+
+	public boolean getAlwaysCheckRecursion() {
+		return alwaysCheckRecursion;
 	}
 
 	@Override

@@ -74,6 +74,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
 
+	private static final String ALWAYS_CHECK_RECURSION_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckRecursion";
+
 	private static final String PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.processFunctionsInParallel";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -94,6 +96,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	private boolean alwaysCheckPythonSideEffects = Boolean.getBoolean(ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY);
+
+	private boolean alwaysCheckRecursion = Boolean.getBoolean(ALWAYS_CHECK_RECURSION_PROPERTY_KEY);
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY);
 
@@ -116,7 +120,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
-					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildFunctionAttributeColumnNames());
+					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 							buildAttributeColumnNames("transformation"));
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -138,7 +142,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					resultsTimeCollector.start();
 					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
-							this.getAlwaysCheckPythonSideEffects(), this.getProcessFunctionsInParallel());
+							this.getAlwaysCheckPythonSideEffects(), this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -166,7 +170,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// candidate functions.
 					for (Function function : candidates) {
-						printFunction(candidatesPrinter, function);
+						candidatesPrinter.printRecord(buildAttributeColumnValues(function));
 
 						// transformations.
 						for (Transformation transformation : function.getTransformations())
@@ -265,14 +269,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "parameters", "tensor parameter", "hybrid", "side-effects",
-				"autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
-				"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
+				"recursive", "autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements",
+				"func", "input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.getIsHybrid(),
-				function.getHasPythonSideEffects());
+				function.getHasPythonSideEffects(), function.getIsRecursive());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -351,6 +355,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckPythonSideEffects() {
 		return alwaysCheckPythonSideEffects;
+	}
+
+	private boolean getAlwaysCheckRecusion() {
+		return alwaysCheckRecursion;
 	}
 
 	private boolean getProcessFunctionsInParallel() {
