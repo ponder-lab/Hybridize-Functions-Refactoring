@@ -265,14 +265,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "parameters", "tensor parameter", "hybrid", "side-effects",
-				"autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
-				"input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
+				"recursive", "autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements",
+				"func", "input_signature", "jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.getNumberOfParameters(), function.getLikelyHasTensorParameter(), function.getIsHybrid(),
-				function.getHasPythonSideEffects());
+				function.getHasPythonSideEffects(), function.getIsRecursive());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
