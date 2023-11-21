@@ -116,7 +116,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
-					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildFunctionAttributeColumnNames());
+					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 					CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 							buildAttributeColumnNames("transformation"));
 					CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -166,7 +166,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// candidate functions.
 					for (Function function : candidates) {
-						printFunction(candidatesPrinter, function);
+						candidatesPrinter.printRecord(buildAttributeColumnValues(function));
 
 						// transformations.
 						for (Transformation transformation : function.getTransformations())
