@@ -4425,10 +4425,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				// NOTE: Should be error-free once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
-				checkSideEffectStatus(f);
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4437,8 +4434,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support __call__. See
-	 * https://github.com/wala/ML/issues/24.
+	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support call. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291.
 	 */
 	@Test
 	public void testModel2() throws Exception {
@@ -4462,9 +4459,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				// NOTE: Change to assertTrue when https://github.com/wala/ML/issues/24 is fixed.
+				// NOTE: Change to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291 is fixed.
 				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed.
+				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291 is fixed.
 				checkSideEffectStatus(f);
 				break;
 			default:
@@ -5141,8 +5138,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.getIsHybrid());
 		assertFalse(function.getLikelyHasTensorParameter());
-		// Change to assertTrue() once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/271 is fixed:
-		assertNull(function.getHasPythonSideEffects());
+		assertTrue(function.getHasPythonSideEffects());
 	}
 
 	@Test
