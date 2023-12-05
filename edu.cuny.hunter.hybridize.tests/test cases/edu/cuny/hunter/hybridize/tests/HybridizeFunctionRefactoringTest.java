@@ -4395,33 +4395,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(false, false);
 	}
 
-	/**
-	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/280.
-	 */
-	@Test
-	public void testHasLikelyTensorParameter148() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertEquals(true, function.getIsHybrid());
-
-		argumentsType params = function.getParameters();
-
-		// one params.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
-
-		exprType actualParameter = actualParams[0];
-		assertNotNull(actualParameter);
-
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
-		assertEquals("input", paramName);
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
-	}
-
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
@@ -5689,6 +5662,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getIsRecursive());
 		assertTrue("No (transitively) recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/280.
+	 */
+	@Test
+	public void testCallback() throws Exception {
+		Function f = getFunction("replica_fn");
+		assertTrue(f.getLikelyHasTensorParameter());
 	}
 
 	// TODO: Left off at https://www.tensorflow.org/guide/function#depending_on_python_global_and_free_variables.
