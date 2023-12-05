@@ -4409,7 +4409,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		argumentsType params = function.getParameters();
 
-		// two params.
+		// one params.
 		exprType[] actualParams = params.args;
 		assertEquals(1, actualParams.length);
 
