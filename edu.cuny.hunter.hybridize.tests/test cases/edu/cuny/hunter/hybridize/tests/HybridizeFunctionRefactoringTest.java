@@ -4459,10 +4459,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				// NOTE: Change to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291 is fixed.
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				// NOTE: Remove once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291 is fixed.
-				checkSideEffectStatus(f);
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
