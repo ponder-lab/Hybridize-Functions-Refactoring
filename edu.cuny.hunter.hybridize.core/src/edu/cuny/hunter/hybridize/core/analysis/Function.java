@@ -323,7 +323,7 @@ public class Function {
 	private FunctionDefinition functionDefinition;
 
 	/**
-	 * True iff this {@link Function} is decorated with tf.function.
+	 * True iff this {@link Function} is decorated with tf.function. FIXME: This should be "hybrid?"
 	 */
 	private Boolean isHybrid;
 
