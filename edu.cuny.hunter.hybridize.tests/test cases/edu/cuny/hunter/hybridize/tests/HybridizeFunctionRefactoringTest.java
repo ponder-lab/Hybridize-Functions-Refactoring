@@ -4395,6 +4395,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(false, false);
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/294. Control case.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter148() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
