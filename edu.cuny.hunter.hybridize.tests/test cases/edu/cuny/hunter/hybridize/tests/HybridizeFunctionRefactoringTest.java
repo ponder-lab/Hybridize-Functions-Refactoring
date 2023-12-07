@@ -4,6 +4,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
@@ -4409,6 +4410,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getTransformations().isEmpty());
 		assertTrue(function.getStatus().hasError());
 		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/294. No call.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter149() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertNull(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
 	}
 
 	// TODO: Test arbitrary expression.

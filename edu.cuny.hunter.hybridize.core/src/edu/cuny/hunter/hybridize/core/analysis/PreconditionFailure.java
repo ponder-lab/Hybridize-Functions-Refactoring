@@ -24,7 +24,12 @@ public enum PreconditionFailure {
 	/**
 	 * Can't find the CG node corresponding to the function.
 	 */
-	CANT_APPROXIMATE_RECURSION(9);
+	CANT_APPROXIMATE_RECURSION(9),
+
+	/**
+	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?.
+	 */
+	UNDETERMINABLE_TENSOR_PARAMETER(10);
 
 	static {
 		// check that the codes are unique.
