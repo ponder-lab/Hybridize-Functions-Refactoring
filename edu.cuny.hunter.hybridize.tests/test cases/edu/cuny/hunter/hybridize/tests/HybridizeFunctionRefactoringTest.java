@@ -5709,6 +5709,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
 
+	// TODO: Left off at https://www.tensorflow.org/guide/function#depending_on_python_global_and_free_variables.
+
 	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/280.
 	 */
@@ -5717,6 +5719,4 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("replica_fn");
 		assertTrue(f.getLikelyHasTensorParameter());
 	}
-
-	// TODO: Left off at https://www.tensorflow.org/guide/function#depending_on_python_global_and_free_variables.
 }
