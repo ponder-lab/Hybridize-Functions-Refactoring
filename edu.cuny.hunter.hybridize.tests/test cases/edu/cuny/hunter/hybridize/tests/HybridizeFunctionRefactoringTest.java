@@ -643,7 +643,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertNotNull(function);
 			assertFalse(function.getIsHybrid());
-			assertFalse(function.getLikelyHasTensorParameter());
+
+			switch (function.getIdentifier()) {
+			case "Test.value":
+			case "Test.name":
+				assertNull(function.getLikelyHasTensorParameter());
+				break;
+			case "Test.__init__":
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
 
 			switch (function.getIdentifier()) {
 			case "Test.value":
@@ -4607,7 +4618,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
 				// Can't infer side-effects here because there's no invocation of this method.
 				checkSideEffectStatus(f);
 				break;
@@ -4643,7 +4654,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
 				// No invocation, so we won't be able to infer side-effects.
 				checkSideEffectStatus(f);
 				break;
