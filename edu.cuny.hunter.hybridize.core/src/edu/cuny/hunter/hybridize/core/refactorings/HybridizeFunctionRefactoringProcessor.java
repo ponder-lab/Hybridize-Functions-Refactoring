@@ -41,6 +41,7 @@ import com.ibm.wala.util.CancelException;
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
+import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -250,14 +251,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				}
 
 				try {
-					func.inferTensorTensorParameters(analysis, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferTensorTensorParameters(analysis, callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (BadLocationException e) {
 					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
+				} catch (CantInferTensorParametersException e) {
+					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
+							"Can't infer tensor parameters for this function.");
 				}
 
 				// Check Python side-effects.
 				try {
-					if (this.getAlwaysCheckPythonSideEffects() || func.getIsHybrid() || func.getLikelyHasTensorParameter())
+					if (this.getAlwaysCheckPythonSideEffects() || func.getIsHybrid()
+							|| func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter())
 						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
 				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
@@ -270,7 +276,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					// NOTE: Whether a hybrid function is recursive is irrelevant; if the function has no tensor parameter, de-hybridizing
 					// it does not violate semantics preservation as potential retracing happens regardless. We do, however, issue a
 					// refactoring warning when a hybrid function with a tensor parameter is recursive.
-					if (this.getAlwaysCheckRecursion() || func.getLikelyHasTensorParameter())
+					if (this.getAlwaysCheckRecursion() || func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter())
 						func.computeRecursion(callGraph);
 				} catch (CantComputeRecursionException e) {
 					LOG.warn("Unable to compute whether " + this + " is recursive.", e);

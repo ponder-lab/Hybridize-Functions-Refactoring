@@ -620,9 +620,9 @@ public class Function {
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
-	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, IProgressMonitor monitor) throws BadLocationException {
+	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor)
+			throws BadLocationException, CantInferTensorParametersException {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
-		// TODO: What if there are no current calls to the function? How will we determine its type?
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
@@ -685,6 +685,14 @@ public class Function {
 							}
 						}
 					}
+
+					// Is this function in the call graph?
+					Set<CGNode> nodes = this.getNodes(callGraph);
+
+					if (nodes.isEmpty())
+						// if there are no nodes representing this function, then it most likely isn't called.
+						throw new CantInferTensorParametersException(
+								"Can't infer tensor parameters for " + this + " without a call graph node.");
 
 					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
 					// pointer key, then we know it's a tensor if the TensorType is not null.
@@ -900,7 +908,7 @@ public class Function {
 		if (!this.getIsHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
-			if (this.getLikelyHasTensorParameter()) {
+			if (this.getLikelyHasTensorParameter() != null && this.getLikelyHasTensorParameter()) {
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					if (this.getIsRecursive() != null && !this.getIsRecursive()) {
 						this.addTransformation(Transformation.CONVERT_TO_HYBRID);
@@ -926,7 +934,7 @@ public class Function {
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
-			if (!this.getLikelyHasTensorParameter()) {
+			if (this.getLikelyHasTensorParameter() != null && !this.getLikelyHasTensorParameter()) {
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);

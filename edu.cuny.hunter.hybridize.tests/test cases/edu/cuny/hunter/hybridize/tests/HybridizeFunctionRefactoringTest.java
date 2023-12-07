@@ -1,9 +1,12 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
@@ -640,7 +643,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertNotNull(function);
 			assertFalse(function.getIsHybrid());
-			assertFalse(function.getLikelyHasTensorParameter());
+
+			switch (function.getIdentifier()) {
+			case "Test.value":
+			case "Test.name":
+				assertNull(function.getLikelyHasTensorParameter());
+				break;
+			case "Test.__init__":
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
 
 			switch (function.getIdentifier()) {
 			case "Test.value":
@@ -4395,6 +4409,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(false, false);
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/294. Control case.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter148() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/294. No call.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter149() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertNull(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(UNDETERMINABLE_SIDE_EFFECTS));
+		assertNotNull(function.getEntryMatchingFailure(CANT_APPROXIMATE_RECURSION));
+		assertNotNull(function.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
@@ -4570,7 +4618,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
 				// Can't infer side-effects here because there's no invocation of this method.
 				checkSideEffectStatus(f);
 				break;
@@ -4606,7 +4654,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertFalse("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
 				// No invocation, so we won't be able to infer side-effects.
 				checkSideEffectStatus(f);
 				break;
