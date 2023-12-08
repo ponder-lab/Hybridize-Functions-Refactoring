@@ -32,10 +32,12 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -50,13 +52,17 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
+import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -64,6 +70,9 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
 import com.ibm.wala.ipa.modref.ModRef;
+import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
@@ -620,22 +629,21 @@ public class Function {
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
-	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor)
-			throws BadLocationException, CantInferTensorParametersException {
+	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
 
 		if (params != null) {
-			exprType[] actualParams = params.args;
+			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
 
 			if (actualParams != null) {
 				String containingModuleName = this.getContainingModuleName();
 				File containingFile = this.getContainingFile();
 
-				// for each parameter.
-				for (exprType paramExpr : actualParams) {
+				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
+					exprType paramExpr = actualParams[paramInx];
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
 					// check a special case where we consider type hints.
@@ -654,33 +662,36 @@ public class Function {
 								LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
 
 								exprType node = argTypeInfo.getNode();
-								Attribute typeHintExpr = (Attribute) node;
+								Set<Attribute> allAttributes = getAllAttributes(node);
 
-								// Look up the definition.
-								IDocument document = this.getContainingDocument();
-								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
+								for (Attribute typeHintExpr : allAttributes) {
+									// Look up the definition.
+									IDocument document = this.getContainingDocument();
+									PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
-								String fqn;
-								try {
-									fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
-											this.getNature(), monitor);
-								} catch (AmbiguousDeclaringModuleException e) {
-									LOG.warn(String.format(
-											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
-											this.getProject()), e);
+									String fqn;
+									try {
+										fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
+												this.getNature(), monitor);
+									} catch (AmbiguousDeclaringModuleException e) {
+										LOG.warn(String.format(
+												"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+												typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
+												this.getProject()), e);
 
-									monitor.worked(1);
-									continue; // next parameter.
-								}
+										monitor.worked(1);
+										continue; // next parameter.
+									}
 
-								LOG.info("Found FQN: " + fqn + ".");
+									LOG.info("Found FQN: " + fqn + ".");
 
-								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
-									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter due to a type hint.");
-									monitor.done();
-									return;
+									if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+										// TODO: Also check for tensor-like stuff.
+										this.likelyHasTensorParameter = Boolean.TRUE;
+										LOG.info(this + " likely has a tensor parameter due to a type hint.");
+										monitor.done();
+										return;
+									}
 								}
 							}
 						}
@@ -724,14 +735,124 @@ public class Function {
 						} else
 							LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
 					}
-					monitor.worked(1);
+
+					// Check for containers of tensors.
+					for (CGNode nodeRepresentingThisFunction : nodes) {
+						// Get the callers of this cgNode.
+						for (Iterator<CGNode> predNodes = callGraph.getPredNodes(nodeRepresentingThisFunction); predNodes.hasNext();) {
+							CGNode callerOfThisFunction = predNodes.next();
+							for (Iterator<CallSiteReference> sites = callGraph.getPossibleSites(callerOfThisFunction,
+									nodeRepresentingThisFunction); sites.hasNext();) {
+								CallSiteReference callSiteReference = sites.next();
+								SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference
+										.getProgramCounter()];
+
+								if (instruction instanceof PythonInvokeInstruction) {
+									PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
+									// FIXME: Also consider kwargs and default args.
+									int useNum = paramInx + 1; // The first use is the function being invoked.
+
+									if (useNum < invokeInstruction.getNumberOfUses()) {
+										int paramUse = invokeInstruction.getUse(useNum);
+										DefUse du = callerOfThisFunction.getDU();
+
+										Set<NewSiteReference> allNewSiteReferences = getAllNewSiteReferences(paramUse, du);
+
+										for (Pair<PointerKey, TensorVariable> pair : analysis) {
+											PointerKey pointerKey = pair.fst;
+
+											if (pointerKey instanceof InstanceFieldPointerKey) {
+												InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+												InstanceKey instanceKey = ifpk.getInstanceKey();
+
+												if (instanceKey instanceof AllocationSiteInNode) {
+													AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+
+													if (asin.getNode().equals(callerOfThisFunction)
+															&& allNewSiteReferences.contains(asin.getSite())) {
+														// We have a match.
+														// check the existence of the tensor variable.
+														assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+
+														this.likelyHasTensorParameter = Boolean.TRUE;
+														LOG.info(this + " likely has a tensor-like parameter due to tensor analysis.");
+														monitor.done();
+														return;
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 				}
+				monitor.worked(1);
 			}
 		}
 
 		this.likelyHasTensorParameter = Boolean.FALSE;
 		LOG.info(this + " does not likely have a tensor parameter.");
 		monitor.done();
+	}
+
+	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
+		Set<Attribute> ret = Sets.newHashSet();
+
+		if (node instanceof Attribute)
+			ret.add((Attribute) node);
+
+		node.traverse(new VisitorBase() {
+
+			@Override
+			public Object visitAttribute(Attribute node) throws Exception {
+				ret.add(node);
+				return super.visitAttribute(node);
+			}
+
+			@Override
+			protected Object unhandled_node(SimpleNode node) throws Exception {
+				return null;
+			}
+
+			@Override
+			public void traverse(SimpleNode node) throws Exception {
+				node.traverse(this);
+			}
+		});
+
+		return ret;
+	}
+
+	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du) {
+		return getAllNewSiteReferences(use, du, new HashSet<>());
+	}
+
+	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du, Set<PythonPropertyWrite> seen) {
+		Set<NewSiteReference> ret = new HashSet<>();
+		SSAInstruction def = du.getDef(use);
+
+		if (def != null && def instanceof SSANewInstruction) {
+			SSANewInstruction newInstruction = (SSANewInstruction) def;
+			NewSiteReference newSite = newInstruction.getNewSite();
+			ret.add(newSite);
+
+			for (Iterator<SSAInstruction> uses = du.getUses(def.getDef()); uses.hasNext();) {
+				SSAInstruction useInstruction = uses.next();
+
+				if (useInstruction instanceof PythonPropertyWrite) {
+					PythonPropertyWrite write = (PythonPropertyWrite) useInstruction;
+
+					if (!seen.contains(write)) {
+						seen.add(write);
+						int value = write.getValue();
+						ret.addAll(getAllNewSiteReferences(value, du, seen));
+					}
+				}
+			}
+		}
+		return ret;
 	}
 
 	/**

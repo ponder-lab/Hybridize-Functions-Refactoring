@@ -4394,11 +4394,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 * Test lists.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter146() throws Exception {
-		testHasLikelyTensorParameterHelper(false, false);
+		testHasLikelyTensorParameterHelper(false, true);
 	}
 
 	/**
@@ -4441,6 +4441,119 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function.getEntryMatchingFailure(UNDETERMINABLE_SIDE_EFFECTS));
 		assertNotNull(function.getEntryMatchingFailure(CANT_APPROXIMATE_RECURSION));
 		assertNotNull(function.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter150() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter151() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter152() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter153() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertEquals(P2, function.getPassingPrecondition());
+		assertEquals(1, function.getTransformations().size());
+		assertEquals(CONVERT_TO_EAGER, function.getTransformations().iterator().next());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter154() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter155() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter156() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
 	}
 
 	// TODO: Test arbitrary expression.
