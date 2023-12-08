@@ -252,12 +252,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				try {
 					func.inferTensorTensorParameters(analysis, callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
-				} catch (BadLocationException e) {
-					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
 				} catch (CantInferTensorParametersException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
 							"Can't infer tensor parameters for this function.");
+				} catch (Exception e) {
+					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
 				}
 
 				// Check Python side-effects.

@@ -32,10 +32,12 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -627,8 +629,7 @@ public class Function {
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
-	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor)
-			throws BadLocationException, CantInferTensorParametersException {
+	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
@@ -661,34 +662,36 @@ public class Function {
 								LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
 
 								exprType node = argTypeInfo.getNode();
-								Attribute typeHintExpr = (Attribute) node;
+								Set<Attribute> allAttributes = getAllAttributes(node);
 
-								// Look up the definition.
-								IDocument document = this.getContainingDocument();
-								PySelection selection = Util.getSelection(typeHintExpr.attr, document);
+								for (Attribute typeHintExpr : allAttributes) {
+									// Look up the definition.
+									IDocument document = this.getContainingDocument();
+									PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
-								String fqn;
-								try {
-									fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
-											this.getNature(), monitor);
-								} catch (AmbiguousDeclaringModuleException e) {
-									LOG.warn(String.format(
-											"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-											typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
-											this.getProject()), e);
+									String fqn;
+									try {
+										fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
+												this.getNature(), monitor);
+									} catch (AmbiguousDeclaringModuleException e) {
+										LOG.warn(String.format(
+												"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+												typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
+												this.getProject()), e);
 
-									monitor.worked(1);
-									continue; // next parameter.
-								}
+										monitor.worked(1);
+										continue; // next parameter.
+									}
 
-								LOG.info("Found FQN: " + fqn + ".");
+									LOG.info("Found FQN: " + fqn + ".");
 
-								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
-									// TODO: Also check for tensor-like stuff.
-									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter due to a type hint.");
-									monitor.done();
-									return;
+									if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+										// TODO: Also check for tensor-like stuff.
+										this.likelyHasTensorParameter = Boolean.TRUE;
+										LOG.info(this + " likely has a tensor parameter due to a type hint.");
+										monitor.done();
+										return;
+									}
 								}
 							}
 						}
@@ -792,6 +795,34 @@ public class Function {
 		this.likelyHasTensorParameter = Boolean.FALSE;
 		LOG.info(this + " does not likely have a tensor parameter.");
 		monitor.done();
+	}
+
+	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
+		Set<Attribute> ret = Sets.newHashSet();
+
+		if (node instanceof Attribute)
+			ret.add((Attribute) node);
+
+		node.traverse(new VisitorBase() {
+
+			@Override
+			public Object visitAttribute(Attribute node) throws Exception {
+				ret.add(node);
+				return super.visitAttribute(node);
+			}
+
+			@Override
+			protected Object unhandled_node(SimpleNode node) throws Exception {
+				return null;
+			}
+
+			@Override
+			public void traverse(SimpleNode node) throws Exception {
+				node.traverse(this);
+			}
+		});
+
+		return ret;
 	}
 
 	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du) {
