@@ -743,8 +743,8 @@ public class Function {
 								SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference
 										.getProgramCounter()];
 								PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
+								// FIXME: Also consider kwargs.
 								int paramUse = invokeInstruction.getUse(paramInx + 1); // The first use is the function being invoked.
-																						// FIXME: Also consider kwargs.
 								DefUse du = callerOfThisFunction.getDU();
 								SSAInstruction paramDef = du.getDef(paramUse);
 								SSANewInstruction paramNewInstruction = (SSANewInstruction) paramDef;
