@@ -4459,6 +4459,87 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter151() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter152() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter153() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertEquals(P2, function.getPassingPrecondition());
+		assertEquals(1, function.getTransformations().size());
+		assertEquals(CONVERT_TO_EAGER, function.getTransformations().iterator().next());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter154() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/283.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter155() throws Exception {
+		Function function = getFunction("add");
+
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertTrue(function.getStatus().hasError());
+		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
