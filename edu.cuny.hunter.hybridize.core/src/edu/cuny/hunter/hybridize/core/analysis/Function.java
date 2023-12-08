@@ -749,29 +749,32 @@ public class Function {
 									int paramUse = invokeInstruction.getUse(paramInx + 1); // The first use is the function being invoked.
 									DefUse du = callerOfThisFunction.getDU();
 									SSAInstruction paramDef = du.getDef(paramUse);
-									SSANewInstruction paramNewInstruction = (SSANewInstruction) paramDef;
-									NewSiteReference paramNewSiteReference = paramNewInstruction.getNewSite();
 
-									for (Pair<PointerKey, TensorVariable> pair : analysis) {
-										PointerKey pointerKey = pair.fst;
+									if (paramDef != null && paramDef instanceof SSANewInstruction) {
+										SSANewInstruction paramNewInstruction = (SSANewInstruction) paramDef;
+										NewSiteReference paramNewSiteReference = paramNewInstruction.getNewSite();
 
-										if (pointerKey instanceof InstanceFieldPointerKey) {
-											InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
-											InstanceKey instanceKey = ifpk.getInstanceKey();
+										for (Pair<PointerKey, TensorVariable> pair : analysis) {
+											PointerKey pointerKey = pair.fst;
 
-											if (instanceKey instanceof AllocationSiteInNode) {
-												AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+											if (pointerKey instanceof InstanceFieldPointerKey) {
+												InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+												InstanceKey instanceKey = ifpk.getInstanceKey();
 
-												if (asin.getNode().equals(callerOfThisFunction)
-														&& asin.getSite().equals(paramNewSiteReference)) {
-													// We have a match.
-													// check the existence of the tensor variable.
-													assert pair.snd != null : "Tensor variable should be non-null if the PointerKey is present.";
+												if (instanceKey instanceof AllocationSiteInNode) {
+													AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
 
-													this.likelyHasTensorParameter = Boolean.TRUE;
-													LOG.info(this + " likely has a tensor-like parameter due to tensor analysis.");
-													monitor.done();
-													return;
+													if (asin.getNode().equals(callerOfThisFunction)
+															&& asin.getSite().equals(paramNewSiteReference)) {
+														// We have a match.
+														// check the existence of the tensor variable.
+														assert pair.snd != null : "Tensor variable should be non-null if the PointerKey is present.";
+
+														this.likelyHasTensorParameter = Boolean.TRUE;
+														LOG.info(this + " likely has a tensor-like parameter due to tensor analysis.");
+														monitor.done();
+														return;
+													}
 												}
 											}
 										}
