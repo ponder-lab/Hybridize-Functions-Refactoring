@@ -634,7 +634,7 @@ public class Function {
 		argumentsType params = functionDef.args;
 
 		if (params != null) {
-			exprType[] actualParams = params.args;
+			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
 
 			if (actualParams != null) {
 				String containingModuleName = this.getContainingModuleName();
@@ -683,6 +683,7 @@ public class Function {
 								LOG.info("Found FQN: " + fqn + ".");
 
 								if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+									// TODO: Also check for tensor-like stuff.
 									this.likelyHasTensorParameter = Boolean.TRUE;
 									LOG.info(this + " likely has a tensor parameter due to a type hint.");
 									monitor.done();
