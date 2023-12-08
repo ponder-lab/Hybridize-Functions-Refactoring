@@ -256,11 +256,10 @@ public class Util {
 	}
 
 	public static boolean calls(CGNode node, MethodReference methodReference, CallGraph callGraph) {
-		Set<MethodReference> seen = Sets.newHashSet();
-		return callsInternal(node, methodReference, callGraph, seen);
+		return calls(node, methodReference, callGraph, Sets.newHashSet());
 	}
 
-	private static boolean callsInternal(CGNode node, MethodReference methodReference, CallGraph callGraph, Set<MethodReference> seen) {
+	private static boolean calls(CGNode node, MethodReference methodReference, CallGraph callGraph, Set<MethodReference> seen) {
 		seen.add(node.getMethod().getReference());
 
 		// check the callees.
