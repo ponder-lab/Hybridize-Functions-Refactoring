@@ -50,13 +50,16 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
+import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -64,6 +67,9 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
 import com.ibm.wala.ipa.modref.ModRef;
+import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
@@ -634,8 +640,8 @@ public class Function {
 				String containingModuleName = this.getContainingModuleName();
 				File containingFile = this.getContainingFile();
 
-				// for each parameter.
-				for (exprType paramExpr : actualParams) {
+				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
+					exprType paramExpr = actualParams[paramInx];
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
 					// check a special case where we consider type hints.
@@ -723,6 +729,52 @@ public class Function {
 								LOG.info(localPointerKey + " is not a parameter.");
 						} else
 							LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
+					}
+
+					// Check for containers of tensors.
+					for (CGNode nodeRepresentingThisFunction : nodes) {
+						// Get the callers of this cgNode.
+						for (Iterator<CGNode> predNodes = callGraph.getPredNodes(nodeRepresentingThisFunction); predNodes.hasNext();) {
+							CGNode callerOfThisFunction = predNodes.next();
+							for (Iterator<CallSiteReference> sites = callGraph.getPossibleSites(callerOfThisFunction,
+									nodeRepresentingThisFunction); sites.hasNext();) {
+								CallSiteReference callSiteReference = sites.next();
+								SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference
+										.getProgramCounter()];
+								PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
+								int paramUse = invokeInstruction.getUse(paramInx + 1); // The first use is the function being invoked.
+																						// FIXME: Also consider kwargs.
+								DefUse du = callerOfThisFunction.getDU();
+								SSAInstruction paramDef = du.getDef(paramUse);
+								SSANewInstruction paramNewInstruction = (SSANewInstruction) paramDef;
+								NewSiteReference paramNewSiteReference = paramNewInstruction.getNewSite();
+
+								for (Pair<PointerKey, TensorVariable> pair : analysis) {
+									PointerKey pointerKey = pair.fst;
+
+									if (pointerKey instanceof InstanceFieldPointerKey) {
+										InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+										InstanceKey instanceKey = ifpk.getInstanceKey();
+
+										if (instanceKey instanceof AllocationSiteInNode) {
+											AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+
+											if (asin.getNode().equals(callerOfThisFunction)
+													&& asin.getSite().equals(paramNewSiteReference)) {
+												// We have a match.
+												// check the existence of the tensor variable.
+												assert pair.snd != null : "Tensor variable should be non-null if the PointerKey is present.";
+
+												this.likelyHasTensorParameter = Boolean.TRUE;
+												LOG.info(this + " likely has a tensor-like parameter due to tensor analysis.");
+												monitor.done();
+												return;
+											}
+										}
+									}
+								}
+							}
+						}
 					}
 					monitor.worked(1);
 				}
