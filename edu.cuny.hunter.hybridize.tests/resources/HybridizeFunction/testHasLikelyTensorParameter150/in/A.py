@@ -11,4 +11,3 @@ def add(t):
 arg = (tf.ones([2, 2]), tf.ones([2, 2]))  #  [[2., 2.], [2., 2.]]
 assert type(arg) == tuple
 result = add(arg)
-print(result)
