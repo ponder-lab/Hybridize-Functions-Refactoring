@@ -13,4 +13,3 @@ assert type(arg) == tuple
 assert type(arg[0]) == tuple
 assert type(arg[1]) == tuple
 result = add(arg)
-
