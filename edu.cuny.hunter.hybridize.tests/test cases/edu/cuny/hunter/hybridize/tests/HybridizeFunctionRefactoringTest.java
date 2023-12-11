@@ -5833,4 +5833,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("replica_fn");
 		assertTrue(f.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This function has no parameters.", f.getLikelyHasTensorParameter());
+		assertFalse("This function has no parameters.", f.getLikelyHasNonTensorParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter2() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This function has one parameter.", f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter.", f.getLikelyHasNonTensorParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter3() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one (tensor) parameter.", f.getLikelyHasTensorParameter());
+		assertFalse("This function has one (tensor) parameter.", f.getLikelyHasNonTensorParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter4() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasTensorParameter());
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasNonTensorParameters());
+	}
 }
