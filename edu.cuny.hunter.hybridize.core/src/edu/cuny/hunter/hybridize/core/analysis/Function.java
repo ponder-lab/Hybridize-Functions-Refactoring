@@ -785,8 +785,9 @@ public class Function {
 						if (tensorVariable != null) {
 							subMonitor.done();
 							return true;
-						} else
-							throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
+						}
+
+						throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
 					}
 					LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
 				} else
