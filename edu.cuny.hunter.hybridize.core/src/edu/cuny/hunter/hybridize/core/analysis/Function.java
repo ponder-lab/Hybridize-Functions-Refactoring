@@ -653,7 +653,7 @@ public class Function {
 						// if we are considering type hints.
 						// TODO: Actually get the value here (#111).
 						if (this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists()) {
-							LOG.info("Following type hints for: " + this + ".");
+							LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
 
 							// try to get its type from the AST.
 							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
@@ -687,7 +687,7 @@ public class Function {
 
 									if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
 										this.likelyHasTensorParameter = Boolean.TRUE;
-										LOG.info(this + " likely has a tensor parameter due to a type hint.");
+										LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
 										monitor.done();
 										return;
 									}
@@ -722,7 +722,7 @@ public class Function {
 
 									if (tensorVariable != null) {
 										this.likelyHasTensorParameter = Boolean.TRUE;
-										LOG.info(this + " likely has a tensor parameter due to tensor analysis.");
+										LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
 										monitor.done();
 										return;
 									}
@@ -774,7 +774,8 @@ public class Function {
 														assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
 
 														this.likelyHasTensorParameter = Boolean.TRUE;
-														LOG.info(this + " likely has a tensor-like parameter due to tensor analysis.");
+														LOG.info(this + " likely has a tensor-like parameter: " + paramName
+																+ " due to tensor analysis.");
 														monitor.done();
 														return;
 													}
