@@ -5879,4 +5879,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
 				f.getLikelyHasNonTensorParameters());
 	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		// TODO.
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing2() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		// TODO.
+	}
 }
