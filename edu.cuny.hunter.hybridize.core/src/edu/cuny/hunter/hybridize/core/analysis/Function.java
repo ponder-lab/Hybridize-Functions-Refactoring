@@ -686,7 +686,6 @@ public class Function {
 									LOG.info("Found FQN: " + fqn + ".");
 
 									if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
-										// TODO: Also check for tensor-like stuff.
 										this.likelyHasTensorParameter = Boolean.TRUE;
 										LOG.info(this + " likely has a tensor parameter due to a type hint.");
 										monitor.done();
@@ -697,7 +696,7 @@ public class Function {
 						}
 					}
 
-					// Is this function in the call graph?
+					// Is this function in the call graph? FIXME: This is checked for **each** parameter.
 					Set<CGNode> nodes = this.getNodes(callGraph);
 
 					if (nodes.isEmpty())

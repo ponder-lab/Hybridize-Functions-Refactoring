@@ -2192,8 +2192,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			// NOTE: Not sure about this. Does WALA find closures? What really is the difference between having explicit parameters and
-			// implicit ones? We still need to examine the calling contexts to get any info.
+			// TODO: Not sure about this. Does WALA find closures? What really is the difference between having explicit parameters and
+			// implicit ones? We still need to examine the calling contexts to get any info. Even though this function doesn't have a tensor
+			// parameter, it probably should be hybridized because its free variables are tensors.
 			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
 		}
 	}
