@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
@@ -637,11 +638,7 @@ public class Function {
 
 		if (params != null) {
 			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
-
 			if (actualParams != null) {
-				String containingModuleName = this.getContainingModuleName();
-				File containingFile = this.getContainingFile();
-
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
 					exprType paramExpr = actualParams[paramInx];
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
@@ -664,33 +661,11 @@ public class Function {
 								exprType node = argTypeInfo.getNode();
 								Set<Attribute> allAttributes = getAllAttributes(node);
 
-								for (Attribute typeHintExpr : allAttributes) {
-									// Look up the definition.
-									IDocument document = this.getContainingDocument();
-									PySelection selection = Util.getSelection(typeHintExpr.attr, document);
-
-									String fqn;
-									try {
-										fqn = Util.getFullyQualifiedName(typeHintExpr, containingModuleName, containingFile, selection,
-												this.getNature(), monitor);
-									} catch (AmbiguousDeclaringModuleException e) {
-										LOG.warn(String.format(
-												"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-												typeHintExpr, selection.getSelectedText(), containingModuleName, containingFile.getName(),
-												this.getProject()), e);
-
-										monitor.worked(1);
-										continue; // next parameter.
-									}
-
-									LOG.info("Found FQN: " + fqn + ".");
-
-									if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
-										this.likelyHasTensorParameter = Boolean.TRUE;
-										LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
-										monitor.done();
-										return;
-									}
+								if (attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
+									this.likelyHasTensorParameter = Boolean.TRUE;
+									LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
+									monitor.worked(1);
+									continue; // next parameter.
 								}
 							}
 						}
@@ -706,95 +681,160 @@ public class Function {
 
 					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
 					// pointer key, then we know it's a tensor if the TensorType is not null.
-					for (Pair<PointerKey, TensorVariable> pair : analysis) {
-						PointerKey pointerKey = pair.fst;
-
-						if (pointerKey instanceof LocalPointerKey) {
-							LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
-
-							if (localPointerKey.isParameter()) {
-								// Does the pointer key match the parameter?
-								if (matches(paramExpr, paramName, localPointerKey)) {
-									LOG.info(paramExpr + " matches: " + localPointerKey + ".");
-
-									// check the existence of the tensor variable.
-									TensorVariable tensorVariable = pair.snd;
-
-									if (tensorVariable != null) {
-										this.likelyHasTensorParameter = Boolean.TRUE;
-										LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
-										monitor.done();
-										return;
-									}
-									throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
-								}
-								LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
-							} else
-								LOG.info(localPointerKey + " is not a parameter.");
-						} else
-							LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
+					if (tensorAnalysisIncludesParameter(analysis, paramExpr, paramName, monitor.slice(IProgressMonitor.UNKNOWN))) {
+						this.likelyHasTensorParameter = Boolean.TRUE;
+						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
+						monitor.worked(1);
+						continue; // next parameter.
 					}
 
 					// Check for containers of tensors.
-					for (CGNode nodeRepresentingThisFunction : nodes) {
-						// Get the callers of this cgNode.
-						for (Iterator<CGNode> predNodes = callGraph.getPredNodes(nodeRepresentingThisFunction); predNodes.hasNext();) {
-							CGNode callerOfThisFunction = predNodes.next();
-							for (Iterator<CallSiteReference> sites = callGraph.getPossibleSites(callerOfThisFunction,
-									nodeRepresentingThisFunction); sites.hasNext();) {
-								CallSiteReference callSiteReference = sites.next();
-								SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference
-										.getProgramCounter()];
+					if (tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph, monitor.slice(IProgressMonitor.UNKNOWN))) {
+						this.likelyHasTensorParameter = Boolean.TRUE;
+						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
+						monitor.worked(1);
+						continue; // next parameter.
+					}
 
-								if (instruction instanceof PythonInvokeInstruction) {
-									PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
-									// FIXME: Also consider kwargs and default args.
-									int useNum = paramInx + 1; // The first use is the function being invoked.
+					monitor.worked(1);
+				}
+			}
+		}
 
-									if (useNum < invokeInstruction.getNumberOfUses()) {
-										int paramUse = invokeInstruction.getUse(useNum);
-										DefUse du = callerOfThisFunction.getDU();
+		if (this.likelyHasTensorParameter == null) {
+			this.likelyHasTensorParameter = Boolean.FALSE;
+			LOG.info(this + " does not likely have a tensor parameter.");
+		}
 
-										Set<NewSiteReference> allNewSiteReferences = getAllNewSiteReferences(paramUse, du);
+		monitor.done();
+	}
 
-										for (Pair<PointerKey, TensorVariable> pair : analysis) {
-											PointerKey pointerKey = pair.fst;
+	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis analysis, int paramInx, CallGraph callGraph,
+			IProgressMonitor monitor) {
+		Set<CGNode> nodes = this.getNodes(callGraph);
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.",
+				nodes.size());
 
-											if (pointerKey instanceof InstanceFieldPointerKey) {
-												InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
-												InstanceKey instanceKey = ifpk.getInstanceKey();
+		for (CGNode nodeRepresentingThisFunction : nodes) {
+			// Get the callers of this cgNode.
+			for (Iterator<CGNode> predNodes = callGraph.getPredNodes(nodeRepresentingThisFunction); predNodes.hasNext();) {
+				CGNode callerOfThisFunction = predNodes.next();
+				for (Iterator<CallSiteReference> sites = callGraph.getPossibleSites(callerOfThisFunction,
+						nodeRepresentingThisFunction); sites.hasNext();) {
+					CallSiteReference callSiteReference = sites.next();
+					SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference.getProgramCounter()];
 
-												if (instanceKey instanceof AllocationSiteInNode) {
-													AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+					if (instruction instanceof PythonInvokeInstruction) {
+						PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
+						// FIXME: Also consider kwargs and default args.
+						int useNum = paramInx + 1; // The first use is the function being invoked.
 
-													if (asin.getNode().equals(callerOfThisFunction)
-															&& allNewSiteReferences.contains(asin.getSite())) {
-														// We have a match.
-														// check the existence of the tensor variable.
-														assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+						if (useNum < invokeInstruction.getNumberOfUses()) {
+							int paramUse = invokeInstruction.getUse(useNum);
+							DefUse du = callerOfThisFunction.getDU();
 
-														this.likelyHasTensorParameter = Boolean.TRUE;
-														LOG.info(this + " likely has a tensor-like parameter: " + paramName
-																+ " due to tensor analysis.");
-														monitor.done();
-														return;
-													}
-												}
-											}
+							Set<NewSiteReference> allNewSiteReferences = getAllNewSiteReferences(paramUse, du);
+
+							for (Pair<PointerKey, TensorVariable> pair : analysis) {
+								PointerKey pointerKey = pair.fst;
+
+								if (pointerKey instanceof InstanceFieldPointerKey) {
+									InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+									InstanceKey instanceKey = ifpk.getInstanceKey();
+
+									if (instanceKey instanceof AllocationSiteInNode) {
+										AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+
+										if (asin.getNode().equals(callerOfThisFunction) && allNewSiteReferences.contains(asin.getSite())) {
+											// We have a match.
+											// check the existence of the tensor variable.
+											assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+											subMonitor.done();
+											return true;
 										}
 									}
 								}
 							}
 						}
 					}
-					monitor.worked(1);
 				}
 			}
+			subMonitor.worked(1);
+		}
+		return false;
+	}
+
+	private boolean tensorAnalysisIncludesParameter(TensorTypeAnalysis analysis, exprType paramExpr, String paramName,
+			IProgressMonitor monitor) {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking tensor analysis for tensor parameters.", IProgressMonitor.UNKNOWN);
+
+		for (Pair<PointerKey, TensorVariable> pair : analysis) {
+			PointerKey pointerKey = pair.fst;
+
+			if (pointerKey instanceof LocalPointerKey) {
+				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
+
+				if (localPointerKey.isParameter()) {
+					// Does the pointer key match the parameter?
+					if (matches(paramExpr, paramName, localPointerKey)) {
+						LOG.info(paramExpr + " matches: " + localPointerKey + ".");
+
+						// check the existence of the tensor variable.
+						TensorVariable tensorVariable = pair.snd;
+
+						if (tensorVariable != null) {
+							subMonitor.done();
+							return true;
+						} else
+							throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
+					}
+					LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
+				} else
+					LOG.info(localPointerKey + " is not a parameter.");
+			} else
+				LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
+
+			subMonitor.worked(1);
 		}
 
-		this.likelyHasTensorParameter = Boolean.FALSE;
-		LOG.info(this + " does not likely have a tensor parameter.");
-		monitor.done();
+		subMonitor.done();
+		return false;
+	}
+
+	private boolean attributesHaveTensorTypeHints(Set<Attribute> attributes, IProgressMonitor monitor) throws BadLocationException {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
+
+		for (Attribute typeHintExpr : attributes) {
+			// Look up the definition.
+			IDocument document = this.getContainingDocument();
+			PySelection selection = Util.getSelection(typeHintExpr.attr, document);
+
+			String fqn;
+			try {
+				fqn = Util.getFullyQualifiedName(typeHintExpr, this.getContainingModuleName(), this.getContainingFile(), selection,
+						this.getNature(), subMonitor.split(1));
+			} catch (AmbiguousDeclaringModuleException e) {
+				LOG.warn(String.format(
+						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+						typeHintExpr, selection.getSelectedText(), getContainingModuleName(), this.getContainingFile().getName(),
+						this.getProject()), e);
+
+				subMonitor.worked(1);
+				continue; // next attribute.
+			}
+
+			LOG.info("Found FQN: " + fqn + ".");
+
+			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+				subMonitor.done();
+				return true;
+			}
+
+			subMonitor.worked(1);
+		}
+
+		subMonitor.done();
+		return false;
 	}
 
 	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
