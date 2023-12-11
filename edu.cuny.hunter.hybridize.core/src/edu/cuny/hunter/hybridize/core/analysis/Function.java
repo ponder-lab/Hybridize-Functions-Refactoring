@@ -786,8 +786,8 @@ public class Function {
 							}
 						}
 					}
+					monitor.worked(1);
 				}
-				monitor.worked(1);
 			}
 		}
 
