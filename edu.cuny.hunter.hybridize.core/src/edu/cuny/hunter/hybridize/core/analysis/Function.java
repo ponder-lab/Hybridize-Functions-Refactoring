@@ -12,6 +12,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -59,6 +60,8 @@ import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.CallSiteReference;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -414,32 +417,27 @@ public class Function {
 
 		for (CGNode nodeRepresentingThisFunction : nodes) {
 			IR ir = nodeRepresentingThisFunction.getIR();
-			int[] parameterValueNumbers = ir.getParameterValueNumbers();
 
 			subMonitor.beginTask("Examining parameters...", ir.getNumberOfParameters() - 1);
 
 			// Start at 1 because the first value is the function being invoked.
-			for (int i = 1; i < parameterValueNumbers.length; i++) {
-				int value = parameterValueNumbers[i];
+			// FIXME: Also consider kwargs and default args.
+			// TODO: I wonder if ir.getParameterValueNumbers() returns kwargs as well.
+			for (int paramInx = 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+				int value = ir.getParameter(paramInx);
 				PointerKey pointerKeyForLocal = pointerAnalysis.getHeapModel().getPointerKeyForLocal(nodeRepresentingThisFunction, value);
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKeyForLocal);
 
 				subMonitor.beginTask("Examining instances...", pointsToSet.size());
 
 				for (InstanceKey instanceKey : pointsToSet) {
-					LOG.info("Parameter of: " + this + " with value number: " + value + " points to: " + instanceKey + ".");
+					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
 
-					if (instanceKey instanceof ConstantKey<?>) {
-						ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-						Object constantValue = constantKey.getValue();
-
-						if (constantValue != null) {
-							LOG.info("Found constant value: " + constantValue + " for parameter of: " + this + " with value number: "
-									+ value + ".");
-							this.likelyHasPrimitiveParameters = TRUE;
-							subMonitor.done();
-							return;
-						}
+					if (containsPrimitive(instanceKey, pointerAnalysis, subMonitor.split(1))) {
+						LOG.info(this + " likely has a primitive parameter.");
+						this.likelyHasPrimitiveParameters = TRUE;
+						subMonitor.done();
+						return;
 					}
 
 					subMonitor.worked(1);
@@ -451,9 +449,49 @@ public class Function {
 			subMonitor.worked(1);
 		}
 
-		LOG.info(this + " does not have a primitive parameter.");
+		LOG.info(this + " likely does not have a primitive parameter.");
 		this.likelyHasPrimitiveParameters = FALSE;
 		subMonitor.done();
+	}
+
+	private boolean containsPrimitive(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor) {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
+
+		if (instanceKey instanceof ConstantKey<?>) {
+			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+			Object constantValue = constantKey.getValue();
+
+			if (constantValue != null) {
+				LOG.info("Found constant value: " + constantValue + " for parameter of: " + this + ".");
+				subMonitor.done();
+				return true;
+			}
+		} else if (instanceKey instanceof AllocationSiteInNode) {
+			AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+			IClass concreteType = asin.getConcreteType();
+			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
+
+			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
+
+			for (IField field : allInstanceFields) {
+				InstanceFieldPointerKey instanceFieldKey = (InstanceFieldPointerKey) pointerAnalysis.getHeapModel()
+						.getPointerKeyForInstanceField(asin, field);
+				OrdinalSet<InstanceKey> instanceFieldPointsToSet = pointerAnalysis.getPointsToSet(instanceFieldKey);
+
+				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
+
+				for (InstanceKey key : instanceFieldPointsToSet)
+					if (containsPrimitive(key, pointerAnalysis, subMonitor.split(1))) {
+						subMonitor.done();
+						return true;
+					}
+
+				subMonitor.worked(1);
+			}
+		}
+
+		subMonitor.done();
+		return false;
 	}
 
 	/**

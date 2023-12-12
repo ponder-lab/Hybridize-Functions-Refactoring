@@ -5887,6 +5887,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getLikelyHasPrimitiveParameters());
 	}
 
+	@Test
+	public void testLikelyHasNonTensorParameter8() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter9() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter10() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter11() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter12() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
 	/**
 	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
 	 */
