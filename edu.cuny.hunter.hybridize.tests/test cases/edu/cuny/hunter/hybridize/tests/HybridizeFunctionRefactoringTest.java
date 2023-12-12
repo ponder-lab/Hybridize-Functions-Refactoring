@@ -5880,6 +5880,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				f.getLikelyHasNonTensorParameters());
 	}
 
+	@Test
+	public void testLikelyHasNonTensorParameter7() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.getLikelyHasNonTensorParameters());
+	}
+
 	/**
 	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
 	 */

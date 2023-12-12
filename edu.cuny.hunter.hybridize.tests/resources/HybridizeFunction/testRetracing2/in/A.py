@@ -4,14 +4,12 @@ import tensorflow as tf
 
 
 @tf.function
-def f(x, y):
-  return tf.abs(x)
+def f(x):
+  return x  # tf.abs(x)
 
 
-f1 = f.get_concrete_function(1, 2)
-f2 = f.get_concrete_function(2, 3)  # Slow - compiles new graph
-assert (f1 is f2) == False
+print(f(1))
+print(f(2))  # Slow - compiles new graph
 
-f1 = f.get_concrete_function(tf.constant(1), 2)
-f2 = f.get_concrete_function(tf.constant(2), 2)  # Fast - reuses f1
-assert (f1 is f2) == True
+print(f(tf.constant(1)))
+print(f(tf.constant(2)))  # Fast - reuses f1

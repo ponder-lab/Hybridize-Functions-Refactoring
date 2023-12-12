@@ -690,23 +690,20 @@ public class Function {
 					if (tensorAnalysisIncludesParameter(analysis, paramExpr, paramName, monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
-						monitor.worked(1);
-						continue; // next parameter.
+					} else {
+						this.likelyHasNonTensorParameters = TRUE;
+						LOG.info(this + " likely has a non-tensor parameter: " + paramName + " due to tensor analysis.");
 					}
 
 					// Check for containers of tensors.
-					if (tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph, monitor.slice(IProgressMonitor.UNKNOWN))) {
+					if ((this.likelyHasTensorParameter == null || this.likelyHasTensorParameter == FALSE)
+							&& tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph,
+									monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
-						monitor.worked(1);
-						continue; // next parameter.
-					}
-
-					// if there is at least one parameter and we haven't found a tensor parameter.
-					if (actualParams.length > 0) {
-						// then we must have encountered a "non-tensor" parameter.
+					} else if (this.likelyHasNonTensorParameters == null || this.likelyHasNonTensorParameters == FALSE) {
 						this.likelyHasNonTensorParameters = TRUE;
-						LOG.info(this + " likely has a non-tensor parameter: " + paramName);
+						LOG.info(this + " likely has a non-tensor-like parameter: " + paramName + " due to tensor analysis.");
 					}
 
 					monitor.worked(1);
@@ -715,7 +712,7 @@ public class Function {
 		}
 
 		if (this.likelyHasTensorParameter == null) {
-			this.likelyHasTensorParameter = Boolean.FALSE;
+			this.likelyHasTensorParameter = FALSE;
 			LOG.info(this + " does not likely have a tensor parameter.");
 		}
 
