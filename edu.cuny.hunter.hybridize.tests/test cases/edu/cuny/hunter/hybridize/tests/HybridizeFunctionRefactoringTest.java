@@ -5838,28 +5838,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testLikelyHasNonTensorParameter() throws Exception {
 		Function f = getFunction("f");
 		assertFalse("This function has no parameters.", f.getLikelyHasTensorParameter());
-		assertFalse("This function has no parameters.", f.getLikelyHasNonTensorParameters());
+		assertFalse("This function has no parameters.", f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter2() throws Exception {
 		Function f = getFunction("f");
 		assertFalse("This function has one parameter.", f.getLikelyHasTensorParameter());
-		assertTrue("This function has one parameter.", f.getLikelyHasNonTensorParameters());
+		assertTrue("This function has one parameter.", f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter3() throws Exception {
 		Function f = getFunction("f");
 		assertTrue("This function has one (tensor) parameter.", f.getLikelyHasTensorParameter());
-		assertFalse("This function has one (tensor) parameter.", f.getLikelyHasNonTensorParameters());
+		assertFalse("This function has one (tensor) parameter.", f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter4() throws Exception {
 		Function f = getFunction("f");
 		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasTensorParameter());
-		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasNonTensorParameters());
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
@@ -5868,7 +5868,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
 				f.getLikelyHasTensorParameter());
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasNonTensorParameters());
+				f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
@@ -5877,14 +5877,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
 				f.getLikelyHasTensorParameter());
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasNonTensorParameters());
+				f.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter7() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasTensorParameter());
-		assertTrue(f.getLikelyHasNonTensorParameters());
+		assertTrue(f.getLikelyHasPrimitiveParameters());
 	}
 
 	/**

@@ -29,7 +29,9 @@ public enum PreconditionFailure {
 	/**
 	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?.
 	 */
-	UNDETERMINABLE_TENSOR_PARAMETER(10);
+	UNDETERMINABLE_TENSOR_PARAMETER(10),
+
+	UNDETERMINABLE_PRIMITIVE_PARAMETER(11);
 
 	static {
 		// check that the codes are unique.

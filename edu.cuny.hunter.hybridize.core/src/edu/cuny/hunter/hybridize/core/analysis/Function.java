@@ -59,11 +59,13 @@ import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.CallSiteReference;
+import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
+import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -72,6 +74,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
@@ -343,9 +346,9 @@ public class Function {
 	private Boolean likelyHasTensorParameter;
 
 	/**
-	 * True iff this {@link Function} has at least one parameter that is not likely a tensor.
+	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
-	private Boolean likelyHasNonTensorParameters;
+	private Boolean likelyHasPrimitiveParameters;
 
 	/**
 	 * True iff this {@link Function} has Python side-effects.
@@ -398,6 +401,60 @@ public class Function {
 			LOG.info(this + " is not recursive.");
 			this.setIsRecursive(false);
 		}
+	}
+
+	public void inferPrimitiveParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor)
+			throws CantInferPrimitiveParametersException {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering primitive parameters...", IProgressMonitor.UNKNOWN);
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		if (nodes.isEmpty())
+			throw new CantInferPrimitiveParametersException("Can't primitive paramaeters of " + this + " without a call graph node.");
+
+		subMonitor.beginTask("Examining nodes...", nodes.size());
+
+		for (CGNode nodeRepresentingThisFunction : nodes) {
+			IR ir = nodeRepresentingThisFunction.getIR();
+			int[] parameterValueNumbers = ir.getParameterValueNumbers();
+
+			subMonitor.beginTask("Examining parameters...", ir.getNumberOfParameters() - 1);
+
+			// Start at 1 because the first value is the function being invoked.
+			for (int i = 1; i < parameterValueNumbers.length; i++) {
+				int value = parameterValueNumbers[i];
+				PointerKey pointerKeyForLocal = pointerAnalysis.getHeapModel().getPointerKeyForLocal(nodeRepresentingThisFunction, value);
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKeyForLocal);
+
+				subMonitor.beginTask("Examining instances...", pointsToSet.size());
+
+				for (InstanceKey instanceKey : pointsToSet) {
+					LOG.info("Parameter of: " + this + " with value number: " + value + " points to: " + instanceKey + ".");
+
+					if (instanceKey instanceof ConstantKey<?>) {
+						ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+						Object constantValue = constantKey.getValue();
+
+						if (constantValue != null) {
+							LOG.info("Found constant value: " + constantValue + " for parameter of: " + this + " with value number: "
+									+ value + ".");
+							this.likelyHasPrimitiveParameters = TRUE;
+							subMonitor.done();
+							return;
+						}
+					}
+
+					subMonitor.worked(1);
+				}
+
+				subMonitor.worked(1);
+			}
+
+			subMonitor.worked(1);
+		}
+
+		LOG.info(this + " does not have a primitive parameter.");
+		this.likelyHasPrimitiveParameters = FALSE;
+		subMonitor.done();
 	}
 
 	/**
@@ -690,19 +747,16 @@ public class Function {
 					if (tensorAnalysisIncludesParameter(analysis, paramExpr, paramName, monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
-					} else {
-						this.likelyHasNonTensorParameters = TRUE;
-						LOG.info(this + " likely has a non-tensor parameter: " + paramName + " due to tensor analysis.");
+						monitor.worked(1);
+						continue; // next parameter.
 					}
 
 					// Check for containers of tensors.
-					if (this.likelyHasTensorParameter == null && tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph,
-							monitor.slice(IProgressMonitor.UNKNOWN))) {
+					if (tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph, monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
-					} else if (this.likelyHasNonTensorParameters == null) {
-						this.likelyHasNonTensorParameters = TRUE;
-						LOG.info(this + " likely has a non-tensor-like parameter: " + paramName + " due to tensor analysis.");
+						monitor.worked(1);
+						continue; // next parameter.
 					}
 
 					monitor.worked(1);
@@ -711,13 +765,8 @@ public class Function {
 		}
 
 		if (this.likelyHasTensorParameter == null) {
-			this.likelyHasTensorParameter = FALSE;
+			this.likelyHasTensorParameter = Boolean.FALSE;
 			LOG.info(this + " does not likely have a tensor parameter.");
-		}
-
-		if (this.likelyHasNonTensorParameters == null) {
-			this.likelyHasNonTensorParameters = FALSE;
-			LOG.info(this + " does not likely have a non-tensor parameter.");
 		}
 
 		monitor.done();
@@ -1365,11 +1414,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff this {@link Function} has at least one parameter that is likely not a tensor.
+	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive.
 	 *
-	 * @return True iff this {@link Function} has at least one parameter that is likely not a tensor.
+	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
-	public Boolean getLikelyHasNonTensorParameters() {
-		return likelyHasNonTensorParameters;
+	public Boolean getLikelyHasPrimitiveParameters() {
+		return likelyHasPrimitiveParameters;
 	}
 }
