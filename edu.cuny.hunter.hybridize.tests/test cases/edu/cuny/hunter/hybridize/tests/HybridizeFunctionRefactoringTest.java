@@ -5861,4 +5861,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasTensorParameter());
 		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasNonTensorParameters());
 	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter5() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasNonTensorParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter6() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasNonTensorParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter7() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.getLikelyHasNonTensorParameters());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		// TODO.
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing2() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		// TODO.
+	}
 }
