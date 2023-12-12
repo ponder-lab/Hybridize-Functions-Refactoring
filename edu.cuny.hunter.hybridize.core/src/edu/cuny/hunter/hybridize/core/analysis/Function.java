@@ -343,11 +343,6 @@ public class Function {
 	private Boolean likelyHasTensorParameter;
 
 	/**
-	 * True iff this {@link Function} has at least one parameter that is not likely a tensor.
-	 */
-	private Boolean likelyHasNonTensorParameters;
-
-	/**
 	 * True iff this {@link Function} has Python side-effects.
 	 */
 	private Boolean hasPythonSideEffects;
@@ -643,7 +638,6 @@ public class Function {
 
 		if (params != null) {
 			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
-
 			if (actualParams != null) {
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
 					exprType paramExpr = actualParams[paramInx];
@@ -701,9 +695,8 @@ public class Function {
 									monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
-					} else if (this.likelyHasNonTensorParameters == null || this.likelyHasNonTensorParameters == FALSE) {
-						this.likelyHasNonTensorParameters = TRUE;
-						LOG.info(this + " likely has a non-tensor-like parameter: " + paramName + " due to tensor analysis.");
+						monitor.worked(1);
+						continue; // next parameter.
 					}
 
 					monitor.worked(1);
@@ -714,11 +707,6 @@ public class Function {
 		if (this.likelyHasTensorParameter == null) {
 			this.likelyHasTensorParameter = FALSE;
 			LOG.info(this + " does not likely have a tensor parameter.");
-		}
-
-		if (this.likelyHasNonTensorParameters == null) {
-			this.likelyHasNonTensorParameters = FALSE;
-			LOG.info(this + " does not likely have a non-tensor parameter.");
 		}
 
 		monitor.done();
@@ -1363,14 +1351,5 @@ public class Function {
 
 	public Set<RefactoringStatusEntry> getErrors() {
 		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isError);
-	}
-
-	/**
-	 * Returns true iff this {@link Function} has at least one parameter that is likely not a tensor.
-	 *
-	 * @return True iff this {@link Function} has at least one parameter that is likely not a tensor.
-	 */
-	public Boolean getLikelyHasNonTensorParameters() {
-		return likelyHasNonTensorParameters;
 	}
 }
