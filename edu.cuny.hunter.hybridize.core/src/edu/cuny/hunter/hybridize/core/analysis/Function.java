@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
@@ -1171,14 +1172,26 @@ public class Function {
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter() != null && this.getLikelyHasTensorParameter()) {
-				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
-					if (this.getIsRecursive() != null && !this.getIsRecursive()) {
-						this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-						this.setPassingPrecondition(P1);
-					} else if (this.getIsRecursive() != null) // it's recursive.
-						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
-				} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
-					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+				if (this.getLikelyHasPrimitiveParameters() != null && !this.getLikelyHasPrimitiveParameters()) {
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						if (this.getIsRecursive() != null && !this.getIsRecursive()) {
+							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+							this.setPassingPrecondition(P1);
+						} else if (this.getIsRecursive() != null) // it's recursive.
+							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"Can't hybridize a function with Python side-effects.");
+
+						if (this.getIsRecursive() != null && this.getIsRecursive())
+							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+					}
+				} else if (this.getLikelyHasPrimitiveParameters() != null) { // it has primitive parameters.
+					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
+
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"Can't hybridize a function with Python side-effects.");
 
 					if (this.getIsRecursive() != null && this.getIsRecursive())
 						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
@@ -1186,6 +1199,9 @@ public class Function {
 			} else if (this.getLikelyHasTensorParameter() != null) { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
+
+				if (this.getLikelyHasPrimitiveParameters() != null && this.getLikelyHasPrimitiveParameters())
+					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");

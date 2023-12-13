@@ -31,7 +31,12 @@ public enum PreconditionFailure {
 	 */
 	UNDETERMINABLE_TENSOR_PARAMETER(10),
 
-	UNDETERMINABLE_PRIMITIVE_PARAMETER(11);
+	/**
+	 * We need a call graph node.
+	 */
+	UNDETERMINABLE_PRIMITIVE_PARAMETER(11),
+
+	HAS_PRIMITIVE_PARAMETERS(12);
 
 	static {
 		// check that the codes are unique.

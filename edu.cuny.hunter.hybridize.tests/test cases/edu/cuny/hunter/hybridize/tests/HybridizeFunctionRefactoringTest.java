@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.tests;
 
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
@@ -5955,7 +5956,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRetracing() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasTensorParameter());
-		// TODO.
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getIsHybrid());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(f.getTransformations().isEmpty());
 	}
 
 	/**
@@ -5965,6 +5971,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRetracing2() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasTensorParameter());
-		// TODO.
+		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getIsHybrid());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertNotNull(f.getPassingPrecondition());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().isEmpty());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 }
