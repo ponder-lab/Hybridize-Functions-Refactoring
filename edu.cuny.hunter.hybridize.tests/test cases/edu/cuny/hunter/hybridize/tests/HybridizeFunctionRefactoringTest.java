@@ -5980,4 +5980,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getTransformations().isEmpty());
 		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing3() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.getIsHybrid());
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(f.getTransformations().isEmpty());
+	}
 }
