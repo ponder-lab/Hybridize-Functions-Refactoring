@@ -5891,30 +5891,61 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testLikelyHasNonTensorParameter8() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter9() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter10() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter11() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter12() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter13() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter14() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter15() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This is a user-defined class with no fields.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter16() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
 	}
 
 	/**
