@@ -36,7 +36,12 @@ public enum PreconditionFailure {
 	 */
 	UNDETERMINABLE_PRIMITIVE_PARAMETER(11),
 
-	HAS_PRIMITIVE_PARAMETERS(12);
+	HAS_PRIMITIVE_PARAMETERS(12),
+
+	/**
+	 * P3 failure.
+	 */
+	HAS_NO_PRIMITIVE_PARAMETERS(13);
 
 	static {
 		// check that the codes are unique.

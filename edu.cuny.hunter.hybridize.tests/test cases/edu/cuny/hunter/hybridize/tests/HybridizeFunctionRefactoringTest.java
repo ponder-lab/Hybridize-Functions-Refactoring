@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -10,10 +11,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETE
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static java.util.Collections.singleton;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -5987,12 +5990,58 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRetracing3() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasTensorParameter());
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertTrue(f.getIsHybrid());
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
+		assertFalse(f.getHasPythonSideEffects()); // F
+
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNotNull(f.getPassingPrecondition());
+		assertEquals(P3, f.getPassingPrecondition());
+		assertFalse(f.getStatus().hasError());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().isEmpty());
+		assertEquals(singleton(CONVERT_TO_EAGER), f.getTransformations());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing4() throws Exception {
+		Function f = getFunction("f");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
+		assertTrue(f.getHasPythonSideEffects()); // T
+
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getStatus().hasError());
 		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertNotNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+		assertTrue(f.getTransformations().isEmpty());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing5() throws Exception {
+		Function f = getFunction("f");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertFalse(f.getLikelyHasPrimitiveParameters()); // F
+		assertFalse(f.getHasPythonSideEffects()); // F
+
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getStatus().hasError());
+		assertNotNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
 		assertTrue(f.getTransformations().isEmpty());
 	}
 }
