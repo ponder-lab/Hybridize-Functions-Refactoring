@@ -1183,7 +1183,7 @@ public class Function {
 					if (this.getIsRecursive() != null && this.getIsRecursive())
 						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 				}
-			} else { // no tensor parameters.
+			} else if (this.getLikelyHasTensorParameter() != null) { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
@@ -1203,7 +1203,7 @@ public class Function {
 				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
-			} else { // it has a tensor parameter.
+			} else if (this.getLikelyHasTensorParameter() != null) { // it has a tensor parameter.
 				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
 						"Functions with tensor parameters may benefit from hybreidization.");
 
