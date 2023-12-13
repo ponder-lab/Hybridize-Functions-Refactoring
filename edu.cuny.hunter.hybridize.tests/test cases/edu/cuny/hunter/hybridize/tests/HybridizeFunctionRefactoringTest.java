@@ -5945,7 +5945,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testLikelyHasNonTensorParameter16() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
+		assertTrue("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
 	}
 
 	/**
