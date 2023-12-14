@@ -746,6 +746,10 @@ public class Function {
 					exprType paramExpr = actualParams[paramInx];
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
+					// don't consider `self` as a tensor.
+					if (paramInx == 0 && paramName.equals("self"))
+						continue; // next parameter.
+
 					// check a special case where we consider type hints.
 
 					// if hybridization parameters are specified.

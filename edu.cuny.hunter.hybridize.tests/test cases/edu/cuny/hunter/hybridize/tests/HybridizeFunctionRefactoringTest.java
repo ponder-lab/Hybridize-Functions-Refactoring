@@ -648,9 +648,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(function.getIsHybrid());
 
 			switch (function.getIdentifier()) {
-			case "Test.value":
 			case "Test.name":
 				assertNull(function.getLikelyHasTensorParameter());
+				break;
+			case "Test.value":
+				assertFalse(function.getLikelyHasTensorParameter());
 				break;
 			case "Test.__init__":
 				assertFalse(function.getLikelyHasTensorParameter());
