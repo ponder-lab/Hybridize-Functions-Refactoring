@@ -1,8 +1,10 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -1220,12 +1222,22 @@ public class Function {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 			} else if (this.getLikelyHasTensorParameter() != null) { // it has a tensor parameter.
-				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
-						"Functions with tensor parameters may benefit from hybreidization.");
+				// if it has primitive parameters.
+				if (this.getLikelyHasPrimitiveParameters() != null && this.getLikelyHasPrimitiveParameters()) {
+					// if it does not have side-effects.
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						this.addTransformation(CONVERT_TO_EAGER);
+						this.setPassingPrecondition(P3);
+					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
+				} else if (this.getLikelyHasPrimitiveParameters() != null) { // no primitive parameters.
+					this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+							"Functions with no Python literal arguments may benefit from hybridization.");
 
-				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
-					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
-							"De-hybridizing a function with Python side-effects may alter semantics.");
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"De-hybridizing a function with Python side-effects may alter semantics.");
+					}
 				}
 
 				// Here, we have a hybrid function with a tensor parameter.
