@@ -4474,10 +4474,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getIsHybrid());
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNull(function.getPassingPrecondition());
-		assertTrue(function.getTransformations().isEmpty());
-		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(P3, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4490,10 +4492,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getIsHybrid());
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNull(function.getPassingPrecondition());
-		assertTrue(function.getTransformations().isEmpty());
-		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(PreconditionSuccess.P3, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(singleton(CONVERT_TO_EAGER), function.getTransformations());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -6046,6 +6050,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(f.getPassingPrecondition());
 		assertTrue(f.getStatus().hasError());
 		assertNotNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS));
 		assertTrue(f.getTransformations().isEmpty());
 	}
 }
