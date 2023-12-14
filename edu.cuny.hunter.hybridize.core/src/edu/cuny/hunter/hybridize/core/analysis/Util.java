@@ -32,9 +32,11 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeReference;
 
 public class Util {
 
@@ -276,5 +278,10 @@ public class Util {
 		}
 
 		return false;
+	}
+
+	public static boolean isContainerType(TypeReference reference) {
+		return reference.equals(PythonTypes.dict) || reference.equals(PythonTypes.enumerate) || reference.equals(PythonTypes.list)
+				|| reference.equals(PythonTypes.set) || reference.equals(PythonTypes.tuple);
 	}
 }

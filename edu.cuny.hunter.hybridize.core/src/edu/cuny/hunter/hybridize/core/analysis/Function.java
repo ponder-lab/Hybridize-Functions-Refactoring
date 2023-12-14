@@ -852,7 +852,8 @@ public class Function {
 									if (instanceKey instanceof AllocationSiteInNode) {
 										AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
 
-										if (asin.getNode().equals(callerOfThisFunction) && allNewSiteReferences.contains(asin.getSite())) {
+										if (asin.getNode().equals(callerOfThisFunction) && allNewSiteReferences.contains(asin.getSite())
+												&& Util.isContainerType(asin.getConcreteType().getReference())) {
 											// We have a match.
 											// check the existence of the tensor variable.
 											assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
