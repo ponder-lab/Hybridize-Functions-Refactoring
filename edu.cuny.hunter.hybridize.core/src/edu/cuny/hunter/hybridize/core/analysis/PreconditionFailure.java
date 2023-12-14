@@ -29,7 +29,19 @@ public enum PreconditionFailure {
 	/**
 	 * Either there is no call to the function, there is a call but don't handle it, or something about decorators?.
 	 */
-	UNDETERMINABLE_TENSOR_PARAMETER(10);
+	UNDETERMINABLE_TENSOR_PARAMETER(10),
+
+	/**
+	 * We need a call graph node.
+	 */
+	UNDETERMINABLE_PRIMITIVE_PARAMETER(11),
+
+	HAS_PRIMITIVE_PARAMETERS(12),
+
+	/**
+	 * P3 failure.
+	 */
+	HAS_NO_PRIMITIVE_PARAMETERS(13);
 
 	static {
 		// check that the codes are unique.

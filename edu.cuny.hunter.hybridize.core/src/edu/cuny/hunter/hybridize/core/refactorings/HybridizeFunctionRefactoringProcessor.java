@@ -41,6 +41,7 @@ import com.ibm.wala.util.CancelException;
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
+import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
@@ -258,6 +259,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 							"Can't infer tensor parameters for this function.");
 				} catch (Exception e) {
 					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
+				}
+
+				try {
+					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
+				} catch (CantInferPrimitiveParametersException e) {
+					LOG.warn("Unable to infer primitive paramaeters for: " + func + ".", e);
+					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
+							"Can't infer primitive parameters for this function.");
 				}
 
 				// Check Python side-effects.

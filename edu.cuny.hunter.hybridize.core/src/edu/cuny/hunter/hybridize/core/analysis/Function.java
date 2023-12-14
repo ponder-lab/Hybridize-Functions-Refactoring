@@ -1,7 +1,10 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -12,6 +15,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -59,11 +63,14 @@ import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.CallSiteReference;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
+import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -72,6 +79,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
@@ -343,6 +351,11 @@ public class Function {
 	private Boolean likelyHasTensorParameter;
 
 	/**
+	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 */
+	private Boolean likelyHasPrimitiveParameters;
+
+	/**
 	 * True iff this {@link Function} has Python side-effects.
 	 */
 	private Boolean hasPythonSideEffects;
@@ -393,6 +406,95 @@ public class Function {
 			LOG.info(this + " is not recursive.");
 			this.setIsRecursive(false);
 		}
+	}
+
+	public void inferPrimitiveParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor)
+			throws CantInferPrimitiveParametersException {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering primitive parameters...", IProgressMonitor.UNKNOWN);
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		if (nodes.isEmpty())
+			throw new CantInferPrimitiveParametersException("Can't primitive paramaeters of " + this + " without a call graph node.");
+
+		subMonitor.beginTask("Examining nodes...", nodes.size());
+
+		for (CGNode nodeRepresentingThisFunction : nodes) {
+			IR ir = nodeRepresentingThisFunction.getIR();
+
+			subMonitor.beginTask("Examining parameters...", ir.getNumberOfParameters() - 1);
+
+			// Start at 1 because the first value is the function being invoked.
+			// FIXME: Also consider kwargs and default args.
+			// TODO: I wonder if ir.getParameterValueNumbers() returns kwargs as well.
+			for (int paramInx = 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+				int value = ir.getParameter(paramInx);
+				PointerKey pointerKeyForLocal = pointerAnalysis.getHeapModel().getPointerKeyForLocal(nodeRepresentingThisFunction, value);
+				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKeyForLocal);
+
+				subMonitor.beginTask("Examining instances...", pointsToSet.size());
+
+				for (InstanceKey instanceKey : pointsToSet) {
+					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
+
+					if (containsPrimitive(instanceKey, pointerAnalysis, subMonitor.split(1))) {
+						LOG.info(this + " likely has a primitive parameter.");
+						this.likelyHasPrimitiveParameters = TRUE;
+						subMonitor.done();
+						return;
+					}
+
+					subMonitor.worked(1);
+				}
+
+				subMonitor.worked(1);
+			}
+
+			subMonitor.worked(1);
+		}
+
+		LOG.info(this + " likely does not have a primitive parameter.");
+		this.likelyHasPrimitiveParameters = FALSE;
+		subMonitor.done();
+	}
+
+	private boolean containsPrimitive(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor) {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
+
+		if (instanceKey instanceof ConstantKey<?>) {
+			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+			Object constantValue = constantKey.getValue();
+
+			if (constantValue != null) {
+				LOG.info("Found constant value: " + constantValue + " for parameter of: " + this + ".");
+				subMonitor.done();
+				return true;
+			}
+		} else if (instanceKey instanceof AllocationSiteInNode) {
+			AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+			IClass concreteType = asin.getConcreteType();
+			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
+
+			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
+
+			for (IField field : allInstanceFields) {
+				InstanceFieldPointerKey instanceFieldKey = (InstanceFieldPointerKey) pointerAnalysis.getHeapModel()
+						.getPointerKeyForInstanceField(asin, field);
+				OrdinalSet<InstanceKey> instanceFieldPointsToSet = pointerAnalysis.getPointsToSet(instanceFieldKey);
+
+				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
+
+				for (InstanceKey key : instanceFieldPointsToSet)
+					if (containsPrimitive(key, pointerAnalysis, subMonitor.split(1))) {
+						subMonitor.done();
+						return true;
+					}
+
+				subMonitor.worked(1);
+			}
+		}
+
+		subMonitor.done();
+		return false;
 	}
 
 	/**
@@ -638,6 +740,7 @@ public class Function {
 
 		if (params != null) {
 			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
+
 			if (actualParams != null) {
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
 					exprType paramExpr = actualParams[paramInx];
@@ -1071,14 +1174,26 @@ public class Function {
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter() != null && this.getLikelyHasTensorParameter()) {
-				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
-					if (this.getIsRecursive() != null && !this.getIsRecursive()) {
-						this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-						this.setPassingPrecondition(P1);
-					} else if (this.getIsRecursive() != null) // it's recursive.
-						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
-				} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
-					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
+				if (this.getLikelyHasPrimitiveParameters() != null && !this.getLikelyHasPrimitiveParameters()) {
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						if (this.getIsRecursive() != null && !this.getIsRecursive()) {
+							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+							this.setPassingPrecondition(P1);
+						} else if (this.getIsRecursive() != null) // it's recursive.
+							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"Can't hybridize a function with Python side-effects.");
+
+						if (this.getIsRecursive() != null && this.getIsRecursive())
+							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
+					}
+				} else if (this.getLikelyHasPrimitiveParameters() != null) { // it has primitive parameters.
+					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
+
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"Can't hybridize a function with Python side-effects.");
 
 					if (this.getIsRecursive() != null && this.getIsRecursive())
 						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
@@ -1086,6 +1201,9 @@ public class Function {
 			} else if (this.getLikelyHasTensorParameter() != null) { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
+
+				if (this.getLikelyHasPrimitiveParameters() != null && this.getLikelyHasPrimitiveParameters())
+					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
@@ -1104,12 +1222,22 @@ public class Function {
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 			} else if (this.getLikelyHasTensorParameter() != null) { // it has a tensor parameter.
-				this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS,
-						"Functions with tensor parameters may benefit from hybreidization.");
+				// if it has primitive parameters.
+				if (this.getLikelyHasPrimitiveParameters() != null && this.getLikelyHasPrimitiveParameters()) {
+					// if it does not have side-effects.
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						this.addTransformation(CONVERT_TO_EAGER);
+						this.setPassingPrecondition(P3);
+					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
+				} else if (this.getLikelyHasPrimitiveParameters() != null) { // no primitive parameters.
+					this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+							"Functions with no Python literal arguments may benefit from hybridization.");
 
-				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
-					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
-							"De-hybridizing a function with Python side-effects may alter semantics.");
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects()) {
+						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+								"De-hybridizing a function with Python side-effects may alter semantics.");
+					}
 				}
 
 				// Here, we have a hybrid function with a tensor parameter.
@@ -1348,5 +1476,14 @@ public class Function {
 
 	public Set<RefactoringStatusEntry> getErrors() {
 		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isError);
+	}
+
+	/**
+	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive.
+	 *
+	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 */
+	public Boolean getLikelyHasPrimitiveParameters() {
+		return likelyHasPrimitiveParameters;
 	}
 }

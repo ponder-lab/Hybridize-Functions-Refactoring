@@ -1,18 +1,21 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
-import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static java.util.Collections.singleton;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -4423,7 +4426,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4457,7 +4460,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4470,10 +4473,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getIsHybrid());
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNull(function.getPassingPrecondition());
-		assertTrue(function.getTransformations().isEmpty());
-		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(P3, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4486,10 +4491,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getIsHybrid());
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNull(function.getPassingPrecondition());
-		assertTrue(function.getTransformations().isEmpty());
-		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(PreconditionSuccess.P3, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(singleton(CONVERT_TO_EAGER), function.getTransformations());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4506,7 +4513,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, function.getTransformations().size());
 		assertEquals(CONVERT_TO_EAGER, function.getTransformations().iterator().next());
 		assertFalse(function.getStatus().hasError());
-		assertNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4522,7 +4529,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4538,7 +4545,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
 		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -4550,11 +4557,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.getIsHybrid());
 		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.getLikelyHasPrimitiveParameters());
+		// FIXME: This is a strange case. We use type hints for tf.Tensor on primitives. Since they're cast automatically, we shouldn't
+		// consider this parameter as a primitive.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNull(function.getPassingPrecondition());
-		assertTrue(function.getTransformations().isEmpty());
-		assertTrue(function.getStatus().hasError());
-		assertNotNull(function.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNotNull(function.getPassingPrecondition());
+		assertEquals(P3, function.getPassingPrecondition());
+		assertFalse(function.getTransformations().isEmpty());
+		assertEquals(singleton(CONVERT_TO_EAGER), function.getTransformations());
+		assertFalse(function.getStatus().hasError());
+		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	// TODO: Test arbitrary expression.
@@ -5371,7 +5383,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.getLikelyHasTensorParameter());
 		// In table 2, we need it not to have a tensor parameter to de-hybridize, so this is a "failure."
-		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS).isError());
+		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
 		assertTrue(function.getHasPythonSideEffects());
 		// We also can't de-hybridize if it has Python side-effects. So, that's an error.
@@ -5424,7 +5436,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(capturesLeakedTensor.getStatus().hasFatalError());
 		RefactoringStatusEntry error = capturesLeakedTensor.getStatus().getEntryMatchingSeverity(RefactoringStatus.ERROR);
 		assertTrue(error.isError());
-		assertEquals(PreconditionFailure.HAS_TENSOR_PARAMETERS.getCode(), error.getCode());
+		assertEquals(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS.getCode(), error.getCode());
 
 		// NOTE: Change to assertEquals(..., 1, ...) once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
 		assertEquals("We should warn that the hybrid function is capturing leaked tensors.", 0,
@@ -5674,7 +5686,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
 		assertTrue(f.getLikelyHasTensorParameter()); // T.
-		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
 		assertFalse(f.getHasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
@@ -5695,7 +5707,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(f.getLikelyHasTensorParameter());
 		assertFalse("Already optimal.", f.getStatus().isOK());
-		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
 		assertFalse(f.getHasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
@@ -5716,7 +5728,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(f.getLikelyHasTensorParameter()); // T.
 		assertFalse("Already optimal.", f.getStatus().isOK());
-		assertTrue(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS).isError());
+		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
 		assertFalse(f.getHasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
@@ -5755,7 +5767,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
 		assertFalse(f.getLikelyHasTensorParameter()); // F.
-		assertNull(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 		assertNull("Not having tensor parameters is not a failure for: " + OPTIMIZE_HYBRID_FUNCTION + ".",
 				f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
 
@@ -5798,7 +5810,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(f.getLikelyHasTensorParameter()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
-		assertNull(f.getEntryMatchingFailure(HAS_TENSOR_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 
 		assertFalse(f.getHasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
@@ -5832,5 +5844,212 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testCallback() throws Exception {
 		Function f = getFunction("replica_fn");
 		assertTrue(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This function has no parameters.", f.getLikelyHasTensorParameter());
+		assertFalse("This function has no parameters.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter2() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This function has one parameter.", f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter3() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one (tensor) parameter.", f.getLikelyHasTensorParameter());
+		assertFalse("This function has one (tensor) parameter.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter4() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasTensorParameter());
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter5() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter6() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
+				f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter7() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter8() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter9() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter10() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter11() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter12() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter13() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter14() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter15() throws Exception {
+		Function f = getFunction("f");
+		assertFalse("This is a user-defined class with no fields.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testLikelyHasNonTensorParameter16() throws Exception {
+		Function f = getFunction("f");
+		assertTrue("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getIsHybrid());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(f.getTransformations().isEmpty());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing2() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.getIsHybrid());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertNotNull(f.getPassingPrecondition());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().isEmpty());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing3() throws Exception {
+		Function f = getFunction("f");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
+		assertFalse(f.getHasPythonSideEffects()); // F
+
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNotNull(f.getPassingPrecondition());
+		assertEquals(P3, f.getPassingPrecondition());
+		assertFalse(f.getStatus().hasError());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().isEmpty());
+		assertEquals(singleton(CONVERT_TO_EAGER), f.getTransformations());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing4() throws Exception {
+		Function f = getFunction("f");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
+		assertTrue(f.getHasPythonSideEffects()); // T
+
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getStatus().hasError());
+		assertNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertNotNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+		assertTrue(f.getTransformations().isEmpty());
+	}
+
+	/**
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 */
+	@Test
+	public void testRetracing5() throws Exception {
+		Function f = getFunction("f");
+
+		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.getLikelyHasTensorParameter()); // T
+		assertFalse(f.getLikelyHasPrimitiveParameters()); // F
+		assertFalse(f.getHasPythonSideEffects()); // F
+
+		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
+		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getStatus().hasError());
+		assertNotNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS));
+		assertTrue(f.getTransformations().isEmpty());
 	}
 }
