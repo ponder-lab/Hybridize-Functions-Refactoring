@@ -229,6 +229,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				throw new CoreException(Status.error("Could not analyze tensors for: " + project.getName(), e));
 			}
 
+			LOG.info("Tensor analysis: " + analysis.toString());
+
 			subMonitor.checkCanceled();
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
