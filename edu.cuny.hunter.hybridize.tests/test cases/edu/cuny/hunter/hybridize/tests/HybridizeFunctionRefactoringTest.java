@@ -4569,6 +4569,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getStatus().hasError());
 		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
+	
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter157() throws Exception {
+		testHasLikelyTensorParameterHelper(false, true);
+	}
 
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
