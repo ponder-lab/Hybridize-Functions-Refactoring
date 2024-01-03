@@ -232,11 +232,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// end the record.
 					resultsPrinter.println();
 
+					// clear the cache.
+					processor.clearCaches();
+
 					monitor.worked(1);
 				}
 			} catch (IOException | ExecutionException e) {
 				throw new CoreException(Status.error("Encountered error with evaluation.", e));
 			} finally {
+				// clear cache.
+				if (processor != null)
+					processor.clearCaches();
+
 				SubMonitor.done(monitor);
 			}
 		}).schedule();
