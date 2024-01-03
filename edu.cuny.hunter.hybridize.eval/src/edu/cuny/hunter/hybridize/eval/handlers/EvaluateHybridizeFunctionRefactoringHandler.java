@@ -118,6 +118,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			resultsHeader.add("time (s)");
 
+			HybridizeFunctionRefactoringProcessor processor = null;
+
 			try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 					CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
 					CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
@@ -141,8 +143,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
-					HybridizeFunctionRefactoringProcessor processor = createHybridizeFunctionRefactoring(new IProject[] { project },
-							this.getAlwaysCheckPythonSideEffects(), this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion());
+					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
+							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.

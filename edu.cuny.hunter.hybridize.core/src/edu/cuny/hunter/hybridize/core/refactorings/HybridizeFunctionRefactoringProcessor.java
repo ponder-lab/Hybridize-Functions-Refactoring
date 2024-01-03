@@ -371,7 +371,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	@Override
-	protected void clearCaches() {
+	public void clearCaches() {
 		this.getProjectToCallGraphBuilder().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
