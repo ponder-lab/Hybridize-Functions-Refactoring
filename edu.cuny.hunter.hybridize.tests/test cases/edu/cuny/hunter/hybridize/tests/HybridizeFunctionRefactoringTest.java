@@ -169,6 +169,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean PROCESS_FUNCTIONS_IN_PARALLEL = false;
 
 	/**
+	 * True iff the input test Python file should be executed.
+	 */
+	private static final boolean RUN_INPUT_TEST_FILE = true;
+
+	/**
 	 * Add a module to the given {@link IPythonNature}.
 	 *
 	 * @param ast the ast that defines the module
@@ -492,27 +497,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path inputTestFileAbsolutePath = getAbsolutionPath(inputTestFileName);
 		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutePath.getParent();
 
-		// install dependencies.
-		installRequirements(inputTestFileDirectoryAbsolutePath);
+		if (RUN_INPUT_TEST_FILE) {
+			// install dependencies.
+			installRequirements(inputTestFileDirectoryAbsolutePath);
 
-		// the number of Python files executed.
-		int filesRun = 0;
+			// the number of Python files executed.
+			int filesRun = 0;
 
-		File[] pythonFilesInTestFileDirectory = inputTestFileDirectoryAbsolutePath.toFile().listFiles((dir, name) -> name.endsWith(".py"));
+			File[] pythonFilesInTestFileDirectory = inputTestFileDirectoryAbsolutePath.toFile()
+					.listFiles((dir, name) -> name.endsWith(".py"));
 
-		// for each Python file in the test file directory.
-		for (File file : pythonFilesInTestFileDirectory) {
-			Path path = file.toPath();
+			// for each Python file in the test file directory.
+			for (File file : pythonFilesInTestFileDirectory) {
+				Path path = file.toPath();
 
-			boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());
-			assertTrue("Source file must be valid.", validSourceFile);
+				boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());
+				assertTrue("Source file must be valid.", validSourceFile);
 
-			// Run the Python test file.
-			runPython(path);
-			++filesRun;
+				// Run the Python test file.
+				runPython(path);
+				++filesRun;
+			}
+
+			assertTrue("Must have executed at least A.py.", filesRun > 0);
 		}
-
-		assertTrue("Must have executed at least A.py.", filesRun > 0);
 
 		// Project Python path.
 		String projectPath = inputTestFileDirectoryAbsolutePath.toString();
@@ -4569,7 +4577,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getStatus().hasError());
 		assertNull(function.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
-	
+
 	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
 	 */
