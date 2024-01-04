@@ -171,7 +171,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
-	private static final boolean RUN_INPUT_TEST_FILE = false;
+	private static final boolean RUN_INPUT_TEST_FILE = true;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
