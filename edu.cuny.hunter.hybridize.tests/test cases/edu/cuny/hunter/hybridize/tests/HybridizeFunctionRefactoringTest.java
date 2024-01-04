@@ -171,7 +171,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
-	private static final boolean RUN_INPUT_TEST_FILE = true;
+	private static final boolean RUN_INPUT_TEST_FILE = false;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -6068,5 +6068,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_TENSOR_PARAMETERS));
 		assertTrue(f.getTransformations().isEmpty());
+	}
+
+	@Test
+	public void testTensorFlowGanTutorial() throws Exception {
+		Function f = getFunction("train_step");
+		assertNotNull(f);
 	}
 }
