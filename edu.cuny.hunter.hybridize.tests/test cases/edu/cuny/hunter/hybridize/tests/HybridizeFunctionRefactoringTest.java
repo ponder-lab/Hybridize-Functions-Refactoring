@@ -6073,6 +6073,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testTensorFlowGanTutorial() throws Exception {
 		Function f = getFunction("train_step");
-		assertNotNull(f);
+		assertFalse(f.getIsHybrid());
+		assertTrue(f.getLikelyHasTensorParameter());
 	}
 }
