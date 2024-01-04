@@ -155,9 +155,9 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
 # checkpoint_dir = "./training_checkpoints"
 # checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
-epochs = 1
+epochs = 50
 noise_dim = 100
-num_examples_to_generate = 1
+num_examples_to_generate = 16
 
 seed = tf.random.normal([num_examples_to_generate, noise_dim])
 
