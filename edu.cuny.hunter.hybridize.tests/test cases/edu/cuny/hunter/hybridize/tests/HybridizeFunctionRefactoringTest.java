@@ -57,6 +57,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.python.pydev.ast.codecompletion.revisited.ASTManager;
 import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
@@ -6071,6 +6072,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Takes too long when executing the input Python source.")
 	public void testTensorFlowGanTutorial() throws Exception {
 		Function f = getFunction("train_step");
 		assertFalse(f.getIsHybrid());
