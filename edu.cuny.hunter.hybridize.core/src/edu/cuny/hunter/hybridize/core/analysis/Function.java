@@ -427,6 +427,8 @@ public class Function {
 			// FIXME: Also consider kwargs and default args.
 			// TODO: I wonder if ir.getParameterValueNumbers() returns kwargs as well.
 			for (int paramInx = 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+				boolean allInstancesArePrimitive = true;
+
 				int value = ir.getParameter(paramInx);
 				PointerKey pointerKeyForLocal = pointerAnalysis.getHeapModel().getPointerKeyForLocal(nodeRepresentingThisFunction, value);
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKeyForLocal);
@@ -436,14 +438,15 @@ public class Function {
 				for (InstanceKey instanceKey : pointsToSet) {
 					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
 
-					if (containsPrimitive(instanceKey, pointerAnalysis, subMonitor.split(1))) {
-						LOG.info(this + " likely has a primitive parameter.");
-						this.likelyHasPrimitiveParameters = TRUE;
-						subMonitor.done();
-						return;
-					}
-
+					allInstancesArePrimitive &= containsPrimitive(instanceKey, pointerAnalysis, subMonitor.split(1));
 					subMonitor.worked(1);
+				}
+
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive) {
+					LOG.info(this + " likely has a primitive parameter.");
+					this.likelyHasPrimitiveParameters = TRUE;
+					subMonitor.done();
+					return;
 				}
 
 				subMonitor.worked(1);
