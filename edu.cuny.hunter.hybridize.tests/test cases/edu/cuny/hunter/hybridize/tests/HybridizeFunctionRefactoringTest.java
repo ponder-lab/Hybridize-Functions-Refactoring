@@ -6093,5 +6093,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(f.getErrors().isEmpty());
 		assertTrue(f.getStatus().isOK());
 		assertEquals(singleton(CONVERT_TO_HYBRID), f.getTransformations());
+
+		f = getFunction("train_step");
+		assertTrue(f.getLikelyHasTensorParameter());
+
+		f = getFunction("test_step");
+		assertTrue(f.getLikelyHasTensorParameter());
 	}
 }
