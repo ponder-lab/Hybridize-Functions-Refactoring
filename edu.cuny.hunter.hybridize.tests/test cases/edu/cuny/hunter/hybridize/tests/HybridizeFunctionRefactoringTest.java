@@ -6079,4 +6079,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.getLikelyHasTensorParameter());
 		assertFalse("This function doesn't have a primitve parameter.", f.getLikelyHasPrimitiveParameters());
 	}
+
+	@Test
+	public void testTensorFlowEagerExecution() throws Exception {
+		Function f = getFunction("MyModel.call");
+		assertFalse(f.getIsHybrid());
+		assertTrue(f.getLikelyHasTensorParameter());
+		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.getIsRecursive());
+		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
+		assertTrue(f.getErrors().isEmpty());
+		assertTrue(f.getStatus().isOK());
+		assertEquals(singleton(CONVERT_TO_HYBRID), f.getTransformations());
+	}
 }
