@@ -6072,7 +6072,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
-	@Ignore("Takes too long when executing the input Python source.")
 	public void testTensorFlowGanTutorial() throws Exception {
 		Function f = getFunction("train_step");
 		assertFalse(f.getIsHybrid());
