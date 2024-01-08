@@ -57,7 +57,6 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.python.pydev.ast.codecompletion.revisited.ASTManager;
 import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
