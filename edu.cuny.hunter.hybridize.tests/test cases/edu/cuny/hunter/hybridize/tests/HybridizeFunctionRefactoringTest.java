@@ -4970,6 +4970,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
+	private static void testTransitivePythonSideEffects(Map<Function, Boolean> functionToHasSideEffects) {
+		functionToHasSideEffects.forEach((f, s) -> {
+			assertFalse(f.getIsHybrid());
+			assertFalse(f.getLikelyHasTensorParameter());
+
+			switch (f.getIdentifier()) {
+			case "f":
+			case "g":
+				// there's a Python statement with (transitive) side-effects.
+				assertEquals("This Python statement modifies a global variable, so it has side-effects.", s, f.getHasPythonSideEffects());
+				break;
+
+			default:
+				fail("Not expecting: " + f.getIdentifier() + ".");
+				break;
+			}
+		});
+	}
+
 	/**
 	 * Returns the only function defined in the default test file.
 	 *
@@ -5649,6 +5668,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects58() throws Exception {
 		Function f = getFunction("f");
 		assertFalse("Decorated embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test transitive side-effects in different files. Unlike testPythonSideEffects8, the import is different. This is actually a test of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects59() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("g", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+				// Change to `true` once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
+				functionToExpectedSideEffects.put(function, false);
+				break;
+			case "g":
+				// `g()` never gets called, so we don't know if it has side-effects or not.
+				// Change `null` to `true` once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
+				functionToExpectedSideEffects.put(function, null);
+				break;
+			default:
+				fail("Not expecting: " + function + ".");
+			}
+		}
+
+		testTransitivePythonSideEffects(functionToExpectedSideEffects);
 	}
 
 	@Test
