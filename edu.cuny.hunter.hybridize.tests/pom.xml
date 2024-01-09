@@ -54,6 +54,10 @@
 					<failIfNoTests>true</failIfNoTests>
 					<showEclipseLog>true</showEclipseLog>
 					<trimStackTrace>false</trimStackTrace>
+					<systemPropertyVariables>
+						<!-- Set JUL Formatting -->
+						<java.util.logging.config.file>${logging.config.file}</java.util.logging.config.file>
+					</systemPropertyVariables>
 					<explodedBundles>
 						<bundle>org.junit</bundle>
 					</explodedBundles>
