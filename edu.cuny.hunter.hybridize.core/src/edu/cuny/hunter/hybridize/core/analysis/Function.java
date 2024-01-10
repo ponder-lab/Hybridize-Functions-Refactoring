@@ -41,6 +41,7 @@ import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -323,6 +324,8 @@ public class Function {
 
 	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
 
+	private static final String SELF_PARAMETER_NAME = "self";
+
 	private static final ILog LOG = getLog(Function.class);
 
 	/**
@@ -421,12 +424,12 @@ public class Function {
 		for (CGNode nodeRepresentingThisFunction : nodes) {
 			IR ir = nodeRepresentingThisFunction.getIR();
 
-			subMonitor.beginTask("Examining parameters...", ir.getNumberOfParameters() - 1);
+			subMonitor.beginTask("Examining explicit parameters (not self)...", ir.getNumberOfParameters() - 1);
 
-			// Start at 1 because the first value is the function being invoked.
+			// Start at 1 or 2, depending on whether this is a method or not, because the first value is the function being invoked.
 			// FIXME: Also consider kwargs and default args.
 			// TODO: I wonder if ir.getParameterValueNumbers() returns kwargs as well.
-			for (int paramInx = 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+			for (int paramInx = (this.isMethod() ? 2 : 1); paramInx < ir.getNumberOfParameters(); paramInx++) {
 				boolean allInstancesArePrimitive = true;
 
 				int value = ir.getParameter(paramInx);
@@ -750,7 +753,7 @@ public class Function {
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
 					// don't consider `self` as a tensor.
-					if (paramInx == 0 && paramName.equals("self"))
+					if (paramInx == 0 && paramName.equals(SELF_PARAMETER_NAME))
 						continue; // next parameter.
 
 					// check a special case where we consider type hints.
@@ -1493,5 +1496,24 @@ public class Function {
 	 */
 	public Boolean getLikelyHasPrimitiveParameters() {
 		return likelyHasPrimitiveParameters;
+	}
+
+	/**
+	 * Returns true iff this {@link Function} represents an instance method.
+	 *
+	 * @return True iff this {@link Function} is an instance method.
+	 */
+	public boolean isMethod() {
+		argumentsType parameters = this.getParameters();
+
+		if (parameters.args.length > 1) {
+			final exprType firstParam = parameters.args[0];
+			final String firstParamName = NodeUtils.getRepresentationString(firstParam);
+
+			if (firstParamName.equals(SELF_PARAMETER_NAME))
+				return true;
+		}
+
+		return false;
 	}
 }

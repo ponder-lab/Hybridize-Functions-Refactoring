@@ -6190,4 +6190,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
 		assertNull("This function is called from A.py.", f.getLikelyHasTensorParameter());
 	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/308.
+	 */
+	@Test
+	public void testTensorFlowKerasCustomLayer() throws Exception {
+		Function function = getFunction("MyConvolution2D.call");
+		assertNotNull(function);
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
