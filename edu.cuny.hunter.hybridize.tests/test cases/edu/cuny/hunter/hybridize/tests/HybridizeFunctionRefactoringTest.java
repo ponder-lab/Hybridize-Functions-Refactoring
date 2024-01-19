@@ -4978,8 +4978,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (f.getIdentifier()) {
 			case "f":
 			case "g":
-				// there's a Python statement with (transitive) side-effects.
-				assertEquals("This Python statement modifies a global variable, so it has side-effects.", s, f.getHasPythonSideEffects());
+				assertEquals(s, f.getHasPythonSideEffects());
 				break;
 
 			default:
