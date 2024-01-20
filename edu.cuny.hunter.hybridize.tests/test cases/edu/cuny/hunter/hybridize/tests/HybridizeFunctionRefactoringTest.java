@@ -6200,4 +6200,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testNeuralNetwork() throws Exception {
+		Set<Function> functions = getFunctions();
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "run_optimization":
+				System.out.println(function.getIdentifier());
+				break;
+			case "NeuralNet.__init__":
+				System.out.println(function.getIdentifier());
+				break;
+			case "accuracy":
+				System.out.println(function.getIdentifier());
+				break;
+			case "cross_entropy_loss":
+				System.out.println(function.getIdentifier());
+				break;
+			case "NeuralNet.call":
+				System.out.println(function.getIdentifier());
+				break;
+			default:
+				throw new IllegalStateException("Unexpecting: " + function.getIdentifier() + ".");
+			}
+		}
+	}
 }
