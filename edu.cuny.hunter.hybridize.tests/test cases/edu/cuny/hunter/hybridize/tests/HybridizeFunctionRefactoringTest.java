@@ -6029,6 +6029,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
 	}
 
+	@Test
+	public void testBooleanParameter() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testBooleanParameter2() throws Exception {
+		Function f = getFunction("f");
+		assertFalse(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testBooleanParameter3() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testBooleanParameter4() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testBooleanParameter5() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getLikelyHasPrimitiveParameters());
+	}
+
 	/**
 	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
 	 */

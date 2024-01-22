@@ -384,10 +384,13 @@ public class Function {
 
 	private Boolean isRecursive;
 
+	private boolean ignoreBooleans;
+
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
-	public Function(FunctionDefinition fd) {
+	public Function(FunctionDefinition fd, boolean ignoreBooleans) {
 		this.functionDefinition = fd;
+		this.ignoreBooleans = ignoreBooleans;
 	}
 
 	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException {
@@ -440,7 +443,8 @@ public class Function {
 				for (InstanceKey instanceKey : pointsToSet) {
 					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
 
-					allInstancesArePrimitive &= containsPrimitive(instanceKey, pointerAnalysis, subMonitor.split(1));
+					allInstancesArePrimitive &= containsPrimitive(instanceKey, this.getIgnoreBooleans(), pointerAnalysis,
+							subMonitor.split(1));
 					subMonitor.worked(1);
 				}
 
@@ -462,7 +466,17 @@ public class Function {
 		subMonitor.done();
 	}
 
-	private static boolean containsPrimitive(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor) {
+	/**
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @param pointerAnalysis The {@link PointerAnalysis} corresponding to the given {@link InstanceKey}.
+	 * @param monitor To monitor progress.
+	 * @return True iff the given {@link InstanceKey} takes on primitive values according to the given {@link PointerAnalysis}.
+	 */
+	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
+			IProgressMonitor monitor) {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
 
 		if (instanceKey instanceof ConstantKey<?>) {
@@ -471,8 +485,15 @@ public class Function {
 
 			if (constantValue != null) {
 				LOG.info("Found constant value: " + constantValue + ".");
-				subMonitor.done();
-				return true;
+
+				boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
+
+				// If it's not the case that we found a boolean value and we are ignoring booleans.
+				if (!(foundBooleanValue && ignoreBooleans)) {
+					// We have found a primitive.
+					subMonitor.done();
+					return true;
+				}
 			}
 		} else if (instanceKey instanceof AllocationSiteInNode) {
 			AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
@@ -489,7 +510,7 @@ public class Function {
 				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
 
 				for (InstanceKey key : instanceFieldPointsToSet)
-					if (containsPrimitive(key, pointerAnalysis, subMonitor.split(1))) {
+					if (containsPrimitive(key, ignoreBooleans, pointerAnalysis, subMonitor.split(1))) {
 						subMonitor.done();
 						return true;
 					}
@@ -1514,5 +1535,14 @@ public class Function {
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff booleans shouldn't be considered primitives.
+	 *
+	 * @return True iff boolean values shouldn't be considered primitives.
+	 */
+	protected boolean getIgnoreBooleans() {
+		return ignoreBooleans;
 	}
 }
