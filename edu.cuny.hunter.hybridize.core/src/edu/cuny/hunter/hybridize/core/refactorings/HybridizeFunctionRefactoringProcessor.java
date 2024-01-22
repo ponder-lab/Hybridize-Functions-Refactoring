@@ -106,7 +106,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckRecursion;
 
-	private boolean processFunctionsInParallel = true;
+	private boolean processFunctionsInParallel;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
