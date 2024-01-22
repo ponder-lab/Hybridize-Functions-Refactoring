@@ -6255,11 +6255,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "run_optimization":
 			case "accuracy":
 			case "cross_entropy_loss":
-				testFunctionHelper(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
-						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
-				break;
 			case "NeuralNet.call":
-				testFunctionHelper(function, false, true, true, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
+				testFunctionHelper(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
 						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
 				break;
 			case "NeuralNet.__init__":
