@@ -462,7 +462,7 @@ public class Function {
 		subMonitor.done();
 	}
 
-	private boolean containsPrimitive(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor) {
+	private static boolean containsPrimitive(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor) {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
 
 		if (instanceKey instanceof ConstantKey<?>) {
@@ -470,7 +470,7 @@ public class Function {
 			Object constantValue = constantKey.getValue();
 
 			if (constantValue != null) {
-				LOG.info("Found constant value: " + constantValue + " for parameter of: " + this + ".");
+				LOG.info("Found constant value: " + constantValue + ".");
 				subMonitor.done();
 				return true;
 			}
