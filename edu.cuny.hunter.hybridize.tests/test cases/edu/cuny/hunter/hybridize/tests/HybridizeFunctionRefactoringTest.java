@@ -6230,4 +6230,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
+
+	private static void testFunctionHelper(Function function, Boolean expectedHybrid, Boolean expectedTensorParameter,
+			Boolean expectedPrimitiveParameter, Boolean expectedPythonSideEffects, Boolean expectedRecursive,
+			Refactoring expectedRefactoring, PreconditionSuccess expectedPassingPrecondition, Set<Transformation> expectedTransformations,
+			int expectedStatusSeverity) {
+		assertEquals(expectedHybrid, function.getIsHybrid());
+		assertEquals(expectedTensorParameter, function.getLikelyHasTensorParameter());
+		assertEquals(expectedPrimitiveParameter, function.getLikelyHasPrimitiveParameters());
+		assertEquals(expectedPythonSideEffects, function.getHasPythonSideEffects());
+		assertEquals(expectedRecursive, function.getIsRecursive());
+		assertEquals(expectedRefactoring, function.getRefactoring());
+		assertEquals(expectedPassingPrecondition, function.getPassingPrecondition());
+		assertEquals(expectedTransformations, function.getTransformations());
+		assertEquals(expectedStatusSeverity, function.getStatus().getSeverity());
+	}
+
+	@Test
+	public void testNeuralNetwork() throws Exception {
+		Set<Function> functions = getFunctions();
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "run_optimization":
+			case "accuracy":
+			case "cross_entropy_loss":
+			case "NeuralNet.call":
+				testFunctionHelper(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
+						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
+				break;
+			case "NeuralNet.__init__":
+				assertFalse(function.getStatus().isOK());
+				break;
+			default:
+				throw new IllegalStateException("Unexpecting: " + function.getIdentifier() + ".");
+			}
+		}
+	}
 }
