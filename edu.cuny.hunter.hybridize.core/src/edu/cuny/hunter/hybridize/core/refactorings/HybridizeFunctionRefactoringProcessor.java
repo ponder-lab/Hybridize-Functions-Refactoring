@@ -106,6 +106,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckRecursion;
 
+	private boolean ignoreBooleansInLiteralCheck = true;
+
 	private boolean processFunctionsInParallel;
 
 	public HybridizeFunctionRefactoringProcessor() {
@@ -132,6 +134,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.alwaysCheckRecursion = alwaysCheckRecusion;
 	}
 
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion);
+		this.ignoreBooleansInLiteralCheck = ignoreBooleansInLiteralCheck;
+	}
+
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
@@ -141,7 +149,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd);
+				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
