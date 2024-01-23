@@ -6231,7 +6231,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
-	private static void testFunctionHelper(Function function, Boolean expectedHybrid, Boolean expectedTensorParameter,
+	private static void testFunction(Function function, Boolean expectedHybrid, Boolean expectedTensorParameter,
 			Boolean expectedPrimitiveParameter, Boolean expectedPythonSideEffects, Boolean expectedRecursive,
 			Refactoring expectedRefactoring, PreconditionSuccess expectedPassingPrecondition, Set<Transformation> expectedTransformations,
 			int expectedStatusSeverity) {
@@ -6256,7 +6256,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "accuracy":
 			case "cross_entropy_loss":
 			case "NeuralNet.call":
-				testFunctionHelper(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
+				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
 						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
 				break;
 			case "NeuralNet.__init__":
