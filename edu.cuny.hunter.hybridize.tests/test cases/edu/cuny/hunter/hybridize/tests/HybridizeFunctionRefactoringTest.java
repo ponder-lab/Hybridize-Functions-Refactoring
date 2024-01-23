@@ -6263,7 +6263,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertFalse(function.getStatus().isOK());
 				break;
 			default:
-				throw new IllegalStateException("Unexpecting: " + function.getIdentifier() + ".");
+				throw new IllegalStateException("Not expecting: " + function.getIdentifier() + ".");
 			}
 		}
 	}
