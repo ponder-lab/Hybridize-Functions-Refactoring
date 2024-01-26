@@ -6256,8 +6256,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "accuracy":
 			case "cross_entropy_loss":
 			case "NeuralNet.call":
-				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
-						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
+				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
+						RefactoringStatus.OK);
 				break;
 			case "NeuralNet.__init__":
 				assertFalse(function.getStatus().isOK());
@@ -6278,8 +6278,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "mean_square":
 			case "run_optimization":
 			case "decoder":
-				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1,
-						singleton(CONVERT_TO_HYBRID), RefactoringStatus.OK);
+				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
+						RefactoringStatus.OK);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function.getIdentifier() + ".");
