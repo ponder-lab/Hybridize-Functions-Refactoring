@@ -6286,4 +6286,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 	}
+
+	@Test
+	public void testDatasetGenerator() throws Exception {
+		Function function = getFunction("add");
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
