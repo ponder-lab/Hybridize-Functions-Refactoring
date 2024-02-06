@@ -5687,13 +5687,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functionSet) {
 			switch (function.getIdentifier()) {
 			case "f":
-				// Change to `true` once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
-				functionToExpectedSideEffects.put(function, false);
+				functionToExpectedSideEffects.put(function, true);
 				break;
 			case "g":
-				// `g()` never gets called, so we don't know if it has side-effects or not.
-				// Change `null` to `true` once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
-				functionToExpectedSideEffects.put(function, null);
+				functionToExpectedSideEffects.put(function, true);
 				break;
 			default:
 				fail("Not expecting: " + function + ".");
