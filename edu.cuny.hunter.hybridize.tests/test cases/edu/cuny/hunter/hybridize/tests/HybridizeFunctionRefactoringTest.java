@@ -6218,6 +6218,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testClassInDifferentFile4() throws Exception {
+		Set<Function> functions = getFunctions("B");
+		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
+		assertEquals(1, set.size());
+		Function f = set.iterator().next();
+		// Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
+		assertNull("This function is called from A.py.", f.getLikelyHasTensorParameter());
+	}
+
+	/**
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/308.
 	 */
 	@Test
