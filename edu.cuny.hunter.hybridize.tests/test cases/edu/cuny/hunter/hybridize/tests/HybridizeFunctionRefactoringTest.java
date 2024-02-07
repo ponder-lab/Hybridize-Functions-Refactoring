@@ -4977,6 +4977,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			switch (f.getIdentifier()) {
 			case "f":
+			case "g":
 			case "C.g":
 				assertEquals(s, f.getHasPythonSideEffects());
 				break;
