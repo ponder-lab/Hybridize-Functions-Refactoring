@@ -5700,6 +5700,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testTransitivePythonSideEffects(functionToExpectedSideEffects);
 	}
 
+	/**
+	 * Test transitive side-effects in different files. Unlike testPythonSideEffects8, the import is different. This is actually a test of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects60() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("C.g", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+				functionToExpectedSideEffects.put(function, true);
+				break;
+			case "C.g":
+				functionToExpectedSideEffects.put(function, true);
+				break;
+			default:
+				fail("Not expecting: " + function + ".");
+			}
+		}
+
+		testTransitivePythonSideEffects(functionToExpectedSideEffects);
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
