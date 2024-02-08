@@ -4948,10 +4948,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects7() throws Exception {
 		Set<Function> functionSet = getFunctions();
 		assertEquals(2, functionSet.size());
-		testTransitivePythonSideEffects(functionSet);
+		testPythonSideEffects(functionSet);
 	}
 
-	private static void testTransitivePythonSideEffects(Set<Function> functionSet) {
+	private static void testPythonSideEffects(Set<Function> functionSet) {
 		functionSet.forEach(f -> {
 			assertFalse(f.getIsHybrid());
 			assertFalse(f.getLikelyHasTensorParameter());
@@ -4970,22 +4970,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
-	private static void testTransitivePythonSideEffects(Map<Function, Boolean> functionToHasSideEffects) {
+	private static void testPythonSideEffects(Map<Function, Boolean> functionToHasSideEffects) {
 		functionToHasSideEffects.forEach((f, s) -> {
 			assertFalse(f.getIsHybrid());
 			assertFalse(f.getLikelyHasTensorParameter());
-
-			switch (f.getIdentifier()) {
-			case "f":
-			case "g":
-			case "C.g":
-				assertEquals(s, f.getHasPythonSideEffects());
-				break;
-
-			default:
-				fail("Not expecting: " + f.getIdentifier() + ".");
-				break;
-			}
+			assertEquals("Function: " + f + " should " + (s ? "" : "not ") + "have side-effects.", s, f.getHasPythonSideEffects());
 		});
 	}
 
@@ -5034,7 +5023,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("g", functionFromB.getIdentifier());
 
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
-		testTransitivePythonSideEffects(functionSet);
+		testPythonSideEffects(functionSet);
 	}
 
 	/**
@@ -5698,7 +5687,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 
-		testTransitivePythonSideEffects(functionToExpectedSideEffects);
+		testPythonSideEffects(functionToExpectedSideEffects);
 	}
 
 	/**
@@ -5729,7 +5718,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 
-		testTransitivePythonSideEffects(functionToExpectedSideEffects);
+		testPythonSideEffects(functionToExpectedSideEffects);
 	}
 
 	@Test
