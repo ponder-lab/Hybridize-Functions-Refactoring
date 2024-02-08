@@ -5677,8 +5677,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functionSet) {
 			switch (function.getIdentifier()) {
 			case "f":
-				functionToExpectedSideEffects.put(function, true);
-				break;
 			case "g":
 				functionToExpectedSideEffects.put(function, true);
 				break;
