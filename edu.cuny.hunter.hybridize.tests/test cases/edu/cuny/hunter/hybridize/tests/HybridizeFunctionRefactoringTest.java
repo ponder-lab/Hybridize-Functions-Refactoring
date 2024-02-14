@@ -5688,6 +5688,104 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testPythonSideEffects(functionToExpectedSideEffects);
 	}
 
+	/**
+	 * Test transitive side-effects in different files. Unlike testPythonSideEffects8, the import is different. This is actually a test of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects60() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("C.g", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "C.g":
+				functionToExpectedSideEffects.put(function, true);
+				break;
+			default:
+				fail("Not expecting: " + function + ".");
+			}
+		}
+
+		testPythonSideEffects(functionToExpectedSideEffects);
+	}
+
+	/**
+	 * Test transitive side-effects in different files. Unlike testPythonSideEffects8, the import is different. This is actually a test of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects61() throws Exception {
+		Function functionFromA = this.getSingleFunction("A");
+		assertEquals("f", functionFromA.getIdentifier());
+
+		Function functionFromB = this.getSingleFunction("B");
+		assertEquals("C.__init__", functionFromB.getIdentifier());
+
+		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
+		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
+
+		for (Function function : functionSet) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "C.__init__":
+				functionToExpectedSideEffects.put(function, true);
+				break;
+			default:
+				fail("Not expecting: " + function + ".");
+			}
+		}
+
+		testPythonSideEffects(functionToExpectedSideEffects);
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects62() throws Exception {
+		Function function = this.getSingleFunction("A");
+		assertEquals("f", function.getIdentifier());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects63() throws Exception {
+		Function function = this.getSingleFunction("A");
+		assertEquals("f", function.getIdentifier());
+		assertFalse(function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects64() throws Exception {
+		Function function = this.getSingleFunction("A");
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects65() throws Exception {
+		Function function = this.getSingleFunction("A");
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
@@ -6175,8 +6273,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		// Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
-		assertNull("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -6188,8 +6285,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		// Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
-		assertNull("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -6201,8 +6297,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		// Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311 is fixed.
-		assertNull("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testClassInDifferentFile4() throws Exception {
+		Set<Function> functions = getFunctions("B");
+		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
+		assertEquals(1, set.size());
+		Function f = set.iterator().next();
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testClassInDifferentFile5() throws Exception {
+		Set<Function> functions = getFunctions("B");
+		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("SequentialModel.__call__"))
+				.collect(Collectors.toSet());
+		assertEquals(1, set.size());
+		Function f = set.iterator().next();
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testClassInDifferentFile6() throws Exception {
+		Set<Function> functions = getFunctions("B");
+		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("SequentialModel.__call__"))
+				.collect(Collectors.toSet());
+		assertEquals(1, set.size());
+		Function f = set.iterator().next();
+		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
 	}
 
 	/**
