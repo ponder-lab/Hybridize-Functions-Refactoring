@@ -5766,6 +5766,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
+	 */
+	@Test
+	public void testPythonSideEffects64() throws Exception {
+		Function function = this.getSingleFunction("A");
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
