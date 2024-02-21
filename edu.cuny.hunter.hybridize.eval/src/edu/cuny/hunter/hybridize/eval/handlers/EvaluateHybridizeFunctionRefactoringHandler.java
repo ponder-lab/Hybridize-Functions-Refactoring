@@ -78,6 +78,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.processFunctionsInParallel";
 
+	private static final String USE_TEST_ENTRYPOINTS_KEY = "edu.cuny.hunter.hybridize.eval.useTestEntrypoints";
+
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
@@ -100,6 +102,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean alwaysCheckRecursion = Boolean.getBoolean(ALWAYS_CHECK_RECURSION_PROPERTY_KEY);
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY);
+
+	private boolean useTestEntrypoints = Boolean.getBoolean(USE_TEST_ENTRYPOINTS_KEY);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -144,7 +148,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					resultsTimeCollector.start();
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
-							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion());
+							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -374,5 +378,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean getProcessFunctionsInParallel() {
 		return this.processFunctionsInParallel;
+	}
+
+	private boolean getUseTestEntrypoints() {
+		return this.useTestEntrypoints;
 	}
 }
