@@ -162,7 +162,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final boolean ALWAYS_CHECK_RECURSION = true;
 
-	private static final boolean USE_TEST_ENTRYPOINTS = true;
+	private static final boolean USE_TEST_ENTRYPOINTS = false;
 
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer

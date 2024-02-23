@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
+import static com.google.common.collect.Iterables.concat;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
@@ -32,7 +33,8 @@ import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This 
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
-import com.ibm.wala.cast.python.ipa.callgraph.PytestEntryPoints;
+import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
+import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
@@ -242,7 +244,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			SubMonitor splitMonitor = subMonitor.split(IProgressMonitor.UNKNOWN, SubMonitor.SUPPRESS_NONE);
 			CallGraph callGraph;
 			try {
-				callGraph = computeCallGraph(project, builder, engine.getClassHierarchy(), splitMonitor);
+				callGraph = computeCallGraph(project, builder, splitMonitor);
 			} catch (CallGraphBuilderCancelException e) {
 				throw new CoreException(Status.error("Could not build call graph for: " + project.getName(), e));
 			}
@@ -370,8 +372,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return projectToTensorTypeAnalysis.get(project);
 	}
 
-	private CallGraph computeCallGraph(IProject project, PythonSSAPropagationCallGraphBuilder builder, IClassHierarchy cha,
-			IProgressMonitor monitor) throws CallGraphBuilderCancelException {
+	private CallGraph computeCallGraph(IProject project, PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor)
+			throws CallGraphBuilderCancelException {
 		Map<IProject, CallGraph> projectToCallGraph = this.getProjectToCallGraph();
 
 		if (!projectToCallGraph.containsKey(project)) {
@@ -380,17 +382,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			if (this.shouldUseTestEntryPoints()) {
 				// Get the current entrypoints.
-				Collection<Entrypoint> entrypoints = new HashSet<>();
-				Util.addEntryPoints(entrypoints, options.getEntrypoints());
+				Iterable<? extends Entrypoint> defaultEntrypoints = builder.getOptions().getEntrypoints();
 
 				// Get the pytest entrypoints.
-				Iterable<Entrypoint> pytestEntrypoints = PytestEntryPoints.make(cha);
+				Iterable<Entrypoint> pytestEntrypoints = new PytestEntrypointBuilder().createEntrypoints(builder.getClassHierarchy());
 
 				// Add the pytest entrypoints.
-				Util.addEntryPoints(entrypoints, pytestEntrypoints);
+				Iterable<Entrypoint> entrypoints = concat(defaultEntrypoints, pytestEntrypoints);
 
 				// Set the new entrypoints.
-				options.setEntrypoints(entrypoints);
+				builder.getOptions().setEntrypoints(entrypoints);
+
+				for (Entrypoint ep : builder.getOptions().getEntrypoints())
+					if (ep instanceof PytesttEntrypoint)
+						LOG.info("Using test entrypoint: " + ep.getMethod().getDeclaringClass().getName() + ".");
 			}
 
 			CallGraph callGraph = builder.makeCallGraph(options, monitorDelegate);
