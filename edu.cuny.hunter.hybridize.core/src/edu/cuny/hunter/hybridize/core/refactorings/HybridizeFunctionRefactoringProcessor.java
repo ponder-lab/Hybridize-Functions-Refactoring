@@ -1,10 +1,13 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
+import static com.google.common.collect.Iterables.concat;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -30,12 +33,16 @@ import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This 
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
+import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
+import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilderCancelException;
+import com.ibm.wala.ipa.callgraph.Entrypoint;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.util.CancelException;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
@@ -47,6 +54,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
+import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
@@ -110,6 +118,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean processFunctionsInParallel;
 
+	/**
+	 * True iff entry points corresponding to tests should be used in the {@link CallGraph} construction.
+	 */
+	private boolean useTestEntryPoints;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
@@ -138,6 +151,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck) {
 		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion);
 		this.ignoreBooleansInLiteralCheck = ignoreBooleansInLiteralCheck;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck, boolean useTestEntryPoints) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion, ignoreBooleansInLiteralCheck);
+		this.useTestEntryPoints = useTestEntryPoints;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
@@ -174,6 +193,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel);
 		this.alwaysCheckRecursion = alwaysCheckRecursion;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion);
+		this.useTestEntryPoints = useTestEntryPoints;
 	}
 
 	@Override
@@ -353,6 +379,25 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (!projectToCallGraph.containsKey(project)) {
 			ProgressMonitorDelegate monitorDelegate = ProgressMonitorDelegate.createProgressMonitorDelegate(monitor);
 			AnalysisOptions options = builder.getOptions();
+
+			if (this.shouldUseTestEntryPoints()) {
+				// Get the current entrypoints.
+				Iterable<? extends Entrypoint> defaultEntrypoints = builder.getOptions().getEntrypoints();
+
+				// Get the pytest entrypoints.
+				Iterable<Entrypoint> pytestEntrypoints = new PytestEntrypointBuilder().createEntrypoints(builder.getClassHierarchy());
+
+				// Add the pytest entrypoints.
+				Iterable<Entrypoint> entrypoints = concat(defaultEntrypoints, pytestEntrypoints);
+
+				// Set the new entrypoints.
+				builder.getOptions().setEntrypoints(entrypoints);
+
+				for (Entrypoint ep : builder.getOptions().getEntrypoints())
+					if (ep instanceof PytesttEntrypoint)
+						LOG.info("Using test entrypoint: " + ep.getMethod().getDeclaringClass().getName() + ".");
+			}
+
 			CallGraph callGraph = builder.makeCallGraph(options, monitorDelegate);
 			projectToCallGraph.put(project, callGraph);
 		}
@@ -460,5 +505,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private boolean getProcessFunctionsInParallel() {
 		return this.processFunctionsInParallel;
+	}
+
+	/**
+	 * True iff we should implicitly consider test cases as entry points in the {@link CallGraph} construction.
+	 *
+	 * @return True iff entry points from tests are considered.
+	 */
+	protected boolean shouldUseTestEntryPoints() {
+		return useTestEntryPoints;
 	}
 }

@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -283,5 +284,12 @@ public class Util {
 	public static boolean isContainerType(TypeReference reference) {
 		return reference.equals(PythonTypes.dict) || reference.equals(PythonTypes.enumerate) || reference.equals(PythonTypes.list)
 				|| reference.equals(PythonTypes.set) || reference.equals(PythonTypes.tuple);
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static void addEntryPoints(Collection target, Iterable source) {
+		for (Object entryPoint : source)
+			if (target.add(entryPoint))
+				LOG.info("Adding entrypoint: " + entryPoint);
 	}
 }
