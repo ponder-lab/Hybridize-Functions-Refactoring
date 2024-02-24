@@ -477,7 +477,14 @@ public class Function {
 	 */
 	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
 			IProgressMonitor monitor) {
+		return containsPrimitive(instanceKey, ignoreBooleans, pointerAnalysis, new HashSet<>(), monitor);
+	}
+
+	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<InstanceKey> seen, IProgressMonitor monitor) {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
+
+		seen.add(instanceKey);
 
 		if (instanceKey instanceof ConstantKey<?>) {
 			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
@@ -510,7 +517,7 @@ public class Function {
 				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
 
 				for (InstanceKey key : instanceFieldPointsToSet)
-					if (containsPrimitive(key, ignoreBooleans, pointerAnalysis, subMonitor.split(1))) {
+					if (!seen.contains(key) && containsPrimitive(key, ignoreBooleans, pointerAnalysis, seen, subMonitor.split(1))) {
 						subMonitor.done();
 						return true;
 					}
