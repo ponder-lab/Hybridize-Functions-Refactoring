@@ -6418,4 +6418,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getFunction("summarize_weights");
 		assertFalse(function.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testTFRange() throws Exception {
+		Function function = getFunction("f");
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
