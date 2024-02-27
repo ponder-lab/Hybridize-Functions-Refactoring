@@ -162,7 +162,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final boolean ALWAYS_CHECK_RECURSION = true;
 
-	private static final boolean USE_TEST_ENTRYPOINTS = false;
+	private static final boolean USE_TEST_ENTRYPOINTS = true;
 
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
@@ -6423,5 +6423,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testTFRange2() throws Exception {
+		Set<Function> functions = this.getFunctions("test_A");
+		System.out.println(functions);
+
 	}
 }
