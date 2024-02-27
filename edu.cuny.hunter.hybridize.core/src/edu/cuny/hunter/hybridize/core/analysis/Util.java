@@ -274,7 +274,7 @@ public class Util {
 				return true;
 
 			// otherwise, check its callees.
-			if (!seen.contains(reference) && calls(next, methodReference, callGraph))
+			if (!seen.contains(reference) && calls(next, methodReference, callGraph, seen))
 				return true;
 		}
 
