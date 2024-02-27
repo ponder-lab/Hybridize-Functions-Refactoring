@@ -6428,7 +6428,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testTFRange2() throws Exception {
 		Set<Function> functions = this.getFunctions("test_A");
-		System.out.println(functions);
+		assertEquals(2, functions.size());
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
+		assertEquals(1, count);
 
 	}
 }
