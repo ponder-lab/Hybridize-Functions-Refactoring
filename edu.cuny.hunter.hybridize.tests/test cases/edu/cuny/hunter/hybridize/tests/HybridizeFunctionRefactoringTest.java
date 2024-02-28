@@ -6423,6 +6423,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
 	}
 
 	@Test
@@ -6431,6 +6432,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(2, functions.size());
 		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
 		assertEquals(1, count);
+
+		count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasPrimitiveParameters).count();
+		assertEquals(0, count);
 	}
 
 	@Test
@@ -6477,5 +6481,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testGPModel2() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		this.testGPModelHelper(functions);
+	}
+
+	@Test
+	public void testGPModel3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+
+		Function[] array = functions.stream().filter(f -> f.getIdentifier().equals("func")).toArray(Function[]::new);
+		assertEquals(1, array.length);
+
+		Function function = array[0];
+		assertNotNull(function);
+
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
 	}
 }
