@@ -6431,6 +6431,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(2, functions.size());
 		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
 		assertEquals(1, count);
+	}
 
+	@Test
+	public void testPytest() throws Exception {
+		Set<Function> functions = this.getFunctions("test_sample");
+		assertEquals(2, functions.size());
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("func")).filter(Function::getLikelyHasPrimitiveParameters)
+				.count();
+		assertEquals(1, count);
+	}
+
+	@Test
+	public void testPytest2() throws Exception {
+		Set<Function> functions = this.getFunctions("test_tf_range");
+		assertEquals(2, functions.size());
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
+		assertEquals(1, count);
 	}
 }
