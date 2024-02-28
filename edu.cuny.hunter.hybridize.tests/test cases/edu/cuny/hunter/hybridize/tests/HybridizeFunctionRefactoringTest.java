@@ -6496,7 +6496,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, count);
 	}
 
-	private void testGPModelHelper(Set<Function> functions) throws Exception {
+	private static void testGPModelHelper(Set<Function> functions) throws Exception {
 		assertEquals(2, functions.size());
 
 		for (Function function : functions) {
