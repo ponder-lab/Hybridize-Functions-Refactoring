@@ -6438,6 +6438,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testTFRange3() throws Exception {
+		Function function = getFunction("f");
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testTFRange4() throws Exception {
+		Function function = getFunction("f");
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testTFRange5() throws Exception {
+		Function function = getFunction("f");
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testTFRange6() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testTFRange7() throws Exception {
+		Function function = getFunction("f");
+		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testTFRange8() throws Exception {
+		Function function = getFunction("f");
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
 	public void testPytest() throws Exception {
 		Set<Function> functions = this.getFunctions("test_sample");
 		assertEquals(2, functions.size());
