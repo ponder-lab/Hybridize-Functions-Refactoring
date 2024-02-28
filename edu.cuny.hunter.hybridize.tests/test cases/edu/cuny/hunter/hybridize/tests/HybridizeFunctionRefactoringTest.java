@@ -6449,4 +6449,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
 		assertEquals(1, count);
 	}
+
+	private void testGPModelHelper(Set<Function> functions) throws Exception {
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "test_compile_monitor":
+				break;
+			case "test_compile_monitor.tf_func":
+				assertTrue(function.getLikelyHasTensorParameter());
+				assertFalse(function.getLikelyHasPrimitiveParameters());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testGPModel() throws Exception {
+		Set<Function> functions = this.getFunctions("test_A");
+		this.testGPModelHelper(functions);
+	}
+
+	@Test
+	public void testGPModel2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		this.testGPModelHelper(functions);
+	}
 }
