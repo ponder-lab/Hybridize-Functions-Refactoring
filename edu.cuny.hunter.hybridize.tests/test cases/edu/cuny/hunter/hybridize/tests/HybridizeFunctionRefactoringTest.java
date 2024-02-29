@@ -6516,13 +6516,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testGPModel() throws Exception {
 		Set<Function> functions = this.getFunctions("test_A");
-		this.testGPModelHelper(functions);
+		testGPModelHelper(functions);
 	}
 
 	@Test
 	public void testGPModel2() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		this.testGPModelHelper(functions);
+		testGPModelHelper(functions);
 	}
 
 	@Test
