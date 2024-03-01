@@ -1064,18 +1064,18 @@ public class Function {
 				// since we know that they are in the same file, it should suffice to know whether the source positions match.
 				int lhsBeginColumn = lhsParamExpr.beginColumn;
 				int lhsBeginLine = lhsParamExpr.beginLine;
-				int lhsLength = lhsParamName.length();
 
 				int paramIndex = rhsPointerKey.getValueNumber() - 1;
 				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
 				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
 
 				int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
-				int rhsEndColumn = parameterPosition.getLastCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
 				int rhsBeginLine = parameterPosition.getFirstLine();
-				int rhsLength = rhsEndColumn - rhsBeginColumn;
 
-				return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine && lhsLength == rhsLength;
+				// It should suffice to that the parameters have the same beginning column and the same beginning line. In other words, we
+				// are not checking the parameters' expression length because Ariadne includes the type hint in the length while PyDev does
+				// not.
+				return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
 			}
 
 			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
