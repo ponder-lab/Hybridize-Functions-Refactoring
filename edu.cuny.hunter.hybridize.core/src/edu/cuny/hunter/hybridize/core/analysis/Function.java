@@ -1202,6 +1202,10 @@ public class Function {
 		addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
 	}
 
+	public void addInfo(String message) {
+		addStatus(RefactoringStatus.INFO, message, RefactoringStatusEntry.NO_CODE);
+	}
+
 	private void addStatus(int status, String message, int code) {
 		RefactoringStatusContext context = new FunctionStatusContext();
 		this.getStatus().addEntry(status, message, context, PLUGIN_ID, code, this);
