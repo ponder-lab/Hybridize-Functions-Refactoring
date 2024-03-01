@@ -1219,9 +1219,13 @@ public class Function {
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
 			if (this.getLikelyHasTensorParameter() != null && this.getLikelyHasTensorParameter()) {
+				this.addInfo("This eager function likely has a tensor parameter.");
 				if (this.getLikelyHasPrimitiveParameters() != null && !this.getLikelyHasPrimitiveParameters()) {
+					this.addInfo("This eager function likely does not have a primitive parameter.");
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						this.addInfo("This eager function does not have Python side-effects.");
 						if (this.getIsRecursive() != null && !this.getIsRecursive()) {
+							this.addInfo("This eager function is not recursive.");
 							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 							this.setPassingPrecondition(P1);
 						} else if (this.getIsRecursive() != null) // it's recursive.
@@ -1260,17 +1264,22 @@ public class Function {
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (this.getLikelyHasTensorParameter() != null && !this.getLikelyHasTensorParameter()) {
+				this.addInfo("This hybrid function does not likely have a tensor parameter.");
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+					this.addInfo("This hybrid function does not have Python side-effects.");
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);
 				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
 			} else if (this.getLikelyHasTensorParameter() != null) { // it has a tensor parameter.
+				this.addInfo("This hybrid function likely has a tensor parameter.");
 				// if it has primitive parameters.
 				if (this.getLikelyHasPrimitiveParameters() != null && this.getLikelyHasPrimitiveParameters()) {
+					this.addInfo("This hybrid function likely has a primitive parameter.");
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+						this.addInfo("This hybrid function does not have Python side-effects.");
 						this.addTransformation(CONVERT_TO_EAGER);
 						this.setPassingPrecondition(P3);
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
