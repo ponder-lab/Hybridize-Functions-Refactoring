@@ -1195,13 +1195,16 @@ public class Function {
 		assert this.getHasPythonSideEffects() == null
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
-		RefactoringStatusContext context = new FunctionStatusContext();
-		this.getStatus().addEntry(RefactoringStatus.ERROR, message, context, PLUGIN_ID, failure.getCode(), this);
+		this.addStatus(RefactoringStatus.ERROR, message, failure.getCode());
 	}
 
 	public void addWarning(String message) {
+		addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
+	}
+
+	private void addStatus(int status, String message, int code) {
 		RefactoringStatusContext context = new FunctionStatusContext();
-		this.getStatus().addEntry(RefactoringStatus.WARNING, message, context, PLUGIN_ID, RefactoringStatusEntry.NO_CODE, this);
+		this.getStatus().addEntry(status, message, context, PLUGIN_ID, code, this);
 	}
 
 	/**
