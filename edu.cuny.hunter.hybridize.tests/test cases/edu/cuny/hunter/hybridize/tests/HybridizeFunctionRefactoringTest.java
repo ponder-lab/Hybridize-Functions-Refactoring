@@ -4858,6 +4858,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
 	}
 
 	@Test
@@ -4866,6 +4867,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
 	}
 
 	@Test
@@ -4874,6 +4876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
 	}
 
 	@Test
@@ -4882,6 +4885,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
 	}
 
 	@Test
@@ -4890,6 +4894,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
 	}
 
 	@Test
@@ -4898,6 +4903,61 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel14() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel15() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel16() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel17() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel18() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel19() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
 	}
 
 	// TODO: Test models that have tf.functions.
