@@ -4686,7 +4686,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
-				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("Should pass preconditions.", f.getStatus().hasError());
 				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
@@ -4728,7 +4728,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
-				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("Should pass preconditions.", f.getStatus().hasError());
 				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
@@ -4876,7 +4876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectedTransformation, transformation);
 
 		assertEquals(precondition, function.getPassingPrecondition());
-		assertTrue(function.getStatus().isOK());
+		assertFalse(function.getStatus().hasError());
 	}
 
 	@Test
@@ -5394,7 +5394,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getHasPythonSideEffects());
 
-		assertTrue(function.getStatus().isOK());
+		assertFalse(function.getStatus().hasError());
 		assertTrue(function.getRefactoring() == Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID);
 		assertTrue(function.getPassingPrecondition() == PreconditionSuccess.P1);
 		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), function.getTransformations());
@@ -5502,7 +5502,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
 
 		// NOTE: Change to assertFalse once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertTrue("Passes P1.", capturesLeakedTensor.getStatus().isOK());
+		assertFalse("Passes P1.", capturesLeakedTensor.getStatus().hasError());
 
 		assertFalse(capturesLeakedTensor.getStatus().hasWarning());
 		// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
@@ -5615,7 +5615,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
-		assertEquals(2, status.getEntries().length);
+		assertEquals(2, Arrays.stream(status.getEntries()).filter(e -> !e.isInfo()).count());
 		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
@@ -5634,7 +5634,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
 				status.hasError());
-		assertEquals(0, status.getEntries().length);
+		assertEquals(0, Arrays.stream(status.getEntries()).filter(RefactoringStatusEntry::isError).count());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNotNull(function.getPassingPrecondition());
@@ -5817,7 +5817,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getIsRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
 
-		assertTrue(f.getStatus().isOK());
+		assertFalse(f.getStatus().hasError());
 		assertEquals(P1, f.getPassingPrecondition());
 		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
@@ -6256,7 +6256,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(P1, f.getPassingPrecondition());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue(f.getErrors().isEmpty());
-		assertTrue(f.getStatus().isOK());
+		assertFalse(f.getStatus().hasError());
 		assertEquals(singleton(CONVERT_TO_HYBRID), f.getTransformations());
 
 		f = getFunction("train_step");
@@ -6377,7 +6377,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "cross_entropy_loss":
 			case "NeuralNet.call":
 				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
-						RefactoringStatus.OK);
+						RefactoringStatus.INFO);
 				break;
 			case "NeuralNet.__init__":
 				assertFalse(function.getStatus().isOK());
@@ -6399,7 +6399,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "run_optimization":
 			case "decoder":
 				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
-						RefactoringStatus.OK);
+						RefactoringStatus.INFO);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function.getIdentifier() + ".");
