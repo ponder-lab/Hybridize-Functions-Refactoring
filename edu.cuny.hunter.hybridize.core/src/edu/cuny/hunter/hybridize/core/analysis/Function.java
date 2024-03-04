@@ -1485,7 +1485,7 @@ public class Function {
 	 */
 	public boolean hasOnlyOneFailurePerKind() {
 		Map<Integer, List<RefactoringStatusEntry>> failureCodeToEntries = Arrays.stream(this.getStatus().getEntries())
-				.collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
+				.filter(RefactoringStatusEntry::isError).collect(Collectors.groupingBy(RefactoringStatusEntry::getCode));
 
 		for (Integer code : failureCodeToEntries.keySet()) {
 			List<RefactoringStatusEntry> failuresForCode = failureCodeToEntries.get(code);
