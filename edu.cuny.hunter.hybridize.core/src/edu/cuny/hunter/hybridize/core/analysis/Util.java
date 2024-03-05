@@ -54,9 +54,10 @@ public class Util {
 	 * @return The name of the module defining the given {@link PySelection}.
 	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
 	 * @throws BadLocationException On a parsing error.
+	 * @throws NoDeclaringModuleException When a declaring module can't be found.
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
-			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
+			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		monitor.beginTask("Getting declaring module name.", 1);
 
 		LOG.info(String.format("Getting declaring module name for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
@@ -81,7 +82,7 @@ public class Util {
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
 
 		if (pointers.length == 0)
-			throw new IllegalArgumentException(
+			throw new NoDeclaringModuleException(
 					String.format("Can't find declaring module for selection: %s in line: %s, module: %s, file: %s, and project: %s.",
 							selection.getSelectedText(), selection.getLineWithoutCommentsOrLiterals().strip(), containingModName,
 							containingFile.getName(), nature.getProject()));
@@ -129,10 +130,11 @@ public class Util {
 	 * @return The FQN of the given {@link decoratorsType}.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
 	 * @throws AmbiguousDeclaringModuleException If the definition of the decorator is ambiguous.
+	 * @throws NoDeclaringModuleException When a declaring module can't be found.:
 	 */
 	public static String getFullyQualifiedName(decoratorsType decorator, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
-			throws BadLocationException, AmbiguousDeclaringModuleException {
+			throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
 		exprType decoratorFunction = decorator.func;
@@ -144,7 +146,7 @@ public class Util {
 
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
-			throws BadLocationException, AmbiguousDeclaringModuleException {
+			throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		monitor.subTask("Getting declaring module name.");
 		LOG.info("Getting declaring module name for SimpleNode: " + node + ".");
 
