@@ -24,16 +24,17 @@ services:
 - xvfb
 install:
   - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
+  - mvn -U -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false clean install -B -q -DskipTests=true
 before_script:
   - python3 --version
   - python3.10 --version
+  - mkdir "$HOME/git"
+  - pushd .
+  - cd "$HOME/git"
+  - pwd
+  - git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git # Clone our fork of PyDev.
+  - popd
 script:
-- mkdir "$HOME/git"
-- pushd .
-- cd "$HOME/git"
-- pwd
-- git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git # Clone our fork of PyDev.
-- popd
 - mvn -U -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false clean verify -Pjacoco coveralls:report -B
 notifications:
   slack:
