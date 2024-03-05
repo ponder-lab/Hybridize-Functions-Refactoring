@@ -774,6 +774,7 @@ public class Function {
 	 */
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
+
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
