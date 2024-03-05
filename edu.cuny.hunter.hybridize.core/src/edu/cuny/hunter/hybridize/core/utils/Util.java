@@ -50,10 +50,10 @@ public class Util {
 
 	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects,
 			boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel, boolean alwaysCheckRecusion,
-			boolean useTestEntryPoints) throws ExecutionException, CoreException, IOException {
+			boolean useTestEntryPoints, boolean alwaysFollowTypeHints) throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
 		return new HybridizeFunctionRefactoringProcessor(functionDefinitions, alwaysCheckPythonSideEffects, processFunctionsInParallel,
-				alwaysCheckRecusion, useTestEntryPoints);
+				alwaysCheckRecusion, useTestEntryPoints, alwaysFollowTypeHints);
 	}
 
 	public static Set<FunctionDefinition> getFunctionDefinitions(Iterable<?> iterable)

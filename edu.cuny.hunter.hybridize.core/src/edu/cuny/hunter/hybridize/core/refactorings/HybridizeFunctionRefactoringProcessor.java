@@ -119,6 +119,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private boolean useTestEntryPoints;
 
+	/**
+	 * True iff we should use type hints regardless of any hybridization arguments.
+	 */
+	private boolean alwaysFollowTypeHints;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
@@ -155,6 +160,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.useTestEntryPoints = useTestEntryPoints;
 	}
 
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck, boolean useTestEntryPoints, boolean alwaysFollowTypeHints) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion, ignoreBooleansInLiteralCheck,
+				useTestEntryPoints);
+		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
+	}
+
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
@@ -164,7 +176,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck);
+				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -196,6 +208,31 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion);
 		this.useTestEntryPoints = useTestEntryPoints;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints)
+			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this();
+
+		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
+		this.alwaysCheckRecursion = alwaysCheckRecursion;
+		this.processFunctionsInParallel = processFunctionsInParallel;
+		this.useTestEntryPoints = useTestEntryPoints;
+		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
+
+		// Convert the FunctionDefs to Functions.
+		if (functions != null) {
+			Set<Function> functionSet = this.getFunctions();
+
+			for (FunctionDefinition fd : functionDefinitionSet) {
+				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints);
+
+				// Add the Function to the Function set.
+				functionSet.add(function);
+			}
+		}
+
 	}
 
 	@Override
@@ -510,5 +547,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	protected boolean shouldUseTestEntryPoints() {
 		return useTestEntryPoints;
+	}
+
+	/**
+	 * Returns true iff we should follow type hints regardless of any hybridization arguments.
+	 *
+	 * @return True iff we should follow type hints regardless of any hybridization arguments.
+	 */
+	public boolean getAlwaysFollowTypeHints() {
+		return alwaysFollowTypeHints;
 	}
 }

@@ -164,6 +164,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final boolean USE_TEST_ENTRYPOINTS = true;
 
+	private static final boolean ALWAYS_FOLLOW_TYPE_HINTS = true;
+
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
 	 * much in way of speedup since each test has only a few {@link Function}s.
@@ -586,7 +588,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
-				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS);
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
+				ALWAYS_FOLLOW_TYPE_HINTS);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1785,7 +1788,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #2. Here, the function has one parameters, is hybrid, and does not consider type hints. But, a type hint is supplied. In
-	 * other words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 * other words, a type hint supplied. We use it because of our option but not because of any hybridization parameters. Thus, it's likely
+	 * to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter8() throws Exception {
@@ -1824,7 +1828,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -4588,6 +4592,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(false, true);
 	}
 
+	/**
+	 * Use the type hint here even though experimental_follow_type_hints isn't supplied.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter158() throws Exception {
+		Function function = getFunction("add");
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+
+	}
+
 	// TODO: Test arbitrary expression.
 	// TODO: Test cast/assert statements?
 	// TODO: https://www.tensorflow.org/guide/function#pass_tensors_instead_of_python_literals. How do we deal with union types? Do we want
@@ -4686,7 +4702,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
-				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("Should pass preconditions.", f.getStatus().hasError());
 				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
@@ -4728,7 +4744,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "__call__":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
-				assertTrue("Should pass preconditions.", f.getStatus().isOK());
+				assertFalse("Should pass preconditions.", f.getStatus().hasError());
 				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
 				break;
 			default:
@@ -4852,6 +4868,114 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
+	@Test
+	public void testModel8() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel9() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel10() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel11() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel12() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel13() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel14() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel15() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel16() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel17() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel18() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
+	@Test
+	public void testModel19() throws Exception {
+		Function function = this.getSingleFunction();
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.getIsHybrid());
+	}
+
 	// TODO: Test models that have tf.functions.
 
 	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,
@@ -4876,7 +5000,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectedTransformation, transformation);
 
 		assertEquals(precondition, function.getPassingPrecondition());
-		assertTrue(function.getStatus().isOK());
+		assertFalse(function.getStatus().hasError());
 	}
 
 	@Test
@@ -5394,7 +5518,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getHasPythonSideEffects());
 
-		assertTrue(function.getStatus().isOK());
+		assertFalse(function.getStatus().hasError());
 		assertTrue(function.getRefactoring() == Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID);
 		assertTrue(function.getPassingPrecondition() == PreconditionSuccess.P1);
 		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), function.getTransformations());
@@ -5502,7 +5626,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
 
 		// NOTE: Change to assertFalse once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
-		assertTrue("Passes P1.", capturesLeakedTensor.getStatus().isOK());
+		assertFalse("Passes P1.", capturesLeakedTensor.getStatus().hasError());
 
 		assertFalse(capturesLeakedTensor.getStatus().hasWarning());
 		// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
@@ -5615,7 +5739,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
-		assertEquals(2, status.getEntries().length);
+		assertEquals(2, Arrays.stream(status.getEntries()).filter(e -> !e.isInfo()).count());
 		assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
@@ -5634,7 +5758,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = function.getStatus();
 		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
 				status.hasError());
-		assertEquals(0, status.getEntries().length);
+		assertEquals(0, Arrays.stream(status.getEntries()).filter(RefactoringStatusEntry::isError).count());
 
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNotNull(function.getPassingPrecondition());
@@ -5817,7 +5941,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getIsRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
 
-		assertTrue(f.getStatus().isOK());
+		assertFalse(f.getStatus().hasError());
 		assertEquals(P1, f.getPassingPrecondition());
 		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
@@ -6256,7 +6380,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(P1, f.getPassingPrecondition());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue(f.getErrors().isEmpty());
-		assertTrue(f.getStatus().isOK());
+		assertFalse(f.getStatus().hasError());
 		assertEquals(singleton(CONVERT_TO_HYBRID), f.getTransformations());
 
 		f = getFunction("train_step");
@@ -6377,7 +6501,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "cross_entropy_loss":
 			case "NeuralNet.call":
 				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
-						RefactoringStatus.OK);
+						RefactoringStatus.INFO);
 				break;
 			case "NeuralNet.__init__":
 				assertFalse(function.getStatus().isOK());
@@ -6399,7 +6523,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "run_optimization":
 			case "decoder":
 				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, P1, singleton(CONVERT_TO_HYBRID),
-						RefactoringStatus.OK);
+						RefactoringStatus.INFO);
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function.getIdentifier() + ".");

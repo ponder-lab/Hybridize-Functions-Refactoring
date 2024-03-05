@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
@@ -386,11 +387,14 @@ public class Function {
 
 	private boolean ignoreBooleans;
 
+	private boolean alwaysFollowTypeHints;
+
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
-	public Function(FunctionDefinition fd, boolean ignoreBooleans) {
+	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
+		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 	}
 
 	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException {
@@ -765,8 +769,12 @@ public class Function {
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
+	/**
+	 * Infer which parameters are likely tensor parameters.
+	 */
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
+
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
@@ -784,29 +792,30 @@ public class Function {
 						continue; // next parameter.
 
 					// check a special case where we consider type hints.
+					boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
+							// TODO: Actually get the value here (#111).
+							&& this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists();
 
-					// if hybridization parameters are specified.
-					if (this.getHybridizationParameters() != null) {
-						// if we are considering type hints.
-						// TODO: Actually get the value here (#111).
-						if (this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists()) {
-							LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
+					// if we are considering type hints.
+					if (followTypeHints) {
+						LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
 
-							// try to get its type from the AST.
-							TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
+						// try to get its type from the AST.
+						TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
 
-							if (argTypeInfo != null) {
-								LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
+						if (argTypeInfo != null) {
+							LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
 
-								exprType node = argTypeInfo.getNode();
-								Set<Attribute> allAttributes = getAllAttributes(node);
+							exprType node = argTypeInfo.getNode();
+							Set<Attribute> allAttributes = getAllAttributes(node);
 
-								if (attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
-									this.likelyHasTensorParameter = Boolean.TRUE;
-									LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
-									monitor.worked(1);
-									continue; // next parameter.
-								}
+							if (attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
+								this.likelyHasTensorParameter = Boolean.TRUE;
+								LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
+								monitor.worked(1);
+								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName
+										+ " in function: " + this + ".");
+								continue; // next parameter.
 							}
 						}
 					}
@@ -1203,7 +1212,15 @@ public class Function {
 	}
 
 	public void addInfo(String message) {
-		addStatus(RefactoringStatus.INFO, message, RefactoringStatusEntry.NO_CODE);
+		this.addInfo(message, RefactoringStatusEntry.NO_CODE);
+	}
+
+	public void addInfo(Information information, String message) {
+		this.addInfo(message, information.getCode());
+	}
+
+	private void addInfo(String message, int code) {
+		addStatus(RefactoringStatus.INFO, message, code);
 	}
 
 	private void addStatus(int status, String message, int code) {
@@ -1567,5 +1584,14 @@ public class Function {
 	 */
 	protected boolean getIgnoreBooleans() {
 		return ignoreBooleans;
+	}
+
+	/**
+	 * Returns true iff we should use type hints regardless of a hybridization parameter.
+	 *
+	 * @return Whether we should use type hints regardless of what is specified in any hybridization parameters.
+	 */
+	public boolean getAlwaysFollowTypeHints() {
+		return alwaysFollowTypeHints;
 	}
 }
