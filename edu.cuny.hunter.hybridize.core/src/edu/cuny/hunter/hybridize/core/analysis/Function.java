@@ -423,7 +423,7 @@ public class Function {
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		if (nodes.isEmpty())
-			throw new CantInferPrimitiveParametersException("Can't primitive paramaeters of " + this + " without a call graph node.");
+			throw new CantInferPrimitiveParametersException("Can't infer primitive parameters of " + this + " without a call graph node.");
 
 		subMonitor.beginTask("Examining nodes...", nodes.size());
 

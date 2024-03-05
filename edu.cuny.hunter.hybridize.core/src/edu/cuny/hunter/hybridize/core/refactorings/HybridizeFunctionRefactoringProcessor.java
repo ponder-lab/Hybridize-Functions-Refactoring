@@ -335,7 +335,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				try {
 					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (CantInferPrimitiveParametersException e) {
-					LOG.warn("Unable to infer primitive paramaeters for: " + func + ".", e);
+					LOG.warn("Unable to infer primitive parameters for: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
 							"Can't infer primitive parameters for this function.");
 				}
