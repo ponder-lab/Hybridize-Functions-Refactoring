@@ -49,6 +49,7 @@ import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersExcep
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
@@ -322,7 +323,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				try {
 					func.inferTensorTensorParameters(analysis, callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
-				} catch (CantInferTensorParametersException e) {
+				} catch (CantInferTensorParametersException | NoDeclaringModuleException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
 							"Can't infer tensor parameters for this function.");

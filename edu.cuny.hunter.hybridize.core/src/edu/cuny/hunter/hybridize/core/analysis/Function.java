@@ -194,7 +194,7 @@ public class Function {
 					if (Function.isHybrid(decorator, Function.this.getContainingModuleName(), Function.this.getContainingFile(), selection,
 							Function.this.getNature(), monitor)) // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
-				} catch (AmbiguousDeclaringModuleException e) {
+				} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
@@ -964,7 +964,7 @@ public class Function {
 			try {
 				fqn = Util.getFullyQualifiedName(typeHintExpr, this.getContainingModuleName(), this.getContainingFile(), selection,
 						this.getNature(), subMonitor.split(1));
-			} catch (AmbiguousDeclaringModuleException e) {
+			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException e) {
 				LOG.warn(String.format(
 						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
 						typeHintExpr, selection.getSelectedText(), getContainingModuleName(), this.getContainingFile().getName(),
@@ -1124,7 +1124,7 @@ public class Function {
 				try {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
-				} catch (AmbiguousDeclaringModuleException | BadLocationException | RuntimeException e) {
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException | RuntimeException e) {
 					String selectedText = null;
 					try {
 						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
@@ -1184,9 +1184,11 @@ public class Function {
 	 * @return The FQN of the given {@link decoratorsType}.
 	 * @throws AmbiguousDeclaringModuleException If the definition of the decorator is ambiguous.
 	 * @throws BadLocationException When the containing entities cannot be parsed.
+	 * @throws NoDeclaringModuleException When a declaring module can't be found.
 	 */
 	private static boolean isHybrid(decoratorsType decorator, String containingModuleName, File containingFile, PySelection selection,
-			IPythonNature nature, IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException {
+			IPythonNature nature, IProgressMonitor monitor)
+			throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		String decoratorFQN = Util.getFullyQualifiedName(decorator, containingModuleName, containingFile, selection, nature, monitor);
 
 		LOG.info("Found decorator: " + decoratorFQN + ".");
