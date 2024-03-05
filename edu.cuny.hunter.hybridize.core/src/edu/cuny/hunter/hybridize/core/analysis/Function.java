@@ -769,6 +769,9 @@ public class Function {
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
 	}
 
+	/**
+	 * Infer which parameters are likely tensor parameters.
+	 */
 	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 		// TODO: Use cast/assert statements?
