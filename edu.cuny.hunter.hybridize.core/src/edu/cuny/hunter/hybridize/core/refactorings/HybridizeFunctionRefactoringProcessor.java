@@ -551,7 +551,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	/**
 	 * Returns true iff we should follow type hints regardless of any hybridization arguments.
-	 * 
+	 *
 	 * @return True iff we should follow type hints regardless of any hybridization arguments.
 	 */
 	public boolean getAlwaysFollowTypeHints() {
