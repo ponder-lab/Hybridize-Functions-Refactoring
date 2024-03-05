@@ -793,8 +793,8 @@ public class Function {
 
 					// check a special case where we consider type hints.
 					boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
-							&& this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists(); // TODO: Actually get the
-																												// value here (#111).
+							// TODO: Actually get the value here (#111).
+							&& this.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists();
 
 					// if we are considering type hints.
 					if (followTypeHints) {
