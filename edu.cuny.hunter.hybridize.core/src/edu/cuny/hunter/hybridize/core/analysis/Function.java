@@ -813,8 +813,7 @@ public class Function {
 								this.likelyHasTensorParameter = Boolean.TRUE;
 								LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
 								monitor.worked(1);
-								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName
-										+ " in function: " + this + ".");
+								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
 								continue; // next parameter.
 							}
 						}
