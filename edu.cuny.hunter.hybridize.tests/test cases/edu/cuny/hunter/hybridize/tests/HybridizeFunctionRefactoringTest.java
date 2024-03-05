@@ -164,6 +164,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final boolean USE_TEST_ENTRYPOINTS = true;
 
+	private static final boolean ALWAYS_FOLLOW_TYPE_HINTS = true;
+
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
 	 * much in way of speedup since each test has only a few {@link Function}s.
@@ -586,7 +588,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
-				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS);
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
+				ALWAYS_FOLLOW_TYPE_HINTS);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1785,7 +1788,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #2. Here, the function has one parameters, is hybrid, and does not consider type hints. But, a type hint is supplied. In
-	 * other words, a type hint supplied but we don't use it. Thus, it's not likely to have a tensor parameter.
+	 * other words, a type hint supplied. We use it because of our option but not because of any hybridization parameters. Thus, it's likely
+	 * to have a tensor parameter.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter8() throws Exception {
@@ -1824,7 +1828,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
 	/**
@@ -4586,6 +4590,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter157() throws Exception {
 		testHasLikelyTensorParameterHelper(false, true);
+	}
+
+	/**
+	 * Use the type hint here even though experimental_follow_type_hints isn't supplied.
+	 */
+	@Test
+	public void testHasLikelyTensorParameter158() throws Exception {
+		Function function = getFunction("add");
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+
 	}
 
 	// TODO: Test arbitrary expression.
