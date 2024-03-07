@@ -202,19 +202,26 @@ public class Util {
 		return ret.toString();
 	}
 
-	public static PySelection getSelection(decoratorsType decorator, IDocument document) {
+	public static PySelection getSelection(decoratorsType decorator, IDocument document) throws NoTextSelectionException {
 		exprType expression = getExpressionFromFunction(decorator);
 		LOG.info("Getting PySelection for exprType: " + expression + ".");
 		return getSelection(expression, document);
 	}
 
-	public static PySelection getSelection(SimpleNode node, IDocument document) {
+	public static PySelection getSelection(SimpleNode node, IDocument document) throws NoTextSelectionException {
 		CoreTextSelection coreTextSelection = getCoreTextSelection(document, node);
 		return new PySelection(document, coreTextSelection);
 	}
 
-	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) {
-		int offset = NodeUtils.getOffset(document, expression);
+	public static CoreTextSelection getCoreTextSelection(IDocument document, SimpleNode expression) throws NoTextSelectionException {
+		int offset;
+
+		try {
+			offset = NodeUtils.getOffset(document, expression);
+		} catch (RuntimeException e) {
+			throw new NoTextSelectionException(expression, e);
+		}
+
 		String representationString = NodeUtils.getRepresentationString(expression);
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;

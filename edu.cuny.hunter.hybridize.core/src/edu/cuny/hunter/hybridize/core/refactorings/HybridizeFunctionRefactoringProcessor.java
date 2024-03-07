@@ -49,7 +49,6 @@ import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersExcep
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
-import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
@@ -323,7 +322,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				try {
 					func.inferTensorTensorParameters(analysis, callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
-				} catch (CantInferTensorParametersException | NoDeclaringModuleException e) {
+				} catch (CantInferTensorParametersException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
 							"Can't infer tensor parameters for this function.");
@@ -334,7 +333,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				try {
 					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (CantInferPrimitiveParametersException e) {
-					LOG.warn("Unable to infer primitive paramaeters for: " + func + ".", e);
+					LOG.warn("Unable to infer primitive parameters for: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
 							"Can't infer primitive parameters for this function.");
 				}
@@ -358,7 +357,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					if (this.getAlwaysCheckRecursion() || func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter())
 						func.computeRecursion(callGraph);
 				} catch (CantComputeRecursionException e) {
-					LOG.warn("Unable to compute whether " + this + " is recursive.", e);
+					LOG.warn("Unable to compute whether " + func + " is recursive.", e);
 					func.addFailure(PreconditionFailure.CANT_APPROXIMATE_RECURSION, "Can't compute whether this function is recursive.");
 				}
 

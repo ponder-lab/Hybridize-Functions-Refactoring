@@ -6544,6 +6544,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testDatasetIteration() throws Exception {
+		Function function = getFunction("add");
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testDatasetIteration2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("add") || f.getIdentifier().equals("f"))
+				.allMatch(f -> f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+	}
+
+	@Test
+	public void testDatasetIteration3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("add") || f.getIdentifier().equals("f"))
+				.allMatch(f -> f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("g"))
+				.allMatch(f -> !f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+	}
+
+	@Test
+	public void testDatasetIteration4() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("distributed_train_step", function.getIdentifier());
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getLikelyHasTensorParameter());

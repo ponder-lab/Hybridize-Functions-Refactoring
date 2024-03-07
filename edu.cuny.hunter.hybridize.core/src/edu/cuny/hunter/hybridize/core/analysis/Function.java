@@ -187,14 +187,14 @@ public class Function {
 			// Iterate through the decorators of the function
 			for (decoratorsType decorator : decoratorArray) {
 				IDocument document = Function.this.getContainingDocument();
-				PySelection selection = Util.getSelection(decorator, document);
 
 				// Save the hybrid decorator
 				try {
+					PySelection selection = Util.getSelection(decorator, document);
 					if (Function.isHybrid(decorator, Function.this.getContainingModuleName(), Function.this.getContainingFile(), selection,
 							Function.this.getNature(), monitor)) // TODO: Cache this from a previous call (#118).
 						tfFunctionDecorator = decorator;
-				} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException e) {
+				} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
 					throw new IllegalStateException("Can't determine whether decorator: " + decorator + " is hybrid.", e);
 				}
 			} // We expect to have the last tf.function decorator in tfFunctionDecorator
@@ -423,7 +423,7 @@ public class Function {
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		if (nodes.isEmpty())
-			throw new CantInferPrimitiveParametersException("Can't primitive paramaeters of " + this + " without a call graph node.");
+			throw new CantInferPrimitiveParametersException("Can't infer primitive parameters of " + this + " without a call graph node.");
 
 		subMonitor.beginTask("Examining nodes...", nodes.size());
 
@@ -813,8 +813,7 @@ public class Function {
 								this.likelyHasTensorParameter = Boolean.TRUE;
 								LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
 								monitor.worked(1);
-								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName
-										+ " in function: " + this + ".");
+								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
 								continue; // next parameter.
 							}
 						}
@@ -958,17 +957,18 @@ public class Function {
 		for (Attribute typeHintExpr : attributes) {
 			// Look up the definition.
 			IDocument document = this.getContainingDocument();
-			PySelection selection = Util.getSelection(typeHintExpr.attr, document);
 
 			String fqn;
+			PySelection selection = null;
 			try {
+				selection = Util.getSelection(typeHintExpr.attr, document);
 				fqn = Util.getFullyQualifiedName(typeHintExpr, this.getContainingModuleName(), this.getContainingFile(), selection,
 						this.getNature(), subMonitor.split(1));
-			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException e) {
+			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
 				LOG.warn(String.format(
 						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-						typeHintExpr, selection.getSelectedText(), getContainingModuleName(), this.getContainingFile().getName(),
-						this.getProject()), e);
+						typeHintExpr, selection == null ? "null" : selection.getSelectedText(), getContainingModuleName(),
+						this.getContainingFile().getName(), this.getProject()), e);
 
 				subMonitor.worked(1);
 				continue; // next attribute.
@@ -1124,7 +1124,8 @@ public class Function {
 				try {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
-				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException | RuntimeException e) {
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException | NoTextSelectionException
+						| RuntimeException e) {
 					String selectedText = null;
 					try {
 						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
