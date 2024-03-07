@@ -6564,8 +6564,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(3, functions.size());
 		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("add") || f.getIdentifier().equals("f"))
 				.allMatch(f -> f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
-		functions.stream().filter(f -> f.getIdentifier().equals("g"))
-				.allMatch(f -> !f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters());
+		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("g"))
+				.allMatch(f -> !f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
 	}
 
 	@Test
