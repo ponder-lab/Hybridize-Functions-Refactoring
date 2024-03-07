@@ -4976,6 +4976,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getIsHybrid());
 	}
 
+	@Test
+	public void testModel20() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+
+		for (Function f : functions) {
+			switch (f.getIdentifier()) {
+			case "f":
+				assertTrue(f.getLikelyHasTensorParameter());
+				assertFalse(f.getLikelyHasPrimitiveParameters());
+				assertFalse(f.getHasPythonSideEffects());
+				assertFalse(f.getIsHybrid());
+				break;
+			case "g":
+				assertTrue(f.getLikelyHasTensorParameter());
+				assertFalse(f.getLikelyHasPrimitiveParameters());
+				assertFalse(f.getHasPythonSideEffects());
+				assertFalse(f.getIsHybrid());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + f + ".");
+			}
+		}
+	}
+
 	// TODO: Test models that have tf.functions.
 
 	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,
