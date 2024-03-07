@@ -357,7 +357,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					if (this.getAlwaysCheckRecursion() || func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter())
 						func.computeRecursion(callGraph);
 				} catch (CantComputeRecursionException e) {
-					LOG.warn("Unable to compute whether " + this + " is recursive.", e);
+					LOG.warn("Unable to compute whether " + func + " is recursive.", e);
 					func.addFailure(PreconditionFailure.CANT_APPROXIMATE_RECURSION, "Can't compute whether this function is recursive.");
 				}
 
