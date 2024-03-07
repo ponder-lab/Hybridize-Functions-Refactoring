@@ -592,6 +592,13 @@ public class Function {
 				InstanceFieldPointerKey fieldPointerKey = (InstanceFieldPointerKey) pointerKey;
 				InstanceKey instanceKey = fieldPointerKey.getInstanceKey();
 
+				// Handle a special case where the instance is null.
+				if (instanceKey instanceof ConstantKey) {
+					ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+					if (constantKey.getValue() == null)
+						continue; // filter this pointer out.
+				}
+
 				if (allCreationsWithinClosure(this.getMethodReference(), instanceKey, callGraph))
 					continue; // filter this pointer out.
 
