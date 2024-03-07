@@ -6569,6 +6569,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testDatasetIteration4() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("distributed_train_step", function.getIdentifier());
+		assertTrue(function.getIsHybrid());
+		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getLikelyHasTensorParameter());
