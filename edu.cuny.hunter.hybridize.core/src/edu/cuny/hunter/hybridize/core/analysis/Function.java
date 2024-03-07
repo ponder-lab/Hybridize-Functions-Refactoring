@@ -1,6 +1,5 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import static com.google.common.collect.Sets.newHashSet;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -624,11 +623,12 @@ public class Function {
 	}
 
 	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
-		return allCreationsWithinClosure(methodReference, instanceKey, callGraph, newHashSet());
+		Set<MethodReference> seen = Sets.newHashSet();
+		return allCreationsWithinClosureInteral(methodReference, instanceKey, callGraph, seen);
 
 	}
 
-	private static boolean allCreationsWithinClosure(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
+	private static boolean allCreationsWithinClosureInteral(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph,
 			Set<MethodReference> seen) {
 		Map<InstanceKey, Map<CallGraph, Boolean>> cache2 = creationsCache.get(methodReference);
 
@@ -685,7 +685,7 @@ public class Function {
 			CGNode next = succNodes.next();
 			MethodReference reference = next.getMethod().getReference();
 
-			if (!seen.contains(reference) && allCreationsWithinClosure(reference, instanceKey, callGraph, seen))
+			if (!seen.contains(reference) && allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
 				return true;
 		}
 
