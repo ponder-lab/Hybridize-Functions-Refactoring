@@ -37,10 +37,16 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
+import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilderCancelException;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.util.CancelException;
+import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
@@ -54,6 +60,7 @@ import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsEx
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
+import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
 @SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
@@ -96,6 +103,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private Set<Function> functions = new LinkedHashSet<>();
 
 	private Map<IProject, PythonSSAPropagationCallGraphBuilder> projectToCallGraphBuilder = new HashMap<>();
+
+	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new HashMap<>();
 
 	private Map<IProject, CallGraph> projectToCallGraph = new HashMap<>();
 
@@ -341,8 +350,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check Python side-effects.
 				try {
 					if (this.getAlwaysCheckPythonSideEffects() || func.getIsHybrid()
-							|| func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter())
-						func.inferPythonSideEffects(callGraph, builder.getPointerAnalysis());
+							|| func.getLikelyHasTensorParameter() != null && func.getLikelyHasTensorParameter()) {
+						Map<CGNode, OrdinalSet<PointerKey>> mod = this.computeMod(project, callGraph, builder.getPointerAnalysis());
+						func.inferPythonSideEffects(mod, callGraph, builder.getPointerAnalysis());
+					}
 				} catch (UndeterminablePythonSideEffectsException e) {
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
@@ -378,6 +389,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 
 		return status;
+	}
+
+	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = this.getProjectToMod();
+
+		if (!projectToMod.containsKey(project)) {
+			ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
+			Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
+			projectToMod.put(project, mod);
+		}
+
+		return projectToMod.get(project);
 	}
 
 	/**
@@ -459,6 +483,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	@Override
 	public void clearCaches() {
 		this.getProjectToCallGraphBuilder().clear();
+		this.getProjectToMod().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
 		Function.clearCaches();
@@ -517,6 +542,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	protected Map<IProject, PythonSSAPropagationCallGraphBuilder> getProjectToCallGraphBuilder() {
 		return projectToCallGraphBuilder;
+	}
+
+	protected Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> getProjectToMod() {
+		return projectToMod;
 	}
 
 	protected Map<IProject, CallGraph> getProjectToCallGraph() {

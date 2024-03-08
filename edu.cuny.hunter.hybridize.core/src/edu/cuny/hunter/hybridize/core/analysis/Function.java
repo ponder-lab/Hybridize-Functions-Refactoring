@@ -78,7 +78,6 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
-import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
@@ -89,7 +88,6 @@ import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
-import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
 /**
  * A representation of a Python function.
@@ -537,16 +535,14 @@ public class Function {
 	/**
 	 * Infer Python side-effects potentially produced by executing this {@link Function}.
 	 *
+	 * @param mod The ModRef analysis result.
 	 * @param callGraph The system {@link CallGraph}.
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given
 	 *         {@link CallGraph}.
 	 */
-	public void inferPythonSideEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis)
+	public void inferPythonSideEffects(Map<CGNode, OrdinalSet<PointerKey>> mod, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis)
 			throws UndeterminablePythonSideEffectsException {
-		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
-		Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
-
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
 		// the current representation. It seems that there is a declaration node for each call to the function. Each node has a different
 		// calling context.
