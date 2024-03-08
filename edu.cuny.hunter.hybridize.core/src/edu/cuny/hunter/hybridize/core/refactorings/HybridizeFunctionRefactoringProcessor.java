@@ -283,10 +283,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			}
 
 			subMonitor.subTask("Building call graph.");
-			SubMonitor splitMonitor = subMonitor.split(IProgressMonitor.UNKNOWN, SubMonitor.SUPPRESS_NONE);
 			CallGraph callGraph;
 			try {
-				callGraph = computeCallGraph(project, builder, splitMonitor);
+				callGraph = computeCallGraph(project, builder, subMonitor.split(IProgressMonitor.UNKNOWN, SubMonitor.SUPPRESS_NONE));
 			} catch (CallGraphBuilderCancelException e) {
 				throw new CoreException(Status.error("Could not build call graph for: " + project.getName(), e));
 			}
