@@ -20,10 +20,10 @@
     <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
         <listEntry value="1"/>
     </listAttribute>
-    <stringAttribute key="org.eclipse.debug.ui.ATTR_CAPTURE_IN_FILE" value="/tmp/out3.log"/>
+    <stringAttribute key="org.eclipse.debug.ui.ATTR_CAPTURE_IN_FILE" value="/tmp/out2.log"/>
     <stringAttribute key="org.eclipse.jdt.junit.CONTAINER" value=""/>
     <booleanAttribute key="org.eclipse.jdt.junit.KEEPRUNNING_ATTR" value="false"/>
-    <stringAttribute key="org.eclipse.jdt.junit.TESTNAME" value="testWildcardImport3"/>
+    <stringAttribute key="org.eclipse.jdt.junit.TESTNAME" value="testWildcardImport2"/>
     <stringAttribute key="org.eclipse.jdt.junit.TEST_KIND" value="org.eclipse.jdt.junit.loader.junit4"/>
     <booleanAttribute key="org.eclipse.jdt.launching.ATTR_ATTR_USE_ARGFILE" value="false"/>
     <stringAttribute key="org.eclipse.jdt.launching.JRE_CONTAINER" value="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-11"/>
