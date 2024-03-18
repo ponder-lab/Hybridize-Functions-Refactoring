@@ -172,10 +172,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private static final boolean PROCESS_FUNCTIONS_IN_PARALLEL = false;
 
-	/**
-	 * True iff the input test Python file should be executed.
-	 */
-	private static final boolean RUN_INPUT_TEST_FILE = false;
+	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -325,20 +322,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Installs the required packages for running an input test file. Assumes that requirements.txt is located in the given path.
 	 *
 	 * @param path The {@link Path} containing the requirements.txt file.
+	 * @return The exit code.
 	 */
-	private static void installRequirements(Path path) throws IOException, InterruptedException {
+	private static int installRequirements(Path path) throws IOException, InterruptedException {
 		Path requirements = path.resolve("requirements.txt");
 		assertTrue("Requirements file must be present.", requirements.toFile().exists());
 
 		// install requirements.
-		runCommand("python3.10", "-m", "pip", "install", "-r", requirements.toString());
+		return runCommand("python3.10", "-m", "pip", "install", "-r", requirements.toString());
 	}
 
 	protected static boolean isPython3Test() {
 		return true;
 	}
 
-	private static void runCommand(String... command) throws IOException, InterruptedException {
+	private static int runCommand(String... command) throws IOException, InterruptedException {
 		ProcessBuilder processBuilder = new ProcessBuilder(command);
 
 		LOG.info("Executing: " + processBuilder.command().stream().collect(Collectors.joining(" ")));
@@ -354,16 +352,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
+		return exitCode;
 	}
 
 	/**
 	 * Runs python on the file presented by the given {@link Path}.
 	 *
 	 * @param path The {@link Path} of the file to interpret.
+	 * @return The exist code.
 	 */
-	private static void runPython(Path path) throws IOException, InterruptedException {
+	private static int runPython(Path path) throws IOException, InterruptedException {
 		// run the code.
-		runCommand("python3.10", path.toString());
+		return runCommand("python3.10", path.toString());
 	}
 
 	/**
@@ -466,6 +466,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		PythonModuleManager.setTesting(false);
 	}
 
+	/**
+	 * True iff the input test Python file should be executed.
+	 */
+	protected boolean runInputTestFile = Boolean.getBoolean(RUN_INPUT_TEST_FILE_KEY);
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -501,9 +506,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path inputTestFileAbsolutePath = getAbsolutionPath(inputTestFileName);
 		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutePath.getParent();
 
-		if (RUN_INPUT_TEST_FILE) {
+		if (this.shouldRunInputTestFile()) {
+			LOG.info("Running input test file(s).");
+
 			// install dependencies.
-			installRequirements(inputTestFileDirectoryAbsolutePath);
+			int rc = installRequirements(inputTestFileDirectoryAbsolutePath);
+			LOG.info("Installing requirements was " + (rc == 0 ? "successful." : "unsuccessful."));
 
 			// the number of Python files executed.
 			int filesRun = 0;
@@ -519,7 +527,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertTrue("Source file must be valid.", validSourceFile);
 
 				// Run the Python test file.
-				runPython(path);
+				rc = runPython(path);
+				LOG.info("Running the test file was " + (rc == 0 ? "successful." : "unsuccesful."));
 				++filesRun;
 			}
 
@@ -6977,5 +6986,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				throw new IllegalStateException("Not expecting: " + function + ".");
 			}
 		}
+	}
+
+	/**
+	 * True iff the input test Python file should be executed.
+	 */
+	public boolean shouldRunInputTestFile() {
+		return this.runInputTestFile;
 	}
 }
