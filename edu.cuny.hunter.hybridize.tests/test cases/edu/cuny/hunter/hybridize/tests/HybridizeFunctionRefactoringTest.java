@@ -1158,7 +1158,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.getIsHybrid());
-		checkSideEffectStatus(function);
+		assertFalse(function.getStatus().hasError());
+		assertFalse(function.getHasPythonSideEffects());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
+		assertNull(entry);
 	}
 
 	/**
@@ -6603,6 +6607,132 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testDataset() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDataset2() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDataset3() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDataset4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			case "filter_fn":
+				assertNull(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testDataset5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testDataset6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+			case "h":
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Unknown function: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testDataset7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(5, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(4, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset10() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset11() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(14, functions.size());
+		assertTrue(functions.stream().filter(f -> !f.getIdentifier().equals("n")).allMatch(Function::getLikelyHasTensorParameter));
+		assertFalse(functions.stream().filter(f -> f.getIdentifier().equals("n")).allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset12() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
+	public void testDataset13() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+	}
+
+	@Test
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getLikelyHasTensorParameter());
@@ -6721,5 +6851,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
+	public void testWildcardImport() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport2() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport3() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
 	}
 }
