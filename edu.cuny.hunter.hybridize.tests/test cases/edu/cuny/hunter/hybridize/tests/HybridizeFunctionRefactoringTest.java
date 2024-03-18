@@ -6399,6 +6399,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testTensorFlowGanTutorial2() throws Exception {
+		Function f = getFunction("train_step");
+		assertTrue(f.getIsHybrid());
+		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.getLikelyHasTensorParameter());
+		assertFalse("This function doesn't have a primitve parameter.", f.getLikelyHasPrimitiveParameters());
+	}
+
+	@Test
 	public void testTensorFlowEagerExecution() throws Exception {
 		Function f = getFunction("MyModel.call");
 		assertFalse(f.getIsHybrid());
