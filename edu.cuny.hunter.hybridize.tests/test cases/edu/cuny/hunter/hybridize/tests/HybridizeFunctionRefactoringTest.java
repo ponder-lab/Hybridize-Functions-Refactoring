@@ -6852,4 +6852,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 		assertFalse(function.getLikelyHasPrimitiveParameters());
 	}
+
+	@Test
+	public void testWildcardImport() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport2() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport3() throws Exception {
+		Function function = this.getSingleFunction();
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testWildcardImport4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
 }
