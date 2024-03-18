@@ -642,7 +642,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String fileName = this.getInputTestFileName(fileNameWithoutExtension);
 		Path path = getAbsolutionPath(fileName);
 		File file = path.toFile();
-		assertTrue("Test file must exist.", file.exists());
+		assertTrue("Test file: " + file.getName() + " must exist at path: " + file.getPath() + ".", file.exists());
 		return file;
 	}
 
