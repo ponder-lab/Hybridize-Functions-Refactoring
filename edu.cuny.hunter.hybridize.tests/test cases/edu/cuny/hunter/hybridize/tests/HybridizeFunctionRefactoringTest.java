@@ -1158,7 +1158,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertTrue(function.getIsHybrid());
-		checkSideEffectStatus(function);
+		assertFalse(function.getStatus().hasError());
+		assertFalse(function.getHasPythonSideEffects());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
+		assertNull(entry);
 	}
 
 	/**
