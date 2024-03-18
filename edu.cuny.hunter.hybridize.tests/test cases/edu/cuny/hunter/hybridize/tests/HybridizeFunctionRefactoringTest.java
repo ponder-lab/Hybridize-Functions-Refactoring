@@ -15,7 +15,10 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static java.lang.Integer.MAX_VALUE;
+import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
+import static java.util.stream.Collectors.toSet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -28,6 +31,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -516,13 +520,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			// the number of Python files executed.
 			int filesRun = 0;
 
-			File[] pythonFilesInTestFileDirectory = inputTestFileDirectoryAbsolutePath.toFile()
-					.listFiles((dir, name) -> name.endsWith(".py"));
+			// for each Python file in the test file directory, recursively.
+			Set<Path> pythonFilesInTestFileDirectory = Files.find(inputTestFileDirectoryAbsolutePath, MAX_VALUE,
+					(path, attr) -> path.toFile().getName().endsWith(".py"), FOLLOW_LINKS).collect(toSet());
 
-			// for each Python file in the test file directory.
-			for (File file : pythonFilesInTestFileDirectory) {
-				Path path = file.toPath();
-
+			for (Path path : pythonFilesInTestFileDirectory) {
 				boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());
 				assertTrue("Source file must be valid.", validSourceFile);
 
