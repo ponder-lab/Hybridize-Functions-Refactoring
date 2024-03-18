@@ -6904,4 +6904,78 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		}
 	}
+
+	@Test
+	public void testWildcardImport5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testWildcardImport6() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testWildcardImport7() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+				assertEquals(1, function.getNumberOfParameters());
+				assertFalse(function.getLikelyHasTensorParameter());
+				break;
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testWildcardImport8() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
 }
