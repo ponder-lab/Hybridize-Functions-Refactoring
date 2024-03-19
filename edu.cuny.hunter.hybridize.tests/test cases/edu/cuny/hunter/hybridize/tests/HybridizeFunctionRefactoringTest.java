@@ -7014,6 +7014,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	@Test
+	public void testModule3() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("C.f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule4() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule5() throws Exception {
+		Set<Function> functions = this.getFunctions("C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule6() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
