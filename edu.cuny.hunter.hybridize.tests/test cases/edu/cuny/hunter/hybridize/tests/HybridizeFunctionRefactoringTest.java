@@ -7062,6 +7062,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	@Test
+	public void testModule7() throws Exception {
+		Set<Function> functions = this.getFunctions("C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
