@@ -18,6 +18,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Refactoring;
@@ -159,5 +160,14 @@ public class Util {
 		IResource resource = sourceFolder.getActualObject();
 		IProject project = resource.getProject();
 		return project;
+	}
+
+	public static IPath getPath(IProject project) {
+		IPath path = project.getFullPath();
+
+		if (!path.toFile().exists())
+			path = project.getLocation();
+
+		return path;
 	}
 }

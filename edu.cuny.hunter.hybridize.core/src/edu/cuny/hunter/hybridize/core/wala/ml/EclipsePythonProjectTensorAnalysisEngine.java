@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
@@ -19,6 +20,8 @@ import com.ibm.wala.cast.python.util.PythonInterpreter;
 import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
 import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
+
+import edu.cuny.hunter.hybridize.core.utils.Util;
 
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
 
@@ -64,15 +67,6 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 			ModuleEntry entry = entries.next();
 			LOG.info("Found entry: " + entry + ".");
 		}
-	}
-
-	private static IPath getPath(IProject project) {
-		IPath path = project.getFullPath();
-
-		if (!path.toFile().exists())
-			path = project.getLocation();
-
-		return path;
 	}
 
 	public IProject getProject() {

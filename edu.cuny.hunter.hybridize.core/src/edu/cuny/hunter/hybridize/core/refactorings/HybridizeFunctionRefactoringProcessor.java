@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static java.lang.Boolean.TRUE;
 import static java.util.stream.Collectors.toList;
 import static org.eclipse.core.runtime.Platform.getLog;
@@ -20,6 +21,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
@@ -66,6 +68,7 @@ import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
+import edu.cuny.hunter.hybridize.core.utils.Util;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
@@ -280,6 +283,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		for (IProject project : projectToFunctions.keySet()) {
 			// create the analysis engine for the project.
 			List<File> pythonPath = getPythonPath(project);
+			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
+
+			// if they PYTHONPATH is the same as the project path, don't use it.
+			if (pythonPath.size() == 1) {
+				File pythonPathEntry = pythonPath.get(0);
+				IPath projectPath = getPath(project);
+				File projectPathFile = projectPath.toFile();
+
+				if (pythonPathEntry.equals(projectPathFile))
+					pythonPath = null;
+			}
+
 			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
 
 			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
