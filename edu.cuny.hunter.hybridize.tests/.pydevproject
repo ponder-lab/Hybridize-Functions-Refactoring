@@ -9,7 +9,6 @@
         <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule4/in</path>
         <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule5/in</path>
         <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule7/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule4/in</path>
         <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule6/in</path>
     </pydev_pathproperty>
 </pydev_project>

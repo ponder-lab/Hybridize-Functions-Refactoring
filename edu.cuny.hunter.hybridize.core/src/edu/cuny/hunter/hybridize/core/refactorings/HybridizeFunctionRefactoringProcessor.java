@@ -2,17 +2,22 @@ package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
 import static java.lang.Boolean.TRUE;
+import static java.util.stream.Collectors.toList;
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -28,7 +33,9 @@ import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This exception sounds too low-level. */
+import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
+import org.python.pydev.plugin.nature.PythonNature;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
 import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
@@ -272,7 +279,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		for (IProject project : projectToFunctions.keySet()) {
 			// create the analysis engine for the project.
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			List<File> pythonPath = getPythonPath(project);
+			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
 
 			// build the call graph for the project.
 			PythonSSAPropagationCallGraphBuilder builder;
@@ -388,6 +396,17 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 
 		return status;
+	}
+
+	private static List<File> getPythonPath(IProject project) throws CoreException {
+		IProjectNature projectNature = project.getNature(PythonNature.PYTHON_NATURE_ID);
+
+		if (projectNature == null)
+			throw new IllegalArgumentException("Can only work with PyDev projects.");
+
+		IPythonNature pythonNature = (IPythonNature) projectNature;
+		String[] pythonPath = pythonNature.getPythonPathNature().getOnlyProjectPythonPathStr(false).split("\\|");
+		return Arrays.stream(pythonPath).map(File::new).collect(toList());
 	}
 
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,

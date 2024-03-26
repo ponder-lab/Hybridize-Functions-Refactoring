@@ -2,11 +2,14 @@ package edu.cuny.hunter.hybridize.core.wala.ml;
 
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
 
@@ -48,9 +51,11 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) throws CoreException {
+		super(pythonPath);
 		this.project = project;
 		IPath projectPath = getPath(project);
+
 		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
 		LOG.info("Creating engine from: " + dirModule + ".");
 
