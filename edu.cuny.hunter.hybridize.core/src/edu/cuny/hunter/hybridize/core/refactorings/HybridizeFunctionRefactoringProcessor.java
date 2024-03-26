@@ -280,6 +280,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		for (IProject project : projectToFunctions.keySet()) {
 			// create the analysis engine for the project.
 			List<File> pythonPath = getPythonPath(project);
+			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
+
 			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
 
 			// build the call graph for the project.
