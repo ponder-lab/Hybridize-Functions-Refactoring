@@ -51,7 +51,7 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) throws CoreException {
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) {
 		super(pythonPath);
 		this.project = project;
 		IPath projectPath = getPath(project);
