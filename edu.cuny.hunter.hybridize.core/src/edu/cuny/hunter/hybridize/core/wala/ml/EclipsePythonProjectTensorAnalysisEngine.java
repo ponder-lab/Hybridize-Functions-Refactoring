@@ -21,8 +21,6 @@ import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
 import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
-import edu.cuny.hunter.hybridize.core.utils.Util;
-
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
 
 	private static final String PYTHON3_INTERPRETER_FQN = "com.ibm.wala.cast.python.util.Python3Interpreter";
