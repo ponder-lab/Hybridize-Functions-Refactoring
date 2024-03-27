@@ -280,23 +280,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
 
 		for (IProject project : projectToFunctions.keySet()) {
+			EclipsePythonProjectTensorAnalysisEngine engine;
+
 			// create the analysis engine for the project.
 			List<File> pythonPath = getPythonPath(project);
+			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
 			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
 
 			// if they PYTHONPATH is the same as the project path, don't use it.
-			if (pythonPath.size() == 1) {
-				File pythonPathEntry = pythonPath.get(0);
-				IPath projectPath = getPath(project);
-				File projectPathFile = projectPath.toFile();
-
-				if (pythonPathEntry.equals(projectPathFile))
-					pythonPath = null;
-			}
-
-			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
-
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
+			if (pythonPath.size() == 1 && pythonPath.get(0).equals(getPath(project).toFile()))
+				engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
+			else
+				engine = new EclipsePythonProjectTensorAnalysisEngine(project);
 
 			// build the call graph for the project.
 			PythonSSAPropagationCallGraphBuilder builder;

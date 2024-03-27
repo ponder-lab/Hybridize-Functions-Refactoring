@@ -53,6 +53,16 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) {
 		super(pythonPath);
+		this.initialize(project);
+	}
+
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
+		this.initialize(project);
+	}
+
+	private void initialize(IProject project) {
+		assert this.project == null : "Engine is meant to be initialized only once.";
+
 		this.project = project;
 		IPath projectPath = getPath(project);
 
