@@ -287,11 +287,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
 			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
 
-			// if they PYTHONPATH is the same as the project path, don't use it.
+			// if the PYTHONPATH is the same as the project path.
 			if (pythonPath.size() == 1 && pythonPath.get(0).equals(getPath(project).toFile()))
-				engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
-			else
+				// Don't use it.
 				engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			else
+				// Use it.
+				engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
 
 			// build the call graph for the project.
 			PythonSSAPropagationCallGraphBuilder builder;
