@@ -13,23 +13,25 @@ import com.ibm.wala.classLoader.SourceFileModule;
  */
 public class EclipsePythonSourceFileModule extends SourceFileModule {
 
-	protected final IFile f;
+	protected final IFile file;
 
-	public EclipsePythonSourceFileModule(IFile f) {
-		super(f == null ? null : new File(f.getFullPath().toOSString()), f == null ? null : f.getName(), null);
-		this.f = f;
+	public EclipsePythonSourceFileModule(IFile file) {
+		super(file == null ? null : new File(file.getFullPath().toOSString()), file == null ? null : file.getName(), null);
+		this.file = file;
 	}
 
 	public IFile getIFile() {
-		return f;
+		return this.file;
 	}
 
 	@Override
 	public String toString() {
-		return this.getClass().getSimpleName() + ":" + getFile().toString();
+		return this.getClass().getSimpleName() + ":" + this.getFile().toString();
 	}
 
 	/**
+	 * {@inheritDoc}
+	 *
 	 * @implNote We consider the name of the Python file as the "class name."
 	 */
 	@Override
@@ -38,6 +40,8 @@ public class EclipsePythonSourceFileModule extends SourceFileModule {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 *
 	 * @implNote We consider the full name of the Python file as its "name."
 	 */
 	@Override
