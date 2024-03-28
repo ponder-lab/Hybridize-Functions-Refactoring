@@ -9,7 +9,6 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
 
 import com.ibm.wala.classLoader.FileModule;
-import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
 /**
