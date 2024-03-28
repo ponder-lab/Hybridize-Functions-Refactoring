@@ -17,7 +17,7 @@ import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
  *
  * @author <a href="mailto:khatchad@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
-public class EclipsePythonSourceDirectoryTreeModule extends EclipseSourceDirectoryTreeModule implements Module {
+public class EclipsePythonSourceDirectoryTreeModule extends EclipseSourceDirectoryTreeModule {
 
 	protected IPath rootPath;
 
