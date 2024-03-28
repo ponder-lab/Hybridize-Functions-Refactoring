@@ -19,7 +19,6 @@ import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.cast.python.util.PythonInterpreter;
 import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
-import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
 
@@ -66,7 +65,7 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		this.project = project;
 		IPath projectPath = getPath(project);
 
-		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
+		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, null, ".py");
 		LOG.info("Creating engine from: " + dirModule + ".");
 
 		this.setModuleFiles(Collections.singleton(dirModule));

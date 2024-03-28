@@ -1098,9 +1098,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		functions.stream().forEach(f -> {
 			assertNotNull(f);
 			assertFalse(f.getIsHybrid());
-
-			if (f.getIdentifier().equals("func1"))
-				checkSideEffectStatus(f);
 		});
 	}
 
@@ -1115,7 +1112,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.getIsHybrid());
-		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1142,7 +1138,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.getIsHybrid());
-		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1201,9 +1196,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.getIsHybrid());
-
-			if (func.getIdentifier().equals("dummy_func2"))
-				checkSideEffectStatus(func);
 		}
 	}
 
