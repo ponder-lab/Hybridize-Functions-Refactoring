@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static java.lang.Boolean.TRUE;
 import static java.util.stream.Collectors.toList;
 import static org.eclipse.core.runtime.Platform.getLog;
