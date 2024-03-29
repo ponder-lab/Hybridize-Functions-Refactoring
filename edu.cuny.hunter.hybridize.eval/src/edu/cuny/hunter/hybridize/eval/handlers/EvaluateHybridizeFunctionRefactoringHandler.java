@@ -291,7 +291,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				"refactoring", "passing precondition", "status");
 	}
 
-	private static void printFunction(CSVPrinter printer, Function function) throws IOException {
+	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getLikelyHasTensorParameter(),
 				function.getLikelyHasPrimitiveParameters(), function.getIsHybrid(), function.getHasPythonSideEffects(),
