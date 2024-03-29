@@ -776,20 +776,20 @@ public class Function {
 		if (pythonPath.isEmpty())
 			// Revert to just the name.
 			return Optional.of(containingFile.getName());
-		else {
-			for (File pathEntry : pythonPath) {
-				String pathEntryAbsolutePath = pathEntry.getAbsoluteFile().getPath();
-				String containingFileAbsolutePath = containingFile.getAbsolutePath();
 
-				if (containingFileAbsolutePath.startsWith(pathEntryAbsolutePath)) {
-					// Found it.
-					Path pathEntryPath = Paths.get(pathEntryAbsolutePath);
-					Path filePath = Paths.get(containingFileAbsolutePath);
-					Path scriptRelativePath = pathEntryPath.relativize(filePath);
-					return Optional.of(scriptRelativePath.toString());
-				}
+		for (File pathEntry : pythonPath) {
+			String pathEntryAbsolutePath = pathEntry.getAbsoluteFile().getPath();
+			String containingFileAbsolutePath = containingFile.getAbsolutePath();
+
+			if (containingFileAbsolutePath.startsWith(pathEntryAbsolutePath)) {
+				// Found it.
+				Path pathEntryPath = Paths.get(pathEntryAbsolutePath);
+				Path filePath = Paths.get(containingFileAbsolutePath);
+				Path scriptRelativePath = pathEntryPath.relativize(filePath);
+				return Optional.of(scriptRelativePath.toString());
 			}
 		}
+
 		return Optional.empty(); // Not found.
 	}
 
