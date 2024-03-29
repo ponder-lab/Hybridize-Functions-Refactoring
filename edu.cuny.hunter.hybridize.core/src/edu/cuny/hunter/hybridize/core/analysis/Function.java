@@ -90,7 +90,7 @@ import com.ibm.wala.util.intset.OrdinalSet;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 /**
- * A representation of a Python function.
+ * A representation of a (syntactic) Python function.
  *
  * @author <a href="mailto:rk1424@hunter.cuny.edu">Raffi Khatchadourian</a>
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
@@ -361,16 +361,8 @@ public class Function {
 	 */
 	private Boolean hasPythonSideEffects;
 
-	/**
-	 * TODO: Populate.
-	 */
 	private Set<Transformation> transformations = new HashSet<>();
 
-	// private InstanceKey instanceKey;
-
-	/**
-	 * TODO: Populate.
-	 */
 	private PreconditionSuccess passingPrecondition;
 
 	/**
