@@ -7066,6 +7066,129 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	@Test
+	public void testModule8() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule9() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule10() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule11() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "C.f":
+			case "D.g":
+				assertEquals(2, function.getNumberOfParameters());
+				assertTrue(function.isMethod());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testModule12() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "C.f":
+				break;
+			case "D.f":
+				assertEquals(2, function.getNumberOfParameters());
+				assertTrue(function.isMethod());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testModule13() throws Exception {
+		Set<Function> functions = this.getFunctions("C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule14() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule15() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule16() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.g", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
