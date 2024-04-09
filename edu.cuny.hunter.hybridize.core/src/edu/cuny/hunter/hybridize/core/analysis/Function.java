@@ -9,12 +9,15 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -22,11 +25,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.SubMonitor;
@@ -387,7 +392,7 @@ public class Function {
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 	}
 
-	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException {
+	public void computeRecursion(CallGraph callGraph) throws CantComputeRecursionException, CoreException {
 		// Get the nodes representing this function.
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
@@ -408,7 +413,7 @@ public class Function {
 	}
 
 	public void inferPrimitiveParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor)
-			throws CantInferPrimitiveParametersException {
+			throws CantInferPrimitiveParametersException, CoreException {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering primitive parameters...", IProgressMonitor.UNKNOWN);
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
@@ -533,8 +538,8 @@ public class Function {
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given
 	 *         {@link CallGraph}.
 	 */
-	public void inferPythonSideEffects(Map<CGNode, OrdinalSet<PointerKey>> mod, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis)
-			throws UndeterminablePythonSideEffectsException {
+	public void inferPythonSideEffects(Map<CGNode, OrdinalSet<PointerKey>> mod, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) throws UndeterminablePythonSideEffectsException, CoreException {
 		// Get the nodes corresponding to this function's declaration. NOTE: There can be multiple nodes for a function declaration under
 		// the current representation. It seems that there is a declaration node for each call to the function. Each node has a different
 		// calling context.
@@ -572,7 +577,7 @@ public class Function {
 	}
 
 	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis) {
+			PointerAnalysis<InstanceKey> pointerAnalysis) throws CoreException {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet) {
@@ -718,7 +723,7 @@ public class Function {
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	private Set<CGNode> getNodes(CallGraph callGraph) {
+	private Set<CGNode> getNodes(CallGraph callGraph) throws CoreException {
 		return getNodes(this.getMethodReference(), callGraph);
 	}
 
@@ -750,18 +755,42 @@ public class Function {
 		return nodes;
 	}
 
-	public MethodReference getMethodReference() {
+	public MethodReference getMethodReference() throws CoreException {
 		TypeReference typeReference = getDeclaringClass();
 		return MethodReference.findOrCreate(typeReference, AstMethodReference.fnSelector);
 	}
 
-	public TypeReference getDeclaringClass() {
-		File containingFile = this.getContainingFile();
-		String filename = containingFile.getName();
+	public TypeReference getDeclaringClass() throws CoreException {
+		String filename = this.getDeclaringClassFilename().orElseThrow();
 		String modifiedIdentifier = this.getIdentifier().replace('.', '/');
 		String typeName = "Lscript " + filename + "/" + modifiedIdentifier;
 
 		return TypeReference.findOrCreate(PythonTypes.pythonLoader, typeName);
+	}
+
+	protected Optional<String> getDeclaringClassFilename() throws CoreException {
+		File containingFile = this.getContainingFile();
+		List<File> pythonPath = getPythonPath(this.getProject());
+
+		// If the PYTHONPATH isn't specified.
+		if (pythonPath.isEmpty())
+			// Revert to just the name.
+			return Optional.of(containingFile.getName());
+
+		for (File pathEntry : pythonPath) {
+			String pathEntryAbsolutePath = pathEntry.getAbsoluteFile().getPath();
+			String containingFileAbsolutePath = containingFile.getAbsolutePath();
+
+			if (containingFileAbsolutePath.startsWith(pathEntryAbsolutePath)) {
+				// Found it.
+				Path pathEntryPath = Paths.get(pathEntryAbsolutePath);
+				Path filePath = Paths.get(containingFileAbsolutePath);
+				Path scriptRelativePath = pathEntryPath.relativize(filePath);
+				return Optional.of(scriptRelativePath.toString());
+			}
+		}
+
+		return Optional.empty(); // Not found.
 	}
 
 	/**
@@ -853,7 +882,7 @@ public class Function {
 	}
 
 	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis analysis, int paramInx, CallGraph callGraph,
-			IProgressMonitor monitor) {
+			IProgressMonitor monitor) throws CoreException {
 		Set<CGNode> nodes = this.getNodes(callGraph);
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.",
 				nodes.size());

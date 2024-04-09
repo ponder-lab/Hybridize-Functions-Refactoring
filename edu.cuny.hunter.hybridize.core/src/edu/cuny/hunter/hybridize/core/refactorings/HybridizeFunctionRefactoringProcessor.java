@@ -1,12 +1,15 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -271,8 +274,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
 
 		for (IProject project : projectToFunctions.keySet()) {
+			// get the PYTHONPATH.
+			List<File> pythonPath = getPythonPath(project);
+			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
+			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
+
 			// create the analysis engine for the project.
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project);
+			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
 
 			// build the call graph for the project.
 			PythonSSAPropagationCallGraphBuilder builder;
@@ -344,6 +352,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.warn("Unable to infer primitive parameters for: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
 							"Can't infer primitive parameters for this function.");
+				} catch (CoreException e) {
+					LOG.error("Can't infer primitive parameters.", e);
+					throw new RuntimeException("Can't infer primitive parameters.", e);
 				}
 
 				// Check Python side-effects.
@@ -357,6 +368,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.warn("Unable to infer side-effects of: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS,
 							"Can't infer side-effects, most likely due to a call graph issue caused by a decorator or a missing function call.");
+				} catch (CoreException e) {
+					LOG.error("Can't determine side-effects.", e);
+					throw new RuntimeException("Can't determine side-effects.", e);
 				}
 
 				// Check recursion.
@@ -369,6 +383,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				} catch (CantComputeRecursionException e) {
 					LOG.warn("Unable to compute whether " + func + " is recursive.", e);
 					func.addFailure(PreconditionFailure.CANT_APPROXIMATE_RECURSION, "Can't compute whether this function is recursive.");
+				} catch (CoreException e) {
+					LOG.error("Can't compute recursion.", e);
+					throw new RuntimeException("Can't compute recursion.", e);
 				}
 
 				// check the function preconditions.

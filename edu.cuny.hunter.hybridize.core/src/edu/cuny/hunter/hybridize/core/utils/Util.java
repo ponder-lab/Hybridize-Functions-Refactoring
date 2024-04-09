@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.utils;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.stream.Collectors.toList;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
@@ -10,14 +11,17 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Refactoring;
@@ -159,5 +163,25 @@ public class Util {
 		IResource resource = sourceFolder.getActualObject();
 		IProject project = resource.getProject();
 		return project;
+	}
+
+	public static IPath getPath(IProject project) {
+		IPath path = project.getFullPath();
+
+		if (!path.toFile().exists())
+			path = project.getLocation();
+
+		return path;
+	}
+
+	public static List<File> getPythonPath(IProject project) throws CoreException {
+		IProjectNature projectNature = project.getNature(PythonNature.PYTHON_NATURE_ID);
+
+		if (projectNature == null)
+			throw new IllegalArgumentException("Can only work with PyDev projects.");
+
+		IPythonNature pythonNature = (IPythonNature) projectNature;
+		String[] pythonPath = pythonNature.getPythonPathNature().getOnlyProjectPythonPathStr(false).split("\\|");
+		return Arrays.stream(pythonPath).map(File::new).collect(toList());
 	}
 }

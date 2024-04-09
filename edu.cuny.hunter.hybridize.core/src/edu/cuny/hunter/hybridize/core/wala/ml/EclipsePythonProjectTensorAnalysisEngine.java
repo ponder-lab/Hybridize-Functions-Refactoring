@@ -1,10 +1,13 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static org.eclipse.core.runtime.Platform.getLog;
 
+import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
@@ -16,7 +19,6 @@ import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.cast.python.util.PythonInterpreter;
 import com.ibm.wala.classLoader.Module;
 import com.ibm.wala.classLoader.ModuleEntry;
-import com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule;
 
 public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalysisEngine {
 
@@ -48,10 +50,22 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) {
+		super(pythonPath);
+		this.initialize(project);
+	}
+
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
+		this.initialize(project);
+	}
+
+	private void initialize(IProject project) {
+		assert this.project == null : "Engine is meant to be initialized only once.";
+
 		this.project = project;
 		IPath projectPath = getPath(project);
-		Module dirModule = new EclipseSourceDirectoryTreeModule(projectPath, null, ".py");
+
+		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, null, ".py");
 		LOG.info("Creating engine from: " + dirModule + ".");
 
 		this.setModuleFiles(Collections.singleton(dirModule));
@@ -60,15 +74,6 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 			ModuleEntry entry = entries.next();
 			LOG.info("Found entry: " + entry + ".");
 		}
-	}
-
-	private static IPath getPath(IProject project) {
-		IPath path = project.getFullPath();
-
-		if (!path.toFile().exists())
-			path = project.getLocation();
-
-		return path;
 	}
 
 	public IProject getProject() {

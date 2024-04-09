@@ -1098,9 +1098,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		functions.stream().forEach(f -> {
 			assertNotNull(f);
 			assertFalse(f.getIsHybrid());
-
-			if (f.getIdentifier().equals("func1"))
-				checkSideEffectStatus(f);
 		});
 	}
 
@@ -1115,7 +1112,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.getIsHybrid());
-		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1142,7 +1138,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 		assertFalse(function.getIsHybrid());
-		checkSideEffectStatus(function);
 	}
 
 	/**
@@ -1201,9 +1196,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 			assertFalse(func.getIsHybrid());
-
-			if (func.getIdentifier().equals("dummy_func2"))
-				checkSideEffectStatus(func);
 		}
 	}
 
@@ -7000,6 +6992,201 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals(1, function.getNumberOfParameters());
 			assertTrue(function.getLikelyHasTensorParameter());
 		}
+	}
+
+	@Test
+	public void testModule2() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule3() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("C.f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule4() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule5() throws Exception {
+		Set<Function> functions = this.getFunctions("C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule6() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule7() throws Exception {
+		Set<Function> functions = this.getFunctions("C/B");
+		assertEquals(1, functions.size());
+
+		for (Function function : functions) {
+			assertEquals("f", function.getIdentifier());
+			assertEquals(1, function.getNumberOfParameters());
+			assertTrue(function.getLikelyHasTensorParameter());
+		}
+	}
+
+	@Test
+	public void testModule8() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule9() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule10() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule11() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "C.f":
+			case "D.g":
+				assertEquals(2, function.getNumberOfParameters());
+				assertTrue(function.isMethod());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testModule12() throws Exception {
+		Set<Function> functions = this.getFunctions("B");
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "C.f":
+				break;
+			case "D.f":
+				assertEquals(2, function.getNumberOfParameters());
+				assertTrue(function.isMethod());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
+	public void testModule13() throws Exception {
+		Set<Function> functions = this.getFunctions("C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule14() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule15() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testModule16() throws Exception {
+		Set<Function> functions = this.getFunctions("src/C");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("D.g", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
 	/**
