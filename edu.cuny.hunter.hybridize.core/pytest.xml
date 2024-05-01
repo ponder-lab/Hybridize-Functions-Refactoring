@@ -41,10 +41,11 @@
       </class>
       <class name="skip" allocatable="true">
         <!-- https://docs.pytest.org/en/8.2.x/reference/reference.html#pytest.mark.skip -->
-        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self reason">
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self params values extra">
           <new def="closure" class="Lpytest/class/Skip" />
           <putfield class="LRoot" field="test" fieldType="LRoot" ref="closure" value="self" />
-          <putfield class="LRoot" field="params" fieldType="LRoot" ref="closure" value="reason" />
+          <putfield class="LRoot" field="params" fieldType="LRoot" ref="closure" value="params" />
+          <putfield class="LRoot" field="values" fieldType="LRoot" ref="closure" value="values" />
           <return value="closure" />
         </method>
       </class>
@@ -56,12 +57,11 @@
       </class>
       <class name="skipif" allocatable="true">
         <!-- https://docs.pytest.org/en/8.2.x/reference/reference.html#pytest.mark.skipif -->
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self condition * reason">
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self params values extra">
           <new def="closure" class="Lpytest/class/Skipif" />
           <putfield class="LRoot" field="test" fieldType="LRoot" ref="closure" value="self" />
-          <putfield class="LRoot" field="condition" fieldType="LRoot" ref="closure" value="condition" />
-          <putfield class="LRoot" field="*" fieldType="LRoot" ref="closure" value="*" />
-          <putfield class="LRoot" field="reason" fieldType="LRoot" ref="closure" value="reason" />
+          <putfield class="LRoot" field="params" fieldType="LRoot" ref="closure" value="params" />
+          <putfield class="LRoot" field="values" fieldType="LRoot" ref="closure" value="values" />
           <return value="closure" />
         </method>
       </class>
