@@ -1210,15 +1210,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			System.out.println(func + ": " + func.getHasPythonSideEffects());
-			
-			
-//			assertFalse(func.getIsHybrid());
-//			assertFalse(func.getHasPythonSideEffects());
-//			RefactoringStatus status = func.getStatus();
-//			RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
-//					PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
-//			assertNull(entry);
+			assertFalse(func.getIsHybrid());
+			assertFalse(func.getHasPythonSideEffects());
+			RefactoringStatus status = func.getStatus();
+			RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
+			assertNull(entry);
 		}
 	}
 
