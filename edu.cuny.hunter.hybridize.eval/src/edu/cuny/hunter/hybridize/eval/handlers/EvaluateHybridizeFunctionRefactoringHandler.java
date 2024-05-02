@@ -70,6 +70,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String STATUS_CSV_FILENAME = "statuses.csv";
 
+	private static final String DECORATOR_CSV_FILENAME = "decorators.csv";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
@@ -138,7 +140,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
 							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
-							buildAttributeColumnNames("refactoring", "severity", "code", "message"));) {
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
+					CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
@@ -213,6 +216,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
 					printStatuses(statusPrinter, generalEntries);
 
+					// decorators.
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
+
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
 						resultsPrinter.print(candidates.parallelStream().map(Function::getRefactoring)
@@ -282,6 +288,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				printer.printRecord(buildAttributeColumnValues(function, function.getRefactoring(), entry.getSeverity(), entry.getCode(),
 						entry.getMessage()));
 			}
+		}
+	}
+
+	private static void printDecorators(CSVPrinter printer, Set<Function> functions, IProgressMonitor monitor) throws IOException {
+		SubMonitor progress = SubMonitor.convert(monitor, "Printing decorators", functions.size());
+
+		for (Function function : functions) {
+			Set<String> decoratorNames = function.getDecoratorNames(progress.split(1));
+			for (String name : decoratorNames)
+				printer.printRecord(buildAttributeColumnValues(function, name));
 		}
 	}
 

@@ -1415,6 +1415,33 @@ public class Function {
 		return Util.getQualifiedName(functionDef);
 	}
 
+	public Set<String> getDecoratorNames(IProgressMonitor monitor) {
+		SubMonitor progress = SubMonitor.convert(monitor);
+		Set<String> ret = new HashSet<>();
+
+		FunctionDefinition definition = this.getFunctionDefinition();
+		FunctionDef def = definition.getFunctionDef();
+		decoratorsType[] decs = def.decs;
+
+		if (decs != null) {
+			progress.setWorkRemaining(decs.length);
+
+			for (decoratorsType decorator : decs) {
+				try {
+					PySelection selection = Util.getSelection(decorator, this.getContainingDocument());
+					String decoratorFQN = Util.getFullyQualifiedName(decorator, this.getContainingModuleName(), this.getContainingFile(),
+							selection, this.getNature(), progress.split(1));
+					ret.add(decoratorFQN);
+				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
+						| NoTextSelectionException e) {
+					// Best effort.
+				}
+			}
+		}
+
+		return ret;
+	}
+
 	/**
 	 * True iff this {@link Function} is hybrid. Note that this only checks the decorator, i.e., whether all invocations of this
 	 * {@link Function} are hybridized.
