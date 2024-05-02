@@ -20,4 +20,4 @@ Require-Bundle: org.eclipse.ui,
  org.eclipse.ltk.core.refactoring
 Automatic-Module-Name: edu.cuny.hunter.hybridize.eval
 Bundle-Activator: edu.cuny.hunter.hybridize.eval.ui.plugins.EvaluateHybridizeFunctionRefactoringPlugin
-Bundle-RequiredExecutionEnvironment: JavaSE-11
+Bundle-RequiredExecutionEnvironment: JavaSE-17
