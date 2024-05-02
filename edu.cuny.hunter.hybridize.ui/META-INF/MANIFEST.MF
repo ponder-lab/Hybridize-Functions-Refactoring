@@ -3,7 +3,7 @@ Bundle-ManifestVersion: 2
 Bundle-SymbolicName: edu.cuny.hunter.hybridize.ui;singleton:=true
 Bundle-Version: 1.0.0.qualifier
 Automatic-Module-Name: edu.cuny.hunter.hybridize.ui
-Bundle-RequiredExecutionEnvironment: JavaSE-11
+Bundle-RequiredExecutionEnvironment: JavaSE-17
 Bundle-Activator: edu.cuny.hunter.hybridize.ui.plugins.HybridizeFunctionRefactoringPlugin
 Bundle-Name: %Bundle-Name
 Bundle-Vendor: %Bundle-Vendor
