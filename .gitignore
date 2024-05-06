@@ -88,4 +88,3 @@ local.properties
 
 target/
 .tycho-consumer-pom.xml
-eval
