@@ -124,7 +124,7 @@ public class Util {
 		return pythonFile.getActualObject();
 	}
 
-	static IDocument getDocument(PythonNode pythonNode) throws CoreException, IOException {
+	public static IDocument getDocument(PythonNode pythonNode) throws CoreException, IOException {
 		IFile file = getActualFile(pythonNode);
 
 		try (InputStream contentStream = file.getContents()) {
@@ -134,7 +134,7 @@ public class Util {
 		}
 	}
 
-	static File getFile(PythonNode pythonNode) {
+	public static File getFile(PythonNode pythonNode) {
 		IFile file = getActualFile(pythonNode);
 		URI uri = file.getRawLocationURI();
 		return new File(uri);
@@ -145,13 +145,13 @@ public class Util {
 		return file.getName();
 	}
 
-	static String getModuleName(PythonNode pythonNode) {
+	public static String getModuleName(PythonNode pythonNode) {
 		String fileName = getFileName(pythonNode);
 		int separatorPos = fileName.indexOf('.');
 		return fileName.substring(0, separatorPos);
 	}
 
-	static IPythonNature getPythonNature(PythonNode pythonNode) {
+	public static IPythonNature getPythonNature(PythonNode pythonNode) {
 		IProject project = getProject(pythonNode);
 		PythonNature pythonNature = PythonNature.getPythonNature(project);
 		return pythonNature;
