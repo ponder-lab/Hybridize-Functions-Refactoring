@@ -1435,6 +1435,7 @@ public class Function {
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
 					// Best effort.
+					LOG.info("Can't get name of decorator: " + decorator, e);
 				}
 			}
 		}
