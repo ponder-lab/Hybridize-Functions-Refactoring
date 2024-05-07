@@ -139,6 +139,8 @@
         <putfield class="LRoot" field="numpy" fieldType="LRoot" ref="experimental" value="numpy" />
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
+        <new def="clip_ops" class="Lobject" />
+        <putfield class="LRoot" field="clip_ops" fieldType="LRoot" ref="ops" value="clip_ops" />
         <new def="random_ops" class="Lobject" />
         <putfield class="LRoot" field="random_ops" fieldType="LRoot" ref="ops" value="random_ops" />
         <new def="math_ops" class="Lobject" />
@@ -186,6 +188,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
+        <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="clip_ops" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
