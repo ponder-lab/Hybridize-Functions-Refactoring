@@ -111,6 +111,10 @@
         <new def="reduce_mean" class="Ltensorflow/math/reduce_mean" />
         <putfield class="LRoot" field="reduce_mean" fieldType="LRoot" ref="x" value="reduce_mean" />
         <putfield class="LRoot" field="reduce_mean" fieldType="LRoot" ref="math" value="reduce_mean" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_sum -->
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="reduce_sum" />
         <new def="placeholder" class="Ltensorflow/functions/placeholder" />
         <putfield class="LRoot" field="placeholder" fieldType="LRoot" ref="x" value="placeholder" />
         <new def="examples" class="Lobject" />
