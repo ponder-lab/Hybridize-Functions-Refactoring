@@ -7193,6 +7193,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
 
+	@Test
+	public void testBooleanMask() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
 	/**
 	 * True iff the input test Python file should be executed.
 	 */

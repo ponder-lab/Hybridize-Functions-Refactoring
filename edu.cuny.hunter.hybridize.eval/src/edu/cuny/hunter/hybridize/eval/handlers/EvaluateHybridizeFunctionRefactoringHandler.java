@@ -10,7 +10,6 @@ import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonNature;
 import static org.eclipse.core.runtime.IProgressMonitor.UNKNOWN;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
-import org.eclipse.jface.text.IDocument;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,6 +38,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ltk.core.refactoring.Change;
@@ -57,6 +57,7 @@ import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
+
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 
@@ -64,9 +65,9 @@ import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
-import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
