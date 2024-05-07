@@ -1,7 +1,6 @@
 # From: https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/ones_like#for_example
 
 import tensorflow as tf
-import numpy as np
 
 
 def f(a):

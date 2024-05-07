@@ -180,6 +180,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/ones_like -->
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/shape -->
+        <putfield class="LRoot" field="shape" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="shape" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
@@ -258,7 +261,12 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/boolean_mask -->
         <new def="boolean_mask" class="Ltensorflow/functions/boolean_mask" />
         <putfield class="LRoot" field="boolean_mask" fieldType="LRoot" ref="x" value="boolean_mask" />
+        <putfield class="LRoot" field="boolean_mask" fieldType="LRoot" ref="array_ops" value="boolean_mask" />
         <new def="autograph" class="Lobject" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stack -->
+        <new def="stack" class="Ltensorflow/functions/stack" />
+        <putfield class="LRoot" field="stack" fieldType="LRoot" ref="x" value="stack" />
+        <putfield class="LRoot" field="stack" fieldType="LRoot" ref="array_ops" value="stack" />
         <putfield class="LRoot" field="autograph" fieldType="LRoot" ref="x" value="autograph" />
         <putfield class="LRoot" field="experimental" fieldType="LRoot" ref="autograph" value="experimental" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/autograph/experimental/do_not_convert -->
@@ -724,6 +732,17 @@
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="tensor mask axis name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="stack" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stack -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/functions/stack " />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="value axis name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
