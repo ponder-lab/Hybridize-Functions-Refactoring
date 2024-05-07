@@ -1,16 +1,26 @@
 package edu.cuny.hunter.hybridize.eval.handlers;
 
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static edu.cuny.hunter.hybridize.core.utils.Util.createHybridizeFunctionRefactoring;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getDocument;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getFile;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getModuleName;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonNature;
+import static org.eclipse.core.runtime.IProgressMonitor.UNKNOWN;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -28,6 +38,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ltk.core.refactoring.Change;
@@ -36,19 +47,32 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.handlers.HandlerUtil;
+import org.python.pydev.core.IPythonNature;
+import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.navigator.elements.PythonNode;
 import org.python.pydev.navigator.elements.PythonSourceFolder;
+import org.python.pydev.outline.ParsedItem;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Call;
+import org.python.pydev.parser.jython.ast.VisitorBase;
+import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
+import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
+import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
+import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
+import edu.cuny.hunter.hybridize.core.utils.Util;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
@@ -70,6 +94,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String STATUS_CSV_FILENAME = "statuses.csv";
 
+	private static final String DECORATOR_CSV_FILENAME = "decorators.csv";
+
+	private static final String CALL_CSV_FILENAME = "calls.csv";
+
+	private static final String[] CALLS_HEADER = { "subject", "callee", "expr" };
+
+	private static final String PERFORM_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performAnalysis";
+
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
 
 	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
@@ -81,6 +113,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String USE_TEST_ENTRYPOINTS_KEY = "edu.cuny.hunter.hybridize.eval.useTestEntrypoints";
 
 	private static final String ALWAYS_FOLLOW_TYPE_HINTS_KEY = "edu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints";
+
+	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
@@ -138,31 +172,48 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
 							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
-							buildAttributeColumnNames("refactoring", "severity", "code", "message"));) {
+							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
+					CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));
+					CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);) {
 				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
 
 				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
 
 				for (IProject project : pythonProjectsFromEvent) {
-					// subject.
-					resultsPrinter.print(project.getName());
+					// calls.
+					if (Boolean.getBoolean(OUTPUT_CALLS_KEY))
+						printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// set up analysis for single project.
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
-					resultsTimeCollector.start();
-					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
-							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
-							this.getAlwaysFollowTypeHints());
-					resultsTimeCollector.stop();
+					if (Boolean.getBoolean(PERFORM_ANALYSIS_PROPERTY_KEY)) {
+						resultsTimeCollector.start();
+						processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
+								this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
+								this.getAlwaysFollowTypeHints());
+						resultsTimeCollector.stop();
 
-					// run the precondition checking.
-					ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
-					resultsTimeCollector.start();
-					RefactoringStatus status = refactoring.checkAllConditions(monitor);
-					resultsTimeCollector.stop();
+						// run the precondition checking.
+						ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+						resultsTimeCollector.start();
+						RefactoringStatus status = refactoring.checkAllConditions(monitor);
+						resultsTimeCollector.stop();
 
-					LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
+						LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
+
+						// actually perform the refactoring if there are no fatal errors.
+						if (Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY) && !status.hasFatalError()) {
+							resultsTimeCollector.start();
+							Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
+							change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
+							resultsTimeCollector.stop();
+						}
+					} else
+						continue; // next project.
+
+					// subject.
+					resultsPrinter.print(project.getName());
 
 					// functions.
 					Set<Function> functions = processor.getFunctions();
@@ -213,6 +264,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
 					printStatuses(statusPrinter, generalEntries);
 
+					// decorators.
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
+
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
 						resultsPrinter.print(candidates.parallelStream().map(Function::getRefactoring)
@@ -227,14 +281,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Transformation transformation : Transformation.values())
 						resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
-
-					// actually perform the refactoring if there are no fatal errors.
-					if (Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY) && !status.hasFatalError()) {
-						resultsTimeCollector.start();
-						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
-						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
-						resultsTimeCollector.stop();
-					}
 
 					// overall results time.
 					resultsPrinter.print(
@@ -282,6 +328,86 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				printer.printRecord(buildAttributeColumnValues(function, function.getRefactoring(), entry.getSeverity(), entry.getCode(),
 						entry.getMessage()));
 			}
+		}
+	}
+
+	private static void printDecorators(CSVPrinter printer, Set<Function> functions, IProgressMonitor monitor) throws IOException {
+		SubMonitor progress = SubMonitor.convert(monitor, "Printing decorators", functions.size());
+
+		for (Function function : functions) {
+			Set<String> decoratorNames = function.getDecoratorNames(progress.split(1));
+			for (String name : decoratorNames)
+				printer.printRecord(buildAttributeColumnValues(function, name));
+		}
+	}
+
+	private static void printCalls(CSVPrinter printer, IProject project, IProgressMonitor monitor)
+			throws IOException, ExecutionException, CoreException {
+		SubMonitor progress = SubMonitor.convert(monitor, "Printing calls.", UNKNOWN);
+		Set<PythonNode> pythonNodes = Util.getPythonNodes(project);
+		progress.setWorkRemaining(pythonNodes.size());
+		Map<String, Set<String>> fqnToExprs = new HashMap<>();
+
+		for (PythonNode pythonNode : pythonNodes) {
+			String moduleName = getModuleName(pythonNode);
+			File file = getFile(pythonNode);
+			IDocument document = getDocument(pythonNode);
+			IPythonNature nature = getPythonNature(pythonNode);
+
+			ParsedItem entry = pythonNode.entry;
+			ASTEntryWithChildren ast = entry.getAstThis();
+			SimpleNode node = ast.node;
+
+			try {
+				node.accept(new VisitorBase() {
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) throws Exception {
+						return null;
+					}
+
+					@Override
+					public Object visitCall(Call call) throws Exception {
+						String fqn = null;
+						PySelection selection = null;
+
+						try {
+							selection = getSelection(call.func, document);
+							fqn = getFullyQualifiedName(call, moduleName, file, selection, nature, progress.split(UNKNOWN));
+						} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+							LOG.info(String.format(
+									"Can't determine FQN of function call expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+									NodeUtils.getFullRepresentationString(call), selection == null ? "null" : selection.getSelectedText(),
+									moduleName, file, project, e));
+						}
+
+						if (fqn != null)
+							fqnToExprs.merge(fqn, Sets.newHashSet(NodeUtils.getFullRepresentationString(call.func)), (s1, s2) -> {
+								s1.addAll(s2);
+								return s1;
+							});
+
+						return super.visitCall(call);
+					}
+				});
+			} catch (Exception e) {
+				LOG.error("Failed to collect function calls..", e);
+				throw new ExecutionException("Failed to collect function calls.", e);
+			}
+
+			progress.worked(1);
+		}
+
+		for (String fqn : fqnToExprs.keySet()) {
+			Set<String> exprs = fqnToExprs.get(fqn);
+
+			for (String expr : exprs)
+				printer.printRecord(project.getName(), fqn, expr);
 		}
 	}
 
