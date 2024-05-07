@@ -250,6 +250,9 @@
         <new def="truncated_normal" class="Ltensorflow/functions/truncated_normal" />
         <putfield class="LRoot" field="truncated_normal" fieldType="LRoot" ref="random" value="truncated_normal" />
         <putfield class="LRoot" field="truncated_normal" fieldType="LRoot" ref="random_ops" value="truncated_normal" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/random/categorical -->
+        <putfield class="LRoot" field="categorical" fieldType="LRoot" ref="random" value="pass_through" />
+        <putfield class="LRoot" field="categorical" fieldType="LRoot" ref="random_ops" value="pass_through" />
         <new def="range" class="Ltensorflow/functions/range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="x" value="range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="math_ops" value="range" />
