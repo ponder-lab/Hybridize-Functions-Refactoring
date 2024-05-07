@@ -208,6 +208,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/ssim -->
         <putfield class="LRoot" field="ssim" fieldType="LRoot" ref="image" value="pass_through" />
         <putfield class="LRoot" field="ssim" fieldType="LRoot" ref="image_ops_impl" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/total_variation -->
+        <putfield class="LRoot" field="total_variation" fieldType="LRoot" ref="image" value="pass_through" />
+        <putfield class="LRoot" field="total_variation" fieldType="LRoot" ref="image_ops_impl" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
