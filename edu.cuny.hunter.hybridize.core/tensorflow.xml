@@ -130,6 +130,11 @@
         <new def="ops" class="Lobject" />
         <putfield class="LRoot" field="ops" fieldType="LRoot" ref="python" value="ops" />
         <putfield class="LRoot" field="ops" fieldType="LRoot" ref="framework" value="ops" />
+        <new def="gen_math_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_math_ops" fieldType="LRoot" ref="ops" value="gen_math_ops" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/log -->
+        <putfield class="LRoot" field="log" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="log" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
         <new def="ragged" class="Lobject" />
         <putfield class="LRoot" field="ragged" fieldType="LRoot" ref="x" value="ragged" />
         <putfield class="LRoot" field="ragged" fieldType="LRoot" ref="ops" value="ragged" />
