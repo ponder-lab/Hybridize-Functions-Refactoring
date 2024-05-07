@@ -183,6 +183,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/shape -->
         <putfield class="LRoot" field="shape" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="shape" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
+        <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
