@@ -111,14 +111,6 @@
         <new def="reduce_mean" class="Ltensorflow/math/reduce_mean" />
         <putfield class="LRoot" field="reduce_mean" fieldType="LRoot" ref="x" value="reduce_mean" />
         <putfield class="LRoot" field="reduce_mean" fieldType="LRoot" ref="math" value="reduce_mean" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_sum -->
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="pass_through" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sqrt -->
-        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="x" value="pass_through" />
-        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math" value="pass_through" />
-        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <new def="placeholder" class="Ltensorflow/functions/placeholder" />
         <putfield class="LRoot" field="placeholder" fieldType="LRoot" ref="x" value="placeholder" />
         <new def="examples" class="Lobject" />
@@ -166,6 +158,14 @@
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_sum -->
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sqrt -->
+        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <new def="linalg_ops" class="Lobject" />
         <putfield class="LRoot" field="linalg_ops" fieldType="LRoot" ref="ops" value="linalg_ops" />
         <new def="sparse_ops" class="Lobject" />
