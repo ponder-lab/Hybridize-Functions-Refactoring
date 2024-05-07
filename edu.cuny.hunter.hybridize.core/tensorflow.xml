@@ -177,6 +177,9 @@
         <new def="ones" class="Ltensorflow/functions/ones" />
         <putfield class="LRoot" field="ones" fieldType="LRoot" ref="x" value="ones" />
         <putfield class="LRoot" field="ones" fieldType="LRoot" ref="array_ops" value="ones" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/ones_like -->
+        <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
