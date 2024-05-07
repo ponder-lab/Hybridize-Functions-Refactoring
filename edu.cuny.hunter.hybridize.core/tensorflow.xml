@@ -200,6 +200,11 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="clip_ops" value="pass_through" />
+        <new def="image_ops_impl" class="Lobject" />
+        <putfield class="LRoot" field="image_ops_impl" fieldType="LRoot" ref="ops" value="image_ops_impl" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/resize -->
+        <putfield class="LRoot" field="resize" fieldType="LRoot" ref="image" value="pass_through" />
+        <putfield class="LRoot" field="resize" fieldType="LRoot" ref="image_ops_impl" value="pass_through" />
         <new def="zeros" class="Ltensorflow/functions/zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="x" value="zeros" />
         <putfield class="LRoot" field="zeros" fieldType="LRoot" ref="array_ops" value="zeros" />
