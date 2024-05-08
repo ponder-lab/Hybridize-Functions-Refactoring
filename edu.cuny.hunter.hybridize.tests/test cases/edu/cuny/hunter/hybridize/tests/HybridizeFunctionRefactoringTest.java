@@ -7224,4 +7224,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions)
 			assertTrue(function.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testCustomGradient() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+
+		for (Function function : functions)
+			if (function.getIdentifier().equals("log1pexp"))
+				assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
