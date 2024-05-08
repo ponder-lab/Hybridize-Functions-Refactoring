@@ -493,6 +493,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return createPythonNode(fileNameWithoutExtension, file, contents);
 	}
 
+	/**
+	 * True iff the input test Python file should be executed.
+	 */
+	public boolean shouldRunInputTestFile() {
+		return this.runInputTestFile;
+	}
+
 	@Override
 	public void genericafter() throws Exception {
 	}
@@ -7216,12 +7223,5 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function function : functions)
 			assertTrue(function.getLikelyHasTensorParameter());
-	}
-
-	/**
-	 * True iff the input test Python file should be executed.
-	 */
-	public boolean shouldRunInputTestFile() {
-		return this.runInputTestFile;
 	}
 }
