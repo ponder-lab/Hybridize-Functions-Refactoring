@@ -354,6 +354,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/custom_gradient -->
         <new def="custom_gradient" class="Ltensorflow/class/custom_gradient" />
         <putfield class="LRoot" field="custom_gradient" fieldType="LRoot" ref="x" value="custom_gradient" />
+        <new def="reshape" class="Ltensorflow/functions/reshape" />
+        <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="x" value="reshape" />
+        <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="array_ops" value="reshape" />
         <return value="x" />
       </method>
     </class>
