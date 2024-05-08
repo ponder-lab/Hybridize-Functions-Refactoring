@@ -223,6 +223,10 @@ public class Util {
 		}
 
 		String representationString = NodeUtils.getRepresentationString(expression);
+
+		if (representationString == null)
+			throw new NoTextSelectionException(expression);
+
 		CoreTextSelection coreTextSelection = new CoreTextSelection(document, offset, representationString.length());
 		return coreTextSelection;
 	}

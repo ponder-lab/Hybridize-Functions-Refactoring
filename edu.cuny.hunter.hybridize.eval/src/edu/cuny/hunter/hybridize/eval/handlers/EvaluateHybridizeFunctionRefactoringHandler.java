@@ -38,6 +38,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
@@ -379,11 +380,20 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						try {
 							selection = getSelection(call.func, document);
 							fqn = getFullyQualifiedName(call, moduleName, file, selection, nature, progress.split(UNKNOWN));
-						} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+						} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException
+								| BadLocationException e) {
+							String selectedText = null;
+
+							try {
+								if (selection != null)
+									selectedText = selection.getSelectedText();
+							} catch (BadLocationException e1) {
+								LOG.info("Can't get selected text for selection: " + selection, e1);
+							}
+
 							LOG.info(String.format(
 									"Can't determine FQN of function call expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-									NodeUtils.getFullRepresentationString(call), selection == null ? "null" : selection.getSelectedText(),
-									moduleName, file, project, e));
+									NodeUtils.getFullRepresentationString(call), selectedText, moduleName, file, project, e));
 						}
 
 						if (fqn != null)
