@@ -7250,4 +7250,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testMeshGrid() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+
+		for (Function function : functions)
+			assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
