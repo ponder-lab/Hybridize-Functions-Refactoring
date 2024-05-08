@@ -260,6 +260,12 @@
         <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math" value="range" />
         <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math_ops" value="range" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/diag -->
+        <putfield class="LRoot" field="diag" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="diag" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/diag_part -->
+        <putfield class="LRoot" field="diag_part" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="diag_part" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <new def="ragged_range" class="Ltensorflow/functions/ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged" value="ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged_math_ops" value="ragged_range" />
