@@ -375,6 +375,10 @@
         <new def="cond" class="Ltensorflow/functions/cond" />
         <putfield class="LRoot" field="cond" fieldType="LRoot" ref="x" value="cond" />
         <putfield class="LRoot" field="cond" fieldType="LRoot" ref="control_flow_ops" value="cond" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/while_loop -->
+        <new def="while_loop" class="Ltensorflow/functions/while_loop" />
+        <putfield class="LRoot" field="while_loop" fieldType="LRoot" ref="x" value="while_loop" />
+        <putfield class="LRoot" field="while_loop" fieldType="LRoot" ref="control_flow_ops" value="while_loop" />
         <putfield class="LRoot" field="autograph" fieldType="LRoot" ref="x" value="autograph" />
         <putfield class="LRoot" field="experimental" fieldType="LRoot" ref="autograph" value="experimental" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/autograph/experimental/do_not_convert -->
@@ -965,6 +969,12 @@
           <return value="v" />
         </method>
        </class>
+       <class name="while_loop" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/while_loop -->
+        <method name="do" descriptor="()LRoot;" numArgs="10" paramNames="self cond body loop_vars shape_invariants parallel_iterations back_prop swap_memory maximum_iterations name">
+          <return value="loop_vars" />
+        </method>
+      </class>
       <class name="placeholder" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="dtype shape name">
           <new def="x" class="Lobject" />
