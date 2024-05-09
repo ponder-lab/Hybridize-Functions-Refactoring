@@ -960,11 +960,11 @@
        </class>
        <class name="cond" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/cond -->
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self pred true_fn false_fn name">
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self pred true_fn false_fn name">
           <call class="LRoot" name="do" descriptor="()LRoot;" type="virtual" arg0="true_fn" def="v" />
           <return value="v" />
         </method>
-      </class>
+       </class>
       <class name="placeholder" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="dtype shape name">
           <new def="x" class="Lobject" />
