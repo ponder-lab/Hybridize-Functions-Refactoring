@@ -6,5 +6,6 @@ import tensorflow as tf
 def f(a):
     pass
 
+
 i = [tf.constant(0)]
 f(i)
