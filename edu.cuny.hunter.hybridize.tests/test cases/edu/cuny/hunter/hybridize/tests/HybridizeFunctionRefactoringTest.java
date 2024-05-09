@@ -7267,4 +7267,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertTrue(function.getLikelyHasTensorParameter());
 	}
+
+	@Test
+	public void testReshape() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testReshape2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
 }
