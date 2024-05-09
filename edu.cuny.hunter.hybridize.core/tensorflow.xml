@@ -291,6 +291,10 @@
         <new def="identity" class="Ltensorflow/functions/identity" />
         <putfield class="LRoot" field="identity" fieldType="LRoot" ref="x" value="identity" />
         <putfield class="LRoot" field="identity" fieldType="LRoot" ref="array_ops" value="identity" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/where -->
+        <new def="where" class="Ltensorflow/functions/where" />
+        <putfield class="LRoot" field="where" fieldType="LRoot" ref="x" value="where" />
+        <putfield class="LRoot" field="where" fieldType="LRoot" ref="array_ops" value="where" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/meshgrid -->
         <new def="meshgrid" class="Ltensorflow/functions/meshgrid" />
         <putfield class="LRoot" field="meshgrid" fieldType="LRoot" ref="x" value="meshgrid" />
@@ -643,6 +647,17 @@
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="input name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="where" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/functions/where" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/where -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="condition x y name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
