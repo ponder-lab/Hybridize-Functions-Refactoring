@@ -284,6 +284,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/gather -->
         <putfield class="LRoot" field="gather" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="gather" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/squeeze -->
+        <putfield class="LRoot" field="squeeze" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="squeeze" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/identity -->
         <new def="identity" class="Ltensorflow/functions/identity" />
         <putfield class="LRoot" field="identity" fieldType="LRoot" ref="x" value="identity" />
