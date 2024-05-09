@@ -296,6 +296,10 @@
         <new def="rank" class="Ltensorflow/functions/rank" />
         <putfield class="LRoot" field="rank" fieldType="LRoot" ref="x" value="rank" />
         <putfield class="LRoot" field="rank" fieldType="LRoot" ref="array_ops" value="rank" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/size -->
+        <new def="size" class="Ltensorflow/functions/size" />
+        <putfield class="LRoot" field="size" fieldType="LRoot" ref="x" value="size" />
+        <putfield class="LRoot" field="size" fieldType="LRoot" ref="array_ops" value="size" />
         <new def="ragged_range" class="Ltensorflow/functions/ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged" value="ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged_math_ops" value="ragged_range" />
@@ -653,6 +657,18 @@
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="input name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="size" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/size -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="x" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="input out_type name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
