@@ -4,8 +4,8 @@ import tensorflow as tf
 
 
 def f(x):
-  # print("Traced with", x) # This is a Python side-effect.
-  tf.print("Executed with", x) # THis isn't.
+    # print("Traced with", x) # This is a Python side-effect.
+    tf.print("Executed with", x)  # THis isn't.
 
 
 f(1)

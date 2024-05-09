@@ -3,8 +3,8 @@ import tensorflow as tf
 
 @tf.function(reduce_retracing=True)
 def func():
-  pass
+    pass
 
- 
-if __name__ == '__main__':
-    func()   
+
+if __name__ == "__main__":
+    func()

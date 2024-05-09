@@ -2,8 +2,8 @@
 
 
 def f():
-  with open('spam.txt', 'w') as file:
-    file.write('Spam and eggs!')
+    with open("spam.txt", "w") as file:
+        file.write("Spam and eggs!")
 
 
 f()

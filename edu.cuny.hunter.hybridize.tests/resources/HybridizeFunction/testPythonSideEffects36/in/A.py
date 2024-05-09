@@ -7,7 +7,7 @@ external_list = []
 
 @tf.function
 def side_effect(x):
-  external_list.append(x)
+    external_list.append(x)
 
 
 side_effect(1)

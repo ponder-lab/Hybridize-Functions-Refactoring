@@ -6,7 +6,6 @@ def test(x):
     return x
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     x = tf.constant(1)
     test(x)
-    

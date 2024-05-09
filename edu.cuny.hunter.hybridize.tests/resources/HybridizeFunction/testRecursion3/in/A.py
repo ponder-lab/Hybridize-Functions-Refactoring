@@ -4,10 +4,10 @@ import tensorflow as tf
 
 
 def recursive_fn2(n):
-  if n > 0:
-    return recursive_fn(n - 1)
-  else:
-    return 1
+    if n > 0:
+        return recursive_fn(n - 1)
+    else:
+        return 1
 
 
 # @tf.function

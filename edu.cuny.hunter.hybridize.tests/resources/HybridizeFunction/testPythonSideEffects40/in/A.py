@@ -5,7 +5,7 @@ import tensorflow as tf
 
 @tf.function
 def buggy_consume_next(iterator):
-  tf.print("Value:", next(iterator))
+    tf.print("Value:", next(iterator))
 
 
 iterator = iter([1, 2, 3])

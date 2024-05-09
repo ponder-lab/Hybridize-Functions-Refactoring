@@ -5,8 +5,8 @@ import tensorflow as tf
 
 @tf.function
 def good_consume_next(iterator):
-  # This is ok, iterator is a tf.data.Iterator
-  tf.print("Value:", next(iterator))
+    # This is ok, iterator is a tf.data.Iterator
+    tf.print("Value:", next(iterator))
 
 
 ds = tf.data.Dataset.from_tensor_slices([1, 2, 3])

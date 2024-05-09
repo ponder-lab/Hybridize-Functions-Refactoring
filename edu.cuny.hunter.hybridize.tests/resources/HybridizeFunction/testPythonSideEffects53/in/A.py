@@ -5,8 +5,8 @@ import tensorflow as tf
 
 class MyClass:
 
-  def __init__(self):
-    self.field = None
+    def __init__(self):
+        self.field = None
 
 
 # external_list = []
@@ -14,9 +14,9 @@ external_object = MyClass()
 
 
 def not_leaky_function():
-  a = tf.constant(1)
-  # external_list.append(a)  # Bad - leaks tensor
-  return external_object.field
+    a = tf.constant(1)
+    # external_list.append(a)  # Bad - leaks tensor
+    return external_object.field
 
 
 # assert len(external_list) == 0

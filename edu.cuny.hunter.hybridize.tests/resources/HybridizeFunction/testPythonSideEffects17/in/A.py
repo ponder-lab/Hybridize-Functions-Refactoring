@@ -5,7 +5,7 @@ my_list = [10]
 
 def fun_with_side_effects(y):
     my_list[0] = 1
-    return y ** 2
+    return y**2
 
 
 def f():

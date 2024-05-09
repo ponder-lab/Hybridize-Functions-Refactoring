@@ -1,7 +1,7 @@
 my_list = [10]
 
 
-class C():
+class C:
 
     def h(self):
         my_list[0] = 1

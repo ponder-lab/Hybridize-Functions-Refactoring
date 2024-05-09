@@ -6,7 +6,7 @@ import tensorflow as tf
 
 # @tf.function
 def f():
-  return x ** 2 + y
+    return x**2 + y
 
 
 x = tf.constant([-2, -3])

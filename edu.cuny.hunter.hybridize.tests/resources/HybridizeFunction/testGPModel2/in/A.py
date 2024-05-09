@@ -13,4 +13,5 @@ def test_compile_monitor() -> None:
     for step in tf.range(100):
         tf_func(step)
 
+
 test_compile_monitor()

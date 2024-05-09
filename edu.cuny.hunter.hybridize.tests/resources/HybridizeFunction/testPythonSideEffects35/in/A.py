@@ -6,8 +6,8 @@ external_list = []
 
 @tf.function
 def side_effect(x):
-  tf.print('Python side effect')
-  external_list.append(x)
+    tf.print("Python side effect")
+    external_list.append(x)
 
 
 side_effect(1)

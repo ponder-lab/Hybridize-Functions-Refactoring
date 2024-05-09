@@ -5,8 +5,8 @@ import tensorflow as tf
 
 @tf.function
 def f(x):
-  print(x)
-  return tf.abs(x)
+    print(x)
+    return tf.abs(x)
 
 
 print(f(1))

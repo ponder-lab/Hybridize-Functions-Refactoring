@@ -7,9 +7,9 @@ x = None
 
 @tf.function
 def leaky_function(a):
-  global x
-  # x = a + 1  # Bad - leaks local tensor
-  return a + 2
+    global x
+    # x = a + 1  # Bad - leaks local tensor
+    return a + 2
 
 
 correct_a = leaky_function(tf.constant(1))

@@ -2,7 +2,7 @@
 
 
 def g():
-    squares = [x ** 2 for x in range(10)]
+    squares = [x**2 for x in range(10)]
 
 
 def f():

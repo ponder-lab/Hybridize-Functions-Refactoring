@@ -5,7 +5,8 @@ import tensorflow as tf
 
 # @tf.function
 def f(x):
-  return x  # tf.abs(x)
+    return x  # tf.abs(x)
+
 
 # print(f(1))
 # print(f(2))  # Slow - compiles new graph

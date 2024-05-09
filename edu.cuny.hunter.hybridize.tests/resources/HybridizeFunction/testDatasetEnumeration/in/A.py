@@ -15,7 +15,7 @@ import numpy as np
 
 # %%
 # Path to save logs into.
-logs_path = '/tmp/tensorflow_logs/example/'
+logs_path = "/tmp/tensorflow_logs/example/"
 
 # MNIST dataset parameters.
 num_classes = 10  # total classes (0-9 digits).
@@ -34,13 +34,16 @@ n_hidden_2 = 256  # 2nd layer number of neurons.
 # %%
 # Prepare MNIST data.
 from tensorflow.keras.datasets import mnist
+
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 # Convert to float32.
 x_train, x_test = np.array(x_train, np.float32), np.array(x_test, np.float32)
 # Flatten images to 1-D vector of 784 features (28*28).
-x_train, x_test = x_train.reshape([-1, num_features]), x_test.reshape([-1, num_features])
+x_train, x_test = x_train.reshape([-1, num_features]), x_test.reshape(
+    [-1, num_features]
+)
 # Normalize images value from [0, 255] to [0, 1].
-x_train, x_test = x_train / 255., x_test / 255.
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
 # %%
 # Use tf.data API to shuffle and batch data.
@@ -54,14 +57,20 @@ train_data = train_data.repeat().shuffle(5000).batch(batch_size).prefetch(1)
 random_normal = tf.initializers.RandomNormal()
 
 weights = {
-    'h1_weights': tf.Variable(random_normal([num_features, n_hidden_1]), name='h1_weights'),
-    'h2_weights': tf.Variable(random_normal([n_hidden_1, n_hidden_2]), name='h2_weights'),
-    'logits_weights': tf.Variable(random_normal([n_hidden_2, num_classes]), name='logits_weights')
+    "h1_weights": tf.Variable(
+        random_normal([num_features, n_hidden_1]), name="h1_weights"
+    ),
+    "h2_weights": tf.Variable(
+        random_normal([n_hidden_1, n_hidden_2]), name="h2_weights"
+    ),
+    "logits_weights": tf.Variable(
+        random_normal([n_hidden_2, num_classes]), name="logits_weights"
+    ),
 }
 biases = {
-    'h1_bias': tf.Variable(tf.zeros([n_hidden_1]), name='h1_bias'),
-    'h2_bias': tf.Variable(tf.zeros([n_hidden_2]), name='h2_bias'),
-    'logits_bias': tf.Variable(tf.zeros([num_classes]), name='logits_bias')
+    "h1_bias": tf.Variable(tf.zeros([n_hidden_1]), name="h1_bias"),
+    "h2_bias": tf.Variable(tf.zeros([n_hidden_2]), name="h2_bias"),
+    "logits_bias": tf.Variable(tf.zeros([num_classes]), name="logits_bias"),
 }
 
 # %%
@@ -72,20 +81,24 @@ biases = {
 # The computation graph to be traced.
 @tf.function
 def neural_net(x):
-    with tf.name_scope('Model'):
-        with tf.name_scope('HiddenLayer1'):
-        # Hidden fully connected layer with 128 neurons.
-            layer_1 = tf.add(tf.matmul(x, weights['h1_weights']), biases['h1_bias'])
+    with tf.name_scope("Model"):
+        with tf.name_scope("HiddenLayer1"):
+            # Hidden fully connected layer with 128 neurons.
+            layer_1 = tf.add(tf.matmul(x, weights["h1_weights"]), biases["h1_bias"])
             # Apply sigmoid to layer_1 output for non-linearity.
             layer_1 = tf.nn.sigmoid(layer_1)
-        with tf.name_scope('HiddenLayer2'):
+        with tf.name_scope("HiddenLayer2"):
             # Hidden fully connected layer with 256 neurons.
-            layer_2 = tf.add(tf.matmul(layer_1, weights['h2_weights']), biases['h2_bias'])
+            layer_2 = tf.add(
+                tf.matmul(layer_1, weights["h2_weights"]), biases["h2_bias"]
+            )
             # Apply sigmoid to layer_2 output for non-linearity.
             layer_2 = tf.nn.sigmoid(layer_2)
-        with tf.name_scope('LogitsLayer'):
+        with tf.name_scope("LogitsLayer"):
             # Output fully connected layer with a neuron for each class.
-            out_layer = tf.matmul(layer_2, weights['logits_weights']) + biases['logits_bias']
+            out_layer = (
+                tf.matmul(layer_2, weights["logits_weights"]) + biases["logits_bias"]
+            )
             # Apply softmax to normalize the logits to a probability distribution.
             out_layer = tf.nn.softmax(out_layer)
     return out_layer
@@ -94,25 +107,25 @@ def neural_net(x):
 # %%
 # Cross-Entropy loss function.
 def cross_entropy(y_pred, y_true):
-    with tf.name_scope('CrossEntropyLoss'):
+    with tf.name_scope("CrossEntropyLoss"):
         # Encode label to a one hot vector.
         y_true = tf.one_hot(y_true, depth=num_classes)
         # Clip prediction values to avoid log(0) error.
-        y_pred = tf.clip_by_value(y_pred, 1e-9, 1.)
+        y_pred = tf.clip_by_value(y_pred, 1e-9, 1.0)
         # Compute cross-entropy.
         return tf.reduce_mean(-tf.reduce_sum(y_true * tf.math.log(y_pred)))
 
 
 # Accuracy metric.
 def accuracy(y_pred, y_true):
-    with tf.name_scope('Accuracy'):
+    with tf.name_scope("Accuracy"):
         # Predicted class is the index of highest score in prediction vector (i.e. argmax).
         correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.cast(y_true, tf.int64))
         return tf.reduce_mean(tf.cast(correct_prediction, tf.float32), axis=-1)
 
 
 # Stochastic gradient descent optimizer.
-with tf.name_scope('Optimizer'):
+with tf.name_scope("Optimizer"):
     optimizer = tf.optimizers.SGD(learning_rate)
 
 
@@ -138,9 +151,9 @@ def run_optimization(x, y):
 # Visualize weights & biases as histogram in Tensorboard.
 def summarize_weights(step):
     for w in weights:
-        tf.summary.histogram(w.replace('_', '/'), weights[w], step=step)
+        tf.summary.histogram(w.replace("_", "/"), weights[w], step=step)
     for b in biases:
-        tf.summary.histogram(b.replace('_', '/'), biases[b], step=step)
+        tf.summary.histogram(b.replace("_", "/"), biases[b], step=step)
 
 
 # %%
@@ -163,10 +176,7 @@ for step, (batch_x, batch_y) in enumerate(train_data.take(training_steps), 1):
     # computation step was performed.
     if step == 1:
         with summary_writer.as_default():
-            tf.summary.trace_export(
-                  name="trace",
-                  step=0,
-                  profiler_outdir=logs_path)
+            tf.summary.trace_export(name="trace", step=0, profiler_outdir=logs_path)
 
     if step % display_step == 0:
         pred = neural_net(batch_x)
@@ -177,8 +187,8 @@ for step, (batch_x, batch_y) in enumerate(train_data.take(training_steps), 1):
         # Write loss/acc metrics & weights to Tensorboard every few steps,
         # to avoid storing too much data.
         with summary_writer.as_default():
-            tf.summary.scalar('loss', loss, step=step)
-            tf.summary.scalar('accuracy', acc, step=step)
+            tf.summary.scalar("loss", loss, step=step)
+            tf.summary.scalar("accuracy", acc, step=step)
             summarize_weights(step)
 
 # %%

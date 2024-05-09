@@ -1,5 +1,6 @@
 def func(x=6):
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     func(5)

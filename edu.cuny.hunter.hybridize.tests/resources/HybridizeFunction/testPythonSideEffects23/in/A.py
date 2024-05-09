@@ -9,7 +9,7 @@ def h():
 
 def fun_with_side_effects(y):
     my_list[0] = 1
-    return y ** 2
+    return y**2
 
 
 def g():

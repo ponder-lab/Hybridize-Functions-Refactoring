@@ -2,7 +2,7 @@ from B import g
 from B import C
 
 
-class D():
+class D:
     pass
 
 

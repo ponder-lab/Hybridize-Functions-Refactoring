@@ -1,7 +1,7 @@
 from tensorflow import Tensor
 
 
-class C():
+class C:
 
     def f(a):
         assert isinstance(a, Tensor)

@@ -12,4 +12,3 @@ def f():
 assert a == 10
 f()
 assert a == 10
-

@@ -30,8 +30,9 @@
 from __future__ import absolute_import, division, print_function
 
 import tensorflow as tf
+
 print("TensorFlow version:", tf.__version__)
-assert(tf.__version__ == "2.9.3")
+assert tf.__version__ == "2.9.3"
 from tensorflow.keras import Model, layers
 import numpy as np
 import timeit
@@ -57,13 +58,16 @@ n_hidden_2 = 256  # 2nd layer number of neurons.
 # %%
 # Prepare MNIST data.
 from tensorflow.keras.datasets import mnist
+
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 # Convert to float32.
 x_train, x_test = np.array(x_train, np.float32), np.array(x_test, np.float32)
 # Flatten images to 1-D vector of 784 features (28*28).
-x_train, x_test = x_train.reshape([-1, num_features]), x_test.reshape([-1, num_features])
+x_train, x_test = x_train.reshape([-1, num_features]), x_test.reshape(
+    [-1, num_features]
+)
 # Normalize images value from [0, 255] to [0, 1].
-x_train, x_test = x_train / 255., x_test / 255.
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
 # %%
 # Use tf.data API to shuffle and batch data.

@@ -1,9 +1,11 @@
 import tensorflow as tf
 
 
-@tf.function(experimental_autograph_options=tf.autograph.experimental.Feature.EQUALITY_OPERATORS)
+@tf.function(
+    experimental_autograph_options=tf.autograph.experimental.Feature.EQUALITY_OPERATORS
+)
 def add(a, b):
-  return a + b
+    return a + b
 
 
 a = tf.range(3, 18, 3)

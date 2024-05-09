@@ -8,5 +8,5 @@ class Test:
         pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     Test().b(tf.ones([1, 2]))

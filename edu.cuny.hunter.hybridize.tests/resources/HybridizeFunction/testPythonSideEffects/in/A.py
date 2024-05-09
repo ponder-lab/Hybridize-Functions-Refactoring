@@ -4,8 +4,8 @@ import tensorflow as tf
 
 
 def f(x):
-  print("Traced with", x)
-  tf.print("Executed with", x)
+    print("Traced with", x)
+    tf.print("Executed with", x)
 
 
 f(1)

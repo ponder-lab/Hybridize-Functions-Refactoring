@@ -1,8 +1,10 @@
-import tf # tf is not TensorFlow. That's import tensorflow as tf.
+import tf  # tf is not TensorFlow. That's import tensorflow as tf.
 
-@tf.function # This is not the "function" from TensorFlow.
+
+@tf.function  # This is not the "function" from TensorFlow.
 def func1():
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     func1()
