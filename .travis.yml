@@ -13,6 +13,7 @@ cache:
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+  - mvn spotless:check -B
 addons:
   apt:
     sources:

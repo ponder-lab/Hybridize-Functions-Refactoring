@@ -43,7 +43,18 @@
 		<maven.compiler.source>17</maven.compiler.source>
 		<maven.compiler.target>17</maven.compiler.target>
 		<logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
+		<spotless.version>2.43.0</spotless.version>
+		<black.version>24.1.1</black.version>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>${spotless.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<!-- run mvn versions:display-plugin-updates -->
 	<reporting>
 		<plugins>
@@ -247,6 +258,25 @@
 						</configuration>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>${spotless.version}</version>
+				<configuration>
+					<python>
+						<includes>
+							<include>**/*.py</include>
+						</includes>
+						<excludes>
+							<exclude>**/target/</exclude>
+							<exclude>**/bin/</exclude>
+						</excludes>
+						<black>
+							<version>${black.version}</version>
+						</black>
+					</python>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
