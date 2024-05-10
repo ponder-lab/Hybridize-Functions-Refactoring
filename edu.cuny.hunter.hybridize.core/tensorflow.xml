@@ -141,6 +141,8 @@
         <putfield class="LRoot" field="numpy" fieldType="LRoot" ref="experimental" value="numpy" />
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
+        <new def="gen_array_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_array_ops" fieldType="LRoot" ref="ops" value="gen_array_ops" />
         <new def="control_flow_ops" class="Lobject" />
         <putfield class="LRoot" field="control_flow_ops" fieldType="LRoot" ref="ops" value="control_flow_ops" />
         <new def="clip_ops" class="Lobject" />
@@ -280,6 +282,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/matrix_transpose -->
         <putfield class="LRoot" field="matrix_transpose" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="matrix_transpose" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/band_part -->
+        <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/expand_dims -->
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="array_ops" value="pass_through" />
