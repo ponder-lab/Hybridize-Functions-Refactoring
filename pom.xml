@@ -44,7 +44,7 @@
 		<maven.compiler.target>17</maven.compiler.target>
 		<logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
 		<spotless.version>2.43.0</spotless.version>
-		<black.version>24.1.1</black.version>
+		<black.version>24.3.0</black.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
