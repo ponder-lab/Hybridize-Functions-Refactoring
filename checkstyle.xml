@@ -49,6 +49,8 @@
   </module>
 
   <module name="TreeWalker">
+    <module name="UnusedLocalVariable"/>
+    <module name="UnusedImports"/>
     <property name="tabWidth" value="8"/>
     <module name="RegexpSinglelineJava">
       <property name="format" value="^\t* "/>
