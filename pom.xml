@@ -81,20 +81,22 @@
 				<activeByDefault>false</activeByDefault>
 			</activation>
 			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.jacoco</groupId>
+						<artifactId>jacoco-maven-plugin</artifactId>
+						<version>${jacoco-version}</version>
+						<executions>
+							<execution>
+								<goals>
+									<goal>prepare-agent</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
 				<pluginManagement>
 					<plugins>
-						<plugin>
-							<groupId>org.jacoco</groupId>
-							<artifactId>jacoco-maven-plugin</artifactId>
-							<version>${jacoco-version}</version>
-							<executions>
-								<execution>
-									<goals>
-										<goal>prepare-agent</goal>
-									</goals>
-								</execution>
-							</executions>
-						</plugin>
 						<plugin>
 							<groupId>org.eluder.coveralls</groupId>
 							<artifactId>coveralls-maven-plugin</artifactId>
@@ -115,7 +117,7 @@
 							</configuration>
 						</plugin>
 					</plugins>
-				</pluginManagement>
+			</pluginManagement>
 			</build>
 		</profile>
 	</profiles>
