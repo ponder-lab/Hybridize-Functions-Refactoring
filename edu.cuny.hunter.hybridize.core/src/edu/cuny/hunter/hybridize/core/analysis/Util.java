@@ -33,9 +33,14 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.cast.python.types.PythonTypes;
+import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 
@@ -304,5 +309,35 @@ public class Util {
 		for (Object entryPoint : source)
 			if (target.add(entryPoint))
 				LOG.info("Adding entrypoint: " + entryPoint);
+	}
+
+	public static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du) {
+		return getAllNewSiteReferences(use, du, new HashSet<>());
+	}
+
+	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du, Set<PythonPropertyWrite> seen) {
+		Set<NewSiteReference> ret = new HashSet<>();
+		SSAInstruction def = du.getDef(use);
+
+		if (def != null && def instanceof SSANewInstruction) {
+			SSANewInstruction newInstruction = (SSANewInstruction) def;
+			NewSiteReference newSite = newInstruction.getNewSite();
+			ret.add(newSite);
+
+			for (Iterator<SSAInstruction> uses = du.getUses(def.getDef()); uses.hasNext();) {
+				SSAInstruction useInstruction = uses.next();
+
+				if (useInstruction instanceof PythonPropertyWrite) {
+					PythonPropertyWrite write = (PythonPropertyWrite) useInstruction;
+
+					if (!seen.contains(write)) {
+						seen.add(write);
+						int value = write.getValue();
+						ret.addAll(getAllNewSiteReferences(value, du, seen));
+					}
+				}
+			}
+		}
+		return ret;
 	}
 }

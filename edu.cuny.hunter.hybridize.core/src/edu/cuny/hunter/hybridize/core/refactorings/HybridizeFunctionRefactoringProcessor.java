@@ -337,7 +337,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				}
 
 				try {
-					func.inferTensorTensorParameters(analysis, callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferTensorTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (CantInferTensorParametersException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,

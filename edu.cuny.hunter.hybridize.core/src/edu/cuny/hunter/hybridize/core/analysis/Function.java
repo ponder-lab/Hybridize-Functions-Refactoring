@@ -60,21 +60,22 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
+import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
 import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
-import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
-import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
-import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
@@ -83,10 +84,7 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
-import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
-import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
@@ -796,7 +794,8 @@ public class Function {
 	/**
 	 * Infer which parameters are likely tensor parameters.
 	 */
-	public void inferTensorTensorParameters(TensorTypeAnalysis analysis, CallGraph callGraph, IProgressMonitor monitor) throws Exception {
+	public void inferTensorTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 
 		// TODO: Use cast/assert statements?
@@ -853,7 +852,7 @@ public class Function {
 
 					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
 					// pointer key, then we know it's a tensor if the TensorType is not null.
-					if (tensorAnalysisIncludesParameter(analysis, paramExpr, paramName, monitor.slice(IProgressMonitor.UNKNOWN))) {
+					if (tensorAnalysisIncludesParameter(tensorAnalysis, paramExpr, paramName, monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
 						monitor.worked(1);
@@ -861,7 +860,8 @@ public class Function {
 					}
 
 					// Check for containers of tensors.
-					if (tensorAnalysisIncludesParameterContainer(analysis, paramInx, callGraph, monitor.slice(IProgressMonitor.UNKNOWN))) {
+					if (tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
+							monitor.slice(IProgressMonitor.UNKNOWN))) {
 						this.likelyHasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
 						monitor.worked(1);
@@ -881,59 +881,113 @@ public class Function {
 		monitor.done();
 	}
 
-	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis analysis, int paramInx, CallGraph callGraph,
-			IProgressMonitor monitor) throws CoreException {
+	/**
+	 * Returns true iff the given parameter represents a container in the given {@link TensorTypeAnalysis}.
+	 *
+	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
+	 * @param paramInx The index of the parameter under question.
+	 * @param callGraph The {@link PythonSSAPropagationCallGraphBuilder}
+	 * @param builder The {@link CallGraphBuilder}.
+	 * @param monitor For progress.
+	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
+	 */
+	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
+		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
 		Set<CGNode> nodes = this.getNodes(callGraph);
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.",
-				nodes.size());
+		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
 
-		for (CGNode nodeRepresentingThisFunction : nodes) {
-			// Get the callers of this cgNode.
-			for (Iterator<CGNode> predNodes = callGraph.getPredNodes(nodeRepresentingThisFunction); predNodes.hasNext();) {
-				CGNode callerOfThisFunction = predNodes.next();
-				for (Iterator<CallSiteReference> sites = callGraph.getPossibleSites(callerOfThisFunction,
-						nodeRepresentingThisFunction); sites.hasNext();) {
-					CallSiteReference callSiteReference = sites.next();
-					SSAInstruction instruction = callerOfThisFunction.getIR().getInstructions()[callSiteReference.getProgramCounter()];
+		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
 
-					if (instruction instanceof PythonInvokeInstruction) {
-						PythonInvokeInstruction invokeInstruction = (PythonInvokeInstruction) instruction;
-						// FIXME: Also consider kwargs and default args.
-						int useNum = paramInx + 1; // The first use is the function being invoked.
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int param = ir.getParameter(paramInx + 1); // the first argument is the function being invoked.
+			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
+			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
 
-						if (useNum < invokeInstruction.getNumberOfUses()) {
-							int paramUse = invokeInstruction.getUse(useNum);
-							DefUse du = callerOfThisFunction.getDU();
+			for (InstanceKey instanceKey : paramPointsToSet)
+				if (isTensorContainer(instanceKey, tensorContainers, builder)) {
+					progress.done();
+					return true;
+				}
 
-							Set<NewSiteReference> allNewSiteReferences = getAllNewSiteReferences(paramUse, du);
+			loopProgress.worked(1);
+		}
 
-							for (Pair<PointerKey, TensorVariable> pair : analysis) {
-								PointerKey pointerKey = pair.fst;
+		return false;
+	}
 
-								if (pointerKey instanceof InstanceFieldPointerKey) {
-									InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
-									InstanceKey instanceKey = ifpk.getInstanceKey();
+	/**
+	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 *
+	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
+	 * @param monitor Progress.
+	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 */
+	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
+		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
+		Set<InstanceKey> tensorContainers = new HashSet<>();
 
-									if (instanceKey instanceof AllocationSiteInNode) {
-										AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
+			PointerKey pointerKey = pair.fst;
 
-										if (asin.getNode().equals(callerOfThisFunction) && allNewSiteReferences.contains(asin.getSite())
-												&& Util.isContainerType(asin.getConcreteType().getReference())) {
-											// We have a match.
-											// check the existence of the tensor variable.
-											assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-											subMonitor.done();
-											return true;
-										}
-									}
-								}
-							}
-						}
+			if (pointerKey instanceof InstanceFieldPointerKey) {
+				InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+				InstanceKey instanceKey = ifpk.getInstanceKey();
+
+				if (instanceKey instanceof AllocationSiteInNode) {
+					AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+
+					if (Util.isContainerType(asin.getConcreteType().getReference())) {
+						// We have a match.
+						// check the existence of the tensor variable.
+						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+						tensorContainers.add(instanceKey);
 					}
 				}
 			}
-			subMonitor.worked(1);
+
+			progress.worked(1);
 		}
+
+		return tensorContainers;
+	}
+
+	/**
+	 * Returns true if the given {@link InstanceKey} is contained in the given {@link Set} of tensor container {@link InstanceKey}s. Also
+	 * returns true if the given {@link InstanceKey} represents a container whose constituent elements are contained in the given
+	 * {@link Set}.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param tensorContainers A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder}.
+	 * @return True iff either the given {@link InstanceKey} is a member of the given {@link Set} or the given {@link InstanceKey} is itself
+	 *         a container whose elements are (ultimately) contained in the given {@link Set}.
+	 */
+	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		if (tensorContainers.contains(instanceKey))
+			return true;
+
+		if (Util.isContainerType(instanceKey.getConcreteType().getReference())) {
+			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory())
+					.getPointerKeyForObjectCatalog(instanceKey);
+			Iterable<InstanceKey> catalogPointsToSet = builder.getPointerAnalysis().getPointsToSet(catalogPointerKey);
+
+			for (InstanceKey catalogInstanceKey : catalogPointsToSet) {
+				ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
+				Object value = constantKey.getValue();
+				IClass concreteType = instanceKey.getConcreteType();
+				IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
+				PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
+				Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
+
+				for (InstanceKey fieldInstanceKey : fieldPointsToSet)
+					if (isTensorContainer(fieldInstanceKey, tensorContainers, builder))
+						return true;
+			}
+		}
+
 		return false;
 	}
 
@@ -1037,36 +1091,6 @@ public class Function {
 			}
 		});
 
-		return ret;
-	}
-
-	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du) {
-		return getAllNewSiteReferences(use, du, new HashSet<>());
-	}
-
-	private static Set<NewSiteReference> getAllNewSiteReferences(int use, DefUse du, Set<PythonPropertyWrite> seen) {
-		Set<NewSiteReference> ret = new HashSet<>();
-		SSAInstruction def = du.getDef(use);
-
-		if (def != null && def instanceof SSANewInstruction) {
-			SSANewInstruction newInstruction = (SSANewInstruction) def;
-			NewSiteReference newSite = newInstruction.getNewSite();
-			ret.add(newSite);
-
-			for (Iterator<SSAInstruction> uses = du.getUses(def.getDef()); uses.hasNext();) {
-				SSAInstruction useInstruction = uses.next();
-
-				if (useInstruction instanceof PythonPropertyWrite) {
-					PythonPropertyWrite write = (PythonPropertyWrite) useInstruction;
-
-					if (!seen.contains(write)) {
-						seen.add(write);
-						int value = write.getValue();
-						ret.addAll(getAllNewSiteReferences(value, du, seen));
-					}
-				}
-			}
-		}
 		return ret;
 	}
 
