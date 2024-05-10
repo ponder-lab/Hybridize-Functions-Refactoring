@@ -125,9 +125,10 @@
 				<configuration>
 					<compilerArgs>
 						<arg>-err:all</arg>
-						<arg>-err:+unused</arg>
+						<arg>-err:+unusedImport</arg>
 						<arg>-err:+uselessTypeCheck</arg>
 						<arg>-err:+unnecessaryElse</arg>
+						<arg>-err:+unusedAllocation</arg>
 						<arg>-err:-missingJavadocComments</arg>
 						<arg>-err:-missingJavadocTags</arg>
 						<arg>-err:-nls</arg>
