@@ -285,6 +285,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/band_part -->
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/broadcast_to -->
+        <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/expand_dims -->
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="array_ops" value="pass_through" />
