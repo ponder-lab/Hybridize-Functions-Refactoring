@@ -145,6 +145,8 @@
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
         <new def="gen_array_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_array_ops" fieldType="LRoot" ref="ops" value="gen_array_ops" />
+        <new def="gen_linalg_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_linalg_ops" fieldType="LRoot" ref="ops" value="gen_linalg_ops" />
         <new def="gen_image_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_image_ops" fieldType="LRoot" ref="ops" value="gen_image_ops" />
         <new def="control_flow_ops" class="Lobject" />
@@ -291,6 +293,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/band_part -->
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky -->
+        <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/broadcast_to -->
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
