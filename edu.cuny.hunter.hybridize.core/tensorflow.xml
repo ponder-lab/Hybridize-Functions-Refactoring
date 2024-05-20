@@ -212,6 +212,8 @@
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <new def="linalg_ops" class="Lobject" />
         <putfield class="LRoot" field="linalg_ops" fieldType="LRoot" ref="ops" value="linalg_ops" />
+        <new def="linalg_impl" class="Lobject" />
+        <putfield class="LRoot" field="linalg_impl" fieldType="LRoot" ref="linalg" value="linalg_impl" />
         <new def="sparse_ops" class="Lobject" />
         <putfield class="LRoot" field="sparse_ops" fieldType="LRoot" ref="ops" value="sparse_ops" />
         <new def="variables" class="Lobject" />
@@ -404,6 +406,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/triangular_solve -->
         <putfield class="LRoot" field="triangular_solve" fieldType="LRoot" ref="linalg" value="passthrough" />
         <putfield class="LRoot" field="triangular_solve" fieldType="LRoot" ref="linalg_ops" value="passthrough" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/adjoint -->
+        <putfield class="LRoot" field="adjoint" fieldType="LRoot" ref="linalg" value="passthrough" />
+        <putfield class="LRoot" field="adjoint" fieldType="LRoot" ref="linalg_impl" value="passthrough" />
         <new def="constant" class="Ltensorflow/functions/constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
