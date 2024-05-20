@@ -194,6 +194,10 @@
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sin -->
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/pow -->
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math" value="pass_through" />
