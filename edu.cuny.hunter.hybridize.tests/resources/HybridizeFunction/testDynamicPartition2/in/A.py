@@ -7,8 +7,8 @@ def f(a):
     pass
 
 
-t = (1)
-p = (1)
+t = 1
+p = 1
 
 r = tf.dynamic_partition(t, p, 2)
 
