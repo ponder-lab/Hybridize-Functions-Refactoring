@@ -171,6 +171,11 @@
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/less -->
+        <!-- TODO: Return a dtype of bool instead of the input. -->
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/cos -->
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="math" value="pass_through" />
