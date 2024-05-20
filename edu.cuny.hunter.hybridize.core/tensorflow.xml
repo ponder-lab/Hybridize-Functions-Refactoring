@@ -168,6 +168,11 @@
         <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="x" value="add_n" />
         <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="math" value="add_n" />
         <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="math_ops" value="add_n" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/equal -->
+        <new def="equal" class="Ltensorflow/math/equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="x" value="equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="math" value="equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="math_ops" value="equal" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/log -->
         <putfield class="LRoot" field="log" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="log" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
@@ -608,6 +613,15 @@
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
           <return value="y" />
+        </method>
+      </class>
+      <class name="equal" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/equal -->
+        <!-- TODO: Return a dtype of bool instead of the input. -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self x y name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="xx" />
+          <return value="xx" />
         </method>
       </class>
       <class name="multiply" allocatable="true">
