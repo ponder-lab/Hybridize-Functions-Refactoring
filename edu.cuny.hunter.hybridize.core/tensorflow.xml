@@ -1119,7 +1119,7 @@
        <class name="dynamic_stitch" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/dynamic_stitch -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="indices data name">
-          <getfield class="Llist" field="0" fieldType="LRootLRoot" ref="data" def="x" />
+          <getfield class="Llist" field="0" fieldType="LRoot" ref="data" def="x" />
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
           <return value="y" />
