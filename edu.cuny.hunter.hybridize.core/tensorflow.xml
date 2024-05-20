@@ -417,6 +417,9 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/log_abs_determinant -->
         <putfield class="LRoot" field="log_abs_determinant" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="log_abs_determinant" fieldType="LRoot" ref="linear_operator" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/map_fn -->
+        <new def="map_fn" class="Ltensorflow/functions/map_fn" />
+        <putfield class="LRoot" field="map_fn" fieldType="LRoot" ref="x" value="map_fn" />
         <new def="constant" class="Ltensorflow/functions/constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
@@ -892,6 +895,13 @@
           <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
           <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="y" />
           <return value="x" />
+        </method>
+      </class>
+      <class name="map_fn" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/map_fn -->
+        <!-- TODO: Call `map_fn()` on each of the elements of `elems`. -->
+        <method name="do" descriptor="()LRoot;" numArgs="9" paramNames="fn elems dtype parallel_iterations back_prop swap_memory infer_shape name fn_output_signature">
+          <return value="elems" />
         </method>
       </class>
       <class name="uniform" allocatable="true">
