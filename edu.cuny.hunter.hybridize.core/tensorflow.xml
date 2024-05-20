@@ -393,6 +393,11 @@
         <putfield class="LRoot" field="abs" fieldType="LRoot" ref="x" value="abs" />
         <putfield class="LRoot" field="abs" fieldType="LRoot" ref="math" value="abs" />
         <putfield class="LRoot" field="abs" fieldType="LRoot" ref="math_ops" value="abs" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/acos-->
+        <new def="acos" class="Ltensorflow/math/acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="x" value="acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="math" value="acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="math_ops" value="acos" />
         <new def="ragged_range" class="Ltensorflow/functions/ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged" value="ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged_math_ops" value="ragged_range" />
@@ -609,6 +614,14 @@
       </class>
       <class name="abs" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/abs -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="acos" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/acos -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
