@@ -296,6 +296,12 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky -->
         <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/inv -->
+        <putfield class="LRoot" field="inv" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="inv" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/solve -->
+        <putfield class="LRoot" field="solve" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="solve" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/broadcast_to -->
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
