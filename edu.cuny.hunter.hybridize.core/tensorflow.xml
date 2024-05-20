@@ -326,9 +326,6 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky -->
         <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky_solve -->
-        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg" value="pass_through" />
-        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/inv -->
         <putfield class="LRoot" field="inv" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="inv" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
@@ -394,6 +391,9 @@
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="x" value="eye" />
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg" value="eye" />
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg_ops" value="eye" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky_solve -->
+        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg_ops" value="pass_through" />
         <new def="constant" class="Ltensorflow/functions/constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
