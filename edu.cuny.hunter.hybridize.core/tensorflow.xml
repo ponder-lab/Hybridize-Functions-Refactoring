@@ -608,7 +608,7 @@
       </class>
       <class name="add_n" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/add_n -->
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self inputs name">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self inputs name">
           <getfield class="Llist" field="0" fieldType="LRoot" ref="inputs" def="x" />
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
