@@ -398,6 +398,9 @@
         <new def="eigh" class="Ltensorflow/functions/eigh" />
         <putfield class="LRoot" field="eigh" fieldType="LRoot" ref="linalg" value="eigh" />
         <putfield class="LRoot" field="eigh" fieldType="LRoot" ref="linalg_ops" value="eigh" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/eigvalsh -->
+        <putfield class="LRoot" field="eigvalsh" fieldType="LRoot" ref="linalg" value="passthrough" />
+        <putfield class="LRoot" field="eigvalsh" fieldType="LRoot" ref="linalg_ops" value="passthrough" />
         <new def="constant" class="Ltensorflow/functions/constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
