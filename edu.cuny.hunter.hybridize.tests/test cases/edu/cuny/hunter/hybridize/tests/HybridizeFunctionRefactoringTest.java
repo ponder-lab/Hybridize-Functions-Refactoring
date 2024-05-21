@@ -7555,4 +7555,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
 	}
+
+	@Test
+	public void testEinSum() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
 }
