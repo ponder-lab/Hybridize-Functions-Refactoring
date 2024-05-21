@@ -9,6 +9,6 @@ def f(a):
 
 u = tf.random.normal(shape=[5])
 v = tf.random.normal(shape=[5])
-e = tf.einsum('i,i->', u, v)  # output = sum_i u[i]*v[i]
+e = tf.einsum("i,i->", u, v)  # output = sum_i u[i]*v[i]
 
 f(e)
