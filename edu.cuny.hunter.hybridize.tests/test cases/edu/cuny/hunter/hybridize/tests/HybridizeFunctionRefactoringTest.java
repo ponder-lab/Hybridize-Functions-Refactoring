@@ -7541,4 +7541,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
 	}
+
+	@Test
+	public void testSort() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testSort2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
 }

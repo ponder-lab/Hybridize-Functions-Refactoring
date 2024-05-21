@@ -152,6 +152,8 @@
         <putfield class="LRoot" field="clip_ops" fieldType="LRoot" ref="ops" value="clip_ops" />
         <new def="random_ops" class="Lobject" />
         <putfield class="LRoot" field="random_ops" fieldType="LRoot" ref="ops" value="random_ops" />
+        <new def="sort_ops" class="Lobject" />
+        <putfield class="LRoot" field="sort_ops" fieldType="LRoot" ref="ops" value="sort_ops" />
         <new def="math_ops" class="Lobject" />
         <putfield class="LRoot" field="math_ops" fieldType="LRoot" ref="ops" value="math_ops" />
         <new def="gen_math_ops" class="Lobject" />
@@ -332,6 +334,10 @@
         <new def="shuffle" class="Ltensorflow/functions/shuffle" />
         <putfield class="LRoot" field="shuffle" fieldType="LRoot" ref="random" value="shuffle" />
         <putfield class="LRoot" field="shuffle" fieldType="LRoot" ref="random_ops" value="shuffle" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sort -->
+        <new def="sort" class="Ltensorflow/functions/sort" />
+        <putfield class="LRoot" field="sort" fieldType="LRoot" ref="x" value="sort" />
+        <putfield class="LRoot" field="sort" fieldType="LRoot" ref="sort_ops" value="sort" />
         <new def="range" class="Ltensorflow/functions/range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="x" value="range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="math_ops" value="range" />
@@ -1151,6 +1157,14 @@
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="value seed name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="value" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="sort" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sort -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values axis direction name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="values" def="y" />
           <return value="y" />
         </method>
       </class>
