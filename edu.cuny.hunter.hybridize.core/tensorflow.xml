@@ -225,9 +225,10 @@
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_sum -->
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="pass_through" />
+        <new def="reduce_sum" class="Ltensorflow/math/reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="reduce_sum" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sqrt -->
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math" value="pass_through" />
@@ -728,6 +729,14 @@
       </class>
       <class name="reduce_prod" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_prod -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_sum" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_sum -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
