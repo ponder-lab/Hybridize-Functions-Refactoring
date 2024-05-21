@@ -420,6 +420,11 @@
         <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="x" value="reduce_all" />
         <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="math" value="reduce_all" />
         <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="math_ops" value="reduce_all" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_logsumexp -->
+        <new def="reduce_logsumexp" class="Ltensorflow/math/reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="x" value="reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="math" value="reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="math_ops" value="reduce_logsumexp" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/acos-->
         <new def="acos" class="Ltensorflow/math/acos" />
         <putfield class="LRoot" field="acos" fieldType="LRoot" ref="x" value="acos" />
@@ -710,6 +715,14 @@
       </class>
       <class name="reduce_all" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_all -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_logsumexp" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_logsumexp -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
