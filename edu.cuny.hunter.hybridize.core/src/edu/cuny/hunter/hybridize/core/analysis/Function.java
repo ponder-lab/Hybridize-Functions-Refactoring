@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -61,6 +62,7 @@ import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
+import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -500,8 +502,8 @@ public class Function {
 					return true;
 				}
 			}
-		} else if (instanceKey instanceof AllocationSiteInNode) {
-			AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+		} else if ((instanceKey instanceof AllocationSiteInNode) || (instanceKey instanceof ScopeMappingInstanceKey)) {
+			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
 			IClass concreteType = asin.getConcreteType();
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
@@ -522,7 +524,8 @@ public class Function {
 
 				subMonitor.worked(1);
 			}
-		}
+		} else
+			throw new IllegalArgumentException("Not expecting: " + instanceKey.getClass());
 
 		subMonitor.done();
 		return false;
