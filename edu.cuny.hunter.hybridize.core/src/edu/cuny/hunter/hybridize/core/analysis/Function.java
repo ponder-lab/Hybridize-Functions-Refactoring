@@ -383,6 +383,8 @@ public class Function {
 
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
+	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newHashMap();
+
 	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
@@ -925,31 +927,37 @@ public class Function {
 	 */
 	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
-		Set<InstanceKey> tensorContainers = new HashSet<>();
 
-		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
-			PointerKey pointerKey = pair.fst;
+		Set<InstanceKey> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
+			Set<InstanceKey> tensorContainers = new HashSet<>();
 
-			if (pointerKey instanceof InstanceFieldPointerKey) {
-				InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
-				InstanceKey instanceKey = ifpk.getInstanceKey();
+			for (Pair<PointerKey, TensorVariable> pair : k) {
+				PointerKey pointerKey = pair.fst;
 
-				if (instanceKey instanceof AllocationSiteInNode) {
-					AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+				if (pointerKey instanceof InstanceFieldPointerKey) {
+					InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+					InstanceKey instanceKey = ifpk.getInstanceKey();
 
-					if (Util.isContainerType(asin.getConcreteType().getReference())) {
-						// We have a match.
-						// check the existence of the tensor variable.
-						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-						tensorContainers.add(instanceKey);
+					if (instanceKey instanceof AllocationSiteInNode) {
+						AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
+
+						if (Util.isContainerType(asin.getConcreteType().getReference())) {
+							// We have a match.
+							// check the existence of the tensor variable.
+							assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+							tensorContainers.add(instanceKey);
+						}
 					}
 				}
+
+				progress.worked(1);
 			}
 
-			progress.worked(1);
-		}
+			return tensorContainers;
+		});
 
-		return tensorContainers;
+		progress.done();
+		return result;
 	}
 
 	/**
@@ -1614,6 +1622,7 @@ public class Function {
 
 	public static void clearCaches() {
 		creationsCache.clear();
+		tensorContainersCache.clear();
 	}
 
 	public Boolean getIsRecursive() {
