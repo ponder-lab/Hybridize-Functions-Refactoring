@@ -369,8 +369,7 @@ public class Function {
 	private PreconditionSuccess passingPrecondition;
 
 	/**
-	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive. TODO:
-	 * Populate.
+	 * The refactoring that this {@link Function} qualifies for. There should be only one as the refactorings are mutually exclusive.
 	 */
 	private Refactoring refactoring;
 
