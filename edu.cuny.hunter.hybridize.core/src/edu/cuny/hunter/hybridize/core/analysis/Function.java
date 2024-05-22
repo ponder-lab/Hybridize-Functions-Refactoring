@@ -1126,13 +1126,15 @@ public class Function {
 				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
 				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
 
-				int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
-				int rhsBeginLine = parameterPosition.getFirstLine();
+				if (parameterPosition != null) {
+					int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
+					int rhsBeginLine = parameterPosition.getFirstLine();
 
-				// It should suffice to that the parameters have the same beginning column and the same beginning line. In other words, we
-				// are not checking the parameters' expression length because Ariadne includes the type hint in the length while PyDev does
-				// not.
-				return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
+					// It should suffice to that the parameters have the same beginning column and the same beginning line. In other words,
+					// we are not checking the parameters' expression length because Ariadne includes the type hint in the length while
+					// PyDev does not.
+					return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
+				}
 			}
 
 			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
