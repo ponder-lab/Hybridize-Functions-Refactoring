@@ -975,16 +975,23 @@ public class Function {
 			Iterable<InstanceKey> catalogPointsToSet = builder.getPointerAnalysis().getPointsToSet(catalogPointerKey);
 
 			for (InstanceKey catalogInstanceKey : catalogPointsToSet) {
-				ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
-				Object value = constantKey.getValue();
-				IClass concreteType = instanceKey.getConcreteType();
-				IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
-				PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
-				Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
+				if (catalogInstanceKey instanceof ConstantKey<?>) {
+					ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
+					Object value = constantKey.getValue();
+					IClass concreteType = instanceKey.getConcreteType();
+					IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
+					PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
+					Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
 
-				for (InstanceKey fieldInstanceKey : fieldPointsToSet)
-					if (isTensorContainer(fieldInstanceKey, tensorContainers, builder))
-						return true;
+					for (InstanceKey fieldInstanceKey : fieldPointsToSet)
+						if (isTensorContainer(fieldInstanceKey, tensorContainers, builder))
+							return true;
+				} else if (catalogInstanceKey instanceof AllocationSiteInNode) {
+					AllocationSiteInNode asin = (AllocationSiteInNode) catalogInstanceKey;
+					return isTensorContainer(asin, tensorContainers, builder);
+				} else
+					throw new IllegalArgumentException(
+							"Not expecting a catalog instance of " + instanceKey + " to be: " + catalogInstanceKey.getClass());
 			}
 		}
 
