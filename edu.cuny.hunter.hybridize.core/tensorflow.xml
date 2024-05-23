@@ -66,6 +66,8 @@
         <putfield class="LRoot" field="Dataset" fieldType="LRoot" ref="data" value="Dataset" />
         <new def="MirroredStrategy" class="Ltensorflow/distribute/MirroredStrategy" />
         <putfield class="LRoot" field="MirroredStrategy" fieldType="LRoot" ref="distribute" value="MirroredStrategy" />
+        <new def="OneDeviceStrategy" class="Ltensorflow/distribute/OneDeviceStrategy" />
+        <putfield class="LRoot" field="OneDeviceStrategy" fieldType="LRoot" ref="distribute" value="OneDeviceStrategy" />
         <new def="inputs" class="Lobject" />
         <putfield class="LRoot" field="inputs" fieldType="LRoot" ref="estimator" value="inputs" />
         <new def="numpy_input_fn" class="Ltensorflow/estimator/numpy_input_fn" />
@@ -1757,6 +1759,15 @@
     <package name="tensorflow/distribute">
       <class name="MirroredStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
+          <new def="x" class="Ltensorflow/distribute/run/run" />
+          <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <return value="arg0" />
+        </method>
+      </class>
+    </package>
+    <package name="tensorflow/distribute">
+      <class name="OneDeviceStrategy" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self device">
           <new def="x" class="Ltensorflow/distribute/run/run" />
           <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
           <return value="arg0" />
