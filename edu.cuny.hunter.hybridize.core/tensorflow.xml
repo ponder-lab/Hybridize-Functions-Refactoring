@@ -1561,6 +1561,8 @@
           <putfield class="LRoot" field="reduce" fieldType="LRoot" ref="arg0" value="reduce" />
           <new def="enumerate" class="Ltensorflow/data/enumerate" />
           <putfield class="LRoot" field="enumerate" fieldType="LRoot" ref="arg0" value="enumerate" />
+          <new def="interleave" class="Ltensorflow/data/interleave" />
+          <putfield class="LRoot" field="interleave" fieldType="LRoot" ref="arg0" value="interleave" />
           <return value="arg0" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self variant_tensor">
