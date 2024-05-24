@@ -248,6 +248,11 @@
         <new def="bias_add" class="Ltensorflow/functions/bias_add" />
         <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn" value="bias_add" />
         <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn_ops" value="bias_add" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/top_k -->
+        <new def="top_k" class="Ltensorflow/math/top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="nn" value="top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="math" value="top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="nn_ops" value="top_k" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize -->
         <new def="l2_normalize" class="Ltensorflow/math/l2_normalize" />
         <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="linalg" value="l2_normalize" />
@@ -857,6 +862,21 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_mean -->
         <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input_tensor axis keepdims name">
           <return value="input_tensor" />
+        </method>
+      </class>
+      <class name="top_k" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/top_k" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/top_k -->
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input k sorted name">
+          <new def="x" class="Ltuple" />
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="xx" />
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="yy" />
+          <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="yy" />
+          <return value="x" />
         </method>
       </class>
       <class name="abs" allocatable="true">
