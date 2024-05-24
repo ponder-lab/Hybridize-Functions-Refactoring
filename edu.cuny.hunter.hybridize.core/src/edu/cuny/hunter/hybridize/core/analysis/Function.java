@@ -348,7 +348,8 @@ public class Function {
 			NewSiteReference newSiteReference = creationSite.snd;
 
 			// is this instance being created outside this function?
-			if ((!creationNode.getMethod().getReference().equals(methodReference) && !newSiteReference.getDeclaredType().equals(methodReference.getDeclaringClass())))
+			if ((!creationNode.getMethod().getReference().equals(methodReference)
+					&& !newSiteReference.getDeclaredType().equals(methodReference.getDeclaringClass())))
 				return false;
 
 			++numCreations;
