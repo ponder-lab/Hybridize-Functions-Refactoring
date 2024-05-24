@@ -110,12 +110,6 @@
         <new def="sigmoid" class="Ltensorflow/math/sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="nn" value="sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="math" value="sigmoid" />
-        <new def="embedding_ops" class="Lobject" />
-        <putfield class="LRoot" field="embedding_ops" fieldType="LRoot" ref="ops" value="embedding_ops" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/embedding_lookup -->
-        <new def="embedding_lookup" class="Ltensorflow/functions/embedding_lookup" />
-        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="nn" value="embedding_lookup" />
-        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="embedding_ops" value="embedding_lookup" />
         <new def="multiply" class="Ltensorflow/math/multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="x" value="multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="math" value="multiply" />
@@ -172,6 +166,12 @@
         <putfield class="LRoot" field="special_math_ops" fieldType="LRoot" ref="ops" value="special_math_ops" />
         <new def="gen_data_flow_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_data_flow_ops" fieldType="LRoot" ref="ops" value="gen_data_flow_ops" />
+        <new def="embedding_ops" class="Lobject" />
+        <putfield class="LRoot" field="embedding_ops" fieldType="LRoot" ref="ops" value="embedding_ops" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/embedding_lookup -->
+        <new def="embedding_lookup" class="Ltensorflow/functions/embedding_lookup" />
+        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="nn" value="embedding_lookup" />
+        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="embedding_ops" value="embedding_lookup" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/add -->
         <new def="add" class="Ltensorflow/math/add" />
         <putfield class="LRoot" field="add" fieldType="LRoot" ref="x" value="add" />
