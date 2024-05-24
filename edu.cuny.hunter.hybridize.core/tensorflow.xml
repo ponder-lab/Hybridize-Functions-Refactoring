@@ -287,6 +287,10 @@
         <new def="sequence_mask" class="Ltensorflow/functions/sequence_mask" />
         <putfield class="LRoot" field="sequence_mask" fieldType="LRoot" ref="x" value="sequence_mask" />
         <putfield class="LRoot" field="sequence_mask" fieldType="LRoot" ref="array_ops" value="sequence_mask" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stop_gradient-->
+        <new def="stop_gradient" class="Ltensorflow/functions/stop_gradient" />
+        <putfield class="LRoot" field="stop_gradient" fieldType="LRoot" ref="x" value="stop_gradient" />
+        <putfield class="LRoot" field="stop_gradient" fieldType="LRoot" ref="array_ops" value="stop_gradient" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/ones_like -->
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="array_ops" value="pass_through" />
@@ -439,6 +443,10 @@
         <new def="size" class="Ltensorflow/functions/size" />
         <putfield class="LRoot" field="size" fieldType="LRoot" ref="x" value="size" />
         <putfield class="LRoot" field="size" fieldType="LRoot" ref="array_ops" value="size" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tensor_scatter_nd_update -->
+        <new def="tensor_scatter_nd_update" class="Ltensorflow/functions/tensor_scatter_nd_update" />
+        <putfield class="LRoot" field="tensor_scatter_nd_update" fieldType="LRoot" ref="x" value="tensor_scatter_nd_update" />
+        <putfield class="LRoot" field="tensor_scatter_nd_update" fieldType="LRoot" ref="array_ops" value="tensor_scatter_nd_update" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/abs-->
         <new def="abs" class="Ltensorflow/math/abs" />
         <putfield class="LRoot" field="abs" fieldType="LRoot" ref="x" value="abs" />
@@ -976,6 +984,17 @@
           <return value="x" />
         </method>
       </class>
+      <class name="stop_gradient" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/array_ops/stop_gradient" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stop_gradient -->
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="input name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="zeros_like" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/array_ops/zeros_like" />
@@ -1073,6 +1092,18 @@
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="input out_type name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="tensor_scatter_nd_update" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="x" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tensor_scatter_nd_update-->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="tensor indices updates name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
