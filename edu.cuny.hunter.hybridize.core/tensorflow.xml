@@ -144,6 +144,8 @@
         <putfield class="LRoot" field="numpy" fieldType="LRoot" ref="experimental" value="numpy" />
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
+        <new def="nn_impl" class="Lobject" />
+        <putfield class="LRoot" field="nn_impl" fieldType="LRoot" ref="ops" value="array_ops" />
         <new def="gen_array_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_array_ops" fieldType="LRoot" ref="ops" value="gen_array_ops" />
         <new def="gen_linalg_ops" class="Lobject" />
@@ -235,6 +237,12 @@
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="x" value="tanh" />
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="math" value="tanh" />
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="gen_math_ops" value="tanh" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize -->
+        <new def="l2_normalize" class="Ltensorflow/math/l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="linalg" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="math" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="nn" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="nn_impl" value="l2_normalize" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sin -->
         <putfield class="LRoot" field="sin" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="sin" fieldType="LRoot" ref="math" value="pass_through" />
@@ -856,6 +864,14 @@
       <class name="tanh" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tanh-->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="l2_normalize" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize-->
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="self x axis epsilon name dim">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
           <return value="y" />
