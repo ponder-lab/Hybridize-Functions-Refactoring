@@ -601,8 +601,7 @@ public class Function {
 		if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
 			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
 			return asin.getConcreteType().getReference();
-		}
-		if (instanceKey instanceof ConstantKey<?>) {
+		} else if (instanceKey instanceof ConstantKey<?>) {
 			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
 			return constantKey.getConcreteType().getReference();
 		} else
