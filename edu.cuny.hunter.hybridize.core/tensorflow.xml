@@ -843,7 +843,7 @@
       </class>
       <class name="reduce_sum" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_sum -->
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input_tensor axis keepdims name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
           <return value="y" />
