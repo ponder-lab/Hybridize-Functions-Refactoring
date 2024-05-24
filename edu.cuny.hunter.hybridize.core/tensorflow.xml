@@ -230,6 +230,11 @@
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="cos" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/tanh -->
+        <new def="tanh" class="Ltensorflow/math/tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="x" value="tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="math" value="tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="gen_math_ops" value="tanh" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sin -->
         <putfield class="LRoot" field="sin" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="sin" fieldType="LRoot" ref="math" value="pass_through" />
@@ -825,6 +830,14 @@
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
           <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="tanh" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tanh-->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
           <return value="y" />
         </method>
       </class>
