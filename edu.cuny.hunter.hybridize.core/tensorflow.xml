@@ -300,7 +300,7 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="array_ops" value="pass_through" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_value -->
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="clip_ops" value="pass_through" />
         <new def="image_ops_impl" class="Lobject" />
