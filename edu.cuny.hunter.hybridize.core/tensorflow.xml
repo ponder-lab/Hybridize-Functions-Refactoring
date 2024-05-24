@@ -303,6 +303,10 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_value -->
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="clip_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_global_norm -->
+        <new def="clip_by_global_norm" class="Ltensorflow/functions/clip_by_global_norm" />
+        <putfield class="LRoot" field="clip_by_global_norm" fieldType="LRoot" ref="x" value="clip_by_global_norm" />
+        <putfield class="LRoot" field="clip_by_global_norm" fieldType="LRoot" ref="clip_ops" value="clip_by_global_norm" />
         <new def="image_ops_impl" class="Lobject" />
         <putfield class="LRoot" field="image_ops_impl" fieldType="LRoot" ref="ops" value="image_ops_impl" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/resize -->
@@ -1179,6 +1183,20 @@
           <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="tensor" def="y" />
           <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
           <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="y" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="clip_by_global_norm" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_global_norm -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="t_list clip_norm use_norm name">
+          <new def="x" class="Ltuple" />
+          <new def="y" class="Llist" />
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="yy" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="y" value="yy" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="yyy" />
+          <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="yyy" />
           <return value="x" />
         </method>
       </class>
