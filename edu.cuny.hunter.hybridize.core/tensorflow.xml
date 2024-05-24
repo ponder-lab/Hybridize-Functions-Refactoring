@@ -245,7 +245,7 @@
         <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="math" value="log_softmax" />
         <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn_ops" value="log_softmax" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/bias_add -->
-        <new def="bias_add " class="Ltensorflow/functions/bias_add" />
+        <new def="bias_add" class="Ltensorflow/functions/bias_add" />
         <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn" value="bias_add" />
         <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn_ops" value="bias_add" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize -->
