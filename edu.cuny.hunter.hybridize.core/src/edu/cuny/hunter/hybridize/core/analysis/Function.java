@@ -940,16 +940,13 @@ public class Function {
 				if (pointerKey instanceof InstanceFieldPointerKey) {
 					InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
 					InstanceKey instanceKey = ifpk.getInstanceKey();
+					TypeReference reference = getTypeReference(instanceKey);
 
-					if (instanceKey instanceof AllocationSiteInNode) {
-						AllocationSiteInNode asin = (AllocationSiteInNode) instanceKey;
-
-						if (Util.isContainerType(asin.getConcreteType().getReference())) {
-							// We have a match.
-							// check the existence of the tensor variable.
-							assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-							tensorContainers.add(instanceKey);
-						}
+					if (reference != null && Util.isContainerType(reference)) {
+						// We have a match.
+						// check the existence of the tensor variable.
+						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+						tensorContainers.add(instanceKey);
 					}
 				}
 
@@ -961,6 +958,17 @@ public class Function {
 
 		progress.done();
 		return result;
+	}
+
+	private static TypeReference getTypeReference(InstanceKey instanceKey) {
+		if ((instanceKey instanceof AllocationSiteInNode) || (instanceKey instanceof ScopeMappingInstanceKey)) {
+			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
+			return asin.getConcreteType().getReference();
+		} else if (instanceKey instanceof ConstantKey<?>) {
+			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+			return constantKey.getConcreteType().getReference();
+		} else
+			throw new IllegalStateException("Not expecting: " + instanceKey.getClass());
 	}
 
 	/**
@@ -996,8 +1004,9 @@ public class Function {
 					for (InstanceKey fieldInstanceKey : fieldPointsToSet)
 						if (isTensorContainer(fieldInstanceKey, tensorContainers, builder))
 							return true;
-				} else if (catalogInstanceKey instanceof AllocationSiteInNode) {
-					AllocationSiteInNode asin = (AllocationSiteInNode) catalogInstanceKey;
+				} else if ((catalogInstanceKey instanceof AllocationSiteInNode)
+						|| (catalogInstanceKey instanceof ScopeMappingInstanceKey)) {
+					AllocationSiteInNode asin = getAllocationSiteInNode(catalogInstanceKey);
 					return isTensorContainer(asin, tensorContainers, builder);
 				} else
 					throw new IllegalArgumentException(
