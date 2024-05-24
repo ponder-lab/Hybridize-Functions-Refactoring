@@ -110,11 +110,6 @@
         <new def="sigmoid" class="Ltensorflow/math/sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="nn" value="sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="math" value="sigmoid" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/log_softmax -->
-        <new def="log_softmax" class="Ltensorflow/math/log_softmax" />
-        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn" value="log_softmax" />
-        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="math" value="log_softmax" />
-        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn_ops" value="log_softmax" />
         <new def="multiply" class="Ltensorflow/math/multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="x" value="multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="math" value="multiply" />
@@ -244,6 +239,11 @@
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="x" value="tanh" />
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="math" value="tanh" />
         <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="gen_math_ops" value="tanh" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/log_softmax -->
+        <new def="log_softmax" class="Ltensorflow/math/log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn" value="log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="math" value="log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn_ops" value="log_softmax" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/bias_add -->
         <new def="bias_add " class="Ltensorflow/functions/bias_add" />
         <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn" value="bias_add" />
