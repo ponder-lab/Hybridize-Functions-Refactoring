@@ -79,6 +79,7 @@ import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
+import com.ibm.wala.ipa.callgraph.propagation.ConcreteTypeKey;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
@@ -473,16 +474,23 @@ public class Function {
 					return true;
 				}
 			}
-		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
-			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
-			IClass concreteType = asin.getConcreteType();
+		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
+				|| instanceKey instanceof ConcreteTypeKey) {
+			InstanceKey instanceKeyToProcess;
+
+			if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey)
+				instanceKeyToProcess = getAllocationSiteInNode(instanceKey);
+			else // it's a ConcreteTypeKey.
+				instanceKeyToProcess = instanceKey; // use the original.
+
+			IClass concreteType = instanceKeyToProcess.getConcreteType();
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
 
 			for (IField field : allInstanceFields) {
 				InstanceFieldPointerKey instanceFieldKey = (InstanceFieldPointerKey) pointerAnalysis.getHeapModel()
-						.getPointerKeyForInstanceField(asin, field);
+						.getPointerKeyForInstanceField(instanceKeyToProcess, field);
 				OrdinalSet<InstanceKey> instanceFieldPointsToSet = pointerAnalysis.getPointsToSet(instanceFieldKey);
 
 				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
