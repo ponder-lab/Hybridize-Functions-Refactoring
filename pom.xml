@@ -35,7 +35,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<jacoco-version>0.8.12</jacoco-version>
 		<maven-checkstyle-plugin-version>3.3.1</maven-checkstyle-plugin-version>
-		<checkstyle-version>10.16.0</checkstyle-version>
+		<checkstyle-version>10.17.0</checkstyle-version>
 		<junit-version>4.13.2</junit-version>
 		<eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
 		<platform-version-name>2022-09</platform-version-name>
@@ -44,7 +44,6 @@
 		<maven.compiler.target>17</maven.compiler.target>
 		<logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
 		<spotless.version>2.43.0</spotless.version>
-		<black.version>24.3.0</black.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -245,7 +244,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-enforcer-plugin</artifactId>
-					<version>3.4.1</version>
+					<version>3.5.0</version>
 					<executions>
 						<execution>
 							<id>enforce-maven</id>
@@ -267,18 +266,6 @@
 					<artifactId>spotless-maven-plugin</artifactId>
 					<version>${spotless.version}</version>
 					<configuration>
-						<python>
-							<includes>
-								<include>**/*.py</include>
-							</includes>
-							<excludes>
-								<exclude>**/target/</exclude>
-								<exclude>**/bin/</exclude>
-							</excludes>
-							<black>
-								<version>${black.version}</version>
-							</black>
-						</python>
 					</configuration>
 				</plugin>
 			</plugins>

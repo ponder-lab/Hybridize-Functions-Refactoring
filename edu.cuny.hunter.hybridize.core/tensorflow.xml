@@ -52,6 +52,8 @@
         <new def="image" class="Lobject" />
         <putfield class="LRoot" field="image" fieldType="LRoot" ref="preprocessing" value="image" />
         <putfield class="LRoot" field="image" fieldType="LRoot" ref="x" value="image" />
+        <new def="io" class="Lobject" />
+        <putfield class="LRoot" field="io" fieldType="LRoot" ref="x" value="io" />
         <new def="app" class="Lobject" />
         <putfield class="LRoot" field="app" fieldType="LRoot" ref="x" value="app" />
         <new def="run" class="Ltensorflow/app/run" />
@@ -64,6 +66,10 @@
         <putfield class="LRoot" field="Dataset" fieldType="LRoot" ref="data" value="Dataset" />
         <new def="MirroredStrategy" class="Ltensorflow/distribute/MirroredStrategy" />
         <putfield class="LRoot" field="MirroredStrategy" fieldType="LRoot" ref="distribute" value="MirroredStrategy" />
+        <new def="TPUStrategy" class="Ltensorflow/distribute/TPUStrategy" />
+        <putfield class="LRoot" field="TPUStrategy" fieldType="LRoot" ref="distribute" value="TPUStrategy" />
+        <new def="OneDeviceStrategy" class="Ltensorflow/distribute/OneDeviceStrategy" />
+        <putfield class="LRoot" field="OneDeviceStrategy" fieldType="LRoot" ref="distribute" value="OneDeviceStrategy" />
         <new def="inputs" class="Lobject" />
         <putfield class="LRoot" field="inputs" fieldType="LRoot" ref="estimator" value="inputs" />
         <new def="numpy_input_fn" class="Ltensorflow/estimator/numpy_input_fn" />
@@ -104,9 +110,6 @@
         <new def="sigmoid" class="Ltensorflow/math/sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="nn" value="sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="math" value="sigmoid" />
-        <new def="add" class="Ltensorflow/math/add" />
-        <putfield class="LRoot" field="add" fieldType="LRoot" ref="x" value="add" />
-        <putfield class="LRoot" field="add" fieldType="LRoot" ref="math" value="add" />
         <new def="multiply" class="Ltensorflow/math/multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="x" value="multiply" />
         <putfield class="LRoot" field="multiply" fieldType="LRoot" ref="math" value="multiply" />
@@ -141,39 +144,153 @@
         <putfield class="LRoot" field="numpy" fieldType="LRoot" ref="experimental" value="numpy" />
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
+        <new def="nn_impl" class="Lobject" />
+        <putfield class="LRoot" field="nn_impl" fieldType="LRoot" ref="ops" value="array_ops" />
         <new def="gen_array_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_array_ops" fieldType="LRoot" ref="ops" value="gen_array_ops" />
+        <new def="gen_linalg_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_linalg_ops" fieldType="LRoot" ref="ops" value="gen_linalg_ops" />
+        <new def="gen_image_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_image_ops" fieldType="LRoot" ref="ops" value="gen_image_ops" />
         <new def="control_flow_ops" class="Lobject" />
         <putfield class="LRoot" field="control_flow_ops" fieldType="LRoot" ref="ops" value="control_flow_ops" />
         <new def="clip_ops" class="Lobject" />
         <putfield class="LRoot" field="clip_ops" fieldType="LRoot" ref="ops" value="clip_ops" />
         <new def="random_ops" class="Lobject" />
         <putfield class="LRoot" field="random_ops" fieldType="LRoot" ref="ops" value="random_ops" />
+        <new def="sort_ops" class="Lobject" />
+        <putfield class="LRoot" field="sort_ops" fieldType="LRoot" ref="ops" value="sort_ops" />
         <new def="math_ops" class="Lobject" />
         <putfield class="LRoot" field="math_ops" fieldType="LRoot" ref="ops" value="math_ops" />
         <new def="gen_math_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_math_ops" fieldType="LRoot" ref="ops" value="gen_math_ops" />
+        <new def="nn_ops" class="Lobject" />
+        <putfield class="LRoot" field="nn_ops" fieldType="LRoot" ref="ops" value="nn_ops" />
+        <new def="special_math_ops" class="Lobject" />
+        <putfield class="LRoot" field="special_math_ops" fieldType="LRoot" ref="ops" value="special_math_ops" />
+        <new def="gen_data_flow_ops" class="Lobject" />
+        <putfield class="LRoot" field="gen_data_flow_ops" fieldType="LRoot" ref="ops" value="gen_data_flow_ops" />
+        <new def="embedding_ops" class="Lobject" />
+        <putfield class="LRoot" field="embedding_ops" fieldType="LRoot" ref="ops" value="embedding_ops" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/embedding_lookup -->
+        <new def="embedding_lookup" class="Ltensorflow/functions/embedding_lookup" />
+        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="nn" value="embedding_lookup" />
+        <putfield class="LRoot" field="embedding_lookup" fieldType="LRoot" ref="embedding_ops" value="embedding_lookup" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/add -->
+        <new def="add" class="Ltensorflow/math/add" />
+        <putfield class="LRoot" field="add" fieldType="LRoot" ref="x" value="add" />
+        <putfield class="LRoot" field="add" fieldType="LRoot" ref="math" value="add" />
+        <putfield class="LRoot" field="add" fieldType="LRoot" ref="math_ops" value="add" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/add_n -->
+        <new def="add_n" class="Ltensorflow/math/add_n" />
+        <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="x" value="add_n" />
+        <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="math" value="add_n" />
+        <putfield class="LRoot" field="add_n" fieldType="LRoot" ref="math_ops" value="add_n" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/exp -->
+        <new def="exp" class="Ltensorflow/math/exp" />
+        <putfield class="LRoot" field="exp" fieldType="LRoot" ref="x" value="exp" />
+        <putfield class="LRoot" field="exp" fieldType="LRoot" ref="math" value="exp" />
+        <putfield class="LRoot" field="exp" fieldType="LRoot" ref="math_ops" value="exp" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/equal -->
+        <new def="equal" class="Ltensorflow/math/equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="x" value="equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="math" value="equal" />
+        <putfield class="LRoot" field="equal" fieldType="LRoot" ref="math_ops" value="equal" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/not_equal -->
+        <new def="not_equal" class="Ltensorflow/math/not_equal" />
+        <putfield class="LRoot" field="not_equal" fieldType="LRoot" ref="x" value="not_equal" />
+        <putfield class="LRoot" field="not_equal" fieldType="LRoot" ref="math" value="not_equal" />
+        <putfield class="LRoot" field="not_equal" fieldType="LRoot" ref="math_ops" value="not_equal" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/log -->
         <putfield class="LRoot" field="log" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="log" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reciprocal -->
+        <putfield class="LRoot" field="reciprocal" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="reciprocal" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/lgamma -->
+        <putfield class="LRoot" field="lgamma" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="lgamma" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/erf -->
+        <putfield class="LRoot" field="erf" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="erf" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/square-->
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="square" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/maximum -->
+        <putfield class="LRoot" field="maximum" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="maximum" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="maximum" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/minimum -->
+        <putfield class="LRoot" field="minimum" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="minimum" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="minimum" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/less -->
+        <!-- TODO: Return a dtype of bool instead of the input. -->
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="less" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/cos -->
+        <putfield class="LRoot" field="cos" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="cos" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="cos" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/tanh -->
+        <new def="tanh" class="Ltensorflow/math/tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="x" value="tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="math" value="tanh" />
+        <putfield class="LRoot" field="tanh" fieldType="LRoot" ref="gen_math_ops" value="tanh" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/log_softmax -->
+        <new def="log_softmax" class="Ltensorflow/math/log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn" value="log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="math" value="log_softmax" />
+        <putfield class="LRoot" field="log_softmax" fieldType="LRoot" ref="nn_ops" value="log_softmax" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/bias_add -->
+        <new def="bias_add" class="Ltensorflow/functions/bias_add" />
+        <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn" value="bias_add" />
+        <putfield class="LRoot" field="bias_add" fieldType="LRoot" ref="nn_ops" value="bias_add" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/top_k -->
+        <new def="top_k" class="Ltensorflow/math/top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="nn" value="top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="math" value="top_k" />
+        <putfield class="LRoot" field="top_k" fieldType="LRoot" ref="nn_ops" value="top_k" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize -->
+        <new def="l2_normalize" class="Ltensorflow/math/l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="linalg" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="math" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="nn" value="l2_normalize" />
+        <putfield class="LRoot" field="l2_normalize" fieldType="LRoot" ref="nn_impl" value="l2_normalize" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sin -->
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="sin" fieldType="LRoot" ref="gen_math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/pow -->
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="pow" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_sum -->
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="pass_through" />
-        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="pass_through" />
+        <new def="reduce_sum" class="Ltensorflow/math/reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="x" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math" value="reduce_sum" />
+        <putfield class="LRoot" field="reduce_sum" fieldType="LRoot" ref="math_ops" value="reduce_sum" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/reduce_max -->
+        <new def="reduce_max" class="Ltensorflow/math/reduce_max" />
+        <putfield class="LRoot" field="reduce_max" fieldType="LRoot" ref="x" value="reduce_max" />
+        <putfield class="LRoot" field="reduce_max" fieldType="LRoot" ref="math" value="reduce_max" />
+        <putfield class="LRoot" field="reduce_max" fieldType="LRoot" ref="math_ops" value="reduce_max" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/sqrt -->
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math" value="pass_through" />
         <putfield class="LRoot" field="sqrt" fieldType="LRoot" ref="math_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/rsqrt -->
+        <new def="rsqrt" class="Ltensorflow/math/rsqrt" />
+        <putfield class="LRoot" field="rsqrt" fieldType="LRoot" ref="math" value="rsqrt" />
+        <putfield class="LRoot" field="rsqrt" fieldType="LRoot" ref="math_ops" value="rsqrt" />
         <new def="linalg_ops" class="Lobject" />
         <putfield class="LRoot" field="linalg_ops" fieldType="LRoot" ref="ops" value="linalg_ops" />
+        <new def="linalg_impl" class="Lobject" />
+        <putfield class="LRoot" field="linalg_impl" fieldType="LRoot" ref="linalg" value="linalg_impl" />
+        <new def="linear_operator" class="Lobject" />
+        <putfield class="LRoot" field="linear_operator" fieldType="LRoot" ref="linalg" value="linear_operator" />
         <new def="sparse_ops" class="Lobject" />
         <putfield class="LRoot" field="sparse_ops" fieldType="LRoot" ref="ops" value="sparse_ops" />
         <new def="variables" class="Lobject" />
@@ -206,6 +323,18 @@
         <new def="ones" class="Ltensorflow/functions/ones" />
         <putfield class="LRoot" field="ones" fieldType="LRoot" ref="x" value="ones" />
         <putfield class="LRoot" field="ones" fieldType="LRoot" ref="array_ops" value="ones" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/concat -->
+        <new def="concat" class="Ltensorflow/functions/concat" />
+        <putfield class="LRoot" field="concat" fieldType="LRoot" ref="x" value="concat" />
+        <putfield class="LRoot" field="concat" fieldType="LRoot" ref="array_ops" value="concat" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sequence_mask-->
+        <new def="sequence_mask" class="Ltensorflow/functions/sequence_mask" />
+        <putfield class="LRoot" field="sequence_mask" fieldType="LRoot" ref="x" value="sequence_mask" />
+        <putfield class="LRoot" field="sequence_mask" fieldType="LRoot" ref="array_ops" value="sequence_mask" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stop_gradient-->
+        <new def="stop_gradient" class="Ltensorflow/functions/stop_gradient" />
+        <putfield class="LRoot" field="stop_gradient" fieldType="LRoot" ref="x" value="stop_gradient" />
+        <putfield class="LRoot" field="stop_gradient" fieldType="LRoot" ref="array_ops" value="stop_gradient" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/ones_like -->
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="ones_like" fieldType="LRoot" ref="array_ops" value="pass_through" />
@@ -215,9 +344,13 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="transpose" fieldType="LRoot" ref="array_ops" value="pass_through" />
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/transpose -->
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_value -->
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="clip_by_value" fieldType="LRoot" ref="clip_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_global_norm -->
+        <new def="clip_by_global_norm" class="Ltensorflow/functions/clip_by_global_norm" />
+        <putfield class="LRoot" field="clip_by_global_norm" fieldType="LRoot" ref="x" value="clip_by_global_norm" />
+        <putfield class="LRoot" field="clip_by_global_norm" fieldType="LRoot" ref="clip_ops" value="clip_by_global_norm" />
         <new def="image_ops_impl" class="Lobject" />
         <putfield class="LRoot" field="image_ops_impl" fieldType="LRoot" ref="ops" value="image_ops_impl" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/resize -->
@@ -263,13 +396,21 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/random/categorical -->
         <putfield class="LRoot" field="categorical" fieldType="LRoot" ref="random" value="pass_through" />
         <putfield class="LRoot" field="categorical" fieldType="LRoot" ref="random_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/random/shuffle -->
+        <new def="shuffle" class="Ltensorflow/functions/shuffle" />
+        <putfield class="LRoot" field="shuffle" fieldType="LRoot" ref="random" value="shuffle" />
+        <putfield class="LRoot" field="shuffle" fieldType="LRoot" ref="random_ops" value="shuffle" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sort -->
+        <new def="sort" class="Ltensorflow/functions/sort" />
+        <putfield class="LRoot" field="sort" fieldType="LRoot" ref="x" value="sort" />
+        <putfield class="LRoot" field="sort" fieldType="LRoot" ref="sort_ops" value="sort" />
         <new def="range" class="Ltensorflow/functions/range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="x" value="range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="math_ops" value="range" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/argmax -->
         <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="x" value="pass_through" />
-        <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math" value="range" />
-        <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math_ops" value="range" />
+        <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math" value="pass_through" />
+        <putfield class="LRoot" field="argmax" fieldType="LRoot" ref="math_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/diag -->
         <putfield class="LRoot" field="diag" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="diag" fieldType="LRoot" ref="array_ops" value="pass_through" />
@@ -285,18 +426,39 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/band_part -->
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="linalg" value="pass_through" />
         <putfield class="LRoot" field="band_part" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky -->
+        <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="cholesky" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/inv -->
+        <putfield class="LRoot" field="inv" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="inv" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/solve -->
+        <putfield class="LRoot" field="solve" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="solve" fieldType="LRoot" ref="gen_linalg_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/broadcast_to -->
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="broadcast_to" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tile -->
+        <putfield class="LRoot" field="tile" fieldType="LRoot" ref="x" value="pass_through" />
+        <putfield class="LRoot" field="tile" fieldType="LRoot" ref="gen_array_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/expand_dims -->
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="expand_dims" fieldType="LRoot" ref="array_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/gather -->
         <putfield class="LRoot" field="gather" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="gather" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/gather_nd -->
+        <new def="gather_nd" class="Ltensorflow/functions/gather_nd" />
+        <putfield class="LRoot" field="gather_nd" fieldType="LRoot" ref="x" value="gather_nd" />
+        <putfield class="LRoot" field="gather_nd" fieldType="LRoot" ref="array_ops" value="gather_nd" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/squeeze -->
         <putfield class="LRoot" field="squeeze" fieldType="LRoot" ref="x" value="pass_through" />
         <putfield class="LRoot" field="squeeze" fieldType="LRoot" ref="array_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/io/decode_png -->
+        <!-- TODO: Return a dtype other than the input -->
+        <putfield class="LRoot" field="decode_png" fieldType="LRoot" ref="image" value="pass_through" />
+        <putfield class="LRoot" field="decode_png" fieldType="LRoot" ref="io" value="pass_through" />
+        <putfield class="LRoot" field="decode_png" fieldType="LRoot" ref="gen_image_ops" value="pass_through" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/identity -->
         <new def="identity" class="Ltensorflow/functions/identity" />
         <putfield class="LRoot" field="identity" fieldType="LRoot" ref="x" value="identity" />
@@ -309,6 +471,14 @@
         <new def="meshgrid" class="Ltensorflow/functions/meshgrid" />
         <putfield class="LRoot" field="meshgrid" fieldType="LRoot" ref="x" value="meshgrid" />
         <putfield class="LRoot" field="meshgrid" fieldType="LRoot" ref="array_ops" value="meshgrid" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/dynamic_partition -->
+        <new def="dynamic_partition" class="Ltensorflow/functions/dynamic_partition" />
+        <putfield class="LRoot" field="dynamic_partition" fieldType="LRoot" ref="x" value="dynamic_partition" />
+        <putfield class="LRoot" field="dynamic_partition" fieldType="LRoot" ref="gen_data_flow_ops" value="dynamic_partition" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/dynamic_stitch -->
+        <new def="dynamic_stitch" class="Ltensorflow/functions/dynamic_stitch" />
+        <putfield class="LRoot" field="dynamic_stitch" fieldType="LRoot" ref="x" value="dynamic_stitch" />
+        <putfield class="LRoot" field="dynamic_stitch" fieldType="LRoot" ref="gen_data_flow_ops" value="dynamic_stitch" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/split -->
         <new def="split" class="Ltensorflow/functions/split" />
         <putfield class="LRoot" field="split" fieldType="LRoot" ref="x" value="split" />
@@ -321,6 +491,35 @@
         <new def="size" class="Ltensorflow/functions/size" />
         <putfield class="LRoot" field="size" fieldType="LRoot" ref="x" value="size" />
         <putfield class="LRoot" field="size" fieldType="LRoot" ref="array_ops" value="size" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tensor_scatter_nd_update -->
+        <new def="tensor_scatter_nd_update" class="Ltensorflow/functions/tensor_scatter_nd_update" />
+        <putfield class="LRoot" field="tensor_scatter_nd_update" fieldType="LRoot" ref="x" value="tensor_scatter_nd_update" />
+        <putfield class="LRoot" field="tensor_scatter_nd_update" fieldType="LRoot" ref="array_ops" value="tensor_scatter_nd_update" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/abs-->
+        <new def="abs" class="Ltensorflow/math/abs" />
+        <putfield class="LRoot" field="abs" fieldType="LRoot" ref="x" value="abs" />
+        <putfield class="LRoot" field="abs" fieldType="LRoot" ref="math" value="abs" />
+        <putfield class="LRoot" field="abs" fieldType="LRoot" ref="math_ops" value="abs" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_all -->
+        <new def="reduce_all" class="Ltensorflow/math/reduce_all" />
+        <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="x" value="reduce_all" />
+        <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="math" value="reduce_all" />
+        <putfield class="LRoot" field="reduce_all" fieldType="LRoot" ref="math_ops" value="reduce_all" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_prod -->
+        <new def="reduce_prod" class="Ltensorflow/math/reduce_prod" />
+        <putfield class="LRoot" field="reduce_prod" fieldType="LRoot" ref="x" value="reduce_prod" />
+        <putfield class="LRoot" field="reduce_prod" fieldType="LRoot" ref="math" value="reduce_prod" />
+        <putfield class="LRoot" field="reduce_prod" fieldType="LRoot" ref="math_ops" value="reduce_prod" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_logsumexp -->
+        <new def="reduce_logsumexp" class="Ltensorflow/math/reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="x" value="reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="math" value="reduce_logsumexp" />
+        <putfield class="LRoot" field="reduce_logsumexp" fieldType="LRoot" ref="math_ops" value="reduce_logsumexp" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/acos-->
+        <new def="acos" class="Ltensorflow/math/acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="x" value="acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="math" value="acos" />
+        <putfield class="LRoot" field="acos" fieldType="LRoot" ref="math_ops" value="acos" />
         <new def="ragged_range" class="Ltensorflow/functions/ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged" value="ragged_range" />
         <putfield class="LRoot" field="range" fieldType="LRoot" ref="ragged_math_ops" value="ragged_range" />
@@ -328,6 +527,53 @@
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="x" value="eye" />
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg" value="eye" />
         <putfield class="LRoot" field="eye" fieldType="LRoot" ref="linalg_ops" value="eye" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/cholesky_solve -->
+        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="cholesky_solve" fieldType="LRoot" ref="linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/eigh -->
+        <new def="eigh" class="Ltensorflow/functions/eigh" />
+        <putfield class="LRoot" field="eigh" fieldType="LRoot" ref="linalg" value="eigh" />
+        <putfield class="LRoot" field="eigh" fieldType="LRoot" ref="linalg_ops" value="eigh" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/matmul -->
+        <new def="matmul" class="Ltensorflow/math/matmul" />
+        <putfield class="LRoot" field="matmul" fieldType="LRoot" ref="x" value="matmul" />
+        <putfield class="LRoot" field="matmul" fieldType="LRoot" ref="linalg" value="matmul" />
+        <putfield class="LRoot" field="matmul" fieldType="LRoot" ref="math_ops" value="matmul" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/tensordot -->
+        <new def="tensordot" class="Ltensorflow/math/tensordot" />
+        <putfield class="LRoot" field="tensordot" fieldType="LRoot" ref="x" value="tensordot" />
+        <putfield class="LRoot" field="tensordot" fieldType="LRoot" ref="linalg" value="tensordot" />
+        <putfield class="LRoot" field="tensordot" fieldType="LRoot" ref="math_ops" value="tensordot" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/trace -->
+        <new def="trace" class="Ltensorflow/math/trace" />
+        <putfield class="LRoot" field="trace" fieldType="LRoot" ref="linalg" value="trace" />
+        <putfield class="LRoot" field="trace" fieldType="LRoot" ref="math_ops" value="trace" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/einsum -->
+        <new def="einsum" class="Ltensorflow/math/einsum" />
+        <putfield class="LRoot" field="einsum" fieldType="LRoot" ref="x" value="einsum" />
+        <putfield class="LRoot" field="einsum" fieldType="LRoot" ref="linalg" value="einsum" />
+        <putfield class="LRoot" field="einsum" fieldType="LRoot" ref="special_math_ops" value="einsum" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/eigvalsh -->
+        <putfield class="LRoot" field="eigvalsh" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="eigvalsh" fieldType="LRoot" ref="linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/triangular_solve -->
+        <putfield class="LRoot" field="triangular_solve" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="triangular_solve" fieldType="LRoot" ref="linalg_ops" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/adjoint -->
+        <putfield class="LRoot" field="adjoint" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="adjoint" fieldType="LRoot" ref="linalg_impl" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/logdet -->
+        <putfield class="LRoot" field="logdet" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="logdet" fieldType="LRoot" ref="linalg_impl" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/log_abs_determinant -->
+        <putfield class="LRoot" field="log_abs_determinant" fieldType="LRoot" ref="linalg" value="pass_through" />
+        <putfield class="LRoot" field="log_abs_determinant" fieldType="LRoot" ref="linear_operator" value="pass_through" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/map_fn -->
+        <new def="map_fn" class="Ltensorflow/functions/map_fn" />
+        <putfield class="LRoot" field="map_fn" fieldType="LRoot" ref="x" value="map_fn" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/py_function -->
+        <new def="py_function" class="Ltensorflow/functions/py_function" />
+        <putfield class="LRoot" field="py_function" fieldType="LRoot" ref="x" value="py_function" />
         <new def="constant" class="Ltensorflow/functions/constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="x" value="constant" />
         <putfield class="LRoot" field="constant" fieldType="LRoot" ref="constant_op" value="constant" />
@@ -370,6 +616,10 @@
         <new def="boolean_mask" class="Ltensorflow/functions/boolean_mask" />
         <putfield class="LRoot" field="boolean_mask" fieldType="LRoot" ref="x" value="boolean_mask" />
         <putfield class="LRoot" field="boolean_mask" fieldType="LRoot" ref="array_ops" value="boolean_mask" />
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linspace -->
+        <new def="linspace" class="Ltensorflow/functions/linspace" />
+        <putfield class="LRoot" field="linspace" fieldType="LRoot" ref="x" value="linspace" />
+        <putfield class="LRoot" field="linspace" fieldType="LRoot" ref="math_ops" value="linspace" />
         <new def="autograph" class="Lobject" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stack -->
         <new def="stack" class="Ltensorflow/functions/stack" />
@@ -492,6 +742,113 @@
           <return value="xx" />
         </method>
       </class>
+      <class name="rsqrt" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/rsqrt -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/rsqrt" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="log_softmax" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/log_softmax -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/log_softmax " />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self logits axis name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="exp" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/exp -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/exp" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="matmul" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/matmul -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/matmul" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="10" paramNames="a b transpose_a transpose_b adjoint_a adjoint_b a_is_sparse b_is_sparse output_type name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="tensordot" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/tensordot -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/tensordot" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="a b axes name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="trace" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/trace -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/trace" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="x name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="einsum" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/einsum -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/einsum" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="equation *inputs **kwargs">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="add_n" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/add_n -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self inputs name">
+          <getfield class="Llist" field="0" fieldType="LRoot" ref="inputs" def="x" />
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="equal" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/equal -->
+        <!-- TODO: Return a dtype of bool instead of the input. -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self x y name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="not_equal" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/not_equal -->
+        <!-- TODO: Return a dtype of bool instead of the input. -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/not_equal" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self x y name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
       <class name="multiply" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/multiply -->
         <method name="read_data" descriptor="()LRoot;">
@@ -508,6 +865,93 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_mean -->
         <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input_tensor axis keepdims name">
           <return value="input_tensor" />
+        </method>
+      </class>
+      <class name="top_k" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/math/top_k" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/top_k -->
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input k sorted name">
+          <new def="x" class="Ltuple" />
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="xx" />
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="yy" />
+          <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="yy" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="abs" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/abs -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_all" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_all -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_prod" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_prod -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="tanh" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tanh-->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="l2_normalize" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/l2_normalize-->
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="self x axis epsilon name dim">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_sum" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_sum -->
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_max" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_max -->
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="reduce_logsumexp" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/reduce_logsumexp -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self input_tensor axis keepdims name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="input_tensor" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="acos" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/acos -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
         </method>
       </class>
     </package>
@@ -566,6 +1010,17 @@
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="shape dtype name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="concat" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/array_ops/concat" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="values axis name">
+          <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/concat -->
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
@@ -630,12 +1085,45 @@
           <return value="x" />
         </method>
       </class>
+      <class name="sequence_mask" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/array_ops/sequence_mask" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sequence_mask -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="lengths maxlen dtype name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="stop_gradient" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/array_ops/stop_gradient" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stop_gradient -->
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="input name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="zeros_like" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/array_ops/zeros_like" />
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="input dtype name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="embedding_lookup" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/embedding_ops/embedding_lookup" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/embedding_lookup -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="params ids max_norm name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
@@ -731,6 +1219,18 @@
           <return value="x" />
         </method>
       </class>
+      <class name="tensor_scatter_nd_update" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="x" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/tensor_scatter_nd_update-->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="tensor indices updates name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="range" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Llist" />
@@ -794,6 +1294,50 @@
           <return value="x" />
         </method>
       </class>
+      <class name="eigh" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linalg/eigh -->
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="tensor name">
+          <new def="x" class="Ltuple" />
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="tensor" def="y" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
+          <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="y" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="clip_by_global_norm" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/clip_by_global_norm -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="t_list clip_norm use_norm name">
+          <new def="x" class="Ltuple" />
+          <new def="y" class="Llist" />
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="yy" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="y" value="yy" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="yyy" />
+          <putfield class="LRoot" field="1" fieldType="LRoot" ref="x" value="yyy" />
+          <return value="x" />
+        </method>
+      </class>
+      <class name="map_fn" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/map_fn -->
+        <!-- TODO: Call `map_fn()` on each of the elements of `elems`. -->
+        <method name="do" descriptor="()LRoot;" numArgs="9" paramNames="fn elems dtype parallel_iterations back_prop swap_memory infer_shape name fn_output_signature">
+          <return value="elems" />
+        </method>
+      </class>
+      <class name="py_function" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/functions/py_function" />
+          <return value="x" />
+        </method>
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/py_function -->
+        <!-- TODO: Call `func` per https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/py_function#returns -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="func inp Tout name">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="uniform" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/random_ops/uniform" />
@@ -834,6 +1378,17 @@
           <return value="x" />
         </method>
       </class>
+      <class name="gather_nd" allocatable="true">
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/ops/array_ops/gather_nd" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="params indices name batch_dims">
+          <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/gather_nd -->
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="truncated_normal" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
           <new def="x" class="Ltensorflow/python/ops/random_ops/truncated_normal" />
@@ -842,6 +1397,22 @@
         <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape mean stddev dtype seed name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
+        </method>
+      </class>
+      <class name="shuffle" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/random/shuffle -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="value seed name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="value" def="y" />
+          <return value="y" />
+        </method>
+      </class>
+      <class name="sort" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/sort -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values axis direction name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="values" def="y" />
+          <return value="y" />
         </method>
       </class>
       <class name="Input" allocatable="true">
@@ -945,6 +1516,17 @@
           <return value="x" />
         </method>
       </class>
+      <class name="linspace" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/linspace -->
+        <method name="read_data" descriptor="()LRoot;">
+          <new def="x" class="Ltensorflow/python/functions/linspace" />
+          <return value="x" />
+        </method>
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="start stop num name axis">
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
+          <return value="x" />
+        </method>
+      </class>
       <class name="stack" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stack -->
         <method name="read_data" descriptor="()LRoot;">
@@ -968,6 +1550,25 @@
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="value num axis name">
           <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
+        </method>
+       </class>
+       <class name="dynamic_partition" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/dynamic_partition -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="data partitions num_partitions name">
+          <new def="x" class="Llist" />
+          <new def="z" class="Ltensorflow/functions/constant" />
+          <call class="Ltensorflow/functions/constant" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="1" def="y" />
+          <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="y" />
+          <return value="x" />
+        </method>
+       </class>
+       <class name="dynamic_stitch" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/dynamic_stitch -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="indices data name">
+          <getfield class="Llist" field="0" fieldType="LRoot" ref="data" def="x" />
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="x" def="y" />
+          <return value="y" />
         </method>
        </class>
        <class name="cond" allocatable="true">
@@ -1027,6 +1628,14 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/sparse_softmax_cross_entropy_with_logits -->
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self labels logits name">
           <return value="labels" />
+        </method>
+      </class>
+      <class name="bias_add" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/bias_add-->
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self value bias data_format name">
+          <new def="z" class="Ltensorflow/functions/convert_to_tensor" />
+          <call class="Ltensorflow/functions/convert_to_tensor" name="do" descriptor="()LRoot;" type="virtual" arg0="z" arg1="value" def="y" />
+          <return value="y" />
         </method>
       </class>
     </package>
@@ -1189,6 +1798,8 @@
           <putfield class="LRoot" field="reduce" fieldType="LRoot" ref="arg0" value="reduce" />
           <new def="enumerate" class="Ltensorflow/data/enumerate" />
           <putfield class="LRoot" field="enumerate" fieldType="LRoot" ref="arg0" value="enumerate" />
+          <new def="interleave" class="Ltensorflow/data/interleave" />
+          <putfield class="LRoot" field="interleave" fieldType="LRoot" ref="arg0" value="interleave" />
           <return value="arg0" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self variant_tensor">
@@ -1278,6 +1889,15 @@
       <class name="enumerate" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#enumerate -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self predicate name">
+          <!-- FIXME: Workaround for https://github.com/wala/ML/issues/127. -->
+          <new def="x" class="Ltensorflow/data/Dataset" />
+          <call class="Ltensorflow/data/Dataset" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="x" def="xx" />
+          <return value="xx" />
+        </method>
+      </class>
+      <class name="interleave" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#interleave -->
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self map_func cycle_length block_length num_parallel_calls deterministic name">
           <!-- FIXME: Workaround for https://github.com/wala/ML/issues/127. -->
           <new def="x" class="Ltensorflow/data/Dataset" />
           <call class="Ltensorflow/data/Dataset" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="x" def="xx" />
@@ -1374,6 +1994,24 @@
     <package name="tensorflow/distribute">
       <class name="MirroredStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
+          <new def="x" class="Ltensorflow/distribute/run/run" />
+          <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <return value="arg0" />
+        </method>
+      </class>
+    </package>
+    <package name="tensorflow/distribute">
+      <class name="TPUStrategy" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
+          <new def="x" class="Ltensorflow/distribute/run/run" />
+          <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <return value="arg0" />
+        </method>
+      </class>
+    </package>
+    <package name="tensorflow/distribute">
+      <class name="OneDeviceStrategy" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self device">
           <new def="x" class="Ltensorflow/distribute/run/run" />
           <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
           <return value="arg0" />

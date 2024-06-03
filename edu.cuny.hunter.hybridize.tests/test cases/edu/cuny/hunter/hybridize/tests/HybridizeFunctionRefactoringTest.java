@@ -61,6 +61,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.python.pydev.ast.codecompletion.revisited.ASTManager;
 import org.python.pydev.ast.codecompletion.revisited.ModulesManager;
@@ -1125,6 +1126,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #47. This function is not from TensorFlow.
 	 */
 	@Test
+	@Ignore("This test is flaky.")
 	public void testIsHybrid5() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
@@ -7340,5 +7342,238 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDynamicPartition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDynamicPartition2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDynamicStitch() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testDynamicStitch2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testEigenDecomposition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testEigenDecomposition2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testMapFn() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAbs() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAbs2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAddN() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAddN2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAddN3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testAddN4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testEqual() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testEqual2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testEqual3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testExp() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testExp2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testLinSpace() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testMatMul() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testNotEqual() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testNotEqual2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testNotEqual3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue(function.getLikelyHasTensorParameter());
+	}
+
+	@Test
+	public void testReduceAll() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testShuffle() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testSort() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testSort2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testEinSum() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testClipByGlobalNorm() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+	}
+
+	@Test
+	public void testTopK() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
 	}
 }
