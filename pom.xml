@@ -152,10 +152,15 @@
                 <endWithNewline/>
               </format>
             </formats>
-            <eclipse>
-              <version>4.27</version>
-              <file>${maven.multiModuleProjectDirectory}/eclipse-formatter.xml</file>
-            </eclipse>
+            <java>
+              <eclipse>
+                <version>4.27</version>
+                <file>${maven.multiModuleProjectDirectory}/eclipse-formatter.xml</file>
+              </eclipse>
+              <importOrder/>
+              <removeUnusedImports/>
+              <formatAnnotations/>
+            </java>
             <pom>
               <sortPom>
                 <expandEmptyElements>false</expandEmptyElements>
