@@ -1716,6 +1716,8 @@ public class Function {
 			case RECONFIGURE:
 				// TODO
 				throw new UnsupportedOperationException();
+			default:
+				throw new IllegalStateException();
 			}
 		}
 
