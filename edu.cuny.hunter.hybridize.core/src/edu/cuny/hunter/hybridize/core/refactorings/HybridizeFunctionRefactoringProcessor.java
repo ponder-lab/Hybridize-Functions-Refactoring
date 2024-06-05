@@ -518,7 +518,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		CompositeChange compositeChange = new CompositeChange("Hybridize");
 
 		for (Function function : optimizableFunctions) {
-			TextChange change = new DocumentChange("Change", function.getContainingDocument());
+			TextChange change = new DocumentChange("Hybridize Functions", function.getContainingDocument());
 			change.setTextType("py");
 			change.setEdit(function.transform());
 			compositeChange.add(change);
