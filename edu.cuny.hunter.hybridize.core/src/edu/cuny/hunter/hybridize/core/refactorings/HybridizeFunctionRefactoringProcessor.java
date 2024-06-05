@@ -24,9 +24,12 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
+import org.eclipse.ltk.core.refactoring.CompositeChange;
+import org.eclipse.ltk.core.refactoring.DocumentChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
+import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
@@ -507,8 +510,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	@Override
 	public Change createChange(IProgressMonitor pm) throws CoreException, OperationCanceledException {
-		// TODO Auto-generated method stub
-		return new NullChange();
+		Set<Function> optimizableFunctions = this.getOptimizableFunctions();
+
+		if (optimizableFunctions.isEmpty())
+			return new NullChange(Messages.NoFunctionsToOptimize);
+
+		CompositeChange compositeChange = new CompositeChange("Hybridize");
+
+		for (Function function : optimizableFunctions) {
+			TextChange change = new DocumentChange("Change", function.getContainingDocument());
+			change.setTextType("py");
+			change.setEdit(function.transform());
+			compositeChange.add(change);
+		}
+
+		return compositeChange;
 	}
 
 	@Override

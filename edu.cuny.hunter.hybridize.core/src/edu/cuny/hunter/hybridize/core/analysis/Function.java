@@ -15,6 +15,7 @@ import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunc
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -41,6 +42,9 @@ import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
+import org.eclipse.text.edits.InsertEdit;
+import org.eclipse.text.edits.MultiTextEdit;
+import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -1696,5 +1700,36 @@ public class Function {
 
 	public boolean willDehybridize() {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
+	}
+
+	public TextEdit transform() {
+		MultiTextEdit edit = new MultiTextEdit();
+
+		Set<Transformation> transformations = this.getTransformations();
+
+		for (Transformation transformation : transformations) {
+			switch (transformation) {
+			case CONVERT_TO_HYBRID:
+				edit.addChild(this.convertToHybrid());
+				break;
+			case CONVERT_TO_EAGER:
+			case RECONFIGURE:
+				// TODO
+				throw new UnsupportedOperationException();
+			}
+		}
+
+		return edit;
+	}
+
+	private TextEdit convertToHybrid() {
+		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
+
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		FunctionDef functionDef = functionDefinition.getFunctionDef();
+		int offset = getOffset(this.getContainingDocument(), functionDef);
+		LOG.info("Foundd offset: " + offset);
+		
+		return new InsertEdit(offset, "@tf.function");
 	}
 }
