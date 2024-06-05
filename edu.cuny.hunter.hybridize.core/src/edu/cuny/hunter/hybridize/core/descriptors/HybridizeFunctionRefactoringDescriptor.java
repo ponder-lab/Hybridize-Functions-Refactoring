@@ -22,8 +22,8 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 				"Improves efficiency in imperatives style TensorFlow client code.", arguments);
 	}
 
-	public HybridizeFunctionRefactoringDescriptor(String refactoringID, String project, String description,
-			String comment, @SuppressWarnings("rawtypes") Map arguments) {
+	public HybridizeFunctionRefactoringDescriptor(String refactoringID, String project, String description, String comment,
+			@SuppressWarnings("rawtypes") Map arguments) {
 		super(refactoringID, project, description, comment, arguments);
 	}
 
@@ -33,14 +33,12 @@ public class HybridizeFunctionRefactoringDescriptor extends RefactoringDescripto
 		return new Refactoring() {
 
 			@Override
-			public RefactoringStatus checkFinalConditions(IProgressMonitor pm)
-					throws CoreException, OperationCanceledException {
+			public RefactoringStatus checkFinalConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
 				return processor.checkFinalConditions(pm, null);
 			}
 
 			@Override
-			public RefactoringStatus checkInitialConditions(IProgressMonitor pm)
-					throws CoreException, OperationCanceledException {
+			public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
 				return processor.checkInitialConditions(pm);
 			}
 

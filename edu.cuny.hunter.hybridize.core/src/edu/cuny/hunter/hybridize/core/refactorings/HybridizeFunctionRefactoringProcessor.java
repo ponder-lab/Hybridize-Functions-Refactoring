@@ -33,7 +33,7 @@ import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
-import org.python.pydev.ast.refactoring.TooManyMatchesException; /* FIXME: This exception sounds too low-level. */
+import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;

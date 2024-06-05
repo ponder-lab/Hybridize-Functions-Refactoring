@@ -62,8 +62,7 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		}
 	}
 
-	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell)
-			throws TooManyMatchesException {
+	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell) throws TooManyMatchesException {
 		Refactoring refactoring = createRefactoring(functionDefinitions);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 

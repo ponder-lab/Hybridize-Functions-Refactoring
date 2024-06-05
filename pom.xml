@@ -153,13 +153,22 @@
               </format>
             </formats>
             <java>
+              <includes>
+                <include>**/*.java</include>
+              </includes>
+              <excludes>
+                <exclude>**/target/</exclude>
+              </excludes>
               <eclipse>
                 <version>4.27</version>
                 <file>${maven.multiModuleProjectDirectory}/eclipse-formatter.xml</file>
               </eclipse>
-              <importOrder/>
+              <importOrder>
+                <file>${maven.multiModuleProjectDirectory}/eclipse.importorder</file>
+              </importOrder>
               <removeUnusedImports/>
               <formatAnnotations/>
+              <trimTrailingWhitespace/>
             </java>
             <pom>
               <sortPom>
