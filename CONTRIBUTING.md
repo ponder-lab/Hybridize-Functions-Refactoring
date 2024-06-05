@@ -6,10 +6,10 @@ Please see our [wiki] for more information regarding development.
 
 The plug-ins are being developed on the following Eclipse versions. Currently, newer versions of Eclipse will not resolve M2E dependencies:
 
-    Eclipse IDE for RCP and RAP Developers (includes Incubating components)
+	Eclipse IDE for RCP and RAP Developers (includes Incubating components)
 
-    Version: 2023-03 (4.27.0)
-    Build id: 20230309-1520
+	Version: 2023-03 (4.27.0)
+	Build id: 20230309-1520
 
 ## Building
 

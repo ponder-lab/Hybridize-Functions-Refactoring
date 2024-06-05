@@ -19,7 +19,7 @@ Fixes # .
 
 ## Testing
 
-- [ ] If this is a bug fix, I was able to reproduce the problem locally **before** I made any changes (can use `git stash` to temporarily reset the working directory). 
+- [ ] If this is a bug fix, I was able to reproduce the problem locally **before** I made any changes (can use `git stash` to temporarily reset the working directory).
 - [ ] When I made (or put back) my changes, the problem I reproduced above was fixed.
 
 <!-- Please describe the tests that you ran (locally) to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration. -->
