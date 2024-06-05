@@ -1729,7 +1729,7 @@ public class Function {
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
 		int offset = getOffset(this.getContainingDocument(), functionDef);
 		LOG.info("Foundd offset: " + offset);
-		
+
 		return new InsertEdit(offset, "@tf.function");
 	}
 }
