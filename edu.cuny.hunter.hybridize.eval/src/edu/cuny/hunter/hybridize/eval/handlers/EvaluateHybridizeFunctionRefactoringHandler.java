@@ -32,9 +32,12 @@ import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectNature;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
@@ -76,6 +79,8 @@ import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringP
 import edu.cuny.hunter.hybridize.core.utils.Util;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
+
+	private static final boolean BUILD_WORKSPACE = false;
 
 	private static final ILog LOG = getLog(EvaluateHybridizeFunctionRefactoringHandler.class);
 
@@ -176,11 +181,24 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 					CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));
 					CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);) {
-				IProject[] pythonProjectsFromEvent = getSelectedPythonProjectsFromEvent(event);
+				if (BUILD_WORKSPACE) {
+					// build the workspace.
+					monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
+					ResourcesPlugin.getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, monitor.slice(IProgressMonitor.UNKNOWN));
+				}
 
-				monitor.beginTask("Analyzing projects...", pythonProjectsFromEvent.length);
+				IProject[] pythonProjects = getSelectedPythonProjectsFromEvent(event);
 
-				for (IProject project : pythonProjectsFromEvent) {
+				monitor.beginTask("Analyzing projects...", pythonProjects.length);
+
+				for (IProject project : pythonProjects) {
+					if (!(project.isOpen() && project.exists() && project.hasNature(PYTHON_NATURE_ID)
+							&& project.isNatureEnabled(PYTHON_NATURE_ID)))
+						throw new IllegalStateException("Python project: " + project.getName() + " must be open and must exist.");
+
+					// subject.
+					resultsPrinter.print(project.getName());
+
 					// calls.
 					if (Boolean.getBoolean(OUTPUT_CALLS_KEY))
 						printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
@@ -188,33 +206,24 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// set up analysis for single project.
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
-					if (Boolean.getBoolean(PERFORM_ANALYSIS_PROPERTY_KEY)) {
-						resultsTimeCollector.start();
-						processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
-								this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
-								this.getAlwaysFollowTypeHints());
-						resultsTimeCollector.stop();
+					resultsTimeCollector.start();
+					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
+							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
+							this.getAlwaysFollowTypeHints());
+					resultsTimeCollector.stop();
 
-						// run the precondition checking.
-						ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+					// run the precondition checking.
+					RefactoringStatus status = null;
+					ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
+
+					if (shouldPerformAnalysis()) {
 						resultsTimeCollector.start();
-						RefactoringStatus status = refactoring.checkAllConditions(monitor);
+						status = refactoring.checkAllConditions(new NullProgressMonitor());
 						resultsTimeCollector.stop();
 
 						LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
-
-						// actually perform the refactoring if there are no fatal errors.
-						if (Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY) && !status.hasFatalError()) {
-							resultsTimeCollector.start();
-							Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
-							change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
-							resultsTimeCollector.stop();
-						}
 					} else
-						continue; // next project.
-
-					// subject.
-					resultsPrinter.print(project.getName());
+						status = new RefactoringStatus();
 
 					// functions.
 					Set<Function> functions = processor.getFunctions();
@@ -283,6 +292,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
+					// actually perform the refactoring if there are no fatal
+					// errors.
+					if (shouldPerformChange() && !status.hasFatalError()) {
+						resultsTimeCollector.start();
+						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
+						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
+						resultsTimeCollector.stop();
+					}
+
 					// overall results time.
 					resultsPrinter.print(
 							(resultsTimeCollector.getCollectedTime() - processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
@@ -295,8 +313,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					monitor.worked(1);
 				}
-			} catch (IOException | ExecutionException e) {
-				throw new CoreException(Status.error("Encountered error with evaluation.", e));
+			} catch (Exception e) {
+				return Status.error("Encountered error with evaluation.", e);
 			} finally {
 				// clear cache.
 				if (processor != null)
@@ -304,9 +322,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				SubMonitor.done(monitor);
 			}
+
+			return Status.info("Evaluation was successful.");
 		}).schedule();
 
 		return null;
+	}
+
+	private static boolean shouldPerformChange() {
+		return Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY);
+	}
+
+	private static boolean shouldPerformAnalysis() {
+		return Boolean.getBoolean(PERFORM_ANALYSIS_PROPERTY_KEY);
 	}
 
 	private static Set<RefactoringStatusEntry> getRefactoringStatusEntries(Set<Function> functionSet,
