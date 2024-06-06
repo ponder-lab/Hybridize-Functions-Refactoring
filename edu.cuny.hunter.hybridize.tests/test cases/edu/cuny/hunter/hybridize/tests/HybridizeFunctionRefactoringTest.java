@@ -19,6 +19,7 @@ import static java.lang.Integer.MAX_VALUE;
 import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
+import static org.eclipse.core.resources.ResourceAttributes.fromFile;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -49,10 +50,14 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.ResourceAttributes;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
@@ -97,11 +102,13 @@ import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.plugin.FileStub2;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
 import org.python.pydev.plugin.nature.PythonNature;
 import org.python.pydev.refactoring.ast.PythonModuleManager;
 import org.python.pydev.shared_core.io.FileUtils;
+import org.python.pydev.shared_core.io.PyUnsupportedEncodingException;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
 import org.python.pydev.shared_core.string.CoreTextSelection;
@@ -603,8 +610,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
+		IFile actualInputTestFile = new FileStub2(fileNameWithoutExtension + ".py") {
+			@Override
+			public String getFileExtension() {
+				return TEST_FILE_EXTENSION;
+			}
+
+			@Override
+			public IPath getFullPath() {
+				return new org.eclipse.core.runtime.Path(inputTestFile.getAbsolutePath());
+			}
+
+			@Override
+			public String getCharset(boolean checkImplicit) throws CoreException {
+				try {
+					return FileUtils.getPythonFileEncoding(document, this.getFullPath().toOSString());
+				} catch (PyUnsupportedEncodingException e) {
+					throw new CoreException(Status.error("Can't determine encoding.", e));
+				}
+			}
+
+			@Override
+			public long getModificationStamp() {
+				return 0;
+			}
+
+			@Override
+			public ResourceAttributes getResourceAttributes() {
+				return fromFile(inputTestFile);
+			}
+		};
+
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature)).collect(Collectors.toSet());
+				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, nature))
+				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,

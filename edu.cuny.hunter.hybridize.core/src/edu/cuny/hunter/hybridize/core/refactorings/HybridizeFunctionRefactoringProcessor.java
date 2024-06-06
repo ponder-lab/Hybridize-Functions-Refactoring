@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -25,11 +26,11 @@ import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
-import org.eclipse.ltk.core.refactoring.DocumentChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.TextChange;
+import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
@@ -518,9 +519,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		CompositeChange compositeChange = new CompositeChange("Hybridize");
 
 		for (Function function : optimizableFunctions) {
-			TextChange change = new DocumentChange("Hybridize Functions", function.getContainingDocument());
-			change.setTextType("py");
-			change.setEdit(function.transform());
+			IFile file = function.getContainingActualFile();
+
+			TextChange change = new TextFileChange(Messages.Name, function.getContainingActualFile());
+
+			try {
+				change.setEdit(function.transform());
+			} catch (BadLocationException e) {
+				throw new CoreException(Status.error("Can't create change.", e));
+			}
+
 			compositeChange.add(change);
 		}
 

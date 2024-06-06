@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -1085,6 +1086,15 @@ public class Function {
 	}
 
 	/**
+	 * Returns the {@link IFile} of where this {@link Function} is found.
+	 *
+	 * @return The {@link IFile} of where this {@link Function} is found.
+	 */
+	public IFile getContainingActualFile() {
+		return this.getFunctionDefinition().containingActualFile;
+	}
+
+	/**
 	 * Returns the Python module name of this {@link Function}.
 	 *
 	 * @return This {@link Function}'s Python module.
@@ -1702,9 +1712,8 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
-	public TextEdit transform() {
+	public TextEdit transform() throws BadLocationException {
 		MultiTextEdit edit = new MultiTextEdit();
-
 		Set<Transformation> transformations = this.getTransformations();
 
 		for (Transformation transformation : transformations) {
@@ -1724,14 +1733,18 @@ public class Function {
 		return edit;
 	}
 
-	private TextEdit convertToHybrid() {
+	private TextEdit convertToHybrid() throws BadLocationException {
 		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
-		int offset = getOffset(this.getContainingDocument(), functionDef);
-		LOG.info("Foundd offset: " + offset);
 
-		return new InsertEdit(offset, "@tf.function");
+		IDocument doc = this.getContainingDocument();
+		int offset = getOffset(doc, functionDef);
+		int lineBeginOffset = offset - functionDef.beginColumn + 1;
+
+		String precedingText = doc.get(lineBeginOffset, functionDef.beginColumn - 1);
+
+		return new InsertEdit(offset, "@tf.function\n" + precedingText);
 	}
 }

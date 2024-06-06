@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import java.io.File;
 import java.util.Objects;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.IPythonNature;
@@ -18,15 +19,18 @@ public final class FunctionDefinition {
 
 	File containingFile;
 
+	IFile containingActualFile;
+
 	IDocument containingDocument;
 
 	IPythonNature nature;
 
-	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument,
-			IPythonNature nature) {
+	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IFile containingActualFile,
+			IDocument containingDocument, IPythonNature nature) {
 		this.functionDef = functionDef;
 		this.containingModuleName = containingModuleName;
 		this.containingFile = containingFile;
+		this.containingActualFile = containingActualFile;
 		this.containingDocument = containingDocument;
 		this.nature = nature;
 	}
@@ -37,8 +41,8 @@ public final class FunctionDefinition {
 		String qualifiedName = Util.getQualifiedName(functionDef);
 		Integer id = Integer.valueOf(functionDef.getId());
 
-		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile, this.containingDocument,
-				Integer.valueOf(functionDef.beginColumn), Integer.valueOf(functionDef.beginLine), id);
+		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile, this.containingActualFile,
+				this.containingDocument, Integer.valueOf(functionDef.beginColumn), Integer.valueOf(functionDef.beginLine), id);
 	}
 
 	@Override
@@ -75,6 +79,7 @@ public final class FunctionDefinition {
 
 				return Objects.equals(this.containingModuleName, other.containingModuleName)
 						&& Objects.equals(this.containingFile, other.containingFile)
+						&& Objects.equals(this.containingActualFile, other.containingActualFile)
 						&& Objects.equals(this.containingDocument, other.containingDocument)
 						&& lhsFunctionDef.beginColumn == rhsFunctionDef.beginColumn && lhsFunctionDef.beginLine == rhsFunctionDef.beginLine
 						&& lhsId == rhsId;
