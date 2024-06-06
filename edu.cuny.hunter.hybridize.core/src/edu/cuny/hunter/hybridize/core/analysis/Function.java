@@ -48,6 +48,9 @@ import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.core.IPythonNature;
+import org.python.pydev.core.docutils.ImportHandle;
+import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
+import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
@@ -1745,6 +1748,32 @@ public class Function {
 
 		String precedingText = doc.get(lineBeginOffset, functionDef.beginColumn - 1);
 
-		return new InsertEdit(offset, "@tf.function\n" + precedingText);
+		String prefix = getImportPrefix(doc);
+
+		return new InsertEdit(offset, "@" + prefix + ".function\n" + precedingText);
+	}
+
+	private static String getImportPrefix(IDocument doc) {
+		PyImportsHandling handling = new PyImportsHandling(doc);
+
+		for (Iterator<ImportHandle> it = handling.iterator(); it.hasNext();) {
+			ImportHandle importHandle = it.next();
+			List<ImportHandleInfo> infoList = importHandle.getImportInfo();
+
+			for (ImportHandleInfo importHandleInfo : infoList) {
+				String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
+
+				List<String> importedStrList = importHandleInfo.getImportedStr();
+
+				for (String importStr : importedStrList)
+					if (importStr.equals("tensorflow"))
+						return "tensorflow";
+					else if (importStr.startsWith("tensorflow as"))
+						return importStr.substring("tensorflow as ".length(), importStr.length());
+
+			}
+		}
+
+		throw new IllegalArgumentException("No import prefix found in: " + doc);
 	}
 }
