@@ -1799,6 +1799,8 @@ public class Function {
 	private TextEdit convertToHybrid() throws BadLocationException {
 		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
+		MultiTextEdit ret = new MultiTextEdit();
+
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
 
@@ -1810,7 +1812,31 @@ public class Function {
 
 		String prefix = getImportPrefix(doc);
 
-		return new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
+		if (prefix == null) {
+			// need to add an import.
+			int line = getLineToInsertImport(doc);
+			int lineOffset = doc.getLineOffset(line);
+
+			ret.addChild(new InsertEdit(lineOffset, "from tensorflow import function"));
+			prefix = ""; // no prefix needed.
+		}
+
+		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
+		ret.addChild(edit);
+
+		return ret;
+	}
+
+	private static int getLineToInsertImport(IDocument doc) {
+		PyImportsHandling handling = new PyImportsHandling(doc);
+		int lastFoundImportLine = -1;
+
+		for (Iterator<ImportHandle> it = handling.iterator(); it.hasNext();) {
+			ImportHandle importHandle = it.next();
+			lastFoundImportLine = importHandle.endFoundLine;
+		}
+
+		return lastFoundImportLine + 1;
 	}
 
 	private static String getImportPrefix(IDocument doc) {
@@ -1832,6 +1858,7 @@ public class Function {
 			}
 		}
 
-		throw new IllegalArgumentException("No import prefix found in: " + doc);
+		// not found.
+		return null;
 	}
 }
