@@ -1761,8 +1761,6 @@ public class Function {
 			List<ImportHandleInfo> infoList = importHandle.getImportInfo();
 
 			for (ImportHandleInfo importHandleInfo : infoList) {
-				String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
-
 				List<String> importedStrList = importHandleInfo.getImportedStr();
 
 				for (String importStr : importedStrList)
