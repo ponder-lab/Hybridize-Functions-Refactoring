@@ -34,6 +34,7 @@ import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
+import org.eclipse.text.edits.MalformedTreeException;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
@@ -57,11 +58,14 @@ import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.citytech.refactoring.common.core.RefactoringProcessor;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
+import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
+import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
@@ -525,7 +529,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			try {
 				change.setEdit(function.transform());
-			} catch (BadLocationException e) {
+			} catch (BadLocationException | MalformedTreeException | NoTextSelectionException | AmbiguousDeclaringModuleException
+					| NoDeclaringModuleException e) {
 				throw new CoreException(Status.error("Can't create change.", e));
 			}
 

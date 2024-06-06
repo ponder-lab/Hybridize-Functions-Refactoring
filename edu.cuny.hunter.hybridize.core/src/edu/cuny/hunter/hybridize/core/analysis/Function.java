@@ -15,6 +15,7 @@ import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunc
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
 import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
 
 import java.io.File;
@@ -43,7 +44,9 @@ import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
+import org.eclipse.text.edits.DeleteEdit;
 import org.eclipse.text.edits.InsertEdit;
+import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
@@ -1152,9 +1155,7 @@ public class Function {
 
 			for (decoratorsType decorator : decs)
 				try {
-					PySelection selection = Util.getSelection(decorator, this.getContainingDocument());
-					String decoratorFQN = Util.getFullyQualifiedName(decorator, this.getContainingModuleName(), this.getContainingFile(),
-							selection, this.getNature(), progress.split(1));
+					String decoratorFQN = getFQN(decorator, progress.split(1));
 					ret.add(decoratorFQN);
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
@@ -1164,6 +1165,23 @@ public class Function {
 		}
 
 		return ret;
+	}
+
+	/**
+	 * Converts the given {@link decoratorsType} to its corresponding qualified name as a {@link String}.
+	 *
+	 * @param decorator The decorator in question
+	 * @param progress For progress monitoring.
+	 * @return The corresponding decorator FQN.
+	 */
+	private String getFQN(decoratorsType decorator, IProgressMonitor monitor)
+			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
+		SubMonitor progress = SubMonitor.convert(monitor, 1);
+
+		PySelection selection = Util.getSelection(decorator, this.getContainingDocument());
+
+		return Util.getFullyQualifiedName(decorator, this.getContainingModuleName(), this.getContainingFile(), selection, this.getNature(),
+				progress.split(1));
 	}
 
 	/**
@@ -1715,7 +1733,8 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
-	public TextEdit transform() throws BadLocationException {
+	public TextEdit transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
+			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		MultiTextEdit edit = new MultiTextEdit();
 		Set<Transformation> transformations = this.getTransformations();
 
@@ -1725,8 +1744,9 @@ public class Function {
 				edit.addChild(this.convertToHybrid());
 				break;
 			case CONVERT_TO_EAGER:
+				edit.addChild(this.convertToEager());
+				break;
 			case RECONFIGURE:
-				// TODO
 				throw new UnsupportedOperationException();
 			default:
 				throw new IllegalStateException();
@@ -1734,6 +1754,46 @@ public class Function {
 		}
 
 		return edit;
+	}
+
+	private TextEdit convertToEager()
+			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
+		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already eager.";
+
+		// there can be more than one.
+		MultiTextEdit ret = new MultiTextEdit();
+
+		FunctionDefinition functionDefinition = this.getFunctionDefinition();
+		FunctionDef functionDef = functionDefinition.getFunctionDef();
+
+		for (decoratorsType decorator : functionDef.decs) {
+			String fqn = this.getFQN(decorator, null);
+
+			if (fqn.equals(TF_FUNCTION_FQN)) {
+				IDocument doc = this.getContainingDocument();
+				int offset = getOffset(doc, decorator);
+				String fullRepresentationString = getFullRepresentationString(decorator.func);
+				int length = fullRepresentationString.length() + 1;
+
+				int newline = offset + length;
+				char charAtEnd = doc.getChar(newline);
+
+				// is the decorator on its own line?
+				if (charAtEnd == '\n') {
+					++length; // also remove the newline.
+
+					// also remove the preceding text.
+					int lineBeginOffset = offset - functionDef.beginColumn + 1;
+					offset = lineBeginOffset;
+					length += functionDef.beginColumn - 1;
+				}
+
+				TextEdit edit = new DeleteEdit(offset, length);
+				ret.addChild(edit);
+			}
+		}
+
+		return ret;
 	}
 
 	private TextEdit convertToHybrid() throws BadLocationException {
