@@ -1810,7 +1810,7 @@ public class Function {
 
 		String prefix = getImportPrefix(doc);
 
-		return new InsertEdit(offset, "@" + prefix + ".function\n" + precedingText);
+		return new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
 	}
 
 	private static String getImportPrefix(IDocument doc) {
@@ -1825,9 +1825,9 @@ public class Function {
 
 				for (String importStr : importedStrList)
 					if (importStr.equals("tensorflow"))
-						return "tensorflow";
+						return "tensorflow.";
 					else if (importStr.startsWith("tensorflow as"))
-						return importStr.substring("tensorflow as ".length(), importStr.length());
+						return importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
 
 			}
 		}
