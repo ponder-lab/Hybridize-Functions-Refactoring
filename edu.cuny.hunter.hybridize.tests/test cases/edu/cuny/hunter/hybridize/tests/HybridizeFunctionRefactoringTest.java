@@ -614,6 +614,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		else
 			assertFalse(status.isOK());
 
+		// check if there's an expected output.
+		File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
+
+		if (outputTestFile.exists()) {
+			String expected = this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
+			String actual = document.get();
+			assertEqualLines(expected, actual);
+		}
+
 		return processor.getFunctions();
 	}
 
@@ -645,10 +654,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private File getInputTestFile(String fileNameWithoutExtension) {
 		String fileName = this.getInputTestFileName(fileNameWithoutExtension);
-		Path path = getAbsolutionPath(fileName);
-		File file = path.toFile();
+		File file = getFile(fileName);
 		assertTrue("Test file: " + file.getName() + " must exist at path: " + file.getPath() + ".", file.exists());
 		return file;
+	}
+
+	/**
+	 * Return the {@link File} representing X.py, where X is fileNameWithoutExtension.
+	 *
+	 * @param fileNameWithoutExtension The filename not including the file extension.
+	 * @return The {@link File} representing X.py, where X is fileNameWithoutExtension.
+	 */
+	private File getOutputTestFile(String fileNameWithoutExtension) {
+		String fileName = this.getOutputTestFileName(fileNameWithoutExtension);
+		return getFile(fileName);
+	}
+
+	private static File getFile(String fileName) {
+		return getAbsolutionPath(fileName).toFile();
 	}
 
 	@Override
