@@ -10,6 +10,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
@@ -23,6 +24,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -778,6 +780,10 @@ public class Function {
 	}
 
 	protected void addTransformation(Transformation transformation) {
+		assert (transformation != CONVERT_TO_EAGER || this.getTransformations().contains(CONVERT_TO_HYBRID))
+				&& (transformation != CONVERT_TO_HYBRID
+						|| this.getTransformations().contains(CONVERT_TO_EAGER)) : "Conversion transformations are mutually exclusive.";
+
 		this.transformations.add(transformation);
 	}
 
@@ -1323,7 +1329,7 @@ public class Function {
 	}
 
 	public Set<Transformation> getTransformations() {
-		return this.transformations;
+		return Collections.unmodifiableSet(this.transformations);
 	}
 
 	public Set<RefactoringStatusEntry> getWarnings() {
