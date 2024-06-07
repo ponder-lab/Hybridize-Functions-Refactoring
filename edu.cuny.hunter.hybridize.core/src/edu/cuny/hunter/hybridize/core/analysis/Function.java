@@ -342,6 +342,11 @@ public class Function {
 
 	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newHashMap();
 
+	/**
+	 * Containing {@link IDocument}s that have had import statements added to them during transformation.
+	 */
+	private static Set<IDocument> documentsWithAddedImport = new HashSet<>();
+
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
@@ -448,6 +453,7 @@ public class Function {
 	public static void clearCaches() {
 		creationsCache.clear();
 		tensorContainersCache.clear();
+		documentsWithAddedImport.clear();
 	}
 
 	/**
@@ -1809,11 +1815,15 @@ public class Function {
 		String prefix = getImportPrefix(doc);
 
 		if (prefix == null) {
-			// need to add an import.
-			int line = getLineToInsertImport(doc);
-			int lineOffset = doc.getLineOffset(line);
+			// need to add an import if it doesn't already exist.
+			if (!documentsWithAddedImport.contains(doc)) {
+				int line = getLineToInsertImport(doc);
+				int lineOffset = doc.getLineOffset(line);
 
-			ret.addChild(new InsertEdit(lineOffset, "from tensorflow import function"));
+				ret.addChild(new InsertEdit(lineOffset, "from tensorflow import function"));
+				documentsWithAddedImport.add(doc);
+			}
+
 			prefix = ""; // no prefix needed.
 		}
 
