@@ -5064,6 +5064,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
+			case "call2":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
 				break;
 			default:
