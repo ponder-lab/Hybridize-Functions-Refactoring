@@ -438,6 +438,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paths = getSystemPythonpathPaths();
 		paths = StringUtils.replaceAllSlashes(paths);
 		final Set<String> s = new HashSet<>(Arrays.asList(paths.split("\\|")));
+
 		InterpreterInfo.configurePathsCallback = arg -> {
 			List<String> toAsk = arg.o1;
 			List<String> l = arg.o2;
@@ -445,12 +446,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			for (String t : toAsk)
 				if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase())))
 					l.add(t);
-			// System.out.println("Added:"+t);
 			return Boolean.TRUE;
 		};
 
 		// System Python paths.
-
 		setInterpreterManager(paths);
 
 		InterpreterInfo info = getDefaultInterpreterInfo();
@@ -562,11 +561,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		AdditionalProjectInterpreterInfo.getAdditionalInfo(nature);
 
 		checkSize();
-
-		// NOTE (RK): Adding the test module to the nature. I think this already done anyway from the project path
-		// above.
-		// SimpleNode ast = request.getAST();
-		// addModuleToNature(ast, modName, nature, file);
 	}
 
 	/**
