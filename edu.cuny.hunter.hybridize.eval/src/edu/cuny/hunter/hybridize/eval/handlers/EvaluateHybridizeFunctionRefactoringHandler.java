@@ -7,13 +7,17 @@ import static edu.cuny.hunter.hybridize.core.utils.Util.getDocument;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getFile;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getModuleName;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonNature;
+import static org.eclipse.core.resources.IResource.DEPTH_INFINITE;
 import static org.eclipse.core.runtime.IProgressMonitor.UNKNOWN;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -299,6 +303,17 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
 						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
 						resultsTimeCollector.stop();
+
+						// flush changed documents to disk.
+						for (Function function : optimizableFunctions) {
+							IDocument document = function.getContainingDocument();
+							File file = function.getContainingFile();
+							Files.writeString(file.toPath(), document.get(), StandardOpenOption.WRITE);
+						}
+
+						// refresh the project if necessary.
+						if (!project.isSynchronized(DEPTH_INFINITE))
+							project.refreshLocal(DEPTH_INFINITE, monitor.slice(IProgressMonitor.UNKNOWN));
 					}
 
 					// overall results time.

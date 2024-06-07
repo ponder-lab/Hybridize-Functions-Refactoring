@@ -26,6 +26,7 @@ import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
+import org.eclipse.ltk.core.refactoring.DocumentChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
@@ -523,9 +524,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		CompositeChange compositeChange = new CompositeChange("Hybridize");
 
 		for (Function function : optimizableFunctions) {
-			IFile file = function.getContainingActualFile();
-
-			TextChange change = new TextFileChange(Messages.Name, function.getContainingActualFile());
+			TextChange change = new DocumentChange(Messages.Name, function.getContainingDocument());
 			change.setKeepPreviewEdits(true);
 
 			try {
