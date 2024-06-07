@@ -5039,6 +5039,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	/**
+	 * Test a model. No tf.function in this one. Has two functions that should be hybridized.
+	 */
+	@Test
+	public void testModel21() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+
+		LOG.info("Found functions: " + functions.size());
+		assertEquals("Expecting three functions.", 3, functions.size());
+
+		// no hybrids.
+		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+
+		// check function parameters.
+		functions.forEach(f -> {
+			String simpleName = f.getSimpleName();
+			switch (simpleName) {
+			case "__init__":
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
+				assertFalse(f.getIsHybrid());
+				assertTrue(f.getHasPythonSideEffects());
+				checkOptimizationNotAvailableStatus(f);
+				break;
+			case "__call__":
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
+			}
+		});
+	}
+
 	// TODO: Test models that have tf.functions.
 
 	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,
