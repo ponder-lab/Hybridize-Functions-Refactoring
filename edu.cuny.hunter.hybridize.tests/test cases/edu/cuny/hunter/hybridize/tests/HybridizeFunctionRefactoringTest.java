@@ -7048,6 +7048,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testWildcardImport9() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+		for (Function function : functions) {
+			switch (function.getIdentifier()) {
+			case "f":
+			case "g":
+				assertEquals(1, function.getNumberOfParameters());
+				assertTrue(function.getLikelyHasTensorParameter());
+				break;
+			default:
+				throw new IllegalStateException("Not expecting: " + function + ".");
+			}
+		}
+	}
+
+	@Test
 	public void testModule() throws Exception {
 		Set<Function> functions = this.getFunctions("B");
 		assertEquals(1, functions.size());
