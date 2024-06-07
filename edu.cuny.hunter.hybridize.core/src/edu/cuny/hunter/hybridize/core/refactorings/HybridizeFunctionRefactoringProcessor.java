@@ -23,9 +23,11 @@ import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.DocumentChange;
+import org.eclipse.ltk.core.refactoring.MultiStateTextFileChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
@@ -34,6 +36,7 @@ import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.eclipse.text.edits.MalformedTreeException;
+import org.eclipse.text.edits.TextEdit;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 
@@ -519,23 +522,52 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (optimizableFunctions.isEmpty())
 			return new NullChange(Messages.NoFunctionsToOptimize);
 
-		CompositeChange compositeChange = new CompositeChange("Hybridize");
+		Map<IDocument, TextChange> documentToChange = new HashMap<>();
 
+		// for each optimizable function (i.e., those with transformations.
 		for (Function function : optimizableFunctions) {
-			TextChange change = new DocumentChange(Messages.Name, function.getContainingDocument());
-			change.setKeepPreviewEdits(true);
+			// get the containing document.
+			IDocument document = function.getContainingDocument();
 
+			// get the change for that document.
+			TextChange change = documentToChange.get(document);
+
+			// if we don't have one yet.
+			if (change == null) {
+				// create a new one.
+				change = new DocumentChange(Messages.Name, document);
+				change.setKeepPreviewEdits(true);
+				change.setTextType("py");
+
+				// store it in the map.
+				documentToChange.put(document, change);
+			}
+
+			// transform the function.
+			TextEdit edit;
 			try {
-				change.setEdit(function.transform());
+				edit = function.transform();
 			} catch (BadLocationException | MalformedTreeException | NoTextSelectionException | AmbiguousDeclaringModuleException
 					| NoDeclaringModuleException e) {
 				throw new CoreException(Status.error("Can't create change.", e));
 			}
 
-			compositeChange.add(change);
+			// add the edit to the changes for the document.
+			TextEdit rootEdit = change.getEdit();
+
+			if (rootEdit == null)
+				change.setEdit(edit);
+			else
+				change.addEdit(edit);
 		}
 
-		return compositeChange;
+		CompositeChange ret = new CompositeChange("Hybridize");
+
+		// add all created changes.
+		TextChange[] changes = documentToChange.values().toArray(TextChange[]::new);
+		ret.addAll(changes);
+
+		return ret;
 	}
 
 	@Override
