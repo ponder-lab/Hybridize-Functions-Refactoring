@@ -780,9 +780,9 @@ public class Function {
 	}
 
 	protected void addTransformation(Transformation transformation) {
-		assert (transformation != CONVERT_TO_EAGER || this.getTransformations().contains(CONVERT_TO_HYBRID))
+		assert (transformation != CONVERT_TO_EAGER || !this.getTransformations().contains(CONVERT_TO_HYBRID))
 				&& (transformation != CONVERT_TO_HYBRID
-						|| this.getTransformations().contains(CONVERT_TO_EAGER)) : "Conversion transformations are mutually exclusive.";
+						|| !this.getTransformations().contains(CONVERT_TO_EAGER)) : "Conversion transformations are mutually exclusive.";
 
 		this.transformations.add(transformation);
 	}
