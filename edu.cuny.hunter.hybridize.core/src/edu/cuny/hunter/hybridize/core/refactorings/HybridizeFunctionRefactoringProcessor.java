@@ -526,6 +526,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			IFile file = function.getContainingActualFile();
 
 			TextChange change = new TextFileChange(Messages.Name, function.getContainingActualFile());
+			change.setKeepPreviewEdits(true);
 
 			try {
 				change.setEdit(function.transform());
