@@ -509,6 +509,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	@Override
 	public void genericafter() throws Exception {
+		// Do nothing.
 	}
 
 	@Override
