@@ -22,8 +22,8 @@ public final class FunctionDefinition {
 
 	IPythonNature nature;
 
-	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile,
-			IDocument containingDocument, IPythonNature nature) {
+	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IDocument containingDocument,
+			IPythonNature nature) {
 		this.functionDef = functionDef;
 		this.containingModuleName = containingModuleName;
 		this.containingFile = containingFile;
@@ -37,8 +37,8 @@ public final class FunctionDefinition {
 		String qualifiedName = Util.getQualifiedName(functionDef);
 		Integer id = Integer.valueOf(functionDef.getId());
 
-		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile,
-				this.containingDocument, Integer.valueOf(functionDef.beginColumn), Integer.valueOf(functionDef.beginLine), id);
+		return Objects.hash(functionDef, qualifiedName, this.containingModuleName, this.containingFile, this.containingDocument,
+				Integer.valueOf(functionDef.beginColumn), Integer.valueOf(functionDef.beginLine), id);
 	}
 
 	@Override
