@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -33,6 +34,7 @@ import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.TextChange;
+import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
