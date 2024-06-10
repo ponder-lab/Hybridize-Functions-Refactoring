@@ -15,6 +15,7 @@ before_install:
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
   - pip install -r requirements.txt
   - mvn -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN spotless:check -B
+  - black --fast --check .
 addons:
   apt:
     sources:
