@@ -11,6 +11,8 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -521,50 +523,59 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (optimizableFunctions.isEmpty())
 			return new NullChange(Messages.NoFunctionsToOptimize);
 
-		Map<IDocument, TextChange> documentToChange = new HashMap<>();
+		Map<IDocument, Queue<TextEdit>> documentToEdits = new HashMap<>();
 
 		// for each optimizable function (i.e., those with transformations.
 		for (Function function : optimizableFunctions) {
 			// get the containing document.
-			IDocument document = function.getContainingDocument();
+			IDocument doc = function.getContainingDocument();
 
-			// get the change for that document.
-			TextChange change = documentToChange.get(document);
+			// get the edits for that document.
+			Queue<TextEdit> docEdits = documentToEdits.get(doc);
 
 			// if we don't have one yet.
-			if (change == null) {
+			if (docEdits == null) {
 				// create a new one.
-				change = new DocumentChange(Messages.Name, document);
-				change.setKeepPreviewEdits(true);
-				change.setTextType("py");
+				docEdits = new PriorityQueue<>((x, y) -> x.getExclusiveEnd() - y.getExclusiveEnd());
 
 				// store it in the map.
-				documentToChange.put(document, change);
+				documentToEdits.put(doc, docEdits);
 			}
 
 			// transform the function.
-			TextEdit edit;
+			List<TextEdit> funcEdits;
 			try {
-				edit = function.transform();
+				funcEdits = function.transform();
 			} catch (BadLocationException | MalformedTreeException | NoTextSelectionException | AmbiguousDeclaringModuleException
 					| NoDeclaringModuleException e) {
 				throw new CoreException(Status.error("Can't create change.", e));
 			}
 
-			// add the edit to the changes for the document.
-			TextEdit rootEdit = change.getEdit();
-
-			if (rootEdit == null)
-				change.setEdit(edit);
-			else
-				change.addEdit(edit);
+			// add the edit to the edits for the document.
+			docEdits.addAll(funcEdits);
 		}
 
 		CompositeChange ret = new CompositeChange("Hybridize");
 
-		// add all created changes.
-		TextChange[] changes = documentToChange.values().toArray(TextChange[]::new);
-		ret.addAll(changes);
+		for (IDocument document : documentToEdits.keySet()) {
+			Queue<TextEdit> edits = documentToEdits.get(document);
+
+			if (!edits.isEmpty()) {
+				TextChange change = new DocumentChange(Messages.Name, document);
+				change.setKeepPreviewEdits(true);
+				change.setTextType("py");
+
+				TextEdit rootEdit = edits.remove();
+				change.setEdit(rootEdit);
+
+				while (!edits.isEmpty()) {
+					TextEdit edit = edits.remove();
+					change.addEdit(edit);
+				}
+
+				ret.add(change);
+			}
+		}
 
 		return ret;
 	}

@@ -22,6 +22,7 @@ import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -1735,18 +1736,18 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
-	public TextEdit transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
+	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
 			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
-		MultiTextEdit edit = new MultiTextEdit();
+		List<TextEdit> ret = new ArrayList<>();
 		Set<Transformation> transformations = this.getTransformations();
 
 		for (Transformation transformation : transformations) {
 			switch (transformation) {
 			case CONVERT_TO_HYBRID:
-				edit.addChild(this.convertToHybrid());
+				ret.addAll(this.convertToHybrid());
 				break;
 			case CONVERT_TO_EAGER:
-				edit.addChild(this.convertToEager());
+				ret.addAll(this.convertToEager());
 				break;
 			case RECONFIGURE:
 				throw new UnsupportedOperationException();
@@ -1755,15 +1756,15 @@ public class Function {
 			}
 		}
 
-		return edit;
+		return ret;
 	}
 
-	private TextEdit convertToEager()
+	private List<TextEdit> convertToEager()
 			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already eager.";
 
 		// there can be more than one.
-		MultiTextEdit ret = new MultiTextEdit();
+		List<TextEdit> ret = new ArrayList<>();
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
@@ -1791,17 +1792,19 @@ public class Function {
 				}
 
 				TextEdit edit = new DeleteEdit(offset, length);
-				ret.addChild(edit);
+				MultiTextEdit mte = new MultiTextEdit();
+				mte.addChild(edit);
+				ret.add(mte);
 			}
 		}
 
 		return ret;
 	}
 
-	private TextEdit convertToHybrid() throws BadLocationException {
+	private List<TextEdit> convertToHybrid() throws BadLocationException {
 		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
-		MultiTextEdit ret = new MultiTextEdit();
+		List<TextEdit> ret = new ArrayList<>();
 
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
@@ -1820,7 +1823,10 @@ public class Function {
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
 
-				ret.addChild(new InsertEdit(lineOffset, "from tensorflow import function"));
+				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function");
+				MultiTextEdit mte = new MultiTextEdit();
+				mte.addChild(edit);
+				ret.add(mte);
 				documentsWithAddedImport.add(doc);
 			}
 
@@ -1828,7 +1834,9 @@ public class Function {
 		}
 
 		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
-		ret.addChild(edit);
+		MultiTextEdit mte = new MultiTextEdit();
+		mte.addChild(edit);
+		ret.add(mte);
 
 		return ret;
 	}
