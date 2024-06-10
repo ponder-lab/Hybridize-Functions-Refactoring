@@ -605,8 +605,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		IDocument document = documentToAvailableFunctionDefs.getKey();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
+		IFile actualInputTestFile = new FileStub2(fileNameWithoutExtension + ".py") {
+			@Override
+			public String getFileExtension() {
+				return TEST_FILE_EXTENSION;
+			}
+
+			@Override
+			public IPath getFullPath() {
+				return new org.eclipse.core.runtime.Path(inputTestFile.getAbsolutePath());
+			}
+
+			@Override
+			public String getCharset(boolean checkImplicit) throws CoreException {
+				try {
+					return FileUtils.getPythonFileEncoding(document, this.getFullPath().toOSString());
+				} catch (PyUnsupportedEncodingException e) {
+					throw new CoreException(Status.error("Can't determine encoding.", e));
+				}
+			}
+
+			@Override
+			public long getModificationStamp() {
+				return 0;
+			}
+
+			@Override
+			public ResourceAttributes getResourceAttributes() {
+				return fromFile(inputTestFile);
+			}
+		};
+
 		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, document, nature))
+				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, nature))
 				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,

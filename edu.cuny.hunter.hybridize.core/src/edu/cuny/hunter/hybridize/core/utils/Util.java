@@ -93,6 +93,7 @@ public class Util {
 
 		String moduleName = getModuleName(pythonNode);
 		File file = getFile(pythonNode);
+		IFile actualFile = getActualFile(pythonNode);
 		IDocument document = getDocument(pythonNode);
 		IPythonNature nature = Util.getPythonNature(pythonNode);
 
@@ -112,7 +113,7 @@ public class Util {
 		Collection<FunctionDef> definitions = functionExtractor.getDefinitions();
 
 		for (FunctionDef def : definitions) {
-			FunctionDefinition function = new FunctionDefinition(def, moduleName, file, document, nature);
+			FunctionDefinition function = new FunctionDefinition(def, moduleName, file, actualFile, document, nature);
 			ret.add(function);
 		}
 

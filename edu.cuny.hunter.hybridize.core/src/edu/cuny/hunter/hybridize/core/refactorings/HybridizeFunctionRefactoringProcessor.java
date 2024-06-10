@@ -29,7 +29,6 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
-import org.eclipse.ltk.core.refactoring.DocumentChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
@@ -529,8 +528,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 		// for each optimizable function (i.e., those with transformations.
 		for (Function function : optimizableFunctions) {
-			// get the containing document.
-			IDocument doc = function.getContainingDocument();
+			// get the containing file.
+			IFile file = function.getContainingActualFile();
+
+			TextChange change = new TextFileChange(Messages.Name, function.getContainingActualFile());
+			change.setKeepPreviewEdits(true);
 
 			// get the edits for that document.
 			Queue<TextEdit> docEdits = documentToEdits.get(doc);

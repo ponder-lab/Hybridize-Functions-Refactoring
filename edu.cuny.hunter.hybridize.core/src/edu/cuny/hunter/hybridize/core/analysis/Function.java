@@ -36,6 +36,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -1101,6 +1102,15 @@ public class Function {
 	 */
 	public File getContainingFile() {
 		return this.getFunctionDefinition().containingFile;
+	}
+
+	/**
+	 * Returns the {@link IFile} of where this {@link Function} is found.
+	 *
+	 * @return The {@link IFile} of where this {@link Function} is found.
+	 */
+	public IFile getContainingActualFile() {
+		return this.getFunctionDefinition().containingActualFile;
 	}
 
 	/**
