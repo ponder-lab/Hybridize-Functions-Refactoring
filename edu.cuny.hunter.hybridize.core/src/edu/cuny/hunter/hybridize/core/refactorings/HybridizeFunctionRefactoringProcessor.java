@@ -26,7 +26,6 @@ import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
-import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
@@ -524,26 +523,23 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (optimizableFunctions.isEmpty())
 			return new NullChange(Messages.NoFunctionsToOptimize);
 
-		Map<IDocument, Queue<TextEdit>> documentToEdits = new HashMap<>();
+		Map<IFile, Queue<TextEdit>> fileToEdits = new HashMap<>();
 
 		// for each optimizable function (i.e., those with transformations.
 		for (Function function : optimizableFunctions) {
 			// get the containing file.
 			IFile file = function.getContainingActualFile();
 
-			TextChange change = new TextFileChange(Messages.Name, function.getContainingActualFile());
-			change.setKeepPreviewEdits(true);
-
-			// get the edits for that document.
-			Queue<TextEdit> docEdits = documentToEdits.get(doc);
+			// get the edits for that file.
+			Queue<TextEdit> fileEdits = fileToEdits.get(file);
 
 			// if we don't have one yet.
-			if (docEdits == null) {
+			if (fileEdits == null) {
 				// create a new one.
-				docEdits = new PriorityQueue<>((x, y) -> x.getExclusiveEnd() - y.getExclusiveEnd());
+				fileEdits = new PriorityQueue<>((x, y) -> x.getExclusiveEnd() - y.getExclusiveEnd());
 
 				// store it in the map.
-				documentToEdits.put(doc, docEdits);
+				fileToEdits.put(file, fileEdits);
 			}
 
 			// transform the function.
@@ -556,16 +552,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			}
 
 			// add the edit to the edits for the document.
-			docEdits.addAll(funcEdits);
+			fileEdits.addAll(funcEdits);
 		}
 
 		CompositeChange ret = new CompositeChange("Hybridize");
 
-		for (IDocument document : documentToEdits.keySet()) {
-			Queue<TextEdit> edits = documentToEdits.get(document);
+		for (IFile file : fileToEdits.keySet()) {
+			Queue<TextEdit> edits = fileToEdits.get(file);
 
 			if (!edits.isEmpty()) {
-				TextChange change = new DocumentChange(Messages.Name, document);
+				TextChange change = new TextFileChange(Messages.Name, file);
 				change.setKeepPreviewEdits(true);
 				change.setTextType("py");
 

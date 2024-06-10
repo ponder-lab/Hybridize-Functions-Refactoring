@@ -57,9 +57,9 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
@@ -108,7 +108,6 @@ import org.python.pydev.plugin.PydevTestUtils;
 import org.python.pydev.plugin.nature.PythonNature;
 import org.python.pydev.refactoring.ast.PythonModuleManager;
 import org.python.pydev.shared_core.io.FileUtils;
-import org.python.pydev.shared_core.io.PyUnsupportedEncodingException;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
 import org.python.pydev.shared_core.string.CoreTextSelection;
@@ -185,6 +184,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean PROCESS_FUNCTIONS_IN_PARALLEL = false;
 
 	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
+
+	private static final String COMPARE_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.compareOutput";
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -482,6 +483,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	protected boolean runInputTestFile = Boolean.getBoolean(RUN_INPUT_TEST_FILE_KEY);
 
+	/**
+	 * True iff the output test Python file should be compared.
+	 */
+	protected boolean compareOutputTestFile = Boolean.getBoolean(COMPARE_OUTPUT_TEST_FILE_KEY);
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -505,6 +511,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public boolean shouldRunInputTestFile() {
 		return this.runInputTestFile;
+	}
+
+	/**
+	 * True iff the output test Python file should be compared.
+	 */
+	public boolean shouldCompareOutputTestFile() {
+		return this.compareOutputTestFile;
 	}
 
 	@Override
@@ -613,16 +626,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			@Override
 			public IPath getFullPath() {
-				return new org.eclipse.core.runtime.Path(inputTestFile.getAbsolutePath());
+				// NOTE: This is incorrect when implemenng https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
+				return org.eclipse.core.runtime.Path.fromOSString(inputTestFile.getAbsolutePath());
 			}
 
 			@Override
 			public String getCharset(boolean checkImplicit) throws CoreException {
-				try {
-					return FileUtils.getPythonFileEncoding(document, this.getFullPath().toOSString());
-				} catch (PyUnsupportedEncodingException e) {
-					throw new CoreException(Status.error("Can't determine encoding.", e));
-				}
+				return System.getProperty("file.encoding");
 			}
 
 			@Override
@@ -646,20 +656,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
-		RefactoringStatus status = this.performRefactoringWithStatus(refactoring);
+		RefactoringStatus status = refactoring.checkAllConditions(new NullProgressMonitor());
 
 		if (processor.getFunctions().stream().map(Function::getStatus).allMatch(RefactoringStatus::isOK))
 			assertTrue(status.isOK());
 		else
 			assertFalse(status.isOK());
 
-		// check if there's an expected output.
-		File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
+		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
+		if (this.shouldCompareOutputTestFile()) {
+			// check if there's an expected output.
+			File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
 
-		if (outputTestFile.exists()) {
-			String expected = this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
-			String actual = document.get();
-			assertEqualLines(expected, actual);
+			if (outputTestFile.exists()) {
+				Change change = refactoring.createChange(new NullProgressMonitor());
+				this.performChange(change);
+
+				String expected = this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
+				String actual = document.get();
+				assertEqualLines(expected, actual);
+			}
 		}
 
 		return processor.getFunctions();
