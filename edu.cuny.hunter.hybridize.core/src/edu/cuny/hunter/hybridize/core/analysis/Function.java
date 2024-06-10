@@ -1856,19 +1856,22 @@ public class Function {
 	private static String getImportPrefix(IDocument doc) {
 		PyImportsHandling handling = new PyImportsHandling(doc);
 
-		for (Iterator<ImportHandle> it = handling.iterator(); it.hasNext();) {
-			ImportHandle importHandle = it.next();
-			List<ImportHandleInfo> infoList = importHandle.getImportInfo();
-
-			for (ImportHandleInfo importHandleInfo : infoList)
+		for (ImportHandle importHandle : handling)
+			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo())
 				for (String importStr : importHandleInfo.getImportedStr())
 					if (importStr.equals("tensorflow"))
 						return "tensorflow.";
 					else if (importStr.startsWith("tensorflow as"))
 						return importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
-					else if (importStr.equals("*") && importHandleInfo.getFromImportStrWithoutUnwantedChars().equals("tensorflow"))
-						return ""; // no prefix needed for wildcard import.
-		}
+					else {
+						String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
+						if (fromImportStr != null && fromImportStr.equals("tensorflow"))
+							switch (importStr) {
+							case "*": // wildcard import.
+							case "function": // direct import.
+								return ""; // no prefix needed.
+							}
+					}
 
 		// not found.
 		return null;
