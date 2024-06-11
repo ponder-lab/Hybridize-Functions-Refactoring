@@ -509,14 +509,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * True iff the input test Python file should be executed.
 	 */
-	public boolean shouldRunInputTestFile() {
+	public boolean getRunInputTestFile() {
 		return this.runInputTestFile;
 	}
 
 	/**
 	 * True iff the output test Python file should be compared.
 	 */
-	public boolean shouldCompareOutputTestFile() {
+	public boolean getCompareOutputTestFile() {
 		return this.compareOutputTestFile;
 	}
 
@@ -538,7 +538,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Path inputTestFileAbsolutePath = getAbsolutionPath(inputTestFileName);
 		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutePath.getParent();
 
-		if (this.shouldRunInputTestFile()) {
+		if (this.getRunInputTestFile()) {
 			LOG.info("Running input test file(s).");
 
 			// install dependencies.
@@ -664,7 +664,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(status.isOK());
 
 		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
-		if (this.shouldCompareOutputTestFile()) {
+		if (this.getCompareOutputTestFile()) {
 			// check if there's an expected output.
 			File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
 
