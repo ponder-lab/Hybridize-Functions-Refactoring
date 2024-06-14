@@ -13,7 +13,7 @@ cache:
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  - pip install -r requirements.txt
+  - pip3 install -r requirements.txt
   - mvn -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN spotless:check -B
   - black --fast --check --extend-exclude \/out .
 addons:
