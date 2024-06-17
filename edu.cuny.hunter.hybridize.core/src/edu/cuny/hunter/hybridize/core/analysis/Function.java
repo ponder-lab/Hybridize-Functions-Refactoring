@@ -678,8 +678,15 @@ public class Function {
 	 */
 	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
 			PythonSSAPropagationCallGraphBuilder builder) {
+		return isTensorContainer(instanceKey, tensorContainers, builder, new HashSet<>());
+	}
+
+	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+			PythonSSAPropagationCallGraphBuilder builder, Set<InstanceKey> seen) {
 		if (tensorContainers.contains(instanceKey))
 			return true;
+
+		seen.add(instanceKey);
 
 		if (Util.isContainerType(instanceKey.getConcreteType().getReference())) {
 			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory())
@@ -696,11 +703,13 @@ public class Function {
 					Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
 
 					for (InstanceKey fieldInstanceKey : fieldPointsToSet)
-						if (isTensorContainer(fieldInstanceKey, tensorContainers, builder))
+						if (!seen.contains(fieldInstanceKey) && isTensorContainer(fieldInstanceKey, tensorContainers, builder, seen))
 							return true;
 				} else if (catalogInstanceKey instanceof AllocationSiteInNode || catalogInstanceKey instanceof ScopeMappingInstanceKey) {
 					AllocationSiteInNode asin = getAllocationSiteInNode(catalogInstanceKey);
-					return isTensorContainer(asin, tensorContainers, builder);
+
+					if (!seen.contains(asin))
+						return isTensorContainer(asin, tensorContainers, builder, seen);
 				} else
 					throw new IllegalArgumentException(
 							"Not expecting a catalog instance of " + instanceKey + " to be: " + catalogInstanceKey.getClass());
