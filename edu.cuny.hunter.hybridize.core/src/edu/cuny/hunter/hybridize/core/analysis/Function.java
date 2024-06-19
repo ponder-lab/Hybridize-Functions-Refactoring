@@ -1266,7 +1266,7 @@ public class Function {
 	 *
 	 * @return True iff boolean values shouldn't be considered primitives.
 	 */
-	protected boolean getIgnoreBooleans() {
+	protected boolean shouldIgnoreBooleans() {
 		return this.ignoreBooleans;
 	}
 
@@ -1422,7 +1422,7 @@ public class Function {
 				for (InstanceKey instanceKey : pointsToSet) {
 					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
 
-					allInstancesArePrimitive &= containsPrimitive(instanceKey, this.getIgnoreBooleans(), pointerAnalysis,
+					allInstancesArePrimitive &= containsPrimitive(instanceKey, this.shouldIgnoreBooleans(), pointerAnalysis,
 							subMonitor.split(1));
 					subMonitor.worked(1);
 				}
