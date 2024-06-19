@@ -120,6 +120,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String ALWAYS_FOLLOW_TYPE_HINTS_KEY = "edu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints";
 
+	private static final String USE_SPECULATIVE_ANALYSIS_KEY = "edu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis";
+
 	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -148,6 +150,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean useTestEntrypoints = Boolean.getBoolean(USE_TEST_ENTRYPOINTS_KEY);
 
 	private boolean alwaysFollowTypeHints = Boolean.getBoolean(ALWAYS_FOLLOW_TYPE_HINTS_KEY);
+
+	private boolean useSpeculativeAnalysis = Boolean.getBoolean(USE_SPECULATIVE_ANALYSIS_KEY);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -209,7 +213,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsTimeCollector.start();
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
 							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
-							this.getAlwaysFollowTypeHints());
+							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -553,5 +557,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysFollowTypeHints() {
 		return alwaysFollowTypeHints;
+	}
+
+	public boolean getUseSpeculativeAnalysis() {
+		return this.useSpeculativeAnalysis;
 	}
 }

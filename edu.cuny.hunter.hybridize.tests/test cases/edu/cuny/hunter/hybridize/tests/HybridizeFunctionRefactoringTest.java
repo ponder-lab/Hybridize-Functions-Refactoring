@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
@@ -21,8 +22,10 @@ import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
 import static org.eclipse.core.resources.ResourceAttributes.fromFile;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.eclipse.ltk.core.refactoring.RefactoringStatus.INFO;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -176,6 +179,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean USE_TEST_ENTRYPOINTS = true;
 
 	private static final boolean ALWAYS_FOLLOW_TYPE_HINTS = true;
+
+	private static final boolean USE_SPECULATIVE_ANALYSIS = true;
 
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
@@ -652,7 +657,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
-				ALWAYS_FOLLOW_TYPE_HINTS);
+				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -7718,5 +7723,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(2, functions.size());
 		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
+	}
+
+	/**
+	 * Don't de-hybridize functions whose name has certain keywords.
+	 */
+	@Test
+	public void testSpeculativeAnalysis() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream()
+				.allMatch(f -> f.isHybrid() && f.getSimpleName().matches("train.*_step") && !Objects.equals(f.getPassingPrecondition(), P2)
+						&& !Objects.equals(f.getPassingPrecondition(), P3) && !f.getTransformations().contains(CONVERT_TO_EAGER)
+						&& f.getStatus().hasInfo() && Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+								.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count() == 1));
+	}
+
+	/**
+	 * Don't de-hybridize functions whose name has certain keywords.
+	 */
+	@Test
+	public void testSpeculativeAnalysis2() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		assertTrue(functions.stream()
+				.allMatch(f -> f.isHybrid() && f.getSimpleName().matches("train.*_step") && Objects.equals(f.getPassingPrecondition(), P2)
+						&& f.getTransformations().contains(CONVERT_TO_EAGER) && f.getStatus().hasInfo()
+						&& Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+								.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count() == 0));
+	}
+
+	/**
+	 * Don't de-hybridize functions whose name has certain keywords.
+	 */
+	@Test
+	public void testSpeculativeAnalysis3() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+
+		assertTrue(f.isHybrid());
+		assertTrue(f.getSimpleName().matches("test.*_step"));
+		assertNotEquals(P2, f.getPassingPrecondition());
+		assertNotEquals(P3, f.getPassingPrecondition());
+		assertFalse(f.getTransformations().contains(CONVERT_TO_EAGER));
+		assertTrue(f.getStatus().hasInfo());
+		assertTrue(Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count() == 1);
 	}
 }

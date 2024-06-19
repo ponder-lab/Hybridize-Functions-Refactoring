@@ -7,7 +7,12 @@ public enum Information {
 	/**
 	 * Information related to (tensor) type inferencing.
 	 */
-	TYPE_INFERENCING(1);
+	TYPE_INFERENCING(1),
+
+	/**
+	 * Context being used.
+	 */
+	SPECULATIVE_ANALYSIS(2);
 
 	static {
 		// check that the codes are unique.

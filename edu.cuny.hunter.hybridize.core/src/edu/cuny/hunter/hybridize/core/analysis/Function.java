@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -720,6 +721,11 @@ public class Function {
 
 	private boolean alwaysFollowTypeHints;
 
+	/**
+	 * True iff tensor contexts should be considered.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>.
+	 */
 	private boolean useSpeculativeAnalysis;
 
 	/**
@@ -767,10 +773,11 @@ public class Function {
 
 	private Set<Transformation> transformations = new HashSet<>();
 
-	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints) {
+	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
+		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
@@ -903,11 +910,13 @@ public class Function {
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
 			if (this.hasTensorParameter() != null && !this.hasTensorParameter()) {
-				this.addInfo("This hybrid function does not likely have a tensor parameter.");
+				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
+
 				if (this.hasPythonSideEffects() != null && !this.hasPythonSideEffects()) {
 					this.addInfo("This hybrid function does not have Python side-effects.");
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);
+
 				} else if (this.hasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1105,6 +1114,16 @@ public class Function {
 	 */
 	public boolean getAlwaysFollowTypeHints() {
 		return this.alwaysFollowTypeHints;
+	}
+
+	/**
+	 * Returns true iff this {@link Function}'s tensor context should be considered.
+	 *
+	 * @return true iff this {@link Function}'s tensor context should be considered.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>.
+	 */
+	public boolean getUseSpeculativeAnalysis() {
+		return useSpeculativeAnalysis;
 	}
 
 	public IDocument getContainingDocument() {
@@ -1508,7 +1527,7 @@ public class Function {
 		if (params != null) {
 			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
 
-			if (actualParams != null)
+			if (actualParams != null) {
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
 					exprType paramExpr = actualParams[paramInx];
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
@@ -1572,6 +1591,16 @@ public class Function {
 
 					monitor.worked(1);
 				}
+
+				// check a special case where we consider context. We do this only if there is at least one parameter and we couldn't
+				// determine it otherwise.
+				if (this.tensorParameter == null && actualParams.length > 0 && this.getUseSpeculativeAnalysis()
+						&& this.hasTensorContext()) {
+					this.tensorParameter = Boolean.TRUE;
+					LOG.info(this + " likely has a tensor parameter due to context.");
+					this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
+				}
+			}
 		}
 
 		if (this.tensorParameter == null) {
@@ -1580,6 +1609,11 @@ public class Function {
 		}
 
 		monitor.done();
+	}
+
+	private boolean hasTensorContext() {
+		String name = this.getSimpleName();
+		return name.matches("(train|test).*_step");
 	}
 
 	public boolean isHybridizationAvailable() {

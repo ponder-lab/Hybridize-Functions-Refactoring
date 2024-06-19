@@ -147,6 +147,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private boolean alwaysFollowTypeHints;
 
+	/**
+	 * True iff we should use context to determine tensor types.
+	 */
+	private boolean useSpeculativeAnalysis;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
@@ -190,6 +195,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 	}
 
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
+			boolean useSpeculativeAnalysis) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion, ignoreBooleansInLiteralCheck,
+				useTestEntryPoints, alwaysFollowTypeHints);
+		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+	}
+
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
@@ -199,7 +212,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints);
+				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
+						this.useSpeculativeAnalysis);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -236,6 +250,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints)
 			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints);
+		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
+			boolean useSpeculativeAnalysis) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
 		this();
 
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
@@ -243,13 +264,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.processFunctionsInParallel = processFunctionsInParallel;
 		this.useTestEntryPoints = useTestEntryPoints;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
+		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
 
 		// Convert the FunctionDefs to Functions.
 		if (functions != null) {
 			Set<Function> functionSet = this.getFunctions();
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
-				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints);
+				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
+						this.useSpeculativeAnalysis);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -670,5 +693,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public boolean getAlwaysFollowTypeHints() {
 		return alwaysFollowTypeHints;
+	}
+
+	/**
+	 * Returns true iff we should use context to determine tensor types.
+	 *
+	 * @return True iff we should use context to determine tensor types.
+	 */
+	public boolean getUseSpeculativeAnalysis() {
+		return this.useSpeculativeAnalysis;
 	}
 }
