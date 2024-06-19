@@ -7771,4 +7771,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
 				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count() == 1);
 	}
+
+	/**
+	 * Don't de-hybridize functions whose name has certain keywords.
+	 */
+	@Test
+	public void testSpeculativeAnalysis4() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+
+		assertFalse(f.isHybrid());
+		String name = f.getIdentifier();
+		assertTrue(name.matches("[A-Z].*\\.call"));
+		assertEquals(P1, f.getPassingPrecondition());
+		assertTrue(f.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		assertEquals(1, Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count());
+	}
 }

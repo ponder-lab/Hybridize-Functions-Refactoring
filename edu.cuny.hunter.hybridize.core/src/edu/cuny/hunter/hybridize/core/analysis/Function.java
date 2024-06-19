@@ -120,8 +120,11 @@ public class Function {
 
 	/**
 	 * Used for speculative analysis of the function name.
+	 *
+	 * @implNote FIXME: Use class hierarchy instead to ensure that call() overrides the one in tf.keras.Model as depicted in
+	 *           <a href="https://app.asana.com/0/1201355158849577/1202323572329145/f">this Asana task</a>.
 	 */
-	private static final String FUNCTION_NAME_CONTEXT_REGEX = "(train|test).*_step";
+	private static final String FUNCTION_NAME_CONTEXT_REGEX = "(train|test).*_step|[A-Z].*\\.call";
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
@@ -1617,7 +1620,7 @@ public class Function {
 	}
 
 	private boolean hasTensorContext() {
-		return this.getSimpleName().matches(FUNCTION_NAME_CONTEXT_REGEX);
+		return this.getIdentifier().matches(FUNCTION_NAME_CONTEXT_REGEX);
 	}
 
 	public boolean isHybridizationAvailable() {
