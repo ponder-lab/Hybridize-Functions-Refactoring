@@ -849,7 +849,7 @@ public class Function {
 	 * Check refactoring preconditions.
 	 *
 	 * @return The resulting {@link RefactoringStatus} of the precondition check.
-	 * @see Function#getStatus.
+	 * @see #getStatus()
 	 */
 	public RefactoringStatus check() {
 		if (!this.isHybrid()) { // Eager. Table 1.
