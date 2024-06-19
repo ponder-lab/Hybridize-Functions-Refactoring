@@ -400,7 +400,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				}
 
 				// check the function preconditions.
-				func.check();
+				status.merge(func.check());
 
 				status.merge(checkParameters(func));
 				subMonitor.checkCanceled();

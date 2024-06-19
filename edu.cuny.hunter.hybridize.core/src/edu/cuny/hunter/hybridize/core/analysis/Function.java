@@ -847,8 +847,11 @@ public class Function {
 
 	/**
 	 * Check refactoring preconditions.
+	 *
+	 * @return The resulting {@link RefactoringStatus} of the precondition check.
+	 * @see Function#getStatus().
 	 */
-	public void check() {
+	public RefactoringStatus check() {
 		if (!this.isHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
@@ -937,6 +940,8 @@ public class Function {
 			if (this.hasPythonSideEffects() != null && this.hasPythonSideEffects())
 				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
+
+		return this.getStatus();
 	}
 
 	/**
