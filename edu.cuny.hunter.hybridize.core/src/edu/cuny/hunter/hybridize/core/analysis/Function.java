@@ -729,7 +729,7 @@ public class Function {
 	/**
 	 * True iff tensor contexts should be considered.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>
 	 */
 	private boolean useSpeculativeAnalysis;
 
@@ -1125,7 +1125,7 @@ public class Function {
 	 * Returns true iff this {@link Function}'s tensor context should be considered.
 	 *
 	 * @return true iff this {@link Function}'s tensor context should be considered.
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229">Issue 229</a>
 	 */
 	public boolean getUseSpeculativeAnalysis() {
 		return useSpeculativeAnalysis;
