@@ -310,7 +310,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			}
 
 			timeCollector.start();
-			if (this.shouldDumpCallGraph()) {
+			if (this.getDumpCallGraph()) {
 				CAstCallGraphUtil.dumpCG(builder.getCFAContextInterpreter(), builder.getPointerAnalysis(), callGraph);
 				// DotUtil.dotify(callGraph, null, PDFTypeHierarchy.DOT_FILE, "callgraph.pdf", "dot");
 			}
@@ -370,7 +370,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check Python side-effects.
 				try {
-					if (this.shouldAlwaysCheckPythonSideEffects() || func.isHybrid()
+					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid()
 							|| func.hasTensorParameter() != null && func.hasTensorParameter()) {
 						Map<CGNode, OrdinalSet<PointerKey>> mod = this.computeMod(project, callGraph, builder.getPointerAnalysis());
 						func.inferPythonSideEffects(mod, callGraph, builder.getPointerAnalysis());
@@ -389,7 +389,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					// NOTE: Whether a hybrid function is recursive is irrelevant; if the function has no tensor parameter, de-hybridizing
 					// it does not violate semantics preservation as potential retracing happens regardless. We do, however, issue a
 					// refactoring warning when a hybrid function with a tensor parameter is recursive.
-					if (this.shouldAlwaysCheckRecursion() || func.hasTensorParameter() != null && func.hasTensorParameter())
+					if (this.getAlwaysCheckRecursion() || func.hasTensorParameter() != null && func.hasTensorParameter())
 						func.computeRecursion(callGraph);
 				} catch (CantComputeRecursionException e) {
 					LOG.warn("Unable to compute whether " + func + " is recursive.", e);
@@ -440,7 +440,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private Stream<Function> getStream(Set<Function> functions) {
 		Stream<Function> stream = functions.stream();
-		return this.shouldProcessFunctionsInParallel() ? stream.parallel() : stream;
+		return this.getProcessFunctionsInParallel() ? stream.parallel() : stream;
 	}
 
 	private TensorTypeAnalysis computeTensorTypeAnalysis(EclipsePythonProjectTensorAnalysisEngine engine,
@@ -464,7 +464,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			ProgressMonitorDelegate monitorDelegate = ProgressMonitorDelegate.createProgressMonitorDelegate(monitor);
 			AnalysisOptions options = builder.getOptions();
 
-			if (this.shouldUseTestEntryPoints()) {
+			if (this.getUseTestEntryPoints()) {
 				// Get the current entrypoints.
 				Iterable<? extends Entrypoint> defaultEntrypoints = builder.getOptions().getEntrypoints();
 
@@ -604,11 +604,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return Messages.Name;
 	}
 
-	private boolean shouldAlwaysCheckPythonSideEffects() {
+	private boolean getAlwaysCheckPythonSideEffects() {
 		return this.alwaysCheckPythonSideEffects;
 	}
 
-	public boolean shouldAlwaysCheckRecursion() {
+	public boolean getAlwaysCheckRecursion() {
 		return alwaysCheckRecursion;
 	}
 
@@ -637,7 +637,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return projectToCallGraph;
 	}
 
-	protected boolean shouldDumpCallGraph() {
+	protected boolean getDumpCallGraph() {
 		return dumpCallGraph;
 	}
 
@@ -650,7 +650,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 *
 	 * @return True iff project functions should be processed in parallel.
 	 */
-	private boolean shouldProcessFunctionsInParallel() {
+	private boolean getProcessFunctionsInParallel() {
 		return this.processFunctionsInParallel;
 	}
 
@@ -659,7 +659,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 *
 	 * @return True iff entry points from tests are considered.
 	 */
-	protected boolean shouldUseTestEntryPoints() {
+	protected boolean getUseTestEntryPoints() {
 		return useTestEntryPoints;
 	}
 
@@ -668,7 +668,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 *
 	 * @return True iff we should follow type hints regardless of any hybridization arguments.
 	 */
-	public boolean shouldAlwaysFollowTypeHints() {
+	public boolean getAlwaysFollowTypeHints() {
 		return alwaysFollowTypeHints;
 	}
 }

@@ -720,6 +720,8 @@ public class Function {
 
 	private boolean alwaysFollowTypeHints;
 
+	private boolean useSpeculativeAnalysis;
+
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
@@ -1101,7 +1103,7 @@ public class Function {
 	 *
 	 * @return Whether we should use type hints regardless of what is specified in any hybridization parameters.
 	 */
-	public boolean isAlwaysFollowTypeHints() {
+	public boolean getAlwaysFollowTypeHints() {
 		return this.alwaysFollowTypeHints;
 	}
 
@@ -1266,7 +1268,7 @@ public class Function {
 	 *
 	 * @return True iff boolean values shouldn't be considered primitives.
 	 */
-	protected boolean shouldIgnoreBooleans() {
+	protected boolean getIgnoreBooleans() {
 		return this.ignoreBooleans;
 	}
 
@@ -1422,7 +1424,7 @@ public class Function {
 				for (InstanceKey instanceKey : pointsToSet) {
 					LOG.info("Parameter of: " + this + " with index: " + paramInx + " points to: " + instanceKey + ".");
 
-					allInstancesArePrimitive &= containsPrimitive(instanceKey, this.shouldIgnoreBooleans(), pointerAnalysis,
+					allInstancesArePrimitive &= containsPrimitive(instanceKey, this.getIgnoreBooleans(), pointerAnalysis,
 							subMonitor.split(1));
 					subMonitor.worked(1);
 				}
@@ -1516,7 +1518,7 @@ public class Function {
 						continue; // next parameter.
 
 					// check a special case where we consider type hints.
-					boolean followTypeHints = this.isAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
+					boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
 							// TODO: Actually get the value here (#111).
 							&& this.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
 
