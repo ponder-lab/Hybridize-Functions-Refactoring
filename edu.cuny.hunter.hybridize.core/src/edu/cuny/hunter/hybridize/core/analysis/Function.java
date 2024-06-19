@@ -118,6 +118,11 @@ import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
  */
 public class Function {
 
+	/**
+	 * Used for speculative analysis of the function name.
+	 */
+	private static final String FUNCTION_NAME_CONTEXT_REGEX = "(train|test).*_step";
+
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
 		public Object getCorrespondingElement() {
@@ -1612,7 +1617,7 @@ public class Function {
 	}
 
 	private boolean hasTensorContext() {
-		return this.getSimpleName().matches("(train|test).*_step");
+		return this.getSimpleName().matches(FUNCTION_NAME_CONTEXT_REGEX);
 	}
 
 	public boolean isHybridizationAvailable() {
