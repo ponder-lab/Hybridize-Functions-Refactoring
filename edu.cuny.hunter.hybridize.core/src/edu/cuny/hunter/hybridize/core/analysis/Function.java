@@ -1612,8 +1612,7 @@ public class Function {
 	}
 
 	private boolean hasTensorContext() {
-		String name = this.getSimpleName();
-		return name.matches("(train|test).*_step");
+		return this.getSimpleName().matches("(train|test).*_step");
 	}
 
 	public boolean isHybridizationAvailable() {
