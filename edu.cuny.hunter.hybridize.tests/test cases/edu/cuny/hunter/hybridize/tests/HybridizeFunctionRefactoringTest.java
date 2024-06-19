@@ -7675,48 +7675,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testReduceAll() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(3, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testShuffle() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testSort() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testSort2() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testEinSum() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testClipByGlobalNorm() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(3, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testTopK() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(2, functions.size());
-		functions.stream().allMatch(Function::hasTensorParameter);
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 }
