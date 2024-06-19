@@ -7768,8 +7768,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotEquals(P3, f.getPassingPrecondition());
 		assertFalse(f.getTransformations().contains(CONVERT_TO_EAGER));
 		assertTrue(f.getStatus().hasInfo());
-		assertTrue(Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
-				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count() == 1);
+		assertEquals(1, Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count());
 	}
 
 	/**
