@@ -235,8 +235,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
 					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
-							.filter(f -> f.getIsHybrid() != null && f.getIsHybrid()
-									|| f.getLikelyHasTensorParameter() != null && f.getLikelyHasTensorParameter())
+							.filter(f -> f.isHybrid() != null && f.isHybrid() || f.hasTensorParameter() != null && f.hasTensorParameter())
 							.collect(Collectors.toSet());
 					resultsPrinter.print(candidates.size()); // number.
 
@@ -458,23 +457,22 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
-				function.isMethod(), function.getNumberOfParameters(), function.getLikelyHasTensorParameter(),
-				function.getLikelyHasPrimitiveParameters(), function.getIsHybrid(), function.getHasPythonSideEffects(),
-				function.getIsRecursive());
+				function.isMethod(), function.getNumberOfParameters(), function.hasTensorParameter(), function.hasPrimitiveParameters(),
+				function.isHybrid(), function.hasPythonSideEffects(), function.isRecursive());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getAutoGraphParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalAutographOptParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalFollowTypeHintsParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getExperimentalImplementsParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getFuncParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getInputSignatureParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getJitCompileParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.getReduceRetracingParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isAutoGraphParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalAutographOptParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalFollowTypeHintsParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalImplementsParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isFuncParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isInputSignatureParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isJitCompileParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isReduceRetracingParamExists());
 
 		printer.print(function.getRefactoring());
 		printer.print(function.getPassingPrecondition());

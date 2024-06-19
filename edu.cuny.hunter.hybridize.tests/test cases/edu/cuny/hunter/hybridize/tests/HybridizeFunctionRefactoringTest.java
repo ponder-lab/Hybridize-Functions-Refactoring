@@ -750,17 +750,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function function : functions) {
 			assertNotNull(function);
-			assertFalse(function.getIsHybrid());
+			assertFalse(function.isHybrid());
 
 			switch (function.getIdentifier()) {
 			case "Test.name":
-				assertNull(function.getLikelyHasTensorParameter());
+				assertNull(function.hasTensorParameter());
 				break;
 			case "Test.value":
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.hasTensorParameter());
 				break;
 			case "Test.__init__":
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Unknown function: " + function + ".");
@@ -788,14 +788,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -810,14 +810,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -831,14 +831,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -852,14 +852,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -873,14 +873,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -897,9 +897,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -913,14 +913,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -934,14 +934,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -955,14 +955,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && args.getInputSignatureParamExists() & args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && args.isInputSignatureParamExists() & args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -976,7 +976,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 
@@ -1001,16 +1001,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		// This test is with a custom decorator `@custom.decorator` that contains a parameter `input_signature`
 		// like `tf.function`. But it also has a tf.function decorator, therefore args should not be Null.
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & args.getAutoGraphParamExists()
-				&& !args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & args.isAutoGraphParamExists()
+				&& !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 
 		checkSideEffectStatus(function);
 	}
@@ -1018,7 +1018,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static void checkSideEffectStatus(Function function) {
 		RefactoringStatus status = function.getStatus();
 		assertTrue("Should fail due to a call graph issue, either a decorated function or missing function invocation.", status.hasError());
-		assertNull(function.getHasPythonSideEffects());
+		assertNull(function.hasPythonSideEffects());
 		RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
 		assertNotNull(entry);
@@ -1035,14 +1035,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		Function.HybridizationParameters args = function.getHybridizationParameters();
 		assertNotNull(args);
 
-		assertTrue(!args.getFuncParamExists() && !args.getInputSignatureParamExists() & !args.getAutoGraphParamExists()
-				&& args.getJitCompileParamExists() && !args.getReduceRetracingParamExists() && !args.getExperimentalImplementsParamExists()
-				&& !args.getExperimentalAutographOptParamExists() && !args.getExperimentalFollowTypeHintsParamExists());
+		assertTrue(!args.isFuncParamExists() && !args.isInputSignatureParamExists() & !args.isAutoGraphParamExists()
+				&& args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
 	}
 
 	/**
@@ -1151,7 +1151,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -1164,7 +1164,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -1178,7 +1178,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		functions.stream().forEach(f -> {
 			assertNotNull(f);
-			assertFalse(f.getIsHybrid());
+			assertFalse(f.isHybrid());
 		});
 	}
 
@@ -1192,7 +1192,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 	}
 
 	/**
@@ -1206,7 +1206,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 	}
 
 	/**
@@ -1219,7 +1219,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size()); // The decorator is in another file.
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 	}
 
 	/**
@@ -1232,7 +1232,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -1245,9 +1245,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 		assertFalse(function.getStatus().hasError());
-		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.hasPythonSideEffects());
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
 		assertNull(entry);
@@ -1263,7 +1263,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -1277,7 +1277,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertFalse(func.getIsHybrid());
+			assertFalse(func.isHybrid());
 		}
 	}
 
@@ -1292,8 +1292,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertFalse(func.getIsHybrid());
-			assertFalse(func.getHasPythonSideEffects());
+			assertFalse(func.isHybrid());
+			assertFalse(func.hasPythonSideEffects());
 			RefactoringStatus status = func.getStatus();
 			RefactoringStatusEntry entry = status.getEntryMatchingCode(Function.PLUGIN_ID,
 					PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode());
@@ -1312,7 +1312,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertTrue(func.getIsHybrid());
+			assertTrue(func.isHybrid());
 			checkSideEffectStatus(func);
 		}
 	}
@@ -1328,7 +1328,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 	}
 
 	/**
@@ -1342,7 +1342,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function func : functions) {
 			assertNotNull(func);
-			assertTrue(func.getIsHybrid());
+			assertTrue(func.isHybrid());
 		}
 	}
 
@@ -1356,7 +1356,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 		checkSideEffectStatus(function);
 	}
 
@@ -1419,8 +1419,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function func : functions) {
 			assertNotNull(func);
 
-			assertEquals(expectedIsHybrid, func.getIsHybrid());
-			assertEquals(expectedHasTensorParameter, func.getLikelyHasTensorParameter());
+			assertEquals(expectedIsHybrid, func.isHybrid());
+			assertEquals(expectedHasTensorParameter, func.hasTensorParameter());
 		}
 
 		Set<String> functionNames = new HashSet<>();
@@ -1470,8 +1470,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			fut.compareTo(func);
 
-			assertEquals(fut.isHybrid(), func.getIsHybrid());
-			assertEquals(fut.getLikelyHasTensorParameter(), func.getLikelyHasTensorParameter());
+			assertEquals(fut.isHybrid(), func.isHybrid());
+			assertEquals(fut.getLikelyHasTensorParameter(), func.hasTensorParameter());
 		}
 
 		Set<String> functionNames = new HashSet<>();
@@ -1703,14 +1703,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1723,7 +1723,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -1737,7 +1737,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1751,7 +1751,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -1765,7 +1765,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1779,7 +1779,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -1793,7 +1793,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("x", paramName);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1806,14 +1806,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1827,17 +1827,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		// TODO: Need to check the value (#111).
-		assertTrue(function.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists());
+		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
 		argumentsType params = function.getParameters();
 
 		// no params.
 		assertEquals(0, params.args.length);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1851,8 +1851,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists());
+		assertTrue(function.isHybrid());
+		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 		// TODO: And the value is true (#111).
 
 		argumentsType params = function.getParameters();
@@ -1876,7 +1876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		exprType annotationExpr = annotations[0];
 		assertNull(annotationExpr);
 
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	/**
@@ -1891,8 +1891,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists());
+		assertTrue(function.isHybrid());
+		assertFalse(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
 		argumentsType params = function.getParameters();
 
@@ -1921,7 +1921,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	/**
@@ -1935,10 +1935,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		// TODO: Need to check the value (#111).
-		assertTrue(function.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists());
+		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
 		argumentsType params = function.getParameters();
 
@@ -1967,7 +1967,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
 
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	/**
@@ -1981,10 +1981,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		// The flag is there.
-		assertTrue(function.getHybridizationParameters().getExperimentalFollowTypeHintsParamExists());
+		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
 		// But, it's set to False.
 		// TODO: assert that the experimental type hints param is set to false (#111).
@@ -2017,7 +2017,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("tf.Tensor", attributeName);
 
 		// NOTE: Set to assertFalse() when #111 is fixed.
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	/**
@@ -2030,7 +2030,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2050,7 +2050,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2064,7 +2064,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2084,7 +2084,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2115,7 +2115,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			Function function = functionList.iterator().next();
 			assertNotNull(function);
-			assertEquals(fut.isHybrid(), function.getIsHybrid());
+			assertEquals(fut.isHybrid(), function.isHybrid());
 
 			argumentsType params = function.getParameters();
 
@@ -2131,7 +2131,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2159,7 +2159,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			Function function = functionList.iterator().next();
 			assertNotNull(function);
-			assertEquals(fut.isHybrid(), function.getIsHybrid());
+			assertEquals(fut.isHybrid(), function.isHybrid());
 
 			argumentsType params = function.getParameters();
 
@@ -2175,7 +2175,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2203,7 +2203,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			Function function = functionList.iterator().next();
 			assertNotNull(function);
-			assertEquals(fut.isHybrid(), function.getIsHybrid());
+			assertEquals(fut.isHybrid(), function.isHybrid());
 
 			argumentsType params = function.getParameters();
 
@@ -2219,7 +2219,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2247,7 +2247,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2276,7 +2276,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functionList.iterator().next();
 			fut.compareTo(function);
 
-			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2307,7 +2307,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			// TODO: Not sure about this. Does WALA find closures? What really is the difference between having explicit parameters and
 			// implicit ones? We still need to examine the calling contexts to get any info. Even though this function doesn't have a tensor
 			// parameter, it probably should be hybridized because its free variables are tensors.
-			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.getLikelyHasTensorParameter());
+			assertFalse("Expecting " + function + " to not likely have a tensor-like parameter.", function.hasTensorParameter());
 		}
 	}
 
@@ -2321,7 +2321,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2347,7 +2347,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2360,7 +2360,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2380,7 +2380,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2393,7 +2393,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2413,7 +2413,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2426,7 +2426,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2446,7 +2446,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2459,7 +2459,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2479,7 +2479,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2492,7 +2492,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2512,7 +2512,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2525,7 +2525,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2545,7 +2545,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2558,7 +2558,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2578,7 +2578,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2591,7 +2591,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2611,7 +2611,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2624,7 +2624,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2644,7 +2644,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2657,7 +2657,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2677,7 +2677,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2690,7 +2690,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2710,7 +2710,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2723,7 +2723,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2743,7 +2743,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2756,7 +2756,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2776,7 +2776,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2789,7 +2789,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2809,7 +2809,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2822,7 +2822,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2842,7 +2842,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2855,7 +2855,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2875,7 +2875,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2888,7 +2888,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2908,7 +2908,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2921,7 +2921,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2941,7 +2941,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2954,7 +2954,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -2974,7 +2974,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -2987,7 +2987,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3007,7 +3007,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3020,7 +3020,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3040,7 +3040,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3053,7 +3053,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3073,7 +3073,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3086,7 +3086,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3106,7 +3106,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3119,7 +3119,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3139,7 +3139,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3152,7 +3152,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3172,7 +3172,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3185,7 +3185,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3205,7 +3205,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3218,7 +3218,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3238,7 +3238,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3251,7 +3251,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3271,7 +3271,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3284,7 +3284,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3304,7 +3304,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3317,7 +3317,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3337,7 +3337,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3350,7 +3350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3370,7 +3370,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3383,7 +3383,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3403,7 +3403,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3436,7 +3436,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -3469,7 +3469,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -3502,7 +3502,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -3515,7 +3515,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3535,7 +3535,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3548,7 +3548,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3568,7 +3568,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3581,7 +3581,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3601,7 +3601,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -3614,7 +3614,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertFalse(function.getIsHybrid());
+		assertFalse(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3634,7 +3634,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter) throws Exception {
@@ -3643,7 +3643,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertEquals(expectingHybridFunction, function.getIsHybrid());
+		assertEquals(expectingHybridFunction, function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -3663,7 +3663,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertEquals(expectingTensorParameter, function.getLikelyHasTensorParameter());
+		assertEquals(expectingTensorParameter, function.hasTensorParameter());
 	}
 
 	private void testHasLikelyTensorParameterHelper() throws Exception {
@@ -4196,7 +4196,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 		assertNotNull(function);
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 
 		argumentsType params = function.getParameters();
 
@@ -4216,7 +4216,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("b", paramName);
 
-		assertTrue("Expecting function with likely tensor parameter.", function.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with likely tensor parameter.", function.hasTensorParameter());
 	}
 
 	/**
@@ -4297,7 +4297,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -4330,7 +4330,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -4363,7 +4363,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -4396,7 +4396,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = NodeUtils.getRepresentationString(actualParameter);
 		assertEquals("t", paramName);
 
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getLikelyHasTensorParameter());
+		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.hasTensorParameter());
 	}
 
 	/**
@@ -4528,8 +4528,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter148() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
@@ -4544,8 +4544,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter149() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertNull(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertNull(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
@@ -4562,8 +4562,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter150() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
@@ -4578,8 +4578,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter151() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNotNull(function.getPassingPrecondition());
 		assertEquals(P3, function.getPassingPrecondition());
@@ -4596,8 +4596,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter152() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNotNull(function.getPassingPrecondition());
 		assertEquals(PreconditionSuccess.P3, function.getPassingPrecondition());
@@ -4614,8 +4614,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter153() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertEquals(P2, function.getPassingPrecondition());
 		assertEquals(1, function.getTransformations().size());
@@ -4631,8 +4631,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter154() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
@@ -4647,8 +4647,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter155() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNull(function.getPassingPrecondition());
 		assertTrue(function.getTransformations().isEmpty());
@@ -4663,9 +4663,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter156() throws Exception {
 		Function function = getFunction("add");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertTrue(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertTrue(function.hasPrimitiveParameters());
 		// FIXME: This is a strange case. We use type hints for tf.Tensor on primitives. Since they're cast automatically, we shouldn't
 		// consider this parameter as a primitive.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
@@ -4691,9 +4691,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter158() throws Exception {
 		Function function = getFunction("add");
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 
 	}
 
@@ -4714,20 +4714,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4748,20 +4748,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4781,22 +4781,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				assertFalse("Should pass preconditions.", f.getStatus().hasError());
-				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
+				assertFalse("No Python side-effects.", f.hasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4808,7 +4808,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatus status = f.getStatus();
 		assertTrue("Should not be available for optimization.", status.hasError());
 		RefactoringStatusEntry noTensorsFailure = f.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS);
-		assertTrue(!f.getIsHybrid() || (noTensorsFailure != null && noTensorsFailure.isError()));
+		assertTrue(!f.isHybrid() || (noTensorsFailure != null && noTensorsFailure.isError()));
 	}
 
 	/**
@@ -4823,22 +4823,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				assertFalse("Should pass preconditions.", f.getStatus().hasError());
-				assertFalse("No Python side-effects.", f.getHasPythonSideEffects());
+				assertFalse("No Python side-effects.", f.hasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4858,21 +4858,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.hasTensorParameter());
 				// Can't infer side-effects here because there's no invocation of this method.
 				checkSideEffectStatus(f);
 				break;
@@ -4894,21 +4894,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 2, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.hasTensorParameter());
 				// No invocation, so we won't be able to infer side-effects.
 				checkSideEffectStatus(f);
 				break;
@@ -4933,27 +4933,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting two functions.", 3, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "get_stuff":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertFalse(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertFalse(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
-				assertTrue("Should have python side-effects.", f.getHasPythonSideEffects());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
+				assertTrue("Should have python side-effects.", f.hasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -4964,109 +4964,109 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testModel8() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel9() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel10() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel11() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel12() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel13() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertFalse(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertFalse(function.isHybrid());
 	}
 
 	@Test
 	public void testModel14() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
 	public void testModel15() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
 	public void testModel16() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
 	public void testModel17() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
 	public void testModel18() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
 	public void testModel19() throws Exception {
 		Function function = this.getSingleFunction();
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertFalse(function.getHasPythonSideEffects());
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertFalse(function.hasPythonSideEffects());
+		assertTrue(function.isHybrid());
 	}
 
 	@Test
@@ -5077,16 +5077,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function f : functions) {
 			switch (f.getIdentifier()) {
 			case "f":
-				assertTrue(f.getLikelyHasTensorParameter());
-				assertFalse(f.getLikelyHasPrimitiveParameters());
-				assertFalse(f.getHasPythonSideEffects());
-				assertFalse(f.getIsHybrid());
+				assertTrue(f.hasTensorParameter());
+				assertFalse(f.hasPrimitiveParameters());
+				assertFalse(f.hasPythonSideEffects());
+				assertFalse(f.isHybrid());
 				break;
 			case "g":
-				assertTrue(f.getLikelyHasTensorParameter());
-				assertFalse(f.getLikelyHasPrimitiveParameters());
-				assertFalse(f.getHasPythonSideEffects());
-				assertFalse(f.getIsHybrid());
+				assertTrue(f.hasTensorParameter());
+				assertFalse(f.hasPrimitiveParameters());
+				assertFalse(f.hasPythonSideEffects());
+				assertFalse(f.isHybrid());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + f + ".");
@@ -5106,21 +5106,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expecting three functions.", 3, functions.size());
 
 		// no hybrids.
-		assertTrue(functions.stream().map(Function::getIsHybrid).allMatch(b -> b == false));
+		assertTrue(functions.stream().map(Function::isHybrid).allMatch(b -> b == false));
 
 		// check function parameters.
 		functions.forEach(f -> {
 			String simpleName = f.getSimpleName();
 			switch (simpleName) {
 			case "__init__":
-				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.getLikelyHasTensorParameter());
-				assertFalse(f.getIsHybrid());
-				assertTrue(f.getHasPythonSideEffects());
+				assertFalse("Expecting " + simpleName + " to not have a tensor param.", f.hasTensorParameter());
+				assertFalse(f.isHybrid());
+				assertTrue(f.hasPythonSideEffects());
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
 			case "call2":
-				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getLikelyHasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
@@ -5138,8 +5138,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertNotNull(function);
 
-		assertEquals(expectedHybrid, function.getIsHybrid());
-		assertEquals(expectedTensorParameter, function.getLikelyHasTensorParameter());
+		assertEquals(expectedHybrid, function.isHybrid());
+		assertEquals(expectedTensorParameter, function.hasTensorParameter());
 
 		assertEquals(expectedRefactoring, function.getRefactoring());
 
@@ -5169,54 +5169,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
-		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter()); // the example uses a primitive type.
+		assertTrue("Expecting a Python side-effect.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects2() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter()); // the example uses a primitive type.
 		// there's a call to a TF operation. So, no "Python" side-effects.
-		assertFalse("TF operations shouldn't be considered Python side-effects.", function.getHasPythonSideEffects());
+		assertFalse("TF operations shouldn't be considered Python side-effects.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects3() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter()); // the example uses a primitive type.
 		// there's a transitive Python side-effect.
-		assertTrue("Expecting a Python side-effect from a transitive local variable.", function.getHasPythonSideEffects());
+		assertTrue("Expecting a Python side-effect from a transitive local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects4() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter()); // the example uses a primitive type.
 		// there's a Python statement but no side-effect.
-		assertFalse("This Python statement only modifies a local variable, so no side-effects.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement only modifies a local variable, so no side-effects.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects5() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with side-effects.
-		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects6() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with side-effects. Multiple calls to the function.
-		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.getHasPythonSideEffects());
+		assertTrue("This Python statement modifies a global variable, so it has side-effects.", function.hasPythonSideEffects());
 	}
 
 	/**
@@ -5231,14 +5231,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static void testPythonSideEffects(Set<Function> functionSet) {
 		functionSet.forEach(f -> {
-			assertFalse(f.getIsHybrid());
-			assertFalse(f.getLikelyHasTensorParameter());
+			assertFalse(f.isHybrid());
+			assertFalse(f.hasTensorParameter());
 
 			switch (f.getIdentifier()) {
 			case "f":
 			case "g":
 				// there's a Python statement with (transitive) side-effects.
-				assertTrue("This Python statement modifies a global variable, so it has side-effects.", f.getHasPythonSideEffects());
+				assertTrue("This Python statement modifies a global variable, so it has side-effects.", f.hasPythonSideEffects());
 				break;
 
 			default:
@@ -5250,9 +5250,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static void testPythonSideEffects(Map<Function, Boolean> functionToHasSideEffects) {
 		functionToHasSideEffects.forEach((f, s) -> {
-			assertFalse(f.getIsHybrid());
-			assertFalse(f.getLikelyHasTensorParameter());
-			assertEquals("Function: " + f + " should " + (s ? "" : "not ") + "have side-effects.", s, f.getHasPythonSideEffects());
+			assertFalse(f.isHybrid());
+			assertFalse(f.hasTensorParameter());
+			assertEquals("Function: " + f + " should " + (s ? "" : "not ") + "have side-effects.", s, f.hasPythonSideEffects());
 		});
 	}
 
@@ -5313,9 +5313,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects9() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter()); // the example uses a primitive type.
-		assertTrue("Expecting a Python side-effect.", function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter()); // the example uses a primitive type.
+		assertTrue("Expecting a Python side-effect.", function.hasPythonSideEffects());
 	}
 
 	/**
@@ -5324,10 +5324,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects10() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		assertFalse("Not expecting a Python side-effect.", function.hasPythonSideEffects());
 	}
 
 	/**
@@ -5336,109 +5336,109 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects11() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		assertFalse("Not expecting a Python side-effect.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects12() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with no side-effects.
-		assertFalse("This Python statement modifies a local variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement modifies a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects13() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with no side-effects.
-		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement uses a list comprehension to modify a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects14() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with no side-effects.
-		assertFalse("This Python statement uses a lambda to modify a local variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement uses a lambda to modify a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects15() throws Exception {
 		Function function = getSingleFunction();
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with no side-effects.
-		assertFalse("This Python statement uses a loop to modify a local variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement uses a loop to modify a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects16() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with side-effects.
-		assertTrue("This Python statement uses a list comprehension to modify a global variable.", function.getHasPythonSideEffects());
+		assertTrue("This Python statement uses a list comprehension to modify a global variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects17() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// NOTE: Switch to assertTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/274 is fixed.
-		assertFalse("This Python statement uses a lambda to modify a global variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement uses a lambda to modify a global variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects18() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getIsHybrid());
-		assertFalse(f.getLikelyHasTensorParameter());
-		assertTrue(f.getHasPythonSideEffects());
+		assertFalse(f.isHybrid());
+		assertFalse(f.hasTensorParameter());
+		assertTrue(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertTrue(g.getHasPythonSideEffects());
+		assertTrue(g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects19() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getIsHybrid());
-		assertFalse(f.getLikelyHasTensorParameter());
-		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.isHybrid());
+		assertFalse(f.hasTensorParameter());
+		assertFalse(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertFalse(g.getHasPythonSideEffects());
+		assertFalse(g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects20() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getIsHybrid());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.isHybrid());
+		assertFalse(f.hasTensorParameter());
 		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
-				f.getHasPythonSideEffects());
+				f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects21() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getIsHybrid());
-		assertFalse(f.getLikelyHasTensorParameter());
-		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.isHybrid());
+		assertFalse(f.hasTensorParameter());
+		assertFalse(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertFalse(g.getHasPythonSideEffects());
+		assertFalse(g.hasPythonSideEffects());
 	}
 
 	@Test
@@ -5446,10 +5446,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functionSet = getFunctions();
 
 		for (Function f : functionSet) {
-			assertFalse(f.getIsHybrid());
-			assertFalse(f.getLikelyHasTensorParameter());
+			assertFalse(f.isHybrid());
+			assertFalse(f.hasTensorParameter());
 			assertFalse("This Python statement (transitively) uses a list comprehension to modify a local variable.",
-					f.getHasPythonSideEffects());
+					f.hasPythonSideEffects());
 		}
 	}
 
@@ -5462,14 +5462,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 			case "fun_with_side_effects":
-				assertFalse(function.getIsHybrid());
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.isHybrid());
+				assertFalse(function.hasTensorParameter());
 				// there's a Python statement with side-effects.
 				assertTrue("This Python statement (transitively) uses a list comprehension to modify a global variable.",
-						function.getHasPythonSideEffects());
+						function.hasPythonSideEffects());
 				break;
 			case "h":
-				assertFalse(function.getHasPythonSideEffects());
+				assertFalse(function.hasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Unknown function: " + function + ".");
@@ -5480,36 +5480,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects24() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertFalse("This Python statement (transitively) uses a lambda to modify a local variable.", function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertFalse("This Python statement (transitively) uses a lambda to modify a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects25() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with no side-effects.
-		assertFalse("This Python statement (transitively) uses a loop to modify a local variable.", function.getHasPythonSideEffects());
+		assertFalse("This Python statement (transitively) uses a loop to modify a local variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects26() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with side-effects.
-		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+		assertTrue("A loop to modifies a global variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects27() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// there's a Python statement with side-effects.
-		assertTrue("A loop to modifies a global variable.", function.getHasPythonSideEffects());
+		assertTrue("A loop to modifies a global variable.", function.hasPythonSideEffects());
 	}
 
 	@Test
@@ -5519,90 +5519,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals(2, map.size());
 
-		map.get("f").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertFalse(s));
-		map.get("g").stream().map(Function::getHasPythonSideEffects).forEach(s -> assertTrue(s));
+		map.get("f").stream().map(Function::hasPythonSideEffects).forEach(s -> assertFalse(s));
+		map.get("g").stream().map(Function::hasPythonSideEffects).forEach(s -> assertTrue(s));
 	}
 
 	@Test
 	public void testPythonSideEffects29() throws Exception {
 		Function f = getFunction("f");
 		assertTrue("Function f() calls g(), which has Python side-effets. Thus, f() also has Python side-effects.",
-				f.getHasPythonSideEffects());
+				f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertTrue("Function g() modifies a global variable through the global keyword.", g.getHasPythonSideEffects());
+		assertTrue("Function g() modifies a global variable through the global keyword.", g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects30() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("Removed the global keyword from g().", f.getHasPythonSideEffects());
+		assertFalse("Removed the global keyword from g().", f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertFalse("Function g() modifies a lobal variable (removed the global keyword).", g.getHasPythonSideEffects());
+		assertFalse("Function g() modifies a lobal variable (removed the global keyword).", g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects31() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPythonSideEffects());
+		assertTrue(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertTrue(g.getHasPythonSideEffects());
+		assertTrue(g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects32() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertFalse(g.getHasPythonSideEffects());
+		assertFalse(g.hasPythonSideEffects());
 
 		Function h = this.getFunction("h");
-		assertTrue(h.getHasPythonSideEffects());
+		assertTrue(h.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects33() throws Exception {
 		Function g = getFunction("g");
-		assertFalse("g() only returns the parameter.", g.getHasPythonSideEffects());
+		assertFalse("g() only returns the parameter.", g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects34() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.hasPythonSideEffects());
 
 		Function g = getFunction("g");
-		assertFalse("g() modifies a copy of a parameter.", g.getHasPythonSideEffects());
+		assertFalse("g() modifies a copy of a parameter.", g.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects35() throws Exception {
 		Function function = getFunction("side_effect");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
-		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.hasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects36() throws Exception {
 		Function function = getFunction("side_effect");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse("side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
-		assertTrue("side_effect() modifies a global list.", function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse("side_effect() is passed an integer (from docs).", function.hasTensorParameter());
+		assertTrue("side_effect() modifies a global list.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects37() throws Exception {
 		Function function = getFunction("no_side_effect");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse("no_side_effect() is passed an integer (from docs).", function.getLikelyHasTensorParameter());
-		assertFalse("no_side_effect() doesn't modifies a global list.", function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse("no_side_effect() is passed an integer (from docs).", function.hasTensorParameter());
+		assertFalse("no_side_effect() doesn't modifies a global list.", function.hasPythonSideEffects());
 	}
 
 	@Test
@@ -5610,9 +5610,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getFunction("Model.__call__");
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
@@ -5620,55 +5620,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getFunction("Model.__call__");
 		assertNotNull(function);
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects40() throws Exception {
 		Function function = getFunction("buggy_consume_next");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
 		// TODO: Change to assertTrue() when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/278 is fixed:
-		assertFalse("next() moves the iterator's cursor, and the iterator is over a list.", function.getHasPythonSideEffects());
+		assertFalse("next() moves the iterator's cursor, and the iterator is over a list.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects41() throws Exception {
 		Function function = getFunction("good_consume_next");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse("iterator still isn't a tensor. I wonder if you get speedup from that.", function.getLikelyHasTensorParameter());
-		assertFalse("next() moves the iterator's cursor, but the iterator is over a dataset.", function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse("iterator still isn't a tensor. I wonder if you get speedup from that.", function.hasTensorParameter());
+		assertFalse("next() moves the iterator's cursor, but the iterator is over a dataset.", function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects42() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects43() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects44() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPythonSideEffects());
 
 		assertFalse(function.getStatus().hasError());
 		assertTrue(function.getRefactoring() == Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID);
@@ -5680,15 +5680,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects45() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertTrue(function.getIsHybrid());
+		assertTrue(function.isHybrid());
 		// This is a hybrid function, so the refactoring should be OPTIMIZE_HYBRID_FUNCTION.
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 		// In table 2, we need it not to have a tensor parameter to de-hybridize, so this is a "failure."
 		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.hasPythonSideEffects());
 		// We also can't de-hybridize if it has Python side-effects. So, that's an error.
 		assertTrue(function.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS).isError());
 		// Also, we have a hybrid function with Python side-effects. Let's warn about that.
@@ -5703,9 +5703,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects46() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 
 		RefactoringStatus status = function.getStatus();
 
@@ -5721,18 +5721,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects47() throws Exception {
 		Function leakyFunction = getFunction("leaky_function");
 
-		assertTrue(leakyFunction.getIsHybrid());
-		assertTrue(leakyFunction.getLikelyHasTensorParameter());
-		assertTrue(leakyFunction.getHasPythonSideEffects());
+		assertTrue(leakyFunction.isHybrid());
+		assertTrue(leakyFunction.hasTensorParameter());
+		assertTrue(leakyFunction.hasPythonSideEffects());
 
 		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
 
-		assertTrue(capturesLeakedTensor.getIsHybrid());
-		assertTrue(capturesLeakedTensor.getLikelyHasTensorParameter());
+		assertTrue(capturesLeakedTensor.isHybrid());
+		assertTrue(capturesLeakedTensor.hasTensorParameter());
 
 		// NOTE: This function doesn't have Python side-effects, but it does capture a "leaky" tensor. See
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281.
-		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
+		assertFalse(capturesLeakedTensor.hasPythonSideEffects());
 
 		assertFalse(capturesLeakedTensor.getStatus().isOK());
 		assertTrue(capturesLeakedTensor.getStatus().hasError());
@@ -5764,18 +5764,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects48() throws Exception {
 		Function leakyFunction = getFunction("leaky_function");
 
-		assertTrue(leakyFunction.getIsHybrid());
-		assertTrue(leakyFunction.getLikelyHasTensorParameter());
-		assertTrue(leakyFunction.getHasPythonSideEffects());
+		assertTrue(leakyFunction.isHybrid());
+		assertTrue(leakyFunction.hasTensorParameter());
+		assertTrue(leakyFunction.hasPythonSideEffects());
 
 		Function capturesLeakedTensor = getFunction("captures_leaked_tensor");
 
-		assertFalse(capturesLeakedTensor.getIsHybrid());
-		assertTrue(capturesLeakedTensor.getLikelyHasTensorParameter());
+		assertFalse(capturesLeakedTensor.isHybrid());
+		assertTrue(capturesLeakedTensor.hasTensorParameter());
 
 		// NOTE: This function doesn't have Python side-effects, but it does capture a "leaky" tensor. See
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281.
-		assertFalse(capturesLeakedTensor.getHasPythonSideEffects());
+		assertFalse(capturesLeakedTensor.hasPythonSideEffects());
 
 		// NOTE: Change to assertFalse once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/281 is fixed.
 		assertFalse("Passes P1.", capturesLeakedTensor.getStatus().hasError());
@@ -5802,9 +5802,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects49() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 
 		// This is a P1 failure.
 		RefactoringStatus status = function.getStatus();
@@ -5826,9 +5826,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects50() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 
 		RefactoringStatus status = function.getStatus();
 		assertFalse("This is a P1 failure.", status.isOK());
@@ -5858,36 +5858,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects51() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects52() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects53() throws Exception {
 		Function function = getFunction("not_leaky_function");
 
-		assertFalse(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertFalse(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects54() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPythonSideEffects());
 
 		RefactoringStatus status = function.getStatus();
 		assertTrue("We can't convert something to eager if it has side-effects because that will alter semantics.", status.hasError());
@@ -5903,9 +5903,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects55() throws Exception {
 		Function function = getFunction("leaky_function");
 
-		assertTrue(function.getIsHybrid());
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertFalse(function.getHasPythonSideEffects());
+		assertTrue(function.isHybrid());
+		assertFalse(function.hasTensorParameter());
+		assertFalse(function.hasPythonSideEffects());
 
 		RefactoringStatus status = function.getStatus();
 		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
@@ -5922,19 +5922,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testPythonSideEffects56() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("Keyword argument assignments shouldn't be considered as heap writes.", f.getHasPythonSideEffects());
+		assertFalse("Keyword argument assignments shouldn't be considered as heap writes.", f.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects57() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("Embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+		assertFalse("Embedded functions aren't side-effects.", f.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testPythonSideEffects58() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("Decorated embedded functions aren't side-effects.", f.getHasPythonSideEffects());
+		assertFalse("Decorated embedded functions aren't side-effects.", f.hasPythonSideEffects());
 	}
 
 	/**
@@ -6031,7 +6031,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects62() throws Exception {
 		Function function = this.getSingleFunction("A");
 		assertEquals("f", function.getIdentifier());
-		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.hasPythonSideEffects());
 	}
 
 	/**
@@ -6041,7 +6041,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects63() throws Exception {
 		Function function = this.getSingleFunction("A");
 		assertEquals("f", function.getIdentifier());
-		assertFalse(function.getHasPythonSideEffects());
+		assertFalse(function.hasPythonSideEffects());
 	}
 
 	/**
@@ -6051,7 +6051,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects64() throws Exception {
 		Function function = this.getSingleFunction("A");
 		assertEquals("f", function.getIdentifier());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	/**
@@ -6061,16 +6061,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPythonSideEffects65() throws Exception {
 		Function function = this.getSingleFunction("A");
 		assertEquals("f", function.getIdentifier());
-		assertTrue(function.getHasPythonSideEffects());
+		assertTrue(function.hasPythonSideEffects());
 	}
 
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 
-		assertFalse(f.getIsHybrid());
+		assertFalse(f.isHybrid());
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
 		assertTrue("No recursive functions.", f.getStatus().hasError());
@@ -6081,16 +6081,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion2() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 
-		assertFalse(f.getIsHybrid()); // eag.
+		assertFalse(f.isHybrid()); // eag.
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
-		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertTrue(f.hasTensorParameter()); // T.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS));
 
-		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertFalse(f.hasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS));
 
-		assertFalse(f.getIsRecursive()); // F.
+		assertFalse(f.isRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
 
 		assertFalse(f.getStatus().hasError());
@@ -6103,7 +6103,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("recursive_fn");
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 		assertTrue("No (transitively) recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
@@ -6112,16 +6112,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion4() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertTrue(f.getIsHybrid()); // hyb.
+		assertTrue(f.isHybrid()); // hyb.
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
-		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertTrue(f.hasTensorParameter()); // T.
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
-		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertFalse(f.hasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
 
-		assertTrue(f.getIsRecursive()); // T.
+		assertTrue(f.isRecursive()); // T.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
 		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings().size());
@@ -6132,17 +6132,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion5() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 
-		assertTrue(f.getIsHybrid());
+		assertTrue(f.isHybrid());
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
-		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasTensorParameter());
 		assertFalse("Already optimal.", f.getStatus().isOK());
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
-		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertFalse(f.hasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
 
-		assertFalse(f.getIsRecursive()); // F.
+		assertFalse(f.isRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
 		assertTrue("We have a non-recursive hybrid function with a tensor parameter. No warning.", f.getWarnings().isEmpty());
@@ -6153,17 +6153,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion6() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertTrue(f.getIsHybrid()); // hyb.
+		assertTrue(f.isHybrid()); // hyb.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
-		assertTrue(f.getLikelyHasTensorParameter()); // T.
+		assertTrue(f.hasTensorParameter()); // T.
 		assertFalse("Already optimal.", f.getStatus().isOK());
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS).isError());
 
-		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertFalse(f.hasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
 
-		assertTrue(f.getIsRecursive()); // T.
+		assertTrue(f.isRecursive()); // T.
 		assertNull(f.getEntryMatchingFailure(IS_RECURSIVE));
 
 		assertEquals("We have a recursive hybrid function with a tensor parameter. Warn.", 1, f.getWarnings().size());
@@ -6173,16 +6173,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion7() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertFalse(f.getIsHybrid());
+		assertFalse(f.isHybrid());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.hasTensorParameter());
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
 
-		assertTrue(f.getHasPythonSideEffects()); // T.
+		assertTrue(f.hasPythonSideEffects()); // T.
 		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 
@@ -6193,18 +6193,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion8() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertTrue(f.getIsHybrid()); // hyb.
+		assertTrue(f.isHybrid()); // hyb.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
-		assertFalse(f.getLikelyHasTensorParameter()); // F.
+		assertFalse(f.hasTensorParameter()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 		assertNull("Not having tensor parameters is not a failure for: " + OPTIMIZE_HYBRID_FUNCTION + ".",
 				f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
 
-		assertTrue(f.getHasPythonSideEffects()); // T.
+		assertTrue(f.hasPythonSideEffects()); // T.
 		assertTrue(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS).isError());
 
-		assertTrue(f.getIsRecursive()); // T.
+		assertTrue(f.isRecursive()); // T.
 		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
 				f.getEntryMatchingFailure(IS_RECURSIVE));
 
@@ -6215,16 +6215,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion9() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertFalse(f.getIsHybrid());
+		assertFalse(f.isHybrid());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertFalse(f.hasTensorParameter());
 		assertTrue(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
 
-		assertFalse(f.getHasPythonSideEffects());
+		assertFalse(f.hasPythonSideEffects());
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 
@@ -6235,17 +6235,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRecursion10() throws Exception {
 		Function f = getFunction("recursive_fn");
 
-		assertTrue(f.getIsHybrid()); // hyb
+		assertTrue(f.isHybrid()); // hyb
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 
-		assertFalse(f.getLikelyHasTensorParameter()); // F.
+		assertFalse(f.hasTensorParameter()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
 		assertNull(f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 
-		assertFalse(f.getHasPythonSideEffects()); // F.
+		assertFalse(f.hasPythonSideEffects()); // F.
 		assertNull(f.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 		assertNull("Because there is no tensor parameter, it doesn't matter if it's recursive or not.",
 				f.getEntryMatchingFailure(IS_RECURSIVE));
 
@@ -6260,7 +6260,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = getFunction("recursive_fn");
 		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 
-		assertTrue(f.getIsRecursive());
+		assertTrue(f.isRecursive());
 		assertTrue("No (transitively) recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
 	}
@@ -6273,151 +6273,147 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testCallback() throws Exception {
 		Function f = getFunction("replica_fn");
-		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("This function has no parameters.", f.getLikelyHasTensorParameter());
-		assertFalse("This function has no parameters.", f.getLikelyHasPrimitiveParameters());
+		assertFalse("This function has no parameters.", f.hasTensorParameter());
+		assertFalse("This function has no parameters.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter2() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("This function has one parameter.", f.getLikelyHasTensorParameter());
-		assertTrue("This function has one parameter.", f.getLikelyHasPrimitiveParameters());
+		assertFalse("This function has one parameter.", f.hasTensorParameter());
+		assertTrue("This function has one parameter.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter3() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This function has one (tensor) parameter.", f.getLikelyHasTensorParameter());
-		assertFalse("This function has one (tensor) parameter.", f.getLikelyHasPrimitiveParameters());
+		assertTrue("This function has one (tensor) parameter.", f.hasTensorParameter());
+		assertFalse("This function has one (tensor) parameter.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter4() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasTensorParameter());
-		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getLikelyHasPrimitiveParameters());
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.hasTensorParameter());
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter5() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasTensorParameter());
-		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasPrimitiveParameters());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.hasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter6() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasTensorParameter());
-		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.",
-				f.getLikelyHasPrimitiveParameters());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.hasTensorParameter());
+		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter7() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasTensorParameter());
-		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.hasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter8() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter9() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter10() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter11() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter12() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter13() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter14() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.hasTensorParameter());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter15() throws Exception {
 		Function f = getFunction("f");
-		assertFalse("This is a user-defined class with no fields.", f.getLikelyHasPrimitiveParameters());
+		assertFalse("This is a user-defined class with no fields.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testLikelyHasNonTensorParameter16() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This is a user-defined class with a primitive field?", f.getLikelyHasPrimitiveParameters());
+		assertTrue("This is a user-defined class with a primitive field?", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testBooleanParameter() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testBooleanParameter2() throws Exception {
 		Function f = getFunction("f");
-		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testBooleanParameter3() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testBooleanParameter4() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testBooleanParameter5() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.hasPrimitiveParameters());
 	}
 
 	/**
@@ -6426,9 +6422,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRetracing() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasTensorParameter());
-		assertTrue(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getIsHybrid());
+		assertTrue(f.hasTensorParameter());
+		assertTrue(f.hasPrimitiveParameters());
+		assertFalse(f.isHybrid());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertNull(f.getPassingPrecondition());
 		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
@@ -6441,9 +6437,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testRetracing2() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getLikelyHasTensorParameter());
-		assertFalse(f.getLikelyHasPrimitiveParameters());
-		assertFalse(f.getIsHybrid());
+		assertTrue(f.hasTensorParameter());
+		assertFalse(f.hasPrimitiveParameters());
+		assertFalse(f.isHybrid());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertNotNull(f.getPassingPrecondition());
 		assertEquals(P1, f.getPassingPrecondition());
@@ -6459,10 +6455,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRetracing3() throws Exception {
 		Function f = getFunction("f");
 
-		assertTrue(f.getIsHybrid()); // hyb
-		assertTrue(f.getLikelyHasTensorParameter()); // T
-		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
-		assertFalse(f.getHasPythonSideEffects()); // F
+		assertTrue(f.isHybrid()); // hyb
+		assertTrue(f.hasTensorParameter()); // T
+		assertTrue(f.hasPrimitiveParameters()); // T
+		assertFalse(f.hasPythonSideEffects()); // F
 
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertNotNull(f.getPassingPrecondition());
@@ -6480,10 +6476,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRetracing4() throws Exception {
 		Function f = getFunction("f");
 
-		assertTrue(f.getIsHybrid()); // hyb
-		assertTrue(f.getLikelyHasTensorParameter()); // T
-		assertTrue(f.getLikelyHasPrimitiveParameters()); // T
-		assertTrue(f.getHasPythonSideEffects()); // T
+		assertTrue(f.isHybrid()); // hyb
+		assertTrue(f.hasTensorParameter()); // T
+		assertTrue(f.hasPrimitiveParameters()); // T
+		assertTrue(f.hasPythonSideEffects()); // T
 
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertNull(f.getPassingPrecondition());
@@ -6500,10 +6496,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testRetracing5() throws Exception {
 		Function f = getFunction("f");
 
-		assertTrue(f.getIsHybrid()); // hyb
-		assertTrue(f.getLikelyHasTensorParameter()); // T
-		assertFalse(f.getLikelyHasPrimitiveParameters()); // F
-		assertFalse(f.getHasPythonSideEffects()); // F
+		assertTrue(f.isHybrid()); // hyb
+		assertTrue(f.hasTensorParameter()); // T
+		assertFalse(f.hasPrimitiveParameters()); // F
+		assertFalse(f.hasPythonSideEffects()); // F
 
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, f.getRefactoring());
 		assertNull(f.getPassingPrecondition());
@@ -6516,27 +6512,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testTensorFlowGanTutorial() throws Exception {
 		Function f = getFunction("train_step");
-		assertFalse(f.getIsHybrid());
-		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.getLikelyHasTensorParameter());
-		assertFalse("This function doesn't have a primitve parameter.", f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.isHybrid());
+		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.hasTensorParameter());
+		assertFalse("This function doesn't have a primitve parameter.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTensorFlowGanTutorial2() throws Exception {
 		Function f = getFunction("train_step");
-		assertTrue(f.getIsHybrid());
-		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.getLikelyHasTensorParameter());
-		assertFalse("This function doesn't have a primitve parameter.", f.getLikelyHasPrimitiveParameters());
+		assertTrue(f.isHybrid());
+		assertTrue("The tensor parameter comes from the dataset interprocedurally.", f.hasTensorParameter());
+		assertFalse("This function doesn't have a primitve parameter.", f.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTensorFlowEagerExecution() throws Exception {
 		Function f = getFunction("MyModel.call");
-		assertFalse(f.getIsHybrid());
-		assertTrue(f.getLikelyHasTensorParameter());
-		assertFalse(f.getHasPythonSideEffects());
-		assertFalse(f.getIsRecursive());
-		assertFalse(f.getLikelyHasPrimitiveParameters());
+		assertFalse(f.isHybrid());
+		assertTrue(f.hasTensorParameter());
+		assertFalse(f.hasPythonSideEffects());
+		assertFalse(f.isRecursive());
+		assertFalse(f.hasPrimitiveParameters());
 		assertEquals(P1, f.getPassingPrecondition());
 		assertEquals(CONVERT_EAGER_FUNCTION_TO_HYBRID, f.getRefactoring());
 		assertTrue(f.getErrors().isEmpty());
@@ -6544,10 +6540,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(singleton(CONVERT_TO_HYBRID), f.getTransformations());
 
 		f = getFunction("train_step");
-		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasTensorParameter());
 
 		f = getFunction("test_step");
-		assertTrue(f.getLikelyHasTensorParameter());
+		assertTrue(f.hasTensorParameter());
 	}
 
 	/**
@@ -6559,7 +6555,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6571,7 +6567,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6583,7 +6579,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6595,7 +6591,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6608,7 +6604,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6621,7 +6617,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getLikelyHasTensorParameter());
+		assertTrue("This function is called from A.py.", f.hasTensorParameter());
 	}
 
 	/**
@@ -6631,19 +6627,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testTensorFlowKerasCustomLayer() throws Exception {
 		Function function = getFunction("MyConvolution2D.call");
 		assertNotNull(function);
-		assertFalse(function.getLikelyHasPrimitiveParameters());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	private static void testFunction(Function function, Boolean expectedHybrid, Boolean expectedTensorParameter,
 			Boolean expectedPrimitiveParameter, Boolean expectedPythonSideEffects, Boolean expectedRecursive,
 			Refactoring expectedRefactoring, PreconditionSuccess expectedPassingPrecondition, Set<Transformation> expectedTransformations,
 			int expectedStatusSeverity) {
-		assertEquals(expectedHybrid, function.getIsHybrid());
-		assertEquals(expectedTensorParameter, function.getLikelyHasTensorParameter());
-		assertEquals(expectedPrimitiveParameter, function.getLikelyHasPrimitiveParameters());
-		assertEquals(expectedPythonSideEffects, function.getHasPythonSideEffects());
-		assertEquals(expectedRecursive, function.getIsRecursive());
+		assertEquals(expectedHybrid, function.isHybrid());
+		assertEquals(expectedTensorParameter, function.hasTensorParameter());
+		assertEquals(expectedPrimitiveParameter, function.hasPrimitiveParameters());
+		assertEquals(expectedPythonSideEffects, function.hasPythonSideEffects());
+		assertEquals(expectedRecursive, function.isRecursive());
 		assertEquals(expectedRefactoring, function.getRefactoring());
 		assertEquals(expectedPassingPrecondition, function.getPassingPrecondition());
 		assertEquals(expectedTransformations, function.getTransformations());
@@ -6694,20 +6690,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testDatasetGenerator() throws Exception {
 		Function function = getFunction("add");
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
 	public void testDatasetEnumeration() throws Exception {
 		Function function = getFunction("summarize_weights");
-		assertFalse(function.getLikelyHasTensorParameter());
+		assertFalse(function.hasTensorParameter());
 	}
 
 	@Test
 	public void testDatasetIteration() throws Exception {
 		Function function = getFunction("add");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
@@ -6715,7 +6711,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(2, functions.size());
 		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("add") || f.getIdentifier().equals("f"))
-				.allMatch(f -> f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+				.allMatch(f -> f.hasTensorParameter() && !f.hasPrimitiveParameters()));
 	}
 
 	@Test
@@ -6723,39 +6719,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(3, functions.size());
 		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("add") || f.getIdentifier().equals("f"))
-				.allMatch(f -> f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+				.allMatch(f -> f.hasTensorParameter() && !f.hasPrimitiveParameters()));
 		assertTrue(functions.stream().filter(f -> f.getIdentifier().equals("g"))
-				.allMatch(f -> !f.getLikelyHasTensorParameter() && !f.getLikelyHasPrimitiveParameters()));
+				.allMatch(f -> !f.hasTensorParameter() && !f.hasPrimitiveParameters()));
 	}
 
 	@Test
 	public void testDatasetIteration4() throws Exception {
 		Function function = this.getSingleFunction();
 		assertEquals("distributed_train_step", function.getIdentifier());
-		assertTrue(function.getIsHybrid());
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.isHybrid());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testDataset() throws Exception {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
 	public void testDataset2() throws Exception {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
 	public void testDataset3() throws Exception {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -6767,10 +6763,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "f":
 			case "g":
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			case "filter_fn":
-				assertNull(function.getLikelyHasTensorParameter());
+				assertNull(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Unknown function: " + function + ".");
@@ -6787,7 +6783,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "f":
 			case "g":
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Unknown function: " + function + ".");
@@ -6805,7 +6801,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 			case "h":
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Unknown function: " + function + ".");
@@ -6817,125 +6813,124 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testDataset7() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(5, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset8() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(4, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset9() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset10() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset11() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(14, functions.size());
-		assertTrue(functions.stream().filter(f -> !f.getIdentifier().equals("n")).allMatch(Function::getLikelyHasTensorParameter));
-		assertFalse(functions.stream().filter(f -> f.getIdentifier().equals("n")).allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().filter(f -> !f.getIdentifier().equals("n")).allMatch(Function::hasTensorParameter));
+		assertFalse(functions.stream().filter(f -> f.getIdentifier().equals("n")).allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset12() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset13() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testDataset14() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		assertTrue(functions.stream().allMatch(Function::getLikelyHasTensorParameter));
+		assertTrue(functions.stream().allMatch(Function::hasTensorParameter));
 	}
 
 	@Test
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange2() throws Exception {
 		Set<Function> functions = this.getFunctions("test_A");
 		assertEquals(2, functions.size());
-		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::hasTensorParameter).count();
 		assertEquals(1, count);
 
-		count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasPrimitiveParameters).count();
+		count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::hasPrimitiveParameters).count();
 		assertEquals(0, count);
 	}
 
 	@Test
 	public void testTFRange3() throws Exception {
 		Function function = getFunction("f");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange4() throws Exception {
 		Function function = getFunction("f");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange5() throws Exception {
 		Function function = getFunction("f");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange6() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange7() throws Exception {
 		Function function = getFunction("f");
-		assertFalse(function.getLikelyHasTensorParameter());
-		assertTrue(function.getLikelyHasPrimitiveParameters());
+		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testTFRange8() throws Exception {
 		Function function = getFunction("f");
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
 	public void testPytest() throws Exception {
 		Set<Function> functions = this.getFunctions("test_sample");
 		assertEquals(2, functions.size());
-		long count = functions.stream().filter(f -> f.getIdentifier().equals("func")).filter(Function::getLikelyHasPrimitiveParameters)
-				.count();
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("func")).filter(Function::hasPrimitiveParameters).count();
 		assertEquals(1, count);
 	}
 
@@ -6943,7 +6938,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testPytest2() throws Exception {
 		Set<Function> functions = this.getFunctions("test_tf_range");
 		assertEquals(2, functions.size());
-		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::getLikelyHasTensorParameter).count();
+		long count = functions.stream().filter(f -> f.getIdentifier().equals("f")).filter(Function::hasTensorParameter).count();
 		assertEquals(1, count);
 	}
 
@@ -6955,8 +6950,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "test_compile_monitor":
 				break;
 			case "test_compile_monitor.tf_func":
-				assertTrue(function.getLikelyHasTensorParameter());
-				assertFalse(function.getLikelyHasPrimitiveParameters());
+				assertTrue(function.hasTensorParameter());
+				assertFalse(function.hasPrimitiveParameters());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -6987,8 +6982,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = array[0];
 		assertNotNull(function);
 
-		assertTrue(function.getLikelyHasTensorParameter());
-		assertFalse(function.getLikelyHasPrimitiveParameters());
+		assertTrue(function.hasTensorParameter());
+		assertFalse(function.hasPrimitiveParameters());
 	}
 
 	@Test
@@ -6996,7 +6991,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
 		assertEquals(1, function.getNumberOfParameters());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7004,7 +6999,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
 		assertEquals(1, function.getNumberOfParameters());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7012,7 +7007,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = this.getSingleFunction();
 		assertEquals("f", function.getIdentifier());
 		assertEquals(1, function.getNumberOfParameters());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7023,11 +7018,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "f":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7043,11 +7038,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "f":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7064,7 +7059,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7080,11 +7075,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "f":
 				assertEquals(1, function.getNumberOfParameters());
-				assertFalse(function.getLikelyHasTensorParameter());
+				assertFalse(function.hasTensorParameter());
 				break;
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7101,7 +7096,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7118,7 +7113,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7135,7 +7130,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "f":
 			case "g":
 				assertEquals(1, function.getNumberOfParameters());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7151,7 +7146,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7163,7 +7158,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7175,7 +7170,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("C.f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7187,7 +7182,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7199,7 +7194,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7211,7 +7206,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7223,7 +7218,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 		}
 	}
 
@@ -7236,7 +7231,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("C.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7248,7 +7243,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("C.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7260,7 +7255,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("C.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7274,7 +7269,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "D.g":
 				assertEquals(2, function.getNumberOfParameters());
 				assertTrue(function.isMethod());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7294,7 +7289,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			case "D.f":
 				assertEquals(2, function.getNumberOfParameters());
 				assertTrue(function.isMethod());
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting: " + function + ".");
@@ -7311,7 +7306,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("D.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7323,7 +7318,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("D.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7335,7 +7330,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("D.f", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7347,7 +7342,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("D.g", function.getIdentifier());
 		assertEquals(2, function.getNumberOfParameters());
 		assertTrue(function.isMethod());
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7355,7 +7350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7363,7 +7358,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7372,7 +7367,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(2, functions.size());
 
 		for (Function function : functions)
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7382,7 +7377,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function function : functions)
 			if (function.getIdentifier().equals("log1pexp"))
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7390,7 +7385,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7398,7 +7393,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7407,7 +7402,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(3, functions.size());
 
 		for (Function function : functions)
-			assertTrue(function.getLikelyHasTensorParameter());
+			assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7415,7 +7410,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7423,7 +7418,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7431,7 +7426,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7441,7 +7436,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function function : functions)
 			if (function.getIdentifier().equals("f"))
-				assertTrue(function.getLikelyHasTensorParameter());
+				assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7449,7 +7444,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7457,7 +7452,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7465,7 +7460,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7473,7 +7468,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7481,7 +7476,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7489,7 +7484,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7497,7 +7492,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7505,7 +7500,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7513,7 +7508,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7521,7 +7516,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7529,7 +7524,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7537,7 +7532,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7545,7 +7540,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7553,7 +7548,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7561,7 +7556,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7569,7 +7564,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7577,7 +7572,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7585,7 +7580,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7593,7 +7588,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7601,7 +7596,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7609,7 +7604,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7617,7 +7612,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7625,7 +7620,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7633,7 +7628,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7641,7 +7636,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7649,7 +7644,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7657,7 +7652,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7665,7 +7660,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
@@ -7673,55 +7668,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertTrue(function.getLikelyHasTensorParameter());
+		assertTrue(function.hasTensorParameter());
 	}
 
 	@Test
 	public void testReduceAll() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(3, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testShuffle() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testSort() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testSort2() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testEinSum() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testClipByGlobalNorm() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(3, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 
 	@Test
 	public void testTopK() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(2, functions.size());
-		functions.stream().allMatch(Function::getLikelyHasTensorParameter);
+		functions.stream().allMatch(Function::hasTensorParameter);
 	}
 }
