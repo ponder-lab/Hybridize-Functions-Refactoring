@@ -706,14 +706,17 @@ public class Function {
 				if (catalogInstanceKey instanceof ConstantKey<?>) {
 					ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
 					Object value = constantKey.getValue();
-					IClass concreteType = instanceKey.getConcreteType();
-					IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
-					PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
-					Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
 
-					for (InstanceKey fieldInstanceKey : fieldPointsToSet)
-						if (!seen.contains(fieldInstanceKey) && isTensorContainer(fieldInstanceKey, tensorContainers, builder, seen))
-							return true;
+					if (value != null) {
+						IClass concreteType = instanceKey.getConcreteType();
+						IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
+						PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
+						Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
+
+						for (InstanceKey fieldInstanceKey : fieldPointsToSet)
+							if (!seen.contains(fieldInstanceKey) && isTensorContainer(fieldInstanceKey, tensorContainers, builder, seen))
+								return true;
+					}
 				} else if (catalogInstanceKey instanceof AllocationSiteInNode || catalogInstanceKey instanceof ScopeMappingInstanceKey) {
 					AllocationSiteInNode asin = getAllocationSiteInNode(catalogInstanceKey);
 
