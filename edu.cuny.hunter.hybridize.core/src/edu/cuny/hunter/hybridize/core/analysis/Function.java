@@ -545,24 +545,25 @@ public class Function {
 		if (node instanceof Attribute)
 			ret.add((Attribute) node);
 
-		node.traverse(new VisitorBase() {
+		if (node != null)
+			node.traverse(new VisitorBase() {
 
-			@Override
-			public void traverse(SimpleNode node) throws Exception {
-				node.traverse(this);
-			}
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
 
-			@Override
-			protected Object unhandled_node(SimpleNode node) throws Exception {
-				return null;
-			}
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
 
-			@Override
-			public Object visitAttribute(Attribute node) throws Exception {
-				ret.add(node);
-				return super.visitAttribute(node);
-			}
-		});
+				@Override
+				public Object visitAttribute(Attribute node) throws Exception {
+					ret.add(node);
+					return super.visitAttribute(node);
+				}
+			});
 
 		return ret;
 	}
