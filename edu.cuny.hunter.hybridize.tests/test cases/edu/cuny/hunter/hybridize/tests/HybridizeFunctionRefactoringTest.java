@@ -5616,7 +5616,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 
 		assertTrue(function.isHybrid());
-		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasTensorParameter()); // due to speculative analysis.
 		assertTrue(function.hasPythonSideEffects());
 	}
 
@@ -5626,7 +5626,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 
 		assertTrue(function.isHybrid());
-		assertFalse(function.hasTensorParameter());
+		assertTrue(function.hasTensorParameter()); // due to speculative analysis.
 		assertTrue(function.hasPythonSideEffects());
 	}
 
