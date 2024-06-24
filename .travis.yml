@@ -13,7 +13,7 @@ cache:
 before_install:
   - git show HEAD --check # Fail on whitespace errors.
   - curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  - pip3 install -r requirements.txt
+  - pip3.10 install -r requirements.txt
   - mvn -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN spotless:check -B
   - black --fast --check --extend-exclude \/out .
 addons:
@@ -26,7 +26,7 @@ addons:
 services:
 - xvfb
 install:
-  - pip3 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
+  - pip3.10 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
   - mvn -U -s .travis.settings.xml -Dgithub.username=$GITHUB_USERNAME -Dgithub.password=$GITHUB_TOKEN -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false install -B -q -DskipTests=true
 before_script:
   - python3 --version
