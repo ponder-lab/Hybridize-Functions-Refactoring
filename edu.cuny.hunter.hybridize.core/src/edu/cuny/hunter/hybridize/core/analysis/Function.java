@@ -1624,7 +1624,8 @@ public class Function {
 	}
 
 	private boolean hasTensorContext() {
-		return this.getIdentifier().matches(FUNCTION_NAME_CONTEXT_REGEX);
+		String functionName = this.getSimpleName();
+		return functionName.matches(FUNCTION_NAME_CONTEXT_REGEX);
 	}
 
 	public boolean isHybridizationAvailable() {
