@@ -4876,8 +4876,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "call":
-				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.hasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				// Can't infer side-effects here because there's no invocation of this method.
 				checkSideEffectStatus(f);
 				break;
@@ -4912,8 +4911,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				checkOptimizationNotAvailableStatus(f);
 				break;
 			case "__call__":
-				// NOTE: Change to assertTrue once https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229 is fixed.
-				assertNull("Expecting " + simpleName + " not to have a tensor param.", f.hasTensorParameter());
+				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.hasTensorParameter());
 				// No invocation, so we won't be able to infer side-effects.
 				checkSideEffectStatus(f);
 				break;
@@ -5616,7 +5614,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 
 		assertTrue(function.isHybrid());
-		assertTrue(function.hasTensorParameter()); // due to speculative analysis.
+		assertFalse(function.hasTensorParameter()); // self isn't a tensor parameter.
 		assertTrue(function.hasPythonSideEffects());
 	}
 
@@ -5626,7 +5624,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 
 		assertTrue(function.isHybrid());
-		assertTrue(function.hasTensorParameter()); // due to speculative analysis.
+		assertFalse(function.hasTensorParameter()); // self isn't a tensor parameter.
 		assertTrue(function.hasPythonSideEffects());
 	}
 

@@ -1532,6 +1532,11 @@ public class Function {
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		// True iff the function has a self parameter in the first position.
+		boolean selfParam = false;
+
 		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
@@ -1545,8 +1550,10 @@ public class Function {
 					String paramName = NodeUtils.getRepresentationString(paramExpr);
 
 					// don't consider `self` as a tensor.
-					if (paramInx == 0 && paramName.equals(SELF_PARAMETER_NAME))
+					if (paramInx == 0 && paramName.equals(SELF_PARAMETER_NAME)) {
+						selfParam = true;
 						continue; // next parameter.
+					}
 
 					// check a special case where we consider type hints.
 					boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
@@ -1576,44 +1583,45 @@ public class Function {
 						}
 					}
 
-					// Is this function in the call graph? FIXME: This is checked for **each** parameter.
-					Set<CGNode> nodes = this.getNodes(callGraph);
+					// If this function is in the call graph.
+					if (!nodes.isEmpty()) {
+						// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
+						// pointer key, then we know it's a tensor if the TensorType is not null.
+						if (this.tensorAnalysisIncludesParameter(tensorAnalysis, paramExpr, paramName,
+								monitor.slice(IProgressMonitor.UNKNOWN))) {
+							this.tensorParameter = Boolean.TRUE;
+							LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
+							monitor.worked(1);
+							continue; // next parameter.
+						}
 
-					if (nodes.isEmpty())
-						// if there are no nodes representing this function, then it most likely isn't called.
-						throw new CantInferTensorParametersException(
-								"Can't infer tensor parameters for " + this + " without a call graph node.");
-
-					// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
-					// pointer key, then we know it's a tensor if the TensorType is not null.
-					if (this.tensorAnalysisIncludesParameter(tensorAnalysis, paramExpr, paramName,
-							monitor.slice(IProgressMonitor.UNKNOWN))) {
-						this.tensorParameter = Boolean.TRUE;
-						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
-						monitor.worked(1);
-						continue; // next parameter.
-					}
-
-					// Check for containers of tensors.
-					if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
-							monitor.slice(IProgressMonitor.UNKNOWN))) {
-						this.tensorParameter = Boolean.TRUE;
-						LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
+						// Check for containers of tensors.
+						if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
+								monitor.slice(IProgressMonitor.UNKNOWN))) {
+							this.tensorParameter = Boolean.TRUE;
+							LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
+						}
 					}
 
 					monitor.worked(1);
 				}
 
-				// check a special case where we consider context. We do this only if there is at least one parameter and we couldn't
-				// determine it otherwise.
-				if (this.tensorParameter == null && actualParams.length > 0 && this.getUseSpeculativeAnalysis()
-						&& this.hasTensorContext()) {
-					this.tensorParameter = Boolean.TRUE;
-					LOG.info(this + " likely has a tensor parameter due to context.");
-					this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
-				}
-			}
-		}
+				// True if there is only one parameter that is self.
+				final boolean onlySelfParam = actualParams.length == 1 && selfParam;
+
+				// if we haven't yet determined if there's a tensor parameter and there's at least one parameter that's not only self.
+				if (this.tensorParameter == null && actualParams.length > 0 && !onlySelfParam)
+					// check a special case where we consider context.
+					if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
+						this.tensorParameter = Boolean.TRUE;
+						LOG.info(this + " likely has a tensor parameter due to context.");
+						this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
+					} else if (nodes.isEmpty())
+						// if there are no nodes representing this function, then it most likely isn't called.
+						throw new CantInferTensorParametersException(
+								"Can't infer tensor parameters for " + this + " without a call graph node.");
+			} // end actualParams != null.
+		} // end params != null.
 
 		if (this.tensorParameter == null) {
 			this.tensorParameter = Boolean.FALSE;
