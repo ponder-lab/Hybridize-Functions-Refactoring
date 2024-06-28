@@ -1791,7 +1791,12 @@ public class Function {
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
-			int param = ir.getParameter(paramInx + 1); // the first argument is the function being invoked.
+			int i = paramInx + 1;
+
+			assert i < ir.getNumberOfParameters() : "Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + ").";
+
+			int param = ir.getParameter(i); // the first argument is the function being invoked.
+
 			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
 			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
 
