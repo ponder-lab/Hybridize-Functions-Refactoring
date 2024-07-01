@@ -56,6 +56,7 @@ import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
+import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring2;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
@@ -1666,7 +1667,7 @@ public class Function {
 
 			PySelection selection = Util.getSelection(def.name, getContainingDocument());
 			RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
-			IPyRefactoring2 refactoring = (Refactorer) Refactorer.getPyRefactoring();
+			IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
 			HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
 			assert def.equals(hierarchyNode.ast) : "The first node in the class hierarchy should be this class.";
 
