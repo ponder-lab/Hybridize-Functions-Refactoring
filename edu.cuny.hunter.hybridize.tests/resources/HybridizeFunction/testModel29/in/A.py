@@ -3,7 +3,7 @@
 import tensorflow as tf
 
 
-class EmptyClass():
+class EmptyClass:
     pass
 
 
