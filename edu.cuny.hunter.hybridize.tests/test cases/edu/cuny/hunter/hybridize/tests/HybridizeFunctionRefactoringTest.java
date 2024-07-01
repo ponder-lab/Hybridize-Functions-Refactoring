@@ -5151,6 +5151,139 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel23() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("call")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel24() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertFalse(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel25() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel26() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel27() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel28() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel29() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
+		});
+	}
+
 	// TODO: Test models that have tf.functions.
 
 	private void testPreconditionCheckingHelper(boolean expectedHybrid, boolean expectedTensorParameter, Refactoring expectedRefactoring,

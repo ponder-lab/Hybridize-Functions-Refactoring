@@ -12,10 +12,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getAllParentNames;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
+import static java.util.Collections.emptySet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
 import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
@@ -54,6 +56,9 @@ import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
+import org.python.pydev.ast.refactoring.HierarchyNodeModel;
+import org.python.pydev.ast.refactoring.IPyRefactoring2;
+import org.python.pydev.ast.refactoring.RefactoringRequest;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.ImportHandle;
 import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
@@ -62,6 +67,7 @@ import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
+import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.VisitorBase;
@@ -107,6 +113,7 @@ import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
+import com.python.pydev.analysis.refactoring.refactorer.Refactorer;
 
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
@@ -120,9 +127,6 @@ public class Function {
 
 	/**
 	 * Used for speculative analysis of the function name.
-	 *
-	 * @implNote FIXME: Use class hierarchy instead to ensure that call() overrides the one in tf.keras.Model as depicted in
-	 *           <a href="https://app.asana.com/0/1201355158849577/1202323572329145/f">this Asana task</a>.
 	 */
 	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model";
 
@@ -1631,9 +1635,45 @@ public class Function {
 		monitor.done();
 	}
 
-	private boolean hasTensorContext() {
+	private boolean hasTensorContext() throws NoTextSelectionException {
 		String functionName = this.getSimpleName();
-		return functionName.matches(FUNCTION_NAME_CONTEXT_REGEX);
+		boolean matches = functionName.matches(FUNCTION_NAME_CONTEXT_REGEX);
+
+		// if we have a match and it's a functor.
+		if (matches && (functionName.equals("call") || functionName.equals("__call__"))) {
+			// check that we inherit from tf.keras.Model.
+			FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+
+			if (functionDef.parent instanceof ClassDef) {
+				ClassDef classDef = (ClassDef) functionDef.parent;
+				Set<String> parentNames = this.getAllClassParentNames(true);
+
+				if (parentNames.stream().filter(pn -> pn.equals("Model")).findAny().isPresent())
+					return true;
+			}
+
+			return false;
+		}
+
+		return matches;
+	}
+
+	private Set<String> getAllClassParentNames(boolean onlyLastSegment) throws NoTextSelectionException {
+		SimpleNode node = this.getFunctionDefinition().getFunctionDef().parent;
+
+		if (node instanceof ClassDef) {
+			ClassDef def = (ClassDef) node;
+
+			PySelection selection = Util.getSelection(def.name, getContainingDocument());
+			RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
+			IPyRefactoring2 refactoring = (Refactorer) Refactorer.getPyRefactoring();
+			HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+			assert def.equals(hierarchyNode.ast) : "The first node in the class hierarchy should be this class.";
+
+			return getAllParentNames(hierarchyNode, onlyLastSegment);
+		}
+
+		return emptySet();
 	}
 
 	public boolean isHybridizationAvailable() {

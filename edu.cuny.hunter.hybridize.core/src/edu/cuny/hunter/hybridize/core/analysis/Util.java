@@ -15,6 +15,7 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
+import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
@@ -338,6 +339,18 @@ public class Util {
 				}
 			}
 		}
+		return ret;
+	}
+
+	public static Set<String> getAllParentNames(HierarchyNodeModel hierarchyNode, boolean onlyLastSegment) {
+		Set<String> ret = new HashSet<>();
+
+		if (hierarchyNode.ast != null)
+			ret.addAll(NodeUtils.getParentNames(hierarchyNode.ast, onlyLastSegment));
+
+		for (HierarchyNodeModel parenNode : hierarchyNode.parents)
+			ret.addAll(getAllParentNames(parenNode, onlyLastSegment));
+
 		return ret;
 	}
 }
