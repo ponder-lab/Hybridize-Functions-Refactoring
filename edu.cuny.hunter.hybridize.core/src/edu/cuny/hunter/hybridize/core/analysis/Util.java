@@ -150,6 +150,7 @@ public class Util {
 		return fqn;
 	}
 
+	// FIXME: `node` is only used for logging.
 	public static String getFullyQualifiedName(SimpleNode node, String containingModName, File containingFile,
 			PySelection containingSelection, IPythonNature nature, IProgressMonitor monitor)
 			throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
