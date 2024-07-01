@@ -748,7 +748,7 @@ public class Function {
 	/**
 	 * True iff this {@link Function} has Python side-effects.
 	 */
-	private Boolean pythonSideEffects;
+	private Boolean hasPythonSideEffects;
 
 	/**
 	 * This {@link Function}'s associated hybridization parameters.
@@ -767,12 +767,12 @@ public class Function {
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
-	private Boolean primitiveParameters;
+	private Boolean hasPrimitiveParameter;
 
 	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
-	private Boolean tensorParameter;
+	private Boolean hasTensorParameter;
 
 	private PreconditionSuccess passingPrecondition;
 
@@ -794,7 +794,7 @@ public class Function {
 
 	public void addFailure(PreconditionFailure failure, String message) {
 		// If is side-effects is filled, we can't set a precondition failure that we can't determine them.
-		assert this.hasPythonSideEffects() == null
+		assert this.getHasPythonSideEffects() == null
 				|| failure != PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS : "Can't both have side-effects filled and have tem undterminable.";
 
 		this.addStatus(RefactoringStatus.ERROR, message, failure.getCode());
@@ -876,11 +876,11 @@ public class Function {
 		if (!this.isHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
-			if (this.hasTensorParameter() != null && this.hasTensorParameter()) {
+			if (this.getHasTensorParameter() != null && this.getHasTensorParameter()) {
 				this.addInfo("This eager function likely has a tensor parameter.");
-				if (this.hasPrimitiveParameters() != null && !this.hasPrimitiveParameters()) {
+				if (this.getHasPrimitiveParameter() != null && !this.getHasPrimitiveParameter()) {
 					this.addInfo("This eager function likely does not have a primitive parameter.");
-					if (this.hasPythonSideEffects() != null && !this.hasPythonSideEffects()) {
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This eager function does not have Python side-effects.");
 						if (this.isRecursive() != null && !this.isRecursive()) {
 							this.addInfo("This eager function is not recursive.");
@@ -888,31 +888,31 @@ public class Function {
 							this.setPassingPrecondition(P1);
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
-					} else if (this.hasPythonSideEffects() != null) { // it has side-effects.
+					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
 						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 								"Can't hybridize a function with Python side-effects.");
 
 						if (this.isRecursive() != null && this.isRecursive())
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					}
-				} else if (this.hasPrimitiveParameters() != null) { // it has primitive parameters.
+				} else if (this.getHasPrimitiveParameter() != null) { // it has primitive parameters.
 					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
-					if (this.hasPythonSideEffects() != null && this.hasPythonSideEffects())
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 								"Can't hybridize a function with Python side-effects.");
 
 					if (this.isRecursive() != null && this.isRecursive())
 						this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 				}
-			} else if (this.hasTensorParameter() != null) { // no tensor parameters.
+			} else if (this.getHasTensorParameter() != null) { // no tensor parameters.
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
-				if (this.hasPrimitiveParameters() != null && this.hasPrimitiveParameters())
+				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter())
 					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
-				if (this.hasPythonSideEffects() != null && this.hasPythonSideEffects())
+				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS, "Can't hybridize a function with Python side-effects.");
 
 				if (this.isRecursive() != null && this.isRecursive())
@@ -921,34 +921,34 @@ public class Function {
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
-			if (this.hasTensorParameter() != null && !this.hasTensorParameter()) {
+			if (this.getHasTensorParameter() != null && !this.getHasTensorParameter()) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
-				if (this.hasPythonSideEffects() != null && !this.hasPythonSideEffects()) {
+				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addInfo("This hybrid function does not have Python side-effects.");
 					this.addTransformation(CONVERT_TO_EAGER);
 					this.setPassingPrecondition(P2);
 
-				} else if (this.hasPythonSideEffects() != null) // it has side-effects.
+				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
-			} else if (this.hasTensorParameter() != null) { // it has a tensor parameter.
+			} else if (this.getHasTensorParameter() != null) { // it has a tensor parameter.
 				this.addInfo("This hybrid function likely has a tensor parameter.");
 				// if it has primitive parameters.
-				if (this.hasPrimitiveParameters() != null && this.hasPrimitiveParameters()) {
+				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter()) {
 					this.addInfo("This hybrid function likely has a primitive parameter.");
 					// if it does not have side-effects.
-					if (this.hasPythonSideEffects() != null && !this.hasPythonSideEffects()) {
+					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This hybrid function does not have Python side-effects.");
 						this.addTransformation(CONVERT_TO_EAGER);
 						this.setPassingPrecondition(P3);
-					} else if (this.hasPythonSideEffects() != null) // it has side-effects.
+					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
-				} else if (this.hasPrimitiveParameters() != null) { // no primitive parameters.
+				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
 					this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 							"Functions with no Python literal arguments may benefit from hybridization.");
 
-					if (this.hasPythonSideEffects() != null && this.hasPythonSideEffects())
+					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 								"De-hybridizing a function with Python side-effects may alter semantics.");
 				}
@@ -960,7 +960,7 @@ public class Function {
 			}
 
 			// Warn if the function has side-effects.
-			if (this.hasPythonSideEffects() != null && this.hasPythonSideEffects())
+			if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
 
@@ -1269,8 +1269,8 @@ public class Function {
 		return this.functionDefinition;
 	}
 
-	public Boolean hasPythonSideEffects() {
-		return this.pythonSideEffects;
+	public Boolean getHasPythonSideEffects() {
+		return this.hasPythonSideEffects;
 	}
 
 	/**
@@ -1322,8 +1322,8 @@ public class Function {
 	 *
 	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
-	public Boolean hasPrimitiveParameters() {
-		return this.primitiveParameters;
+	public Boolean getHasPrimitiveParameter() {
+		return this.hasPrimitiveParameter;
 	}
 
 	/**
@@ -1331,8 +1331,8 @@ public class Function {
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
 	 */
-	public Boolean hasTensorParameter() {
-		return this.tensorParameter;
+	public Boolean getHasTensorParameter() {
+		return this.hasTensorParameter;
 	}
 
 	public MethodReference getMethodReference() throws CoreException {
@@ -1462,7 +1462,7 @@ public class Function {
 
 				if (!pointsToSet.isEmpty() && allInstancesArePrimitive) {
 					LOG.info(this + " likely has a primitive parameter.");
-					this.primitiveParameters = TRUE;
+					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
 					return;
 				}
@@ -1474,7 +1474,7 @@ public class Function {
 		}
 
 		LOG.info(this + " likely does not have a primitive parameter.");
-		this.primitiveParameters = FALSE;
+		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
 	}
 
@@ -1574,7 +1574,7 @@ public class Function {
 							Set<Attribute> allAttributes = getAllAttributes(node);
 
 							if (this.attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
-								this.tensorParameter = Boolean.TRUE;
+								this.hasTensorParameter = Boolean.TRUE;
 								LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
 								monitor.worked(1);
 								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
@@ -1589,7 +1589,7 @@ public class Function {
 						// pointer key, then we know it's a tensor if the TensorType is not null.
 						if (this.tensorAnalysisIncludesParameter(tensorAnalysis, paramExpr, paramName,
 								monitor.slice(IProgressMonitor.UNKNOWN))) {
-							this.tensorParameter = Boolean.TRUE;
+							this.hasTensorParameter = Boolean.TRUE;
 							LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
 							monitor.worked(1);
 							continue; // next parameter.
@@ -1598,7 +1598,7 @@ public class Function {
 						// Check for containers of tensors.
 						if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
 								monitor.slice(IProgressMonitor.UNKNOWN))) {
-							this.tensorParameter = Boolean.TRUE;
+							this.hasTensorParameter = Boolean.TRUE;
 							LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
 						}
 					}
@@ -1610,10 +1610,10 @@ public class Function {
 				final boolean onlySelfParam = actualParams.length == 1 && selfParam;
 
 				// if we haven't yet determined if there's a tensor parameter and there's at least one parameter that's not only self.
-				if (this.tensorParameter == null && actualParams.length > 0 && !onlySelfParam)
+				if (this.hasTensorParameter == null && actualParams.length > 0 && !onlySelfParam)
 					// check a special case where we consider context.
 					if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
-						this.tensorParameter = Boolean.TRUE;
+						this.hasTensorParameter = Boolean.TRUE;
 						LOG.info(this + " likely has a tensor parameter due to context.");
 						this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
 					} else if (nodes.isEmpty())
@@ -1623,8 +1623,8 @@ public class Function {
 			} // end actualParams != null.
 		} // end params != null.
 
-		if (this.tensorParameter == null) {
-			this.tensorParameter = Boolean.FALSE;
+		if (this.hasTensorParameter == null) {
+			this.hasTensorParameter = Boolean.FALSE;
 			LOG.info(this + " does not likely have a tensor parameter.");
 		}
 
@@ -1710,11 +1710,11 @@ public class Function {
 	}
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
-		assert this.pythonSideEffects == null : "Can only set side-effects once.";
+		assert this.hasPythonSideEffects == null : "Can only set side-effects once.";
 		assert hasPythonSideEffects == null || this.getStatus().getEntryMatchingCode(PLUGIN_ID,
 				PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS.getCode()) == null : "Can't set side-effects if they are undeterminable.";
 
-		this.pythonSideEffects = hasPythonSideEffects;
+		this.hasPythonSideEffects = hasPythonSideEffects;
 	}
 
 	protected void setHybrid(Boolean hybrid) {

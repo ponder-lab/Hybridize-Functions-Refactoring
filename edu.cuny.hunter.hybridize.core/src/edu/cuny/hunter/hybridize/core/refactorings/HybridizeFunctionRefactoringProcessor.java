@@ -394,7 +394,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check Python side-effects.
 				try {
 					if (this.getAlwaysCheckPythonSideEffects() || func.isHybrid()
-							|| func.hasTensorParameter() != null && func.hasTensorParameter()) {
+							|| func.getHasTensorParameter() != null && func.getHasTensorParameter()) {
 						Map<CGNode, OrdinalSet<PointerKey>> mod = this.computeMod(project, callGraph, builder.getPointerAnalysis());
 						func.inferPythonSideEffects(mod, callGraph, builder.getPointerAnalysis());
 					}
@@ -412,7 +412,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					// NOTE: Whether a hybrid function is recursive is irrelevant; if the function has no tensor parameter, de-hybridizing
 					// it does not violate semantics preservation as potential retracing happens regardless. We do, however, issue a
 					// refactoring warning when a hybrid function with a tensor parameter is recursive.
-					if (this.getAlwaysCheckRecursion() || func.hasTensorParameter() != null && func.hasTensorParameter())
+					if (this.getAlwaysCheckRecursion() || func.getHasTensorParameter() != null && func.getHasTensorParameter())
 						func.computeRecursion(callGraph);
 				} catch (CantComputeRecursionException e) {
 					LOG.warn("Unable to compute whether " + func + " is recursive.", e);
