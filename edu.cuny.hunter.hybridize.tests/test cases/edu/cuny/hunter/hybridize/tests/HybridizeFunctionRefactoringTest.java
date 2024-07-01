@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static edu.cuny.hunter.hybridize.core.analysis.Function.PLUGIN_ID;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
@@ -5128,6 +5129,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
 			}
+		});
+	}
+
+	/**
+	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/229.
+	 */
+	@Test
+	public void testModel22() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		Set<Function> callFunctions = functions.stream().filter(f -> f.getSimpleName().equals("__call__")).collect(toSet());
+		assertEquals(1, callFunctions.size());
+
+		callFunctions.forEach(f -> {
+			assertTrue(f.getHasTensorParameter());
+			RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode());
+			assertNotNull(entry);
 		});
 	}
 
