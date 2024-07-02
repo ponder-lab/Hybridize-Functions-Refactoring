@@ -7023,6 +7023,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testDataset15() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(3, functions.size());
+
+		Set<Function> addFunctions = functions.stream().filter(f -> f.getSimpleName().equals("add")).collect(toSet());
+		assertEquals(1, addFunctions.size());
+
+		Function function = addFunctions.iterator().next();
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
+	public void testDataset16() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+
+		Set<Function> addFunctions = functions.stream().filter(f -> f.getSimpleName().equals("add")).collect(toSet());
+		assertEquals(1, addFunctions.size());
+
+		Function function = addFunctions.iterator().next();
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
 	public void testTFRange() throws Exception {
 		Function function = getFunction("f");
 		assertTrue(function.getHasTensorParameter());
