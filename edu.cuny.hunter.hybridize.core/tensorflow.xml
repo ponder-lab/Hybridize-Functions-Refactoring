@@ -1863,7 +1863,7 @@
         </method>
       </class>
       <class name="with_options" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#with_options-->
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#with_options -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self options name">
           <!-- FIXME: Workaround for https://github.com/wala/ML/issues/127. -->
           <new def="x" class="Ltensorflow/data/Dataset" />
