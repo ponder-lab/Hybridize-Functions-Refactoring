@@ -513,6 +513,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	@Override
 	public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException, OperationCanceledException {
+		this.clearCaches();
 		return super.checkInitialConditions(pm);
 	}
 
