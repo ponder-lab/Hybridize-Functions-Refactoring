@@ -278,7 +278,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter autograph.
+		 * @return True iff this {@link decoratorsType} has parameter autograph.
 		 */
 		public boolean isAutoGraphParamExists() {
 			return this.autoGraphParamExists;
@@ -287,7 +287,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter experimental_autograph_options.
+		 * @return True iff this {@link decoratorsType} has parameter experimental_autograph_options.
 		 */
 		public boolean isExperimentalAutographOptParamExists() {
 			return this.experimentalAutographOptionsParamExists;
@@ -296,7 +296,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter experimental_follow_type_hints.
+		 * @return True iff this {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean isExperimentalFollowTypeHintsParamExists() {
 			return this.experimentaFollowTypeHintsParamExists;
@@ -305,7 +305,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter experimental_implements.
+		 * @return True iff this {@link decoratorsType} has parameter experimental_implements.
 		 */
 		public boolean isExperimentalImplementsParamExists() {
 			return this.experimentalImplementsParamExists;
@@ -314,7 +314,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter has parameter func.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter func.
+		 * @return True iff this {@link decoratorsType} has parameter func.
 		 */
 		public boolean isFuncParamExists() {
 			return this.funcParamExists;
@@ -323,7 +323,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter input_signature.
+		 * @return True iff this {@link decoratorsType} has parameter input_signature.
 		 */
 		public boolean isInputSignatureParamExists() {
 			return this.inputSignatureParamExists;
@@ -332,7 +332,7 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 *
-		 * @return True iff this {@link decoratorType} has parameter jit_compile.
+		 * @return True iff this {@link decoratorsType} has parameter jit_compile.
 		 */
 		public boolean isJitCompileParamExists() {
 			return this.jitCompileParamExists;
@@ -655,9 +655,9 @@ public class Function {
 	 * True iff the given decorator is a hybridization decorator.
 	 *
 	 * @param decorator The {@link decoratorsType} in question.
-	 * @param containingModName The name of the module where the decorator is used.
-	 * @param containingFile The {@link File} where the containingModName is defined.
-	 * @param containingSelection The {@link PySelection} containing the decorator.
+	 * @param containingModuleName The name of the module where the decorator is used.
+	 * @param containingFile The {@link File} where the containingModuleName is defined.
+	 * @param selection The {@link PySelection} containing the decorator.
 	 * @param nature The {@link IPythonNature} to use.
 	 * @param monitor The IProgressMonitor to use.
 	 * @return The FQN of the given {@link decoratorsType}.
@@ -1236,7 +1236,7 @@ public class Function {
 	 * Converts the given {@link decoratorsType} to its corresponding qualified name as a {@link String}.
 	 *
 	 * @param decorator The decorator in question
-	 * @param progress For progress monitoring.
+	 * @param monitor For progress monitoring.
 	 * @return The corresponding decorator FQN.
 	 */
 	private String getFQN(decoratorsType decorator, IProgressMonitor monitor)
@@ -1646,7 +1646,6 @@ public class Function {
 			FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 
 			if (functionDef.parent instanceof ClassDef) {
-				ClassDef classDef = (ClassDef) functionDef.parent;
 				Set<String> parentNames = this.getAllClassParentNames(true);
 
 				if (parentNames.stream().filter(pn -> pn.equals("Model")).findAny().isPresent())

@@ -30,7 +30,6 @@ import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
-import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
@@ -80,19 +79,6 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
 	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
-
-	private final class FunctionStatusContext extends RefactoringStatusContext {
-		private final Function func;
-
-		private FunctionStatusContext(Function func) {
-			this.func = func;
-		}
-
-		@Override
-		public Object getCorrespondingElement() {
-			return func;
-		}
-	}
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 

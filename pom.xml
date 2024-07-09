@@ -193,12 +193,13 @@
         <configuration>
           <compilerArgs>
             <arg>-err:all</arg>
-            <arg>-err:+unusedImport</arg>
+            <arg>-err:+suppress</arg>
+            <arg>-err:+unused</arg>
             <arg>-err:+uselessTypeCheck</arg>
             <arg>-err:+unnecessaryElse</arg>
-            <arg>-err:+unusedAllocation</arg>
             <arg>-err:-missingJavadocComments</arg>
             <arg>-err:-missingJavadocTags</arg>
+            <arg>-err:+invalidJavadoc</arg>
             <arg>-err:-nls</arg>
             <arg>-err:-unqualifiedField</arg>
             <arg>-err:-localHiding</arg>
@@ -207,6 +208,8 @@
             <arg>-err:-emptyBlock</arg>
             <arg>-err:-boxing</arg>
             <arg>-err:-switchDefault</arg>
+            <arg>-err:+static-access</arg>
+            <arg>-err:+allOver-ann</arg>
           </compilerArgs>
         </configuration>
       </plugin>
