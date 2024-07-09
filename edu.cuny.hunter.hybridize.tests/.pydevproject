@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?eclipse-pydev version="1.0"?><pydev_project>
-    <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Default</pydev_property>
-    <pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">python interpreter</pydev_property>
-    <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule2/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule3/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule4/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule5/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule6/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule7/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule17/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule18/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule19/in</path>
-        <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule20/in</path>
-    </pydev_pathproperty>
+<?eclipse-pydev version="1.0"?>
+<pydev_project>
+  <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Default</pydev_property>
+  <pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">python interpreter</pydev_property>
+  <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule2/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule3/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule4/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule5/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule6/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule7/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule17/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule18/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule19/in</path>
+    <path>/${PROJECT_DIR_NAME}/resources/HybridizeFunction/testModule20/in</path>
+  </pydev_pathproperty>
 </pydev_project>
