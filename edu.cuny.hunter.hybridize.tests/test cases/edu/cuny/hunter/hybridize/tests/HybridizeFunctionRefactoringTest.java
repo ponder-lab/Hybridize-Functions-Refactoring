@@ -7526,6 +7526,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	public void testModule17() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertFalse(function.isMethod());
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
+	public void testModule18() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertFalse(function.isMethod());
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
+	public void testModule19() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
+	public void testModule20() throws Exception {
+		Set<Function> functions = this.getFunctions("src/B");
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(2, function.getNumberOfParameters());
+		assertTrue(function.isMethod());
+		assertTrue(function.getHasTensorParameter());
+	}
+
+	@Test
 	public void testBooleanMask() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
