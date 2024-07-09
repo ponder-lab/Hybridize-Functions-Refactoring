@@ -3,6 +3,7 @@
 from tensorflow import ones, Tensor
 from tensorflow import function
 
+
 @function
 def g(a):
     assert isinstance(a, Tensor)
