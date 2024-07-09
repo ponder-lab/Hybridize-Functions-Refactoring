@@ -151,6 +151,10 @@
                   <exclude>**/*.md</exclude>
                   <exclude>**/.gitignore</exclude>
                   <exclude>**/*.java</exclude>
+                  <exclude>**/*.gradle/</exclude>
+                  <exclude>**/.pytest_cache/</exclude>
+                  <exclude>**/*.log</exclude>
+                  <exclude>**/v1_astmanager/</exclude>
                 </excludes>
                 <trimTrailingWhitespace/>
                 <endWithNewline/>
@@ -160,6 +164,9 @@
                   <include>**/*.md</include>
                   <include>**/.gitignore</include>
                 </includes>
+                <excludes>
+                  <exclude>**/target/</exclude>
+                </excludes>
                 <trimTrailingWhitespace/>
                 <endWithNewline/>
                 <indent>
