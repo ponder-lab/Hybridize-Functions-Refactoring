@@ -209,6 +209,7 @@
             <arg>-err:-boxing</arg>
             <arg>-err:-switchDefault</arg>
             <arg>-err:+static-access</arg>
+            <arg>-err:+all-static-method</arg>
             <arg>-err:+allOver-ann</arg>
           </compilerArgs>
         </configuration>
