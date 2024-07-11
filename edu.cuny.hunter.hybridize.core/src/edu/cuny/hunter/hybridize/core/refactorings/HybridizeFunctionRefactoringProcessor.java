@@ -489,6 +489,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				for (Entrypoint ep : builder.getOptions().getEntrypoints())
 					if (ep instanceof PytesttEntrypoint)
 						LOG.info("Using test entrypoint: " + ep.getMethod().getDeclaringClass().getName() + ".");
+					else
+						LOG.info("Using entrypoint: " + ep.getMethod().getDeclaringClass().getName() + ".");
 			}
 
 			CallGraph callGraph = builder.makeCallGraph(options, monitorDelegate);
