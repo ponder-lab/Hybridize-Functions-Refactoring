@@ -372,6 +372,11 @@ public class Function {
 	 */
 	private static final boolean VERBOSE = false;
 
+	/**
+	 * True iff verbose output for an empty CG node set is desired.
+	 */
+	private static final boolean VERBOSE_NO_NODES = false;
+
 	private static boolean allCreationsWithin(MethodReference methodReference, InstanceKey instanceKey, CallGraph callGraph) {
 		int numCreations = 0;
 
@@ -587,7 +592,7 @@ public class Function {
 		if (nodes.isEmpty()) {
 			LOG.error("Can't get call graph nodes for: " + methodReference + ".");
 
-			if (VERBOSE) {
+			if (VERBOSE_NO_NODES) {
 				LOG.info("Method reference is: " + methodReference + ".");
 				LOG.info("Call graph nodes:\n" + callGraph.stream().map(Objects::toString).collect(Collectors.joining("\n")));
 			}
