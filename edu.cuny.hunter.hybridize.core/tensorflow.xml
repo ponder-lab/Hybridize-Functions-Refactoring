@@ -2027,8 +2027,6 @@
           <return value="arg0" />
         </method>
       </class>
-    </package>
-    <package name="tensorflow/distribute">
       <class name="TPUStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
           <new def="x" class="Ltensorflow/distribute/run/run" />
@@ -2036,8 +2034,6 @@
           <return value="arg0" />
         </method>
       </class>
-    </package>
-    <package name="tensorflow/distribute">
       <class name="OneDeviceStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self device">
           <new def="x" class="Ltensorflow/distribute/run/run" />
