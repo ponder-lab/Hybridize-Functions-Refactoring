@@ -129,7 +129,7 @@ public class Function {
 	/**
 	 * Used for speculative analysis of the function name.
 	 */
-	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model";
+	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model|.*inference";
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
