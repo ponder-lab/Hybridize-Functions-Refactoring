@@ -1734,7 +1734,6 @@ public class Function {
 
 				int paramIndex = rhsPointerKey.getValueNumber() - 1;
 				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
-				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
 
 				if (parameterPosition != null) {
 					int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
@@ -1746,10 +1745,7 @@ public class Function {
 					return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
 				}
 			}
-
-			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
-		} else
-			LOG.warn("Encountered non-AST method: " + nodeMethod + ".");
+		}
 
 		return false;
 	}
