@@ -1837,7 +1837,11 @@ public class Function {
 			IR ir = node.getIR();
 			int i = paramInx + 1;
 
-			assert i < ir.getNumberOfParameters() : "Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + ").";
+			if (i >= ir.getNumberOfParameters()) {
+				LOG.warn("Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + "). Skipping: "
+						+ ir.getMethod().getSignature());
+				continue;
+			}
 
 			int param = ir.getParameter(i); // the first argument is the function being invoked.
 
