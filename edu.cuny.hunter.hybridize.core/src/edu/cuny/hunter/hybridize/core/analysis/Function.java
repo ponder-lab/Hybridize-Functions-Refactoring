@@ -1676,8 +1676,9 @@ public class Function {
 
 			if (hierarchyNode != null)
 				return getAllParentNames(hierarchyNode, onlyLastSegment);
-			else // just traverse the base in this AST node.
-				return new HashSet<>(NodeUtils.getParentNames(def, onlyLastSegment));
+
+			// otherwise, just traverse the base in this AST node.
+			return new HashSet<>(NodeUtils.getParentNames(def, onlyLastSegment));
 		}
 
 		return emptySet();
