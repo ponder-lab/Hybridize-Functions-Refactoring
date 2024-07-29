@@ -1007,7 +1007,8 @@ public class Function {
 				try {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
-				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException | NoTextSelectionException e) {
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException
+						| NoTextSelectionException e) {
 					String selectedText = null;
 					try {
 						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
