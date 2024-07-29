@@ -1673,9 +1673,11 @@ public class Function {
 			RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
 			IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
 			HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
-			assert def.equals(hierarchyNode.ast) : "The first node in the class hierarchy should be this class.";
 
-			return getAllParentNames(hierarchyNode, onlyLastSegment);
+			if (hierarchyNode != null)
+				return getAllParentNames(hierarchyNode, onlyLastSegment);
+			else // just traverse the base in this AST node.
+				return new HashSet<>(NodeUtils.getParentNames(def, onlyLastSegment));
 		}
 
 		return emptySet();
