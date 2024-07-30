@@ -355,7 +355,7 @@ public class Function {
 
 	private static final String SELF_PARAMETER_NAME = "self";
 
-	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newHashMap();
+	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
 	 * Containing {@link IDocument}s that have had import statements added to them during transformation.
