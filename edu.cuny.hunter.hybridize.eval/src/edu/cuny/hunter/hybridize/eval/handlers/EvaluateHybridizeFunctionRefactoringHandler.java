@@ -543,15 +543,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return alwaysCheckPythonSideEffects;
 	}
 
-	private boolean getAlwaysCheckRecusion() {
+	public boolean getAlwaysCheckRecusion() {
 		return alwaysCheckRecursion;
 	}
 
-	private boolean getProcessFunctionsInParallel() {
+	public boolean getProcessFunctionsInParallel() {
 		return this.processFunctionsInParallel;
 	}
 
-	private boolean getUseTestEntrypoints() {
+	public boolean getUseTestEntrypoints() {
 		return this.useTestEntrypoints;
 	}
 
