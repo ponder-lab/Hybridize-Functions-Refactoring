@@ -17,7 +17,6 @@ import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
-import static java.util.Collections.emptySet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
 import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
@@ -1640,7 +1639,7 @@ public class Function {
 		monitor.done();
 	}
 
-	private boolean hasTensorContext() throws NoTextSelectionException {
+	private boolean hasTensorContext() {
 		String functionName = this.getSimpleName();
 		boolean matches = functionName.matches(FUNCTION_NAME_CONTEXT_REGEX);
 
@@ -1662,25 +1661,34 @@ public class Function {
 		return matches;
 	}
 
-	private Set<String> getAllClassParentNames(boolean onlyLastSegment) throws NoTextSelectionException {
+	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
+		Set<String> ret = new HashSet<>();
 		SimpleNode node = this.getFunctionDefinition().getFunctionDef().parent;
 
 		if (node instanceof ClassDef) {
 			ClassDef def = (ClassDef) node;
 
-			PySelection selection = Util.getSelection(def.name, getContainingDocument());
-			RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
-			IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
-			HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+			PySelection selection = null;
+			try {
+				selection = Util.getSelection(def.name, getContainingDocument());
+			} catch (NoTextSelectionException e) {
+				LOG.info("Can't get class parent names for: " + this + " with enclosing class: " + def + " with name:" + def.name, e);
+			}
 
-			if (hierarchyNode != null)
-				return getAllParentNames(hierarchyNode, onlyLastSegment);
+			if (selection != null) {
+				RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
+				IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
+				HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+
+				if (hierarchyNode != null)
+					return getAllParentNames(hierarchyNode, onlyLastSegment);
+			}
 
 			// otherwise, just traverse the base in this AST node.
-			return new HashSet<>(NodeUtils.getParentNames(def, onlyLastSegment));
+			ret.addAll(NodeUtils.getParentNames(def, onlyLastSegment));
 		}
 
-		return emptySet();
+		return ret;
 	}
 
 	public boolean isHybridizationAvailable() {
