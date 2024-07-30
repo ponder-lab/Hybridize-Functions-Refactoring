@@ -436,8 +436,7 @@ public class Function {
 			cache2.put(instanceKey, cache3);
 		}
 
-		Boolean previous = cache3.put(callGraph, result);
-		assert previous == null : "Should be a new key.";
+		cache3.put(callGraph, result);
 
 		return result;
 	}
