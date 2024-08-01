@@ -1,6 +1,3 @@
 [submodule "Formatting"]
 	path = Formatting
 	url = https://github.com/ponder-lab/Formatting.git
-[submodule "Results"]
-	path = results
-	url = https://github.com/ponder-lab/Hybridization-Evaluation.git
