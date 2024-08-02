@@ -358,9 +358,9 @@ public class Function {
 	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
-	 * Containing {@link IDocument}s that have had import statements added to them during transformation.
+	 * Containing {@link File}s that have had import statements added to them during transformation.
 	 */
-	private static Set<IDocument> documentsWithAddedImport = new HashSet<>();
+	private static Set<File> filesWithAddedImport = new HashSet<>();
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -472,7 +472,7 @@ public class Function {
 	public static void clearCaches() {
 		creationsCache.clear();
 		tensorContainersCache.clear();
-		documentsWithAddedImport.clear();
+		filesWithAddedImport.clear();
 	}
 
 	/**
@@ -1959,7 +1959,9 @@ public class Function {
 
 		if (prefix == null) {
 			// need to add an import if it doesn't already exist.
-			if (!documentsWithAddedImport.contains(doc)) {
+			File file = this.getContainingFile();
+
+			if (!filesWithAddedImport.contains(file)) {
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
 
@@ -1967,7 +1969,7 @@ public class Function {
 				MultiTextEdit mte = new MultiTextEdit();
 				mte.addChild(edit);
 				ret.add(mte);
-				documentsWithAddedImport.add(doc);
+				filesWithAddedImport.add(file);
 			}
 
 			prefix = ""; // no prefix needed.
