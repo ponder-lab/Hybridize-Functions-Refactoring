@@ -1963,7 +1963,7 @@ public class Function {
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
 
-				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function");
+				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function\n");
 				MultiTextEdit mte = new MultiTextEdit();
 				mte.addChild(edit);
 				ret.add(mte);
