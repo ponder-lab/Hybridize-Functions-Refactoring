@@ -22,6 +22,6 @@ Refactorings for optimizing imperative TensorFlow clients for greater efficiency
 
 For information on contributing, see [CONTRIBUTING.md][contrib].
 
-[wiki]: https://github.com/ponder-lab/Java-8-Stream-Refactoring/wiki
+[wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [eclipse]: http://eclipse.org
 [contrib]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/main/CONTRIBUTING.md
