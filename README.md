@@ -4,6 +4,8 @@
 
 ## Introduction
 
+<img src="https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/master/edu.cuny.hunter.hybridize.ui/icons/icon.drawio.png" alt="Icon" align="left" height=150px width=150px/>
+
 Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
 
 ## Screenshot
