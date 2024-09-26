@@ -41,3 +41,5 @@ For information on contributing, see [CONTRIBUTING.md][contrib].
 [eclipse]: http://eclipse.org
 [contrib]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/main/CONTRIBUTING.md
 [pydev]: http://www.pydev.org/
+[wala]: https://github.com/wala/WALA
+[ariadne]: https://github.com/wala/ML
