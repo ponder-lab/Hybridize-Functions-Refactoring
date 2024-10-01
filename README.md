@@ -10,7 +10,7 @@ This tool consists of automated refactoring research prototype plug-ins for [Ecl
 
 ## Screenshot
 
-Coming soon!
+![Screenshot](https://khatchad.commons.gc.cuny.edu/wp-content/blogs.dir/2880/files/2024/10/Screenshot-from-2024-10-01-13-07-03.png)
 
 ## Demonstration
 
