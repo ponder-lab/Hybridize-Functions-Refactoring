@@ -4,7 +4,7 @@ Please see our [wiki] for more information regarding development.
 
 ## Eclipse Environment
 
-The plug-ins are being developed on the following Eclipse versions. Currently, newer versions of Eclipse will not resolve M2E dependencies. The [Eclipse Install](https://www.eclipse.org/downloads/packages/installer) can be used to install specific versions:
+The plug-ins are being developed on the following Eclipse versions. Currently, newer versions of Eclipse will not resolve M2E dependencies. The [Eclipse Installer](https://www.eclipse.org/downloads/packages/installer) can be used to install specific versions:
 
 	Eclipse IDE for RCP and RAP Developers (includes Incubating components)
 
