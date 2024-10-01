@@ -39,8 +39,14 @@ Dependency | Update Site
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
 [WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository
 
+### Running the Evaluator
+
+Use the `edu.cuny.hunter.hybridize.evaluator` plug-in project to run the evaluation. The evaluation process will produce several CSVs, as well as perform the transformation if desired (see below for details). For convenience, there is an [Eclipse launch configuration](https://wiki.eclipse.org/FAQ_What_is_a_launch_configuration%3F) that can be used to run the evaluation. The run configuration is named [`edu.cuny.hunter.hybridize.eval/Evaluate Hybridize Functions.launch`](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/691cbeb87be805b8bfc336e799d938a9064a5e0e/edu.cuny.hunter.hybridize.eval/Evaluate%20Hybridize%20Functions.launch). In the run configuration dialog, you can specify several arguments to the evaluator as system properties.
+
+You can run the evaluator in several different ways, including as a command or as a menu item, which is shown in the menu bar. Either way, you must evaluate *entire* projects, as the evaluator will collect project-level data. Information on configuring the evaluator can be found on [this wiki page][evaluator wiki].
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
+[evaluator wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Running-the-Evaluator
 [PyDev]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
 [Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
 [Ariadne]: https://github.com/ponder-lab/ML
