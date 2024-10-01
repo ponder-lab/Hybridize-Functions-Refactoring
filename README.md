@@ -23,13 +23,13 @@ Coming soon!
 The refactoring can be run in two different ways:
 
 1. As a command.
-    1. Select a project.
+    1. Select a Python code entity.
     1. Select "Hybridize function..." from the "Quick Access" dialog (CTRL-3).
 1. As a menu item.
-    1. Right-click on a project.
+    1. Right-click on a Python code entity.
     1. Under "Refactor," choose "Hybridize function..."
 
-Currently, the refactoring works only via the package explorer and the outline views. You can either select a single project to optimize or select multiple projects. In each case, the tool will find functions in the enclosing projects to refactor.
+Currently, the refactoring works only via the package explorer and the outline views. You can either select a code entity to optimize or select multiple entities. In each case, the tool will find functions in the enclosing entity to refactor.
 
 #### Update
 
