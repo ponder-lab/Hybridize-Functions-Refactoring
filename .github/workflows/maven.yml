@@ -27,5 +27,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
+    - name: Fail on whitespace errors
+      run: git show HEAD --check 
+    - name: Clone our fork of PyDev
+      run: |
+        mkdir "$HOME/git"
+        pushd "$HOME/git"
+        git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git
+        popd
     - name: Build with Maven
       run: mvn -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report
