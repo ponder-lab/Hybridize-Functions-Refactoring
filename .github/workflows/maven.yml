@@ -40,11 +40,6 @@ jobs:
           ${{ runner.os }}-pip-
     - name: Fail on whitespace errors
       run: git show HEAD --check
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: 'pip' # caching pip dependencies
     - name: Install global requirements
       run: pip3.10 install -r requirements.txt
     - name: Run Spotless
