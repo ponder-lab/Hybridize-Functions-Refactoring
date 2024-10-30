@@ -28,7 +28,7 @@ jobs:
         distribution: 'temurin'
         cache: maven
     - name: Fail on whitespace errors
-      run: git show HEAD --check 
+      run: git show HEAD --check
     - name: Clone our fork of PyDev
       run: |
         mkdir "$HOME/git"
