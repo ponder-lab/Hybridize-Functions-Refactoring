@@ -1,11 +1,6 @@
 # This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
 name: Java CI with Maven
 
 on:
@@ -29,11 +24,25 @@ jobs:
         cache: maven
     - name: Fail on whitespace errors
       run: git show HEAD --check
+    - name: Install global requirements
+      run: pip3.10 install -r requirements.txt
+    - name: Run Spotless
+      run: mvn -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} spotless:check -B
+    - name: Run Black
+      run: black --fast --check --extend-exclude \/out .
+    - name: Install test requirements
+      run: pip3.10 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
+    - name: Install with Maven
+      run: mvn -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false install -B -q -DskipTests=true
+    - name: Print Python 3 version.
+      run: python3 --version
+    - name: Print Python 3.10 version.
+      run: python3.10 --version
     - name: Clone our fork of PyDev
       run: |
         mkdir "$HOME/git"
         pushd "$HOME/git"
         git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git
         popd
-    - name: Build with Maven
+    - name: Test with Maven
       run: mvn -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report
