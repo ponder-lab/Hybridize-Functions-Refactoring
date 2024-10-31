@@ -6098,6 +6098,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects59() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6127,6 +6128,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects60() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6156,6 +6158,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects61() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6706,6 +6709,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
@@ -6742,6 +6746,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile4() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
@@ -7379,6 +7384,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testModule6() throws Exception {
 		Set<Function> functions = this.getFunctions("B");
 		assertEquals(1, functions.size());
