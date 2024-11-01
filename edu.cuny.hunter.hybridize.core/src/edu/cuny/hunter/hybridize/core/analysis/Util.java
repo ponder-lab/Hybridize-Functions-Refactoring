@@ -346,11 +346,13 @@ public class Util {
 	public static Set<String> getAllParentNames(HierarchyNodeModel hierarchyNode, boolean onlyLastSegment) {
 		Set<String> ret = new HashSet<>();
 
-		if (hierarchyNode.ast != null)
-			ret.addAll(NodeUtils.getParentNames(hierarchyNode.ast, onlyLastSegment));
+		if (hierarchyNode != null) {
+			if (hierarchyNode.ast != null)
+				ret.addAll(NodeUtils.getParentNames(hierarchyNode.ast, onlyLastSegment));
 
-		for (HierarchyNodeModel parenNode : hierarchyNode.parents)
-			ret.addAll(getAllParentNames(parenNode, onlyLastSegment));
+			for (HierarchyNodeModel parenNode : hierarchyNode.parents)
+				ret.addAll(getAllParentNames(parenNode, onlyLastSegment));
+		}
 
 		return ret;
 	}

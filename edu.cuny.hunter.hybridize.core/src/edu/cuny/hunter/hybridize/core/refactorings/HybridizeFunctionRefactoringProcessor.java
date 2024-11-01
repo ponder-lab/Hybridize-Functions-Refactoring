@@ -75,30 +75,11 @@ import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
 import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
-@SuppressWarnings("unused")
 public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor {
 
 	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
-
-	private static RefactoringStatus checkDecorators(Function func) {
-		RefactoringStatus status = new RefactoringStatus();
-		LOG.info("Checking decorators for: " + func + ".");
-		// TODO: Is the function already decorated with tf.function? NOTE: May move to checkFinalConditions() as this
-		// will be dependent on other things.
-		return status;
-	}
-
-	private static RefactoringStatus checkParameters(Function func) {
-		RefactoringStatus status = new RefactoringStatus();
-		LOG.info("Checking parameters for: " + func + ".");
-		// TODO: Does the function have a tensor parameter (#2)?
-		// NOTE: Not sure if we will be checking everything individually here since we'll do the computation in the
-		// Function class. Instead, we may just need to check everything in checkFinalConditions(), as it is likely that
-		// the checking will depend on several things.
-		return status;
-	}
 
 	private Set<Function> functions = new LinkedHashSet<>();
 
@@ -410,12 +391,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// check the function preconditions.
 				status.merge(func.check());
-
-				status.merge(checkParameters(func));
-				subMonitor.checkCanceled();
-
-				status.merge(checkDecorators(func));
-				subMonitor.checkCanceled();
 
 				status.merge(func.getStatus());
 				subMonitor.worked(1);

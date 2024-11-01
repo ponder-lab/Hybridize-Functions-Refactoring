@@ -17,7 +17,6 @@ import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
-import static java.util.Collections.emptySet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
 import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
@@ -129,7 +128,7 @@ public class Function {
 	/**
 	 * Used for speculative analysis of the function name.
 	 */
-	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model";
+	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model|.*inference";
 
 	private final class FunctionStatusContext extends RefactoringStatusContext {
 		@Override
@@ -356,12 +355,12 @@ public class Function {
 
 	private static final String SELF_PARAMETER_NAME = "self";
 
-	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newHashMap();
+	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
-	 * Containing {@link IDocument}s that have had import statements added to them during transformation.
+	 * Containing {@link File}s that have had import statements added to them during transformation.
 	 */
-	private static Set<IDocument> documentsWithAddedImport = new HashSet<>();
+	private static Set<File> filesWithAddedImport = new HashSet<>();
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -436,8 +435,7 @@ public class Function {
 			cache2.put(instanceKey, cache3);
 		}
 
-		Boolean previous = cache3.put(callGraph, result);
-		assert previous == null : "Should be a new key.";
+		cache3.put(callGraph, result);
 
 		return result;
 	}
@@ -474,7 +472,7 @@ public class Function {
 	public static void clearCaches() {
 		creationsCache.clear();
 		tensorContainersCache.clear();
-		documentsWithAddedImport.clear();
+		filesWithAddedImport.clear();
 	}
 
 	/**
@@ -1007,8 +1005,8 @@ public class Function {
 				try {
 					selection = Util.getSelection(decorator, document);
 					hybrid = isHybrid(decorator, containingModuleName, containingFile, selection, nature, monitor);
-				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException | NoTextSelectionException
-						| RuntimeException e) {
+				} catch (AmbiguousDeclaringModuleException | BadLocationException | NoDeclaringModuleException
+						| NoTextSelectionException e) {
 					String selectedText = null;
 					try {
 						selectedText = selection == null ? "(can't compute)" : selection.getSelectedText();
@@ -1641,7 +1639,7 @@ public class Function {
 		monitor.done();
 	}
 
-	private boolean hasTensorContext() throws NoTextSelectionException {
+	private boolean hasTensorContext() {
 		String functionName = this.getSimpleName();
 		boolean matches = functionName.matches(FUNCTION_NAME_CONTEXT_REGEX);
 
@@ -1663,22 +1661,34 @@ public class Function {
 		return matches;
 	}
 
-	private Set<String> getAllClassParentNames(boolean onlyLastSegment) throws NoTextSelectionException {
+	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
+		Set<String> ret = new HashSet<>();
 		SimpleNode node = this.getFunctionDefinition().getFunctionDef().parent;
 
 		if (node instanceof ClassDef) {
 			ClassDef def = (ClassDef) node;
 
-			PySelection selection = Util.getSelection(def.name, getContainingDocument());
-			RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
-			IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
-			HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
-			assert def.equals(hierarchyNode.ast) : "The first node in the class hierarchy should be this class.";
+			PySelection selection = null;
+			try {
+				selection = Util.getSelection(def.name, getContainingDocument());
+			} catch (NoTextSelectionException e) {
+				LOG.info("Can't get class parent names for: " + this + " with enclosing class: " + def + " with name:" + def.name, e);
+			}
 
-			return getAllParentNames(hierarchyNode, onlyLastSegment);
+			if (selection != null) {
+				RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
+				IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
+				HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+
+				if (hierarchyNode != null)
+					return getAllParentNames(hierarchyNode, onlyLastSegment);
+			}
+
+			// otherwise, just traverse the base in this AST node.
+			ret.addAll(NodeUtils.getParentNames(def, onlyLastSegment));
 		}
 
-		return emptySet();
+		return ret;
 	}
 
 	public boolean isHybridizationAvailable() {
@@ -1734,7 +1744,6 @@ public class Function {
 
 				int paramIndex = rhsPointerKey.getValueNumber() - 1;
 				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
-				LOG.info(rhsPointerKey + " position is: " + parameterPosition + ".");
 
 				if (parameterPosition != null) {
 					int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
@@ -1746,10 +1755,7 @@ public class Function {
 					return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
 				}
 			}
-
-			LOG.info(containingFile.getName() + " does not match: " + sourceFileName + ".");
-		} else
-			LOG.warn("Encountered non-AST method: " + nodeMethod + ".");
+		}
 
 		return false;
 	}
@@ -1838,7 +1844,11 @@ public class Function {
 			IR ir = node.getIR();
 			int i = paramInx + 1;
 
-			assert i < ir.getNumberOfParameters() : "Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + ").";
+			if (i >= ir.getNumberOfParameters()) {
+				LOG.warn("Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + "). Skipping: "
+						+ ir.getMethod().getSignature());
+				continue;
+			}
 
 			int param = ir.getParameter(i); // the first argument is the function being invoked.
 
@@ -1949,15 +1959,17 @@ public class Function {
 
 		if (prefix == null) {
 			// need to add an import if it doesn't already exist.
-			if (!documentsWithAddedImport.contains(doc)) {
+			File file = this.getContainingFile();
+
+			if (!filesWithAddedImport.contains(file)) {
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
 
-				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function");
+				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function\n");
 				MultiTextEdit mte = new MultiTextEdit();
 				mte.addChild(edit);
 				ret.add(mte);
-				documentsWithAddedImport.add(doc);
+				filesWithAddedImport.add(file);
 			}
 
 			prefix = ""; // no prefix needed.

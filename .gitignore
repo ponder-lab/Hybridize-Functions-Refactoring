@@ -11,7 +11,7 @@
 .mtj.tmp/
 
 # Package Files #
-*.jar
+# *.jar
 *.war
 *.nar
 *.ear
@@ -89,3 +89,4 @@ local.properties
 target/
 .tycho-consumer-pom.xml
 results
+*.versionsBackup

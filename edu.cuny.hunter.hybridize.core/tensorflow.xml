@@ -2024,30 +2024,36 @@
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
           <new def="x" class="Ltensorflow/distribute/run/run" />
           <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <putfield class="LRoot" field="experimental_run_v2" fieldType="LRoot" ref="self" value="x" />
           <return value="arg0" />
         </method>
       </class>
-    </package>
-    <package name="tensorflow/distribute">
       <class name="TPUStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self devices cross_device_ops">
           <new def="x" class="Ltensorflow/distribute/run/run" />
           <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <putfield class="LRoot" field="experimental_run_v2" fieldType="LRoot" ref="self" value="x" />
           <return value="arg0" />
         </method>
       </class>
-    </package>
-    <package name="tensorflow/distribute">
       <class name="OneDeviceStrategy" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self device">
           <new def="x" class="Ltensorflow/distribute/run/run" />
           <putfield class="LRoot" field="run" fieldType="LRoot" ref="self" value="x" />
+          <putfield class="LRoot" field="experimental_run_v2" fieldType="LRoot" ref="self" value="x" />
           <return value="arg0" />
         </method>
       </class>
     </package>
     <package name="tensorflow/distribute/run">
       <class name="run" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3">
+          <getfield class="LRoot" field="0" fieldType="LRoot" ref="arg2" def="x" />
+          <call class="LRoot" name="do" descriptor="()LRoot;" type="virtual" arg0="arg1" arg1="x" numArgs="2" def="v" />
+          <return value="v" />
+        </method>
+      </class>
+      <class name="experimental_run_v2" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3">
           <getfield class="LRoot" field="0" fieldType="LRoot" ref="arg2" def="x" />
           <call class="LRoot" name="do" descriptor="()LRoot;" type="virtual" arg0="arg1" arg1="x" numArgs="2" def="v" />

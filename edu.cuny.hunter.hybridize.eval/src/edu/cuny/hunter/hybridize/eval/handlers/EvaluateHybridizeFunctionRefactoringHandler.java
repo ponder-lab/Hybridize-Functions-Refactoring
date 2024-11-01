@@ -168,6 +168,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			for (Transformation transformation : Transformation.values())
 				resultsHeader.add(transformation.toString());
 
+			String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "type hints", "parallel", "speculative",
+					"test entrypoints" };
+			resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
+
 			resultsHeader.add("time (s)");
 
 			HybridizeFunctionRefactoringProcessor processor = null;
@@ -294,6 +298,24 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Transformation transformation : Transformation.values())
 						resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
+
+					// side-effects.
+					resultsPrinter.print(this.getAlwaysCheckPythonSideEffects());
+
+					// recursion.
+					resultsPrinter.print(this.getAlwaysCheckRecusion());
+
+					// type hints.
+					resultsPrinter.print(this.getAlwaysFollowTypeHints());
+
+					// parallel.
+					resultsPrinter.print(this.getProcessFunctionsInParallel());
+
+					// speculative.
+					resultsPrinter.print(this.getUseSpeculativeAnalysis());
+
+					// test entrypoints.
+					resultsPrinter.print(this.getUseTestEntrypoints());
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -543,15 +565,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return alwaysCheckPythonSideEffects;
 	}
 
-	private boolean getAlwaysCheckRecusion() {
+	public boolean getAlwaysCheckRecusion() {
 		return alwaysCheckRecursion;
 	}
 
-	private boolean getProcessFunctionsInParallel() {
+	public boolean getProcessFunctionsInParallel() {
 		return this.processFunctionsInParallel;
 	}
 
-	private boolean getUseTestEntrypoints() {
+	public boolean getUseTestEntrypoints() {
 		return this.useTestEntrypoints;
 	}
 
