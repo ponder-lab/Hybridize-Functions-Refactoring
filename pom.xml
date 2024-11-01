@@ -28,8 +28,8 @@
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues</url>
   </issueManagement>
   <ciManagement>
-    <system>Travis CI</system>
-    <url>https://app.travis-ci.com/github/ponder-lab/Hybridize-Functions-Refactoring</url>
+    <system>GitHub</system>
+    <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml</url>
   </ciManagement>
   <properties>
     <tycho-version>2.7.5</tycho-version>
