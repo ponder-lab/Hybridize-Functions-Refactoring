@@ -3,7 +3,7 @@ Bundle-ManifestVersion: 2
 Bundle-Name: %Bundle-Name
 Bundle-SymbolicName: edu.cuny.hunter.hybridize.eval;singleton:=true
 Bundle-Vendor: %Bundle-Vendor
-Bundle-Version: 1.1.0.qualifier
+Bundle-Version: 1.2.0.qualifier
 Export-Package: edu.cuny.hunter.hybridize.eval.handlers,
  edu.cuny.hunter.hybridize.eval.ui.plugins
 Import-Package: com.google.common.collect,

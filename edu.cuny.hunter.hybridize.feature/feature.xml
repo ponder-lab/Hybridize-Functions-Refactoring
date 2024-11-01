@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<feature id="edu.cuny.hunter.hybridize.feature" label="Hybridize Functions Refactoring" version="1.1.0.qualifier" provider-name="City University of New York (CUNY) Hunter College" plugin="edu.cuny.hunter.hybridize.core">
+<feature id="edu.cuny.hunter.hybridize.feature" label="Hybridize Functions Refactoring" version="1.2.0.qualifier" provider-name="City University of New York (CUNY) Hunter College" plugin="edu.cuny.hunter.hybridize.core">
   <description url="https://github.com/ponder-lab/Hybridize-Functions-Refactoring"> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
   </description>
   <copyright url="http://www.example.com/copyright"> 2024 Raffi Khatchadourian. All rights reserved.
@@ -62,6 +62,8 @@
     <discovery label="PONDER Lab WALA Update Site" url="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository" />
   </url>
   <requires>
+    <import plugin="org.eclipse.ltk.core.refactoring" version="3.12.200" match="greaterOrEqual" />
+    <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.1.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.equinox.registry" version="3.11.100" match="greaterOrEqual" />
     <import plugin="org.eclipse.osgi" version="3.18.0" match="greaterOrEqual" />
     <import plugin="org.python.pydev.parser" version="9.3.2" match="compatible" />
@@ -69,26 +71,79 @@
     <import plugin="org.python.pydev.ast" version="9.3.2" match="compatible" />
     <import plugin="com.python.pydev.refactoring" version="9.3.2" match="compatible" />
     <import plugin="com.python.pydev.analysis" version="9.3.2" match="compatible" />
+    <import plugin="org.eclipse.core.resources" version="3.18.0" match="greaterOrEqual" />
+    <import plugin="org.eclipse.core.runtime" version="3.26.0" match="greaterOrEqual" />
     <import plugin="com.ibm.wala.ide" version="1.6.2" match="greaterOrEqual" />
-    <import plugin="wrapped.com.ibm.wala.com.ibm.wala.cast.python.ml" />
     <import plugin="org.eclipse.core.commands" />
     <import plugin="org.eclipse.jface.text" />
     <import plugin="org.eclipse.text" version="3.12.200" match="greaterOrEqual" />
-    <import plugin="org.python.pydev" version="9.3.2" match="compatible" />
-    <import plugin="org.python.pydev.shared_core" />
     <import plugin="org.eclipse.ui" version="3.201.0" match="greaterOrEqual" />
+    <import plugin="org.eclipse.core.runtime" version="3.24.100" match="greaterOrEqual" />
     <import plugin="org.eclipse.ltk.ui.refactoring" version="3.12.0" match="greaterOrEqual" />
     <import plugin="edu.cuny.citytech.refactoring.common.ui" version="3.1.0" match="greaterOrEqual" />
+    <import plugin="org.eclipse.ltk.core.refactoring" version="3.12.100" match="greaterOrEqual" />
     <import plugin="edu.cuny.hunter.hybridize.core" version="1.0.0" match="greaterOrEqual" />
     <import plugin="org.python.pydev.refactoring" version="9.3.2" match="compatible" />
+    <import plugin="org.python.pydev" version="9.3.2" match="compatible" />
+    <import plugin="org.eclipse.core.resources" version="3.17.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.jdt.ui" version="3.26.100" match="greaterOrEqual" />
+    <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.0.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui.navigator" version="3.10.200" match="greaterOrEqual" />
     <import plugin="org.python.pydev.shared_ui" version="9.3.2" match="compatible" />
-    <import plugin="org.eclipse.ltk.core.refactoring" version="3.12.200" match="greaterOrEqual" />
-    <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.1.0" match="greaterOrEqual" />
-    <import plugin="org.eclipse.core.resources" version="3.18.0" match="greaterOrEqual" />
-    <import plugin="org.eclipse.core.runtime" version="3.26.0" match="greaterOrEqual" />
+    <import plugin="org.eclipse.ui.workbench" />
+    <import plugin="org.eclipse.pde.core" />
+    <import plugin="org.eclipse.jface" />
+    <import plugin="org.eclipse.jdt.core" />
+    <import plugin="org.eclipse.ui.ide" />
+    <import plugin="org.eclipse.jdt" />
+    <import plugin="org.eclipse.jdt.launching" />
+    <import plugin="org.python.pydev.ast" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.core" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.parser" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.core.filebuffers" />
+    <import plugin="org.python.pydev" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.debug" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.debug.core" />
+    <import plugin="org.eclipse.debug.ui" />
+    <import plugin="org.python.pydev.shared_ui" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.ui.console" />
+    <import plugin="org.eclipse.ui.editors" />
+    <import plugin="org.eclipse.ui.workbench.texteditor" />
+    <import plugin="org.eclipse.search" />
+    <import plugin="org.python.pydev.refactoring" version="9.3.3" match="perfect" />
+    <import plugin="com.python.pydev.analysis" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.core.variables" />
+    <import plugin="org.eclipse.core.filesystem" />
+    <import plugin="org.eclipse.core.expressions" />
+    <import plugin="org.eclipse.ui.views" />
+    <import plugin="org.python.pydev.jython" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.ui.navigator.resources" />
+    <import plugin="org.eclipse.compare" />
+    <import plugin="org.python.pydev.shared_interactive_console" version="9.3.3" match="perfect" />
+    <import plugin="org.eclipse.ui.forms" />
+    <import plugin="org.python.pydev.shared_core" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.customizations" version="9.3.3" match="perfect" />
   </requires>
   <plugin id="edu.cuny.hunter.hybridize.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.hunter.hybridize.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.cast.python.ml" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+  <plugin id="edu.cuny.citytech.refactoring.common.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+  <plugin id="edu.cuny.citytech.refactoring.common.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+  <plugin id="com.ibm.wala.ide" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+  <plugin id="com.python.pydev.analysis" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="com.python.pydev.debug" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="com.python.pydev.refactoring" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.ast" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.core" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.customizations" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.debug" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.django" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.help" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.jython" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.parser" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.refactoring" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.shared_core" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.shared_interactive_console" download-size="0" install-size="0" version="0.0.0" />
+  <plugin id="org.python.pydev.shared_ui" download-size="0" install-size="0" version="0.0.0" />
 </feature>
