@@ -4,9 +4,7 @@
 name: Java CI with Maven
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
   schedule:
   - cron: "0 2 * * 1-5"
 concurrency:
@@ -56,3 +54,6 @@ jobs:
         popd
     - name: Test with Maven
       run: mvn -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report
+    - name: Coveralls GitHub Action
+      uses: coverallsapp/github-action@v2.3.4
+            
