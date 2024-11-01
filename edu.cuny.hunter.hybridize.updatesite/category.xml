@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site>
-   <feature url="features/edu.cuny.hunter.hybridize.feature_0.0.0.jar" id="edu.cuny.hunter.hybridize.feature" version="0.0.0" nl="en_US">
-      <category name="edu.cuny.hunter.hybridize.category"/>
-   </feature>
-   <category-def name="edu.cuny.hunter.hybridize.category" label="Hybridization Refactorings">
-      <description>
-         Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
-      </description>
-   </category-def>
-   <repository-reference location="http://download.eclipse.org/eclipse/updates/4.25" enabled="true" />
-   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" enabled="true" />
-   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" enabled="true" />
-   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository" enabled="true" />
+  <feature url="features/edu.cuny.hunter.hybridize.feature_0.0.0.jar" id="edu.cuny.hunter.hybridize.feature" version="0.0.0" nl="en_US">
+    <category name="edu.cuny.hunter.hybridize.category" />
+  </feature>
+  <category-def name="edu.cuny.hunter.hybridize.category" label="Hybridization Refactorings">
+    <description> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
+    </description>
+  </category-def>
+  <repository-reference location="http://download.eclipse.org/eclipse/updates/4.25" enabled="true" />
+  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" enabled="true" />
+  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" enabled="true" />
+  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository" enabled="true" />
 </site>

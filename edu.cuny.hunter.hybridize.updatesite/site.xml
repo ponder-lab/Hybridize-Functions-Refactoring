@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site>
-   <description name="Hybridize Functions Refactoring Update Site">
-      Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
-   </description>
-   <feature url="features/edu.cuny.hunter.hybridize.feature_1.0.0.202411011440.jar" id="edu.cuny.hunter.hybridize.feature" version="1.0.0.202411011440" nl="en_US">
-      <category name="edu.cuny.hunter.hybridize.category"/>
-   </feature>
-   <category-def name="edu.cuny.hunter.hybridize.category" label="Hybridization Refactorings">
-      <description>
-         Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
-      </description>
-   </category-def>
+  <description name="Hybridize Functions Refactoring Update Site"> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
+  </description>
+  <feature url="features/edu.cuny.hunter.hybridize.feature_1.0.0.202411011440.jar" id="edu.cuny.hunter.hybridize.feature" version="1.0.0.202411011440" nl="en_US">
+    <category name="edu.cuny.hunter.hybridize.category" />
+  </feature>
+  <category-def name="edu.cuny.hunter.hybridize.category" label="Hybridization Refactorings">
+    <description> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
+    </description>
+  </category-def>
 </site>
