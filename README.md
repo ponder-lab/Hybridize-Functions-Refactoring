@@ -39,7 +39,7 @@ Coming soon!
 
 ### Update Site
 
-Coming soon!
+https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite
 
 ### Eclipse Marketplace
 
