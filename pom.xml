@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>edu.cuny.hunter.hybridize</groupId>
   <artifactId>edu.cuny.hunter.hybridize</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Hybridize Function Refactoring</name>
   <description>This prototype refactoring plug-in for Eclipse PyDev represents ongoing work in developing an automated refactoring tool that would assist developers in hybridizing their Python functions.</description>
@@ -18,6 +18,7 @@
     <module>edu.cuny.hunter.hybridize.eval</module>
     <module>edu.cuny.hunter.hybridize.tests</module>
     <module>edu.cuny.hunter.hybridize.tests.report</module>
+    <module>edu.cuny.hunter.hybridize.feature</module>
   </modules>
   <scm>
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring</url>
@@ -27,8 +28,8 @@
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues</url>
   </issueManagement>
   <ciManagement>
-    <system>Travis CI</system>
-    <url>https://app.travis-ci.com/github/ponder-lab/Hybridize-Functions-Refactoring</url>
+    <system>GitHub</system>
+    <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml</url>
   </ciManagement>
   <properties>
     <tycho-version>2.7.5</tycho-version>
@@ -263,9 +264,6 @@
         <groupId>org.eclipse.tycho</groupId>
         <artifactId>tycho-p2-repository-plugin</artifactId>
         <version>${tycho-version}</version>
-        <configuration>
-          <includeAllDependencies>true</includeAllDependencies>
-        </configuration>
       </plugin>
       <plugin>
         <groupId>org.eclipse.tycho</groupId>
@@ -309,6 +307,11 @@
             </environment>
           </environments>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-versions-plugin</artifactId>
+        <version>${tycho-version}</version>
       </plugin>
     </plugins>
   </build>

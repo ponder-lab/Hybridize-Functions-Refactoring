@@ -7,7 +7,7 @@
     <version>1.1.0-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
-  <artifactId>edu.cuny.hunter.hybridize.eval</artifactId>
-  <packaging>eclipse-plugin</packaging>
-  <description>Evaluation plugin for the Hybridize Functions refactoring.</description>
+  <artifactId>edu.cuny.hunter.hybridize.feature</artifactId>
+  <packaging>eclipse-feature</packaging>
+  <description>Hybridize Functions refactoring feature.</description>
 </project>
