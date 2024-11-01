@@ -1,6 +1,6 @@
 # Hybridize-Functions-Refactoring
 
-[![Build Status](https://app.travis-ci.com/ponder-lab/Hybridize-Functions-Refactoring.svg?token=ysqq4ZuxzD688KNytWSA&branch=main)](https://app.travis-ci.com/ponder-lab/Hybridize-Functions-Refactoring) [![Coverage Status](https://coveralls.io/repos/github/ponder-lab/Hybridize-Functions-Refactoring/badge.svg?branch=main&t=PffqbW)](https://coveralls.io/github/ponder-lab/Hybridize-Functions-Refactoring?branch=main) [![GitHub license](https://img.shields.io/badge/license-Eclipse-blue.svg)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/raw/master/LICENSE) [![Java profiler](https://www.ej-technologies.com/images/product_banners/jprofiler_small.png)](https://www.ej-technologies.com/products/jprofiler/overview.html)
+[![Build Status](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml/badge.svg)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml) [![Coverage Status](https://coveralls.io/repos/github/ponder-lab/Hybridize-Functions-Refactoring/badge.svg?branch=main&t=PffqbW)](https://coveralls.io/github/ponder-lab/Hybridize-Functions-Refactoring?branch=main) [![GitHub license](https://img.shields.io/badge/license-Eclipse-blue.svg)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/raw/master/LICENSE) [![Java profiler](https://www.ej-technologies.com/images/product_banners/jprofiler_small.png)](https://www.ej-technologies.com/products/jprofiler/overview.html)
 
 ## Introduction
 
