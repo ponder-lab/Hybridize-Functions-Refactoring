@@ -66,7 +66,7 @@
     <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.1.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.equinox.registry" version="3.11.100" match="greaterOrEqual" />
     <import plugin="org.eclipse.osgi" version="3.18.0" match="greaterOrEqual" />
-    <import plugin="com.python.pydev.refactoring" version="9.3.2" match="compatible" />
+    <import plugin="com.python.pydev.refactoring" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.resources" version="3.18.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.runtime" version="3.26.0" match="greaterOrEqual" />
     <import plugin="com.ibm.wala.ide" version="1.6.2" match="greaterOrEqual" />
@@ -86,31 +86,31 @@
     <import plugin="org.eclipse.ui.ide" />
     <import plugin="org.eclipse.jdt" />
     <import plugin="org.eclipse.jdt.launching" />
-    <import plugin="org.python.pydev.ast" version="9.3.3" match="perfect" />
-    <import plugin="org.python.pydev.core" version="9.3.3" match="perfect" />
-    <import plugin="org.python.pydev.parser" version="9.3.3" match="perfect" />
-    <import plugin="org.python.pydev" version="9.3.3" match="perfect" />
-    <import plugin="org.python.pydev.debug" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.ast" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="org.python.pydev.core" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="org.python.pydev.parser" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="org.python.pydev" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="org.python.pydev.debug" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.debug.core" />
     <import plugin="org.eclipse.debug.ui" />
-    <import plugin="org.python.pydev.shared_ui" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.shared_ui" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui.console" />
     <import plugin="org.eclipse.ui.editors" />
     <import plugin="org.eclipse.ui.workbench.texteditor" />
     <import plugin="org.eclipse.search" />
-    <import plugin="org.python.pydev.refactoring" version="9.3.3" match="perfect" />
-    <import plugin="com.python.pydev.analysis" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.refactoring" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="com.python.pydev.analysis" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.variables" />
     <import plugin="org.eclipse.core.filesystem" />
     <import plugin="org.eclipse.core.expressions" />
     <import plugin="org.eclipse.ui.views" />
-    <import plugin="org.python.pydev.jython" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.jython" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui.navigator.resources" />
     <import plugin="org.eclipse.compare" />
-    <import plugin="org.python.pydev.shared_interactive_console" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.shared_interactive_console" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui.forms" />
-    <import plugin="org.python.pydev.shared_core" version="9.3.3" match="perfect" />
-    <import plugin="org.python.pydev.customizations" version="9.3.3" match="perfect" />
+    <import plugin="org.python.pydev.shared_core" version="9.3.3" match="greaterOrEqual" />
+    <import plugin="org.python.pydev.customizations" version="9.3.3" match="greaterOrEqual" />
   </requires>
   <plugin id="edu.cuny.hunter.hybridize.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.hunter.hybridize.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
