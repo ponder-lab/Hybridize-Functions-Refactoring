@@ -24,6 +24,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
+    - name: Fail on whitespace errors
+      run: git show HEAD --check
+    - name: Run Spotless
+      run: mvn -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} spotless:check -B
     - name: Cache Pip dependencies
       uses: actions/cache@v4
       with:
@@ -31,12 +35,8 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
-    - name: Fail on whitespace errors
-      run: git show HEAD --check
     - name: Install global requirements
       run: pip3.10 install -r requirements.txt
-    - name: Run Spotless
-      run: mvn -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} spotless:check -B
     - name: Run Black
       run: black --fast --check --extend-exclude \/out .
     - name: Install test requirements
