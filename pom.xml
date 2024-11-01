@@ -19,6 +19,7 @@
     <module>edu.cuny.hunter.hybridize.tests</module>
     <module>edu.cuny.hunter.hybridize.tests.report</module>
     <module>edu.cuny.hunter.hybridize.feature</module>
+    <module>edu.cuny.hunter.hybridize.updatesite</module>
   </modules>
   <scm>
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring</url>
