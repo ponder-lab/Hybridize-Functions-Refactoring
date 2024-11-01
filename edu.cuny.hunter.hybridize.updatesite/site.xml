@@ -2,7 +2,7 @@
 <site>
   <description name="Hybridize Functions Refactoring Update Site" url="https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite"> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
   </description>
-  <feature url="features/edu.cuny.hunter.hybridize.feature_1.2.0.202411011739.jar" id="edu.cuny.hunter.hybridize.feature" version="1.2.0.202411011739">
+  <feature url="features/edu.cuny.hunter.hybridize.feature_1.3.0.qualifier.jar" id="edu.cuny.hunter.hybridize.feature" version="1.3.0.qualifier">
     <category name="edu.cuny.hunter.hybridize.category" />
   </feature>
   <category-def name="edu.cuny.hunter.hybridize.category" label="Hybridization Refactorings">
