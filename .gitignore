@@ -89,3 +89,4 @@ local.properties
 target/
 .tycho-consumer-pom.xml
 results
+*.versionsBackup
