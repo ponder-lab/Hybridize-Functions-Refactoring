@@ -14,7 +14,7 @@ This tool consists of automated refactoring research prototype plug-ins for [Ecl
 
 ## Usage
 
-The tool is designed to be used in the Eclipse IDE with the PyDev plug-in. Thus, the tool is designed to operate on Python files contained within PyDev projects, as that is where it obtains metadata from the projects such as `PYTHONPATH`. However, currently, the tool is only compatible only with [*our* PyDev 9.3 development branch][pydev branch]. That means that you will have to have our version of PyDev installed in your Eclipse instance before using this plug-in. Thus, if you have a version of PyDev previously installed, you will need to uninstall it before installing our tool. Integration with the standard PyDev version is being tracked by [#152]. Installation via our [update site][#update-site] should install the necessary PyDev version automatically.
+The tool is designed to be used in the Eclipse IDE with the PyDev plug-in. Thus, the tool is designed to operate on Python files contained within PyDev projects, as that is where it obtains metadata from the projects such as `PYTHONPATH`. However, currently, the tool is only compatible only with [*our* PyDev 9.3 development branch][pydev branch]. That means that you will have to have our version of PyDev installed in your Eclipse instance before using this plug-in. Thus, if you have a version of PyDev previously installed, you will need to uninstall it before installing our tool. Integration with the standard PyDev version is being tracked by [#152]. Installation via our [update site](#update-site) should install the necessary PyDev version automatically.
 
 Once the plug-in and dependencies are installed, the refactoring can be run in two different ways:
 
