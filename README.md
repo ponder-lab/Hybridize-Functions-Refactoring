@@ -68,3 +68,4 @@ See the [wiki][wiki] for further information.
 [wala]: https://github.com/wala/WALA
 [ariadne]: https://github.com/wala/ML
 [pydev branch]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
+[Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
