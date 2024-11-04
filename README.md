@@ -37,7 +37,11 @@ The tool has been tested on Eclipse IDE for RCP and RAP Developers Version: 2023
 
 ### Update Site
 
-An alpha version of our tool is available via an Eclipse update site at: https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite. Please choose the latest version.
+An alpha version of our tool is available via an Eclipse update site at:
+
+https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite
+
+Please choose the latest version.
 
 ### Eclipse Marketplace
 
