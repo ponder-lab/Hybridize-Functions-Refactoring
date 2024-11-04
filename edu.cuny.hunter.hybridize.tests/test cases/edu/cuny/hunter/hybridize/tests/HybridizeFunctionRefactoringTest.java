@@ -506,7 +506,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String contents = input ? this.getFileContents(inputTestFileName)
 				: this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
 
-		Path path = getAbsolutionPath(inputTestFileName);
+		Path path = getAbsolutePath(inputTestFileName);
 		File file = path.toFile();
 
 		return createPythonNode(fileNameWithoutExtension, file, contents);
@@ -541,7 +541,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringCore.getUndoManager().flush();
 
 		String inputTestFileName = this.getInputTestFileName("A"); // There must at least be an A.py file.
-		Path inputTestFileAbsolutePath = getAbsolutionPath(inputTestFileName);
+		Path inputTestFileAbsolutePath = getAbsolutePath(inputTestFileName);
 		Path inputTestFileDirectoryAbsolutePath = inputTestFileAbsolutePath.getParent();
 
 		if (this.getRunInputTestFile()) {
@@ -732,7 +732,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private static File getFile(String fileName) {
-		return getAbsolutionPath(fileName).toFile();
+		return getAbsolutePath(fileName).toFile();
 	}
 
 	@Override
