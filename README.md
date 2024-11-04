@@ -14,7 +14,9 @@ This tool consists of automated refactoring research prototype plug-ins for [Ecl
 
 ## Usage
 
-The refactoring can be run in two different ways:
+The tool is designed to be used in the Eclipse IDE with the PyDev plug-in. Thus, the tool is designed to operate on Python files contained within PyDev projects, as that is where it obtains metadata from the projects such as `PYTHONPATH`. However, currently, the tool is only compatible only with [*our* PyDev 9.3 development branch][pydev branch]. That means that you will have to have our version of PyDev installed in your Eclipse instance before using this plug-in. Thus, if you have a version of PyDev previously installed, you will need to uninstall it before installing our tool. Integration with the standard PyDev version is being tracked by #152. Installation via our [update site][#update-site] should install the necessary PyDev version automatically.
+
+Once the plug-in and dependencies are installed, the refactoring can be run in two different ways:
 
 1. As a command.
 	1. Select a Python code entity.
@@ -31,19 +33,33 @@ Due to https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/370,
 
 ## Installation
 
-Coming soon!
+The tool has been tested on Eclipse IDE for RCP and RAP Developers Version: 2023-03 (4.27.0), Build id: 20230309-1520 under Java 17.
 
 ### Update Site
 
-https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite
+An alpha version of our tool is available via an Eclipse update site at: https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.updatesite. Please choose the latest version.
 
 ### Eclipse Marketplace
 
 Coming soon!
 
+### Dependencies
+
+The refactoring has several dependencies as listed below. If you experience any trouble installing the plug-in using the above update site, you can manually install the dependencies. The latest version of the plug-ins should be installed:
+
+Dependency | Update Site
+--- | ---
+[Common Eclipse Refactoring Framework] | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
+[PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
+[WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository
+
 ## Contributing
 
 For information on contributing, see [CONTRIBUTING.md][contrib].
+
+## Further Information
+
+See the [wiki][wiki] for further information.
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [eclipse]: http://eclipse.org
@@ -51,3 +67,4 @@ For information on contributing, see [CONTRIBUTING.md][contrib].
 [pydev]: http://www.pydev.org/
 [wala]: https://github.com/wala/WALA
 [ariadne]: https://github.com/wala/ML
+[pydev branch]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
