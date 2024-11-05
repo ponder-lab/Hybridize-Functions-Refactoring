@@ -63,7 +63,7 @@
   </url>
   <requires>
     <import plugin="org.eclipse.ltk.core.refactoring" version="3.12.200" match="greaterOrEqual" />
-    <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.1.0" match="greaterOrEqual" />
+    <import plugin="edu.cuny.citytech.refactoring.common.core" version="3.7.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.equinox.registry" version="3.11.100" match="greaterOrEqual" />
     <import plugin="org.eclipse.osgi" version="3.18.0" match="greaterOrEqual" />
     <import plugin="com.python.pydev.refactoring" version="9.3.3" match="greaterOrEqual" />
@@ -75,7 +75,7 @@
     <import plugin="org.eclipse.text" version="3.12.200" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui" version="3.201.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.ltk.ui.refactoring" version="3.12.0" match="greaterOrEqual" />
-    <import plugin="edu.cuny.citytech.refactoring.common.ui" version="3.1.0" match="greaterOrEqual" />
+    <import plugin="edu.cuny.citytech.refactoring.common.ui" version="3.7.0" match="greaterOrEqual" />
     <import plugin="edu.cuny.hunter.hybridize.core" version="1.0.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.jdt.ui" version="3.26.100" match="greaterOrEqual" />
     <import plugin="org.eclipse.ui.navigator" version="3.10.200" match="greaterOrEqual" />
