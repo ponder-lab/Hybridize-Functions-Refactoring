@@ -17,20 +17,20 @@ The project includes a maven configuration file using the Tycho plug-in, which i
 
 ## Dependencies
 
-You should have the following projects in your workspace:
+All dependencies are listed in the [target definition file]. Simply set this file as your "active target", refresh and update the items in the list, and you should be good to go. However, if you plan to run the UI plug-in (and not only the tests or evaluation plug-ins), due to https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/264, you should have the following project in your workspace:
 
 1. [Common Eclipse Refactoring Framework](https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework).
+
+The other projects should be obtained from the target definition. If, for any reason, they aren't, or you also need to modify those projects, you can put the following projects also in your workspace:
+
 1. [PyDev 9.3 branch][PyDev].
 1. [Ariadne ponder-lab fork][Ariadne]
 1. [WALA v1.6 branch][WALA]
 
-Having PyDev in your workspace in its own "working set" is helpful to visualize the structure of the project.
-<!-- Checkout a particular release (e.g., `git checkout pydev_9_3_0`), then-->
-Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
+Having PyDev in your workspace in its own "working set" is helpful to visualize the structure of the project. Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
 
 To access the [Ariadne packages] for building your project, refer to [GitHub Packages Documentation] for instructions.
 
-<!-- It's also possible just to use `mvn install` if you do not intend on changing any of the dependencies. Alternatively, -->
 You may use the following update sites to install some of the appropriate plugins into your Eclipse installation:
 
 Dependency | Update Site
@@ -38,6 +38,8 @@ Dependency | Update Site
 [Common Eclipse Refactoring Framework] | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
 [WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository
+
+These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them.
 
 ### Running the Evaluator
 
@@ -53,3 +55,4 @@ You can run the evaluator in several different ways, including as a command or a
 [Ariadne packages]: https://github.com/orgs/ponder-lab/packages?repo_name=ML
 [WALA]: https://github.com/ponder-lab/WALA/tree/v1.6
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
+[target definition file]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/02cbd028d09f063f3e4ecd048e2435262abdde64/hybridize.target
