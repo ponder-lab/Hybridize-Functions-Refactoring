@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <feature id="edu.cuny.hunter.hybridize.feature" label="Hybridize Functions Refactoring" version="1.4.0.qualifier" provider-name="City University of New York (CUNY) Hunter College" plugin="edu.cuny.hunter.hybridize.core">
-  <description url="https://github.com/ponder-lab/Hybridize-Functions-Refactoring"> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
-  </description>
-  <copyright>2024 Raffi Khatchadourian. All rights reserved.
-  </copyright>
+  <description url="https://github.com/ponder-lab/Hybridize-Functions-Refactoring"> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.</description>
+  <copyright>2025 Raffi Khatchadourian and Tatiana Castro Vélez. All rights reserved.</copyright>
   <license url="https://www.eclipse.org/legal/epl-2.0">
       Eclipse Public License - v 2.0
 
