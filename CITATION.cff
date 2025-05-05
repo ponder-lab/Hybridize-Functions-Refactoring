@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: Khatchadourian
+  given-names: Raffi
+  orcid: https://orcid.org/0000-0002-7930-0182
+- family-names: Castro Vélez
+  given-names: Tatiana
+  orcid: https://orcid.org/0000-0002-6122-269X
+title: "Hybridize Functions Refactoring"
+version: v1.4.0
+date-released: 2025-03-18
+type: software
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.15045769
