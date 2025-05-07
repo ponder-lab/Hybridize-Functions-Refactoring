@@ -46,6 +46,9 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.jface.text.IRegion;
+import org.eclipse.jface.text.Region;
+import org.eclipse.ltk.core.refactoring.FileStatusContext;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusContext;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
@@ -129,13 +132,6 @@ public class Function {
 	 * Used for speculative analysis of the function name.
 	 */
 	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model|.*inference";
-
-	private final class FunctionStatusContext extends RefactoringStatusContext {
-		@Override
-		public Object getCorrespondingElement() {
-			return Function.this;
-		}
-	}
 
 	/**
 	 * Parameters that may be passed to a tf.fuction decorator. Parameter descriptions found at:
@@ -821,7 +817,16 @@ public class Function {
 	}
 
 	private void addStatus(int status, String message, int code) {
-		RefactoringStatusContext context = new FunctionStatusContext();
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/369.
+		// Adding a very simply context here; only highlights the function name.
+		int offset = getOffset(this.getContainingDocument(), functionDef.name);
+		int length = getFullRepresentationString(functionDef).length();
+
+		IRegion region = new Region(offset, length);
+		RefactoringStatusContext context = new FileStatusContext(this.getContainingActualFile(), region);
+
 		this.getStatus().addEntry(status, message, context, PLUGIN_ID, code, this);
 	}
 
@@ -875,12 +880,11 @@ public class Function {
 	}
 
 	/**
-	 * Check refactoring preconditions.
+	 * Check refactoring preconditions. The status is added to this {@link Function}.
 	 *
-	 * @return The resulting {@link RefactoringStatus} of the precondition check.
 	 * @see #getStatus()
 	 */
-	public RefactoringStatus check() {
+	public void check() {
 		if (!this.isHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
@@ -971,8 +975,6 @@ public class Function {
 			if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
-
-		return this.getStatus();
 	}
 
 	/**
@@ -2009,7 +2011,7 @@ public class Function {
 						String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
 						if (fromImportStr != null && fromImportStr.equals("tensorflow"))
 							switch (importStr) {
-							case "*": // wildcard import.
+							case "*": // wild card import.
 							case "function": // direct import.
 								return ""; // no prefix needed.
 							}
