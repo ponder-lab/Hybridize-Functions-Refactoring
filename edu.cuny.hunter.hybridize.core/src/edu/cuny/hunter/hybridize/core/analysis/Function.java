@@ -880,12 +880,11 @@ public class Function {
 	}
 
 	/**
-	 * Check refactoring preconditions.
+	 * Check refactoring preconditions. The status is added to this {@link Function}.
 	 *
-	 * @return The resulting {@link RefactoringStatus} of the precondition check.
 	 * @see #getStatus()
 	 */
-	public RefactoringStatus check() {
+	public void check() {
 		if (!this.isHybrid()) { // Eager. Table 1.
 			this.setRefactoring(CONVERT_EAGER_FUNCTION_TO_HYBRID);
 
@@ -976,8 +975,6 @@ public class Function {
 			if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 				this.addWarning("This hybrid function potentially contains Python side-effects.");
 		}
-
-		return this.getStatus();
 	}
 
 	/**
@@ -2014,7 +2011,7 @@ public class Function {
 						String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
 						if (fromImportStr != null && fromImportStr.equals("tensorflow"))
 							switch (importStr) {
-							case "*": // wildcard import.
+							case "*": // wild card import.
 							case "function": // direct import.
 								return ""; // no prefix needed.
 							}
