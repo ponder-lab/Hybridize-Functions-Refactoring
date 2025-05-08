@@ -14,3 +14,34 @@ type: software
 identifiers:
   - type: doi
     value: 10.5281/zenodo.15045769
+repository-code: "http://github.com/ponder-lab/Hybridize-Functions-Refactoring"
+preferred-citation:
+  authors:
+  - family-names: Khatchadourian
+    given-names: Raffi
+    orcid: https://orcid.org/0000-0002-7930-0182
+  - family-names: Castro Vélez
+    given-names: Tatiana
+    orcid: https://orcid.org/0000-0002-6122-269X
+  - family-names: Bagherzadeh
+    given-names: Mehdi
+    orcid: https://orcid.org/0000-0003-1549-881X
+  - family-names: Jia
+    given-names: Nan
+    orcid: https://orcid.org/0000-0002-6122-269X
+  - family-names: Raja
+    given-names: Anita
+    orcid: https://orcid.org/0000-0002-0735-7358
+  title: "Hybridize Functions: A Tool for Automatically Refactoring Imperative Deep Learning Programs to Graph Execution"
+  abstract: "Efficiency is essential to support responsiveness w.r.t. ever-growing datasets, especially for Deep Learning (DL) systems. DL frameworks have traditionally embraced deferred execution-style DL code---supporting symbolic, graph-based Deep Neural Network (DNN) computation. While scalable, such development is error-prone, non-intuitive, and difficult to debug. Consequently, more natural, imperative DL frameworks encouraging eager execution have emerged but at the expense of run-time performance. Though hybrid approaches aim for the ``best of both worlds,'' using them effectively requires subtle considerations to make code amenable to safe, accurate, and efficient graph execution---avoiding performance bottlenecks and semantically inequivalent results. We discuss the engineering aspects of a refactoring tool that automatically determines when it is safe and potentially advantageous to migrate imperative DL code to graph execution and vice-versa."
+  type: conference-paper
+  date-released: 2025-05-01
+  doi: 10.1007/978-3-031-90900-9_5
+  keywords:
+    - "deep learning"
+    - "refactoring"
+    - "imperative programs"
+    - "graphs"
+   conference:
+     date-end: "2025-05-08"
+     name: "FASE 2025"
