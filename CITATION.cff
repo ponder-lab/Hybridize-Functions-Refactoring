@@ -7,15 +7,6 @@ authors:
 - family-names: Castro Vélez
   given-names: Tatiana
   orcid: https://orcid.org/0000-0002-6122-269X
-- family-names: Bagherzadeh
-  given-names: Mehdi
-  orcid: https://orcid.org/0000-0003-1549-881X
-- family-names: Jia
-  given-names: Nan
-  orcid: https://orcid.org/0000-0002-6122-269X
-- family-names: Raja
-  given-names: Anita
-  orcid: https://orcid.org/0000-0002-0735-7358
 title: "Hybridize Functions Refactoring"
 version: v1.4.0
 date-released: 2025-03-18
