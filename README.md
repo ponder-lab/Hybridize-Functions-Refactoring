@@ -1,6 +1,6 @@
 # Hybridize-Functions-Refactoring
 
-[![Build Status](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml/badge.svg)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml) [![Coverage Status](https://coveralls.io/repos/github/ponder-lab/Hybridize-Functions-Refactoring/badge.svg?branch=main&t=PffqbW)](https://coveralls.io/github/ponder-lab/Hybridize-Functions-Refactoring?branch=main) [![GitHub license](https://img.shields.io/badge/license-Eclipse-blue.svg)]([https://github.com/ponder-lab/Hybridize-Functions-Refactoring/raw/master/LICENSE](https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/refs/heads/main/LICENSE)) [![DOI](https://zenodo.org/badge/492901042.svg)](https://doi.org/10.5281/zenodo.15045769) [![Java profiler](https://www.ej-technologies.com/images/product_banners/jprofiler_small.png)](https://www.ej-technologies.com/products/jprofiler/overview.html)
+[![Build Status](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml/badge.svg?branch=main)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml?branch=main) [![Coverage Status](https://coveralls.io/repos/github/ponder-lab/Hybridize-Functions-Refactoring/badge.svg?branch=main&t=PffqbW)](https://coveralls.io/github/ponder-lab/Hybridize-Functions-Refactoring?branch=main) [![GitHub license](https://img.shields.io/badge/license-Eclipse-blue.svg)]([https://github.com/ponder-lab/Hybridize-Functions-Refactoring/raw/master/LICENSE](https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/refs/heads/main/LICENSE)) [![DOI](https://zenodo.org/badge/492901042.svg)](https://doi.org/10.5281/zenodo.15045769) [![CITATION.cff](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/cff-validator.yml/badge.svg)](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/cff-validator.yml) [![Java profiler](https://www.ej-technologies.com/images/product_banners/jprofiler_small.png)](https://www.ej-technologies.com/products/jprofiler/overview.html)
 
 ## Introduction
 
@@ -10,7 +10,7 @@ This tool consists of automated refactoring research prototype plug-ins for [Ecl
 
 ## Screenshot
 
-![Screenshot](https://khatchad.commons.gc.cuny.edu/wp-content/blogs.dir/2880/files/2024/10/Screenshot-from-2024-10-01-13-07-03.png)
+![Screenshot](https://khatchad.commons.gc.cuny.edu/wp-content/blogs.dir/2880/files/2025/05/Screenshot-from-2024-10-01-13-07-03.png)
 
 ## Usage
 
