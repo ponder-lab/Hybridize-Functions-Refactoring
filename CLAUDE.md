@@ -12,19 +12,21 @@ The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fo
 
 The reactor is a Tycho multi-module Maven build. Requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports 3.9.9 but trips a `TargetPlatformArtifactResolver` binding error on 3.9.9 — see eclipse-tycho/tycho#5384; the project's `maven-enforcer-plugin` rule pins `[3.9.11,)`). `.mvn/extensions.xml` registers `tycho-build` as a Maven core extension (required by Tycho 4+).
 
+The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11 so contributors don't need to upgrade their system Maven. **Use `./mvnw` rather than system `mvn`** — system Maven is often 3.9.9 and will fail on the Tycho binding error.
+
 ```bash
 # Full build, no tests
-mvn -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> install -DskipTests=true
+./mvnw -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> install -DskipTests=true
 
 # Tests + JaCoCo (matches CI)
-mvn -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> verify -Pjacoco
+./mvnw -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> verify -Pjacoco
 
 # Format check / apply (Spotless: Eclipse formatter for Java, also XML/MD/POM)
-mvn spotless:check
-mvn spotless:apply
+./mvnw spotless:check
+./mvnw spotless:apply
 
 # Checkstyle (bound to validate phase)
-mvn validate
+./mvnw validate
 ```
 
 Ariadne (`com.ibm.wala.cast.python.ml`) is fetched from GitHub Packages, which requires a `~/.m2/settings.xml` (or `-s .travis.settings.xml` with `-Dgithub.username/-Dgithub.password`) carrying a token with `read:packages`. See `CONTRIBUTING.md` and the GitHub Packages docs.
