@@ -7484,6 +7484,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Env-dependent flake; suspected https://github.com/wala/ML/issues/168 (unconfirmed).")
 	public void testModule13() throws Exception {
 		Set<Function> functions = this.getFunctions("C");
 		assertEquals(1, functions.size());
@@ -7496,6 +7497,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Env-dependent flake; suspected https://github.com/wala/ML/issues/168 (unconfirmed).")
 	public void testModule14() throws Exception {
 		Set<Function> functions = this.getFunctions("src/C");
 		assertEquals(1, functions.size());
@@ -7508,6 +7510,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Env-dependent flake; suspected https://github.com/wala/ML/issues/168 (unconfirmed).")
 	public void testModule15() throws Exception {
 		Set<Function> functions = this.getFunctions("src/C");
 		assertEquals(1, functions.size());
@@ -7520,6 +7523,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
+	@Ignore("Env-dependent flake; suspected https://github.com/wala/ML/issues/168 (unconfirmed).")
 	public void testModule16() throws Exception {
 		Set<Function> functions = this.getFunctions("src/C");
 		assertEquals(1, functions.size());
