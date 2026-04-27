@@ -11,6 +11,13 @@
         <putfield class="LRoot" field="app" fieldType="LRoot" ref="x" value="app" />
         <new def="run" class="Labsl/run" />
         <putfield class="LRoot" field="run" fieldType="LRoot" ref="app" value="run" />
+        <!-- https://abseil.io/docs/python/guides/testing -->
+        <new def="testing" class="Lobject" />
+        <putfield class="LRoot" field="testing" fieldType="LRoot" ref="x" value="testing" />
+        <new def="parameterized" class="Lobject" />
+        <putfield class="LRoot" field="parameterized" fieldType="LRoot" ref="testing" value="parameterized" />
+        <new def="named_parameters" class="Labsl/class/named_parameters" />
+        <putfield class="LRoot" field="named_parameters" fieldType="LRoot" ref="parameterized" value="named_parameters" />
         <return value="x" />
       </method>
     </class>
@@ -20,6 +27,23 @@
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self func">
           <call class="LRoot" name="do" descriptor="()LRoot;" type="virtual" arg0="func" def="v" />
           <return value="v" />
+        </method>
+      </class>
+    </package>
+    <package name="absl/class">
+      <class name="NamedParameters" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self test">
+          <putfield class="LRoot" field="params" fieldType="LRoot" ref="test" value="self" />
+          <return value="test" />
+        </method>
+      </class>
+      <class name="named_parameters" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self params values extra">
+          <new def="closure" class="Labsl/class/NamedParameters" />
+          <putfield class="LRoot" field="test" fieldType="LRoot" ref="closure" value="self" />
+          <putfield class="LRoot" field="params" fieldType="LRoot" ref="closure" value="params" />
+          <putfield class="LRoot" field="values" fieldType="LRoot" ref="closure" value="values" />
+          <return value="closure" />
         </method>
       </class>
     </package>
