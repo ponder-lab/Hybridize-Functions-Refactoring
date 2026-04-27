@@ -10,7 +10,7 @@ This tool consists of automated refactoring research prototype plug-ins for [Ecl
 
 ## Screenshot
 
-![Screenshot](https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/.github/screenshot.png)
+![Screenshot](https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/images/screenshot.png)
 
 ## Usage
 
