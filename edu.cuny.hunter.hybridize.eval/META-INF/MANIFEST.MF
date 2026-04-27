@@ -29,4 +29,4 @@ Require-Bundle: org.eclipse.ui,
  org.python.pydev.ast
 Automatic-Module-Name: edu.cuny.hunter.hybridize.eval
 Bundle-Activator: edu.cuny.hunter.hybridize.eval.ui.plugins.EvaluateHybridizeFunctionRefactoringPlugin
-Bundle-RequiredExecutionEnvironment: JavaSE-17
+Bundle-RequiredExecutionEnvironment: JavaSE-25
