@@ -15,6 +15,22 @@ The plug-ins are being developed on the following Eclipse versions. Currently, n
 
 The project includes a Maven configuration file using the Tycho plug-in, which is part of the [Maven Eclipse plug-in](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using Maven, this plugin depends on the [Common Eclipse Refactoring Framework], the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), [Ariadne], [WALA], and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse (choose to "work with" "The Eclipse Project Updates"). Others may need to be obtained from their respective update sites (see below).
 
+### JDK version
+
+The Tycho version pinned by this project (2.7.5) does not recognize OSGi execution environments newer than `JavaSE-17`, so `mvn` must be launched on a Java 17 JRE/JDK even if your system default is newer. To pin Java 17 only when working in this repository (without changing your system-wide default), [direnv](https://direnv.net) is recommended. `.envrc` is gitignored; create it locally with contents along these lines (adjust the path for your platform):
+
+```sh
+# Linux (Debian/Ubuntu OpenJDK)
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+PATH_add "$JAVA_HOME/bin"
+
+# macOS (Homebrew Temurin)
+# export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+# PATH_add "$JAVA_HOME/bin"
+```
+
+Then run `direnv allow` once. `cd`-ing into the repo will activate Java 17; leaving restores your system default.
+
 ## Dependencies
 
 All dependencies are listed in the [target definition file]. Simply set this file as your "active target", refresh and update the items in the list, and you should be good to go. However, if you plan to run the UI plug-in (and not only the tests or evaluation plug-ins), due to https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/264, you should have the following project in your workspace:
