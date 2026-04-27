@@ -10,7 +10,7 @@ The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fo
 
 ## Build / test commands
 
-The reactor is a Tycho multi-module Maven build. Java 17 is required — Tycho 2.7.5 doesn't recognize execution environments newer than `JavaSE-17` (fails at project setup with `Unknown OSGi execution environment: 'JavaSE-25'` if Maven is launched on a newer JVM). The repo uses `direnv` (`.envrc` is gitignored; recommended contents documented in `CONTRIBUTING.md`) to pin `JAVA_HOME` to a JDK 17 install per-shell, so the system default JDK can be anything.
+The reactor is a Tycho multi-module Maven build. Requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports 3.9.9 but trips a `TargetPlatformArtifactResolver` binding error on 3.9.9 — see eclipse-tycho/tycho#5384; the project's `maven-enforcer-plugin` rule pins `[3.9.11,)`). `.mvn/extensions.xml` registers `tycho-build` as a Maven core extension (required by Tycho 4+).
 
 ```bash
 # Full build, no tests
