@@ -1504,12 +1504,8 @@
         </method>
       </class>
       <class name="eye" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="self num_rows num_columns batch_shape dtype name">
           <new def="x" class="Ltensorflow/python/ops/linalg_ops/eye" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="num_rows num_columns batch_shape dtype name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
@@ -1558,42 +1554,30 @@
         </method>
       </class>
       <class name="uniform" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <!-- Allocation moved to do() to avoid 1-CFA aliasing issues with shared read_data(). -->
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self shape minval maxval dtype seed name">
           <new def="x" class="Ltensorflow/python/ops/random_ops/uniform" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape minval maxval dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
       <class name="gamma" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <!-- Allocation moved to do() to avoid 1-CFA aliasing issues with shared read_data(). -->
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self shape alpha beta dtype seed name">
           <new def="x" class="Ltensorflow/python/ops/random_ops/gamma" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape alpha beta dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
       <class name="normal" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <!-- Allocation moved to do() to avoid 1-CFA aliasing issues with shared read_data(). -->
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self shape mean stddev dtype seed name">
           <new def="x" class="Ltensorflow/python/ops/random_ops/normal" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape mean stddev dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
       <class name="poisson" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <!-- Allocation moved to do() to avoid 1-CFA aliasing issues with shared read_data(). -->
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="self shape lam dtype seed name">
           <new def="x" class="Ltensorflow/python/ops/random_ops/poisson" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="shape lam dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
@@ -1609,12 +1593,9 @@
         </method>
       </class>
       <class name="truncated_normal" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <!-- Allocation moved to do() to avoid 1-CFA aliasing issues with shared read_data(). -->
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self shape mean stddev dtype seed name">
           <new def="x" class="Ltensorflow/python/ops/random_ops/truncated_normal" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="shape mean stddev dtype seed name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
           <return value="x" />
         </method>
       </class>
@@ -1645,74 +1626,45 @@
         </method>
       </class>
       <class name="from_nested_row_lengths" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_nested_row_lengths" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="flat_values nested_row_lengths name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self flat_values nested_row_lengths name validate">
+          <new def="res" class="Ltensorflow/functions/from_nested_row_lengths" />
+          <return value="res" />
         </method>
       </class>
       <class name="from_nested_row_splits" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_nested_row_splits" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self flat_values nested_row_splits name validate">
+          <new def="res" class="Ltensorflow/functions/from_nested_row_splits" />
+          <return value="res" />
         </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="flat_values nested_row_splits name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
-        </method>
-      </class>
       </class>
       <class name="from_row_lengths" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_lengths" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_lengths name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self values row_lengths name validate">
+          <new def="res" class="Ltensorflow/functions/from_row_lengths" />
+          <return value="res" />
         </method>
       </class>
       <class name="from_row_limits" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_limits" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_limits name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self values row_limits name validate">
+          <new def="res" class="Ltensorflow/functions/from_row_limits" />
+          <return value="res" />
         </method>
       </class>
       <class name="from_row_splits" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_splits" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_splits name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self values row_splits name validate">
+          <new def="res" class="Ltensorflow/functions/from_row_splits" />
+          <return value="res" />
         </method>
       </class>
       <class name="from_row_starts" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_row_starts" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="values row_starts name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self values row_starts name validate">
+          <new def="res" class="Ltensorflow/functions/from_row_starts" />
+          <return value="res" />
         </method>
       </class>
       <class name="from_value_rowids" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/ops/ragged/ragged_tensor/from_value_rowids" />
-          <return value="x" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="values value_rowids nrows name validate">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
+        <method name="do" descriptor="()LRoot;" numArgs="6" paramNames="self values value_rowids nrows name validate">
+          <new def="res" class="Ltensorflow/functions/from_value_rowids" />
+          <return value="res" />
         </method>
       </class>
       <class name="boolean_mask" allocatable="true">
@@ -1795,8 +1747,8 @@
         </method>
       </class>
       <class name="placeholder" allocatable="true">
-        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="dtype shape name">
-          <new def="x" class="Lobject" />
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self dtype shape name">
+          <new def="x" class="Ltensorflow/python/framework/ops/Tensor" />
           <return value="x" />
         </method>
       </class>
@@ -1820,7 +1772,8 @@
       </class>
       <class name="conv2d" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x y">
-          <return value="x" />
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
         </method>
       </class>
       <class name="conv3d" allocatable="true">
@@ -1829,15 +1782,18 @@
         </method>
       </class>
       <class name="softmax" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/softmax -->
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/softmax. Fresh allocation (not pass-through); shape / dtype inferred from `logits` by the `Softmax` generator. See the rationale on `sigmoid.do()` in this file. -->
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self logits axis name">
-          <return value="logits" />
+          <new def="res" class="Ltensorflow/functions/softmax" />
+          <return value="res" />
         </method>
       </class>
       <class name="sparse_softmax_cross_entropy_with_logits" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/sparse_softmax_cross_entropy_with_logits -->
+        <!-- Returns a fresh loss tensor of shape `logits.shape[:-1]` and dtype float32 — does NOT return `labels`. `SoftmaxCrossEntropy` computes the output type. -->
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self labels logits name">
-          <return value="labels" />
+          <new def="res" class="Ltensorflow/functions/sparse_softmax_cross_entropy_with_logits" />
+          <return value="res" />
         </method>
       </class>
       <class name="bias_add" allocatable="true">
@@ -1867,8 +1823,14 @@
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self model">
           <new def="x" class="Ltensorflow/estimator/train/train" />
           <putfield class="LRoot" field="train" fieldType="LRoot" ref="self" value="x" />
+          <putfield class="LRoot" field="evaluate" fieldType="LRoot" ref="self" value="x" />
           <putfield class="LRoot" field="$callback" fieldType="LRoot" ref="x" value="model" />
           <return value="arg0" />
+        </method>
+      </class>
+      <class name="EstimatorSpec" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self mode predictions loss train_op eval_metric_ops export_outputs">
+          <return value="eval_metric_ops" />
         </method>
       </class>
       <class name="numpy_input_fn" allocatable="true">
@@ -1883,90 +1845,151 @@
     <package name="tensorflow/keras/preprocessing/image">
       <class name="ImageDataGenerator" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/preprocessing/image/ImageDataGenerator -->
-        <method name="read_dataset" descriptor="()LRoot;">
+        <method name="do" descriptor="()LRoot;" numArgs="24"
+          paramNames="self featurewise_center samplewise_center featurewise_std_normalization samplewise_std_normalization zca_whitening zca_epsilon rotation_range width_shift_range height_shift_range brightness_range shear_range zoom_range channel_shift_range fill_mode cval horizontal_flip vertical_flip rescale preprocessing_function data_format validation_split interpolation_order dtype">
           <new def="flow_from_directory" class="Ltensorflow/keras/preprocessing/image/flow_from_directory" />
           <putfield class="LRoot" field="flow_from_directory" fieldType="LRoot" ref="arg0" value="flow_from_directory" />
           <return value="arg0" />
-        </method>
-        <method name="do" descriptor="()LRoot;" numArgs="24"
-          paramNames="self featurewise_center samplewise_center featurewise_std_normalization samplewise_std_normalization zca_whitening zca_epsilon rotation_range width_shift_range height_shift_range brightness_range shear_range zoom_range channel_shift_range fill_mode cval horizontal_flip vertical_flip rescale preprocessing_function data_format validation_split interpolation_order dtype">
-          <!-- NOTE: Workaround for https://github.com/wala/ML/issues/127. This ctor doesn't really return a dataset but rather the instance methods do. It shouldn't be a problem since you can't iterate over an `ImageDataGenerator`. -->
-          <call class="LRoot" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="arg0" def="x" />
-          <return value="x" />
         </method>
       </class>
       <class name="flow_from_directory" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/preprocessing/image/ImageDataGenerator#flow_from_directory -->
         <method name="do" descriptor="()LRoot;" numArgs="16" paramNames="self directory target_size color_mode classes class_mode batch_size shuffle seed save_to_dir save_prefix save_format follow_links subset interpolation keep_aspect_ratio">
-          <new def="x" class="Ltensorflow/data/Dataset" />
-          <call class="Ltensorflow/data/Dataset" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="x" def="xx" />
-          <return value="xx" />
+          <new def="x" class="Ltensorflow/keras/preprocessing/image/flow_from_directory" />
+          <return value="x" />
         </method>
       </class>
     </package>
-    <package name="tensorflow/keras/models">
+    <package name="tensorflow/keras/models/class">
       <class name="Model" allocatable="true">
-        <method name="read_data" descriptor="()LRoot;">
+        <method name="read_data" descriptor="()LRoot;" numArgs="1">
           <new def="x" class="Ltensorflow/keras/Model/attribute" />
           <return value="x" />
         </method>
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/models/Model -->
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self inputs outputs name">
-          <new def="__call__" class="Ltensorflow/keras/models/__call__" />
-          <putfield class="LRoot" field="__call__" fieldType="LRoot" ref="arg0" value="__call__" />
-          <new def="call" class="Ltensorflow/keras/models/call" />
-          <putfield class="LRoot" field="call" fieldType="LRoot" ref="arg0" value="call" />
+          <new def="res" class="Ltensorflow/keras/models/Model" />
           <new def="x" class="Llist" />
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" def="xx" />
+          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="res" numArgs="1" def="xx" />
           <putfield class="LRoot" field="0" fieldType="LRoot" ref="x" value="xx" />
           <!-- https://www.tensorflow.org/guide/keras/transfer_learning#freezing_layers_understanding_the_trainable_attribute -->
-          <putfield class="LRoot" field="trainable_weights" fieldType="LRoot" ref="arg0" value="x" />
-          <putfield class="LRoot" field="weights" fieldType="LRoot" ref="arg0" value="x" />
-          <putfield class="LRoot" field="non_trainable_weights" fieldType="LRoot" ref="arg0" value="x" />
-          <return value="arg0" />
+          <putfield class="LRoot" field="trainable_weights" fieldType="LRoot" ref="res" value="x" />
+          <putfield class="LRoot" field="weights" fieldType="LRoot" ref="res" value="x" />
+          <putfield class="LRoot" field="non_trainable_weights" fieldType="LRoot" ref="res" value="x" />
+          <putfield class="LRoot" field="inputs" fieldType="LRoot" ref="res" value="inputs" />
+          <putfield class="LRoot" field="outputs" fieldType="LRoot" ref="res" value="outputs" />
+          <return value="res" />
         </method>
       </class>
-      <class name="__call__" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/Model#call -->
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self inputs training mask">
-          <return value="inputs" />
+    </package>
+    <package name="tensorflow/keras/Model">
+      <!-- Must be declared `allocatable="true"` so that `<new class="Ltensorflow/keras/Model/attribute"/>` in `tensorflow/keras/models/class/Model.read_data()` resolves to a concrete `InstanceKey` in the heap model. Without this declaration, `HeapModel.getInstanceKeyForAllocation` returns `null`, `getInvariantContents`
+        returns empty, and `visitReturn` never adds the iKey to the caller-side `PointerKey`. Same pattern as the wala/WALA#1889 fix for `tensorflow/python/ops/variables/Variable`. The class has no body because it is only referenced as a `<new>` target, not invoked directly; avoiding `read_data` here prevents
+        the class from being picked up by `TensorTypeAnalysis`'s syntactic seeding. -->
+      <class name="attribute" allocatable="true"></class>
+    </package>
+    <package name="tensorflow/keras/models">
+      <class name="Model" allocatable="true">
+        <method name="__call__" descriptor="()LRoot;" numArgs="5" paramNames="func self inputs training mask">
+          <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/Model#call -->
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
+        </method>
+        <!-- FIXME: Workaround for https://github.com/wala/ML/issues/106. -->
+        <method name="call" descriptor="()LRoot;" numArgs="5" paramNames="func self inputs training mask">
+          <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/Model#call -->
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
         </method>
       </class>
-      <!-- FIXME: Workaround for https://github.com/wala/ML/issues/106. -->
-      <class name="call" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/Model#call -->
-        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self inputs training mask">
-          <return value="inputs" />
+    </package>
+    <package name="tensorflow/keras/layers/class">
+      <class name="Dense" allocatable="true">
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/layers/Dense -->
+        <method name="do" descriptor="()LRoot;" numArgs="11" paramNames="self units activation use_bias kernel_initializer bias_initializer kernel_regularizer bias_regularizer activity_regularizer kernel_constraint bias_constraint">
+          <new def="res" class="Ltensorflow/keras/layers/Dense" />
+          <putfield class="LRoot" field="units" fieldType="LRoot" ref="res" value="units" />
+          <return value="res" />
+        </method>
+      </class>
+      <class name="Flatten" allocatable="true">
+        <!-- https://www.tensorflow.org/api_docs/python/tf/keras/layers/Flatten -->
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self data_format input_shape">
+          <new def="res" class="Ltensorflow/keras/layers/Flatten" />
+          <return value="res" />
+        </method>
+      </class>
+      <class name="Dropout" allocatable="true">
+        <!-- https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dropout -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self rate noise_shape seed">
+          <new def="res" class="Ltensorflow/keras/layers/Dropout" />
+          <return value="res" />
         </method>
       </class>
     </package>
     <package name="tensorflow/keras/layers">
-      <class name="Dense" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/keras/layers/Dense -->
-        <method name="do" descriptor="()LRoot;" numArgs="11" paramNames="self units activation use_bias kernel_initializer bias_initializer kernel_regularizer bias_regularizer activity_regularizer kernel_constraint bias_constraint">
-          <new def="__call__" class="Ltensorflow/keras/layers/__call__" />
-          <putfield class="LRoot" field="__call__" fieldType="LRoot" ref="arg0" value="__call__" />
-          <new def="call" class="Ltensorflow/keras/layers/call" />
-          <putfield class="LRoot" field="call" fieldType="LRoot" ref="arg0" value="call" />
-          <return value="arg0" />
+      <class name="Input" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="9" paramNames="self shape batch_size name dtype sparse tensor ragged type_spec">
+          <new def="x" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="x" />
         </method>
       </class>
-      <!-- FIXME: These methods must be called explicitly. The implicit cases blocked on https://github.com/wala/ML/issues/127. -->
-      <class name="__call__" allocatable="true">
+      <class name="Dense" allocatable="true">
         <!-- https://github.com/keras-team/keras/blob/07e13740fd181fc3ddec7d9a594d8a08666645f6/keras/layers/core/dense.py#L166-L240 -->
-        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self inputs">
+        <method name="__call__" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
+        </method>
+        <!-- FIXME: Workaround for https://github.com/wala/ML/issues/106. -->
+        <method name="call" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
+          <!-- https://github.com/keras-team/keras/blob/07e13740fd181fc3ddec7d9a594d8a08666645f6/keras/layers/core/dense.py#L166-L240 -->
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
+        </method>
+      </class>
+      <class name="Flatten" allocatable="true">
+        <!-- https://www.tensorflow.org/api_docs/python/tf/keras/layers/Flatten#__call__ -->
+        <method name="__call__" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
+        </method>
+        <method name="call" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
+          <new def="out" class="Ltensorflow/python/framework/ops/Tensor" />
+          <return value="out" />
+        </method>
+      </class>
+      <class name="Dropout" allocatable="true">
+        <method name="__call__" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
           <return value="inputs" />
         </method>
-      </class>
-      <!-- FIXME: Workaround for https://github.com/wala/ML/issues/106. -->
-      <class name="call" allocatable="true">
-        <!-- https://github.com/keras-team/keras/blob/07e13740fd181fc3ddec7d9a594d8a08666645f6/keras/layers/core/dense.py#L166-L240 -->
-        <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self inputs">
+        <method name="call" descriptor="()LRoot;" numArgs="3" paramNames="func self inputs">
           <return value="inputs" />
         </method>
       </class>
     </package>
+    <package name="tensorflow/initializers/class">
+      <class name="RandomNormal" allocatable="true">
+        <!-- Constructor for `tf.initializers.RandomNormal(mean, stddev, seed)`. Returns the callable initializer instance (modeled as `Ltensorflow/initializers/RandomNormal`, whose `__call__` is in the sibling package below). https://www.tensorflow.org/api_docs/python/tf/keras/initializers/RandomNormal -->
+        <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self mean stddev seed">
+          <new def="res" class="Ltensorflow/initializers/RandomNormal" />
+          <return value="res" />
+        </method>
+      </class>
+    </package>
+    <package name="tensorflow/initializers">
+      <class name="RandomNormal" allocatable="true">
+        <!-- Instance `__call__` for `tf.initializers.RandomNormal`: `instance(shape, dtype=None)` returns a tensor of the requested shape drawn from the normal distribution. Allocates a `random_ops/normal` result so the factory dispatches to the existing `Normal`-family generator (via `RandomNormalCall`,
+          which handles the extra `self` offset). https://www.tensorflow.org/api_docs/python/tf/keras/initializers/RandomNormal#__call__ -->
+        <method name="__call__" descriptor="()LRoot;" numArgs="4" paramNames="func self shape dtype">
+          <new def="out" class="Ltensorflow/python/ops/random_ops/normal" />
+          <return value="out" />
+        </method>
+      </class>
+    </package>
     <package name="tensorflow">
+      <!-- Sentinel class for `tf.newaxis` (aliased as `None` at runtime) so the allocation emitted during the tensorflow import (see the `new Ltensorflow/newaxis` above) registers as an allocatable type. `NdarraySubscriptOperation.classifyField` pattern-matches on `TensorFlowTypes.NEWAXIS` (= `Ltensorflow/newaxis`)
+        to distinguish it from other non-constant subscript elements. -->
+      <class name="newaxis" allocatable="true" />
       <class name="GradientTape" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/GradientTape -->
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self persistent watch_accessed_variables">
