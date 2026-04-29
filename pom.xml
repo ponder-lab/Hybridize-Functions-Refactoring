@@ -45,7 +45,7 @@
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
     <logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
-    <spotless.version>2.44.5</spotless.version>
+    <spotless.version>3.4.0</spotless.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -158,6 +158,9 @@
                   <exclude>**/.pytest_cache/</exclude>
                   <exclude>**/*.log</exclude>
                   <exclude>**/v1_astmanager/</exclude>
+                  <exclude>**/*.pdf</exclude>
+                  <!-- Exclude Git submodules -->
+                  <exclude>Formatting/</exclude>
                 </excludes>
                 <trimTrailingWhitespace/>
                 <endWithNewline/>
@@ -182,6 +185,7 @@
                   <include>**/*.xml</include>
                   <include>**/.pydevproject</include>
                 </includes>
+                <toggleOffOn/>
                 <excludes>
                   <exclude>**/plugin.xml</exclude>
                   <exclude>**/feature.xml</exclude>
@@ -189,6 +193,8 @@
                   <exclude>**/dependency-reduced-pom.xml</exclude>
                   <exclude>**/gradle.xml</exclude>
                   <exclude>**/target/</exclude>
+                  <!-- Exclude Git submodules -->
+                  <exclude>Formatting/</exclude>
                 </excludes>
                 <eclipseWtp>
                   <type>XML</type>
@@ -208,7 +214,7 @@
                 <exclude>**/target/</exclude>
               </excludes>
               <eclipse>
-                <version>4.27</version>
+                <version>4.39</version>
                 <file>${maven.multiModuleProjectDirectory}/eclipse-formatter.xml</file>
               </eclipse>
               <importOrder>
