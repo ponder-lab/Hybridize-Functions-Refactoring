@@ -48,6 +48,7 @@
         <putfield class="LRoot" field="nn" fieldType="LRoot" ref="x" value="nn" />
         <new def="math" class="Lobject" />
         <putfield class="LRoot" field="math" fieldType="LRoot" ref="x" value="math" />
+        <new def="math_ops" class="Lobject" />
         <new def="random" class="Lobject" />
         <putfield class="LRoot" field="random" fieldType="LRoot" ref="x" value="random" />
         <new def="sparse" class="Lobject" />
@@ -225,7 +226,6 @@
         <putfield class="LRoot" field="random_ops" fieldType="LRoot" ref="ops" value="random_ops" />
         <new def="sort_ops" class="Lobject" />
         <putfield class="LRoot" field="sort_ops" fieldType="LRoot" ref="ops" value="sort_ops" />
-        <new def="math_ops" class="Lobject" />
         <putfield class="LRoot" field="math_ops" fieldType="LRoot" ref="ops" value="math_ops" />
         <new def="gen_math_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_math_ops" fieldType="LRoot" ref="ops" value="gen_math_ops" />
