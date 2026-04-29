@@ -1259,6 +1259,7 @@
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self shape dtype name">
           <new def="res" class="Ltensorflow/python/framework/ops/Tensor" />
           <return value="res" />
+        </method>
       </class>
       <class name="concat" allocatable="true">
         <method name="read_data" descriptor="()LRoot;">
