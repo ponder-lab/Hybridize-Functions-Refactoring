@@ -172,6 +172,8 @@
                 </includes>
                 <excludes>
                   <exclude>**/target/</exclude>
+                  <!-- Exclude Git submodules -->
+                  <exclude>Formatting/</exclude>
                 </excludes>
                 <trimTrailingWhitespace/>
                 <endWithNewline/>
