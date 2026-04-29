@@ -48,7 +48,6 @@
         <putfield class="LRoot" field="nn" fieldType="LRoot" ref="x" value="nn" />
         <new def="math" class="Lobject" />
         <putfield class="LRoot" field="math" fieldType="LRoot" ref="x" value="math" />
-        <new def="math_ops" class="Lobject" />
         <new def="random" class="Lobject" />
         <putfield class="LRoot" field="random" fieldType="LRoot" ref="x" value="random" />
         <new def="sparse" class="Lobject" />
@@ -153,6 +152,7 @@
         <new def="sigmoid" class="Ltensorflow/math/sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="nn" value="sigmoid" />
         <putfield class="LRoot" field="sigmoid" fieldType="LRoot" ref="math" value="sigmoid" />
+        <new def="math_ops" class="Lobject" />
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/math/add -->
         <new def="add" class="Ltensorflow/math/add" />
         <putfield class="LRoot" field="add" fieldType="LRoot" ref="x" value="add" />
