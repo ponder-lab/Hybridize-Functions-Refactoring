@@ -39,7 +39,7 @@
     <maven-checkstyle-plugin-version>3.6.0</maven-checkstyle-plugin-version>
     <checkstyle-version>10.25.0</checkstyle-version>
     <junit-version>4.13.2</junit-version>
-    <eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
+    <eclipse-site>https://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
     <platform-version-name>2026-03</platform-version-name>
     <platform-version>4.39</platform-version>
     <maven.compiler.source>25</maven.compiler.source>
