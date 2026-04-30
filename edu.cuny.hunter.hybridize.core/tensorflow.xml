@@ -101,10 +101,10 @@
         <putfield class="LRoot" field="Dataset" fieldType="LRoot" ref="data" value="Dataset" />
         <!--https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/TextLineDataset -->
         <new def="TextLineDataset" class="Ltensorflow/data/Dataset" /> <!-- FIXME: Should *extend* `Dataset` -->
-        <putfield class="LRoot" field="TextLineDataset" fieldType="LRoot" ref="data" value="Dataset" />
+        <putfield class="LRoot" field="TextLineDataset" fieldType="LRoot" ref="data" value="TextLineDataset" />
         <!--https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/TFRecordDataset -->
-        <new def="TFRecordDataset " class="Ltensorflow/data/Dataset" /> <!-- FIXME: Should *extend* `Dataset` -->
-        <putfield class="LRoot" field="TFRecordDataset" fieldType="LRoot" ref="data" value="Dataset" />
+        <new def="TFRecordDataset" class="Ltensorflow/data/Dataset" /> <!-- FIXME: Should *extend* `Dataset` -->
+        <putfield class="LRoot" field="TFRecordDataset" fieldType="LRoot" ref="data" value="TFRecordDataset" />
         <new def="MirroredStrategy" class="Ltensorflow/distribute/MirroredStrategy" />
         <putfield class="LRoot" field="MirroredStrategy" fieldType="LRoot" ref="distribute" value="MirroredStrategy" />
         <new def="TPUStrategy" class="Ltensorflow/distribute/TPUStrategy" />
@@ -214,7 +214,7 @@
         <new def="array_ops" class="Lobject" />
         <putfield class="LRoot" field="array_ops" fieldType="LRoot" ref="ops" value="array_ops" />
         <new def="nn_impl" class="Lobject" />
-        <putfield class="LRoot" field="nn_impl" fieldType="LRoot" ref="ops" value="array_ops" />
+        <putfield class="LRoot" field="nn_impl" fieldType="LRoot" ref="ops" value="nn_impl" />
         <new def="gen_array_ops" class="Lobject" />
         <putfield class="LRoot" field="gen_array_ops" fieldType="LRoot" ref="ops" value="gen_array_ops" />
         <new def="gen_linalg_ops" class="Lobject" />
@@ -902,7 +902,7 @@
       </class>
       <class name="equal" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/equal -->
-        <!-- TODO: Return a Tensor whose dtype is bool (see wala/ML#427. -->
+        <!-- TODO: Return a Tensor whose dtype is bool (see wala/ML#427). -->
         <method name="read_data" descriptor="()LRoot;" numArgs="1">
           <new def="x" class="Ltensorflow/python/framework/ops/Tensor" />
           <return value="x" />
@@ -926,7 +926,7 @@
       <class name="log_softmax" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/nn/log_softmax -->
         <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/math/log_softmax " />
+          <new def="x" class="Ltensorflow/math/log_softmax" />
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self logits axis name">
@@ -1696,7 +1696,7 @@
       <class name="stack" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/stack -->
         <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/functions/stack " />
+          <new def="x" class="Ltensorflow/python/functions/stack" />
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="value axis name">
@@ -1814,7 +1814,7 @@
       <class name="extract_patches" allocatable="true">
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/image/extract_patches#example -->
         <method name="read_data" descriptor="()LRoot;">
-          <new def="x" class="Ltensorflow/python/functions/image/extract_patches " />
+          <new def="x" class="Ltensorflow/python/functions/image/extract_patches" />
           <return value="x" />
         </method>
         <method name="do" descriptor="()LRoot;" numArgs="7" paramNames="self images sizes strides rates padding name">
@@ -2021,6 +2021,9 @@
     <package name="tensorflow/data">
       <class name="Dataset" allocatable="true">
         <!-- "read_dataset" means that this function reads a tensor iterable. -->
+        <method name="read_dataset" descriptor="()LRoot;" numArgs="1" paramNames="self">
+          <return value="self" />
+        </method>
         <method name="do" descriptor="()LRoot;" numArgs="2" paramNames="self variant_tensor">
           <call class="LRoot" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="arg0" numArgs="1" def="x" />
           <return value="x" />
@@ -2235,8 +2238,32 @@
         <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#map -->
         <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self map_func num_parallel_calls deterministic name">
           <new def="x" class="Ltensorflow/data/Dataset" />
-          <call class="Ltensorflow/data/Dataset" name="read_dataset" descriptor="()LRoot;" type="virtual" arg0="x" def="xx" />
-          <return value="xx" />
+          <!-- NOTE: This block of dataset field initializations is duplicated intentionally. Because WALA uses 1-CFA context sensitivity for general methods, if we were to centralize this logic into a single shared helper method (like `read_dataset` or an `init_fields` method), 1-CFA would merge all
+            calls from the user's script to that helper. This would cause all dataset instances in the user's program to share the exact same internal object fields, leading to massive aliasing and loss of precision for tensor shapes/dtypes in chained operations. By inlining these allocations directly into each
+            endpoint's `do` method, each dataset operation gets a unique allocation site, preserving the call site context and preventing aliasing. -->
+          <new def="rd_shuffle" class="Ltensorflow/data/shuffle" />
+          <putfield class="LRoot" field="shuffle" fieldType="LRoot" ref="x" value="rd_shuffle" />
+          <new def="rd_batch" class="Ltensorflow/data/batch" />
+          <putfield class="LRoot" field="batch" fieldType="LRoot" ref="x" value="rd_batch" />
+          <new def="rd_repeat" class="Ltensorflow/data/repeat" />
+          <putfield class="LRoot" field="repeat" fieldType="LRoot" ref="x" value="rd_repeat" />
+          <new def="rd_prefetch" class="Ltensorflow/data/prefetch" />
+          <putfield class="LRoot" field="prefetch" fieldType="LRoot" ref="x" value="rd_prefetch" />
+          <new def="rd_with_options" class="Ltensorflow/data/with_options" />
+          <putfield class="LRoot" field="with_options" fieldType="LRoot" ref="x" value="rd_with_options" />
+          <new def="rd_take" class="Ltensorflow/data/take" />
+          <putfield class="LRoot" field="take" fieldType="LRoot" ref="x" value="rd_take" />
+          <new def="rd_map" class="Ltensorflow/data/map" />
+          <putfield class="LRoot" field="map" fieldType="LRoot" ref="x" value="rd_map" />
+          <new def="rd_filter" class="Ltensorflow/data/filter" />
+          <putfield class="LRoot" field="filter" fieldType="LRoot" ref="x" value="rd_filter" />
+          <new def="rd_concatenate" class="Ltensorflow/data/concatenate" />
+          <putfield class="LRoot" field="concatenate" fieldType="LRoot" ref="x" value="rd_concatenate" />
+          <new def="rd_reduce" class="Ltensorflow/data/reduce" />
+          <putfield class="LRoot" field="reduce" fieldType="LRoot" ref="x" value="rd_reduce" />
+          <new def="rd_enumerate" class="Ltensorflow/data/enumerate" />
+          <putfield class="LRoot" field="enumerate" fieldType="LRoot" ref="x" value="rd_enumerate" />
+          <return value="x" />
         </method>
       </class>
       <class name="filter" allocatable="true">
