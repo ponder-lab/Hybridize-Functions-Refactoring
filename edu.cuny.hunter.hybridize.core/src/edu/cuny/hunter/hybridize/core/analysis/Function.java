@@ -1544,12 +1544,12 @@ public class Function {
 		// True iff the function has a self parameter in the first position.
 		boolean selfParam = false;
 
-		// TODO: Use cast/assert statements? — #129.
+		// TODO: Use cast/assert statements?
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
 
 		if (params != null) {
-			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here. — #108.
+			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
 
 			if (actualParams != null) {
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
