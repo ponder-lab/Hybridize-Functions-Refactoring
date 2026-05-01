@@ -5,6 +5,7 @@ name: Java CI with Maven
 on:
   push:
   pull_request:
+  merge_group:
   schedule:
   - cron: "0 2 * * 5"
 concurrency:
