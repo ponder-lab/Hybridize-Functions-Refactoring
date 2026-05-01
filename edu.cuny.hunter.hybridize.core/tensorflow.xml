@@ -1285,7 +1285,9 @@
       <class name="constant" allocatable="true">
         <method name="do" descriptor="()LRoot;" numArgs="5" paramNames="self value dtype shape name">
           <new def="res" class="Ltensorflow/python/framework/constant_op/constant" />
-          <putfield class="Ltensorflow/python/framework/constant_op/constant" field="value" fieldType="LRoot" ref="res" value="value" />
+          <!-- The `value` putfield was removed (wala/ML#451 reopen): binding the user-supplied value to the alloc's `value` field caused Hybridize's `Function.containsPrimitive` to traverse fields of the alloc and find a `ConstantKey<Integer>`/`ConstantKey<Float>` for `tf.constant(N)`-style calls, classifying
+            parameters that receive the result (e.g. `recursive_fn(tf.constant(5))`'s `n`) as having primitive parameters. The Ariadne-side `Constant` generator reads dtype/shape directly from the call's `value` argument PTS via `getArgumentPointsToSet`, so dtype/shape inference is unaffected. The Java-side `TensorGenerator.getShapesFromShapeArgument`'s
+            `CONSTANT_OP_CONSTANT` branch falls back to walking back to the allocating call's value arg when the field is empty. -->
           <putfield class="Ltensorflow/python/framework/constant_op/constant" field="dtype" fieldType="LRoot" ref="res" value="dtype" />
           <return value="res" />
         </method>
