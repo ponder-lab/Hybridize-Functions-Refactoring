@@ -331,8 +331,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				LOG.info("Checking function: " + func + ".");
 
 				// Find out if it's hybrid via the tf.function decorator.
-				LOG.info("Discovering if " + func + " is hybrid.");
-				func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+				try {
+					LOG.info("Discovering if " + func + " is hybrid.");
+					func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+				} catch (BadLocationException e) {
+					throw new RuntimeException("Could not compute hybridization for: " + func + ".", e);
+				}
 
 				try {
 					func.inferTensorTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
