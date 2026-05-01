@@ -860,7 +860,7 @@ public class Function {
 
 			LOG.info("Found FQN: " + fqn + ".");
 
-			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) — #434.
+			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
 				subMonitor.done();
 				return true;
 			}
