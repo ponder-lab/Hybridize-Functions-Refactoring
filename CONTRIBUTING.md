@@ -15,6 +15,22 @@ The plug-ins are being developed on the following Eclipse versions. Currently, n
 
 The project includes a Maven configuration file using the Tycho plug-in, which is part of the [Maven Eclipse plug-in](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using Maven, this plugin depends on the [Common Eclipse Refactoring Framework], the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), [Ariadne], [WALA], and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse (choose to "work with" "The Eclipse Project Updates"). Others may need to be obtained from their respective update sites (see below).
 
+### JDK version
+
+The Tycho version pinned by this project (2.7.5) does not recognize OSGi execution environments newer than `JavaSE-17`, so `mvn` must be launched on a Java 17 JRE/JDK even if your system default is newer. To pin Java 17 only when working in this repository (without changing your system-wide default), [direnv](https://direnv.net) is recommended. `.envrc` is gitignored; create it locally with contents along these lines (adjust the path for your platform):
+
+```sh
+# Linux (Debian/Ubuntu OpenJDK)
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+PATH_add "$JAVA_HOME/bin"
+
+# macOS (Homebrew Temurin)
+# export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+# PATH_add "$JAVA_HOME/bin"
+```
+
+Then run `direnv allow` once. `cd`-ing into the repo will activate Java 17; leaving restores your system default.
+
 ## Dependencies
 
 All dependencies are listed in the [target definition file]. Simply set this file as your "active target", refresh and update the items in the list, and you should be good to go. However, if you plan to run the UI plug-in (and not only the tests or evaluation plug-ins), due to https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/264, you should have the following project in your workspace:
@@ -41,6 +57,17 @@ Dependency | Update Site
 
 These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them.
 
+### Synchronizing Ariadne XML summaries
+
+Ariadne ships XML summary files (`tensorflow.xml`, `pandas.xml`, etc.) inside its fat-jar, but the OSGi-wrapped bundle's classloader does not surface them to `getClass().getClassLoader().getResourceAsStream(...)` lookups when consumed by Eclipse plug-ins like this one. As a workaround, copies of the XMLs are checked in at `edu.cuny.hunter.hybridize.core/*.xml` and listed in `edu.cuny.hunter.hybridize.core/build.properties` `bin.includes` so they reach the bundle's runtime classpath.
+
+**When bumping the Ariadne version**:
+
+1. Run `edu.cuny.hunter.hybridize.core/update_summaries.sh` to re-sync from a local `$HOME/ML` checkout.
+2. If the new Ariadne version added a new XML summary, **add a `cp` line** for it to `update_summaries.sh` and **add it to `bin.includes`** in `edu.cuny.hunter.hybridize.core/build.properties`. Otherwise the analysis fails at runtime with `IllegalArgumentException: null xmlFile` from `XMLMethodSummaryReader`.
+
+This whole pattern is consumer-side technical debt; the broader fix (thin-jar Ariadne packaging that exposes summaries as proper bundle resources) is tracked at [wala/ML#418]. The narrower fix (changing Ariadne's XML lookup mechanism so consumers do not need to re-ship the files) is tracked at [wala/ML#419].
+
 ### Running the Evaluator
 
 Use the `edu.cuny.hunter.hybridize.evaluator` plug-in project to run the evaluation. The evaluation process will produce several CSVs, as well as perform the transformation if desired (see below for details). For convenience, there is an [Eclipse launch configuration](https://wiki.eclipse.org/FAQ_What_is_a_launch_configuration%3F) that can be used to run the evaluation. The run configuration is named [`edu.cuny.hunter.hybridize.eval/Evaluate Hybridize Functions.launch`](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/691cbeb87be805b8bfc336e799d938a9064a5e0e/edu.cuny.hunter.hybridize.eval/Evaluate%20Hybridize%20Functions.launch). In the run configuration dialog, you can specify several arguments to the evaluator as system properties.
@@ -56,3 +83,5 @@ You can run the evaluator in several different ways, including as a command or a
 [WALA]: https://github.com/ponder-lab/WALA/tree/v1.6
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
 [target definition file]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/02cbd028d09f063f3e4ecd048e2435262abdde64/hybridize.target
+[wala/ML#418]: https://github.com/wala/ML/issues/418
+[wala/ML#419]: https://github.com/wala/ML/issues/419

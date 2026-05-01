@@ -90,3 +90,9 @@ target/
 .tycho-consumer-pom.xml
 results
 *.versionsBackup
+
+# direnv per-developer JDK pin (recommended contents in CONTRIBUTING.md)
+.envrc
+
+# Per-developer Claude Code settings
+.claude/

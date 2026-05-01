@@ -4,13 +4,13 @@
 
 ## Introduction
 
-<img src="https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/master/edu.cuny.hunter.hybridize.ui/icons/icon.drawio.png" alt="Icon" align="left" height=150px /> Imperative Deep Learning programming is a promising paradigm for creating reliable and efficient Deep Learning programs. However, it is [challenging to write correct and efficient imperative Deep Learning programs](https://dl.acm.org/doi/10.1145/3524842.3528455) in TensorFlow (v2), a popular Deep Learning framework. TensorFlow provides a high-level API (`@tf.function`) that allows users to execute computational graphs using nature, imperative programming. However, writing efficient imperative TensorFlow programs requires careful consideration.
+<img src="https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/edu.cuny.hunter.hybridize.ui/icons/icon.drawio.png" alt="Icon" align="left" height=150px /> Imperative Deep Learning programming is a promising paradigm for creating reliable and efficient Deep Learning programs. However, it is [challenging to write correct and efficient imperative Deep Learning programs](https://dl.acm.org/doi/10.1145/3524842.3528455) in TensorFlow (v2), a popular Deep Learning framework. TensorFlow provides a high-level API (`@tf.function`) that allows users to execute computational graphs using nature, imperative programming. However, writing efficient imperative TensorFlow programs requires careful consideration.
 
 This tool consists of automated refactoring research prototype plug-ins for [Eclipse][eclipse] [PyDev][pydev] that assists developers in writing optimal imperative Deep Learning code in a semantics-preserving fashion. Refactoring preconditions and transformations for automatically determining when it is safe and potentially advantageous to migrate an eager function to hybrid and improve upon already hybrid Python functions are included. The approach utilizes the [WALA][wala] [Ariadne][ariadne] static analysis framework that has been modernized to TensorFlow 2 and extended to work with modern Python constructs and whole projects. The tool also features a side-effect analysis that is used to determine if a Python function is safe to hybridize.
 
 ## Screenshot
 
-![Screenshot](https://khatchad.commons.gc.cuny.edu/wp-content/blogs.dir/2880/files/2025/05/Screenshot-from-2024-10-01-13-07-03.png)
+![Screenshot](https://raw.githubusercontent.com/ponder-lab/Hybridize-Functions-Refactoring/main/images/screenshot.png)
 
 ## Usage
 
