@@ -41,7 +41,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "25"
           cache: maven
 
       - if: matrix.language == 'java-kotlin'
@@ -61,7 +61,7 @@ jobs:
       - if: matrix.language == 'java-kotlin'
         name: Install with Maven
         run: |
-          mvn -U \
+          ./mvnw -U \
             -s .travis.settings.xml \
             -Dgithub.username=${{ github.actor }} \
             -Dgithub.password=${{ secrets.GITHUB_TOKEN }} \

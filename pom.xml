@@ -33,17 +33,17 @@
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml</url>
   </ciManagement>
   <properties>
-    <tycho-version>2.7.5</tycho-version>
+    <tycho-version>5.0.2</tycho-version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jacoco-version>0.8.13</jacoco-version>
     <maven-checkstyle-plugin-version>3.6.0</maven-checkstyle-plugin-version>
     <checkstyle-version>10.25.0</checkstyle-version>
     <junit-version>4.13.2</junit-version>
-    <eclipse-site>http://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
-    <platform-version-name>2022-09</platform-version-name>
-    <platform-version>4.25</platform-version>
-    <maven.compiler.source>17</maven.compiler.source>
-    <maven.compiler.target>17</maven.compiler.target>
+    <eclipse-site>https://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
+    <platform-version-name>2026-03</platform-version-name>
+    <platform-version>4.39</platform-version>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
     <logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
     <spotless.version>3.4.0</spotless.version>
   </properties>
@@ -108,7 +108,7 @@
               <configuration>
                 <rules>
                   <requireMavenVersion>
-                    <version>[3.8.7,)</version>
+                    <version>[3.9.11,)</version>
                   </requireMavenVersion>
                 </rules>
               </configuration>

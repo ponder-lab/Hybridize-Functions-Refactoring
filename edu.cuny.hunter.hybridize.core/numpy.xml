@@ -1,0 +1,84 @@
+<?xml version="1.0" ?>
+<!DOCTYPE summary-spec>
+<summary-spec>
+  <classloader name="PythonLoader">
+    <class name="numpy" allocatable="true">
+      <method name="import" static="true" descriptor="()Lnumpy;">
+        <new def="x" class="Lnumpy" />
+        <new def="float32" class="Ltensorflow/dtypes/DType" />
+        <putfield class="LRoot" field="float32" fieldType="LRoot" ref="x" value="float32" />
+        <new def="float64" class="Ltensorflow/dtypes/DType" />
+        <putfield class="LRoot" field="float64" fieldType="LRoot" ref="x" value="float64" />
+        <new def="int32" class="Ltensorflow/dtypes/DType" />
+        <putfield class="LRoot" field="int32" fieldType="LRoot" ref="x" value="int32" />
+        <new def="int64" class="Ltensorflow/dtypes/DType" />
+        <putfield class="LRoot" field="int64" fieldType="LRoot" ref="x" value="int64" />
+        <new def="array_fn" class="Lnumpy/array" />
+        <putfield class="LRoot" field="array" fieldType="LRoot" ref="x" value="array_fn" />
+        <new def="reshape_fn" class="Lnumpy/reshape" />
+        <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="x" value="reshape_fn" />
+        <return value="x" />
+      </method>
+    </class>
+    <package name="numpy">
+      <!-- https://numpy.org/doc/stable/reference/generated/numpy.array.html -->
+      <!-- Modeled as a class-per-function so that `np.array` resolves to this class via a field lookup on the numpy module, and the invocation dispatches to its `do` method. The returned ndarray preserves shape from arg 0 and takes dtype from arg 1; see `NpArray`. -->
+      <class name="array" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x dtype">
+          <new def="ret" class="Lnumpy/ndarray" />
+          <new def="astype_fn" class="Lnumpy/ndarray/astype" />
+          <putfield class="LRoot" field="astype" fieldType="LRoot" ref="ret" value="astype_fn" />
+          <new def="reshape_fn" class="Lnumpy/ndarray/reshape" />
+          <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="ret" value="reshape_fn" />
+          <return value="ret" />
+        </method>
+      </class>
+      <!-- Must be declared `allocatable="true"` so that `<new class="Lnumpy/ndarray"/>` in the various array-producing `do()` methods (both here and in `tensorflow.xml`) resolves to a concrete `InstanceKey` in the heap model. Without this declaration, `HeapModel.getInstanceKeyForAllocation` returns
+        `null`, `getInvariantContents` returns empty, and `visitReturn` never adds the iKey to the caller-side `PointerKey`. Same pattern as the wala/WALA#1889 fix for `tensorflow/python/ops/variables/Variable`. The class deliberately has no method body because it is only referenced as a `<new>` target, not
+        invoked directly. -->
+      <class name="ndarray" allocatable="true"></class>
+      <!-- https://numpy.org/doc/stable/reference/generated/numpy.reshape.html -->
+      <!-- Function-form counterpart of `numpy/ndarray/reshape`: `np.reshape(x, shape)` rather than `x.reshape(shape)`. Modeled as a class-per-function so that `np.reshape` resolves to this class via a field lookup on the numpy module, and the invocation dispatches to its `do` method. Shape comes from
+        arg 1 (target shape); dtype is preserved from arg 0 (input tensor); see `NpReshape`. -->
+      <class name="reshape" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self x shape">
+          <new def="ret" class="Lnumpy/ndarray" />
+          <new def="astype_fn" class="Lnumpy/ndarray/astype" />
+          <putfield class="LRoot" field="astype" fieldType="LRoot" ref="ret" value="astype_fn" />
+          <new def="reshape_fn" class="Lnumpy/ndarray/reshape" />
+          <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="ret" value="reshape_fn" />
+          <return value="ret" />
+        </method>
+      </class>
+    </package>
+    <package name="numpy/ndarray">
+      <!-- NOTE: This block of ndarray method-field populations (`astype`, `reshape`, ...) is duplicated intentionally in every ndarray-producing method's `do()` (both here and in the mnist `x_train`/`y_train`/`x_test`/`y_test` outputs in `tensorflow.xml`). Because WALA uses 1-CFA context sensitivity
+        for general methods, if we were to centralise this into a single shared helper method, 1-CFA would merge all calls to that helper and cause massive aliasing — every ndarray in the program would share internal field values, losing precision for shapes/dtypes in chained operations. Inlining the field populations
+        at each endpoint's `do()` gives each ndarray allocation a unique site and preserves call-site context. Mirrors the Dataset-method pattern in `tensorflow.xml`; if WALA ever lets us declare class-level field summaries once without the 1-CFA collision, this duplication should be consolidated. Tracking upstream:
+        wala/WALA#1890. -->
+      <!-- https://numpy.org/doc/stable/reference/generated/numpy.ndarray.astype.html -->
+      <!-- Modeled as a class-per-function (same pattern as `tensorflow/data/shuffle`, etc.) so that attribute access `x.astype` on an ndarray-like value resolves to this class via a field lookup, and the subsequent invocation dispatches to its `do` method. -->
+      <class name="astype" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self ndarray dtype">
+          <new def="ret" class="Lnumpy/ndarray" />
+          <new def="astype_fn" class="Lnumpy/ndarray/astype" />
+          <putfield class="LRoot" field="astype" fieldType="LRoot" ref="ret" value="astype_fn" />
+          <new def="reshape_fn" class="Lnumpy/ndarray/reshape" />
+          <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="ret" value="reshape_fn" />
+          <return value="ret" />
+        </method>
+      </class>
+      <!-- https://numpy.org/doc/stable/reference/generated/numpy.ndarray.reshape.html -->
+      <class name="reshape" allocatable="true">
+        <method name="do" descriptor="()LRoot;" numArgs="3" paramNames="self ndarray shape">
+          <new def="ret" class="Lnumpy/ndarray" />
+          <new def="astype_fn" class="Lnumpy/ndarray/astype" />
+          <putfield class="LRoot" field="astype" fieldType="LRoot" ref="ret" value="astype_fn" />
+          <new def="reshape_fn" class="Lnumpy/ndarray/reshape" />
+          <putfield class="LRoot" field="reshape" fieldType="LRoot" ref="ret" value="reshape_fn" />
+          <return value="ret" />
+        </method>
+      </class>
+    </package>
+  </classloader>
+</summary-spec>

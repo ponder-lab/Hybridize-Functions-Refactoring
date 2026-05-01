@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>org.eclipse.tycho</groupId>
+    <artifactId>tycho-build</artifactId>
+    <!-- Keep this version in sync with <tycho-version> in pom.xml. Maven loads .mvn/extensions.xml before reading the POM, so this value must remain hard-coded here and updated together with pom.xml. -->
+    <version>5.0.2</version>
+  </extension>
+</extensions>

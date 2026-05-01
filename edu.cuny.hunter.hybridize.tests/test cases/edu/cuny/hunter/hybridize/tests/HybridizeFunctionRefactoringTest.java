@@ -421,7 +421,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 		if (path != null)
 			info = new InterpreterInfo(info.getVersion(), info.executableOrJar,
-					PythonPathHelper.parsePythonPathFromStr(path, new ArrayList<String>()));
+					PythonPathHelper.parsePythonPathFromStr(path, new ArrayList<>()));
 
 		interpreterManager.setInfos(new IInterpreterInfo[] { info }, null, null);
 		InterpreterManagersAPI.setPythonInterpreterManager(interpreterManager);
@@ -555,8 +555,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			int filesRun = 0;
 
 			// for each Python file in the test file directory, recursively.
-			Set<Path> pythonFilesInTestFileDirectory = Files.find(inputTestFileDirectoryAbsolutePath, MAX_VALUE,
-					(path, attr) -> path.toFile().getName().endsWith(".py"), FOLLOW_LINKS).collect(toSet());
+			Set<Path> pythonFilesInTestFileDirectory;
+			try (var stream = Files.find(inputTestFileDirectoryAbsolutePath, MAX_VALUE,
+					(path, attr) -> path.toFile().getName().endsWith(".py"), FOLLOW_LINKS)) {
+				pythonFilesInTestFileDirectory = stream.collect(toSet());
+			}
 
 			for (Path path : pythonFilesInTestFileDirectory) {
 				boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());

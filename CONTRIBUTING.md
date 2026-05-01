@@ -15,21 +15,13 @@ The plug-ins are being developed on the following Eclipse versions. Currently, n
 
 The project includes a Maven configuration file using the Tycho plug-in, which is part of the [Maven Eclipse plug-in](http://www.eclipse.org/m2e). Running `mvn install` will install *most* dependencies. Note that if you are not using Maven, this plugin depends on the [Common Eclipse Refactoring Framework], the **Eclipse SDK**, **Eclipse SDK tests**, the **Eclipse testing framework** (may also be called the **Eclipse Test Framework**), [Ariadne], [WALA], and [PyDev]. Some of these can be installed from the "Install New Software..." menu option under "Help" in Eclipse (choose to "work with" "The Eclipse Project Updates"). Others may need to be obtained from their respective update sites (see below).
 
-### JDK version
+### JDK and Maven versions
 
-The Tycho version pinned by this project (2.7.5) does not recognize OSGi execution environments newer than `JavaSE-17`, so `mvn` must be launched on a Java 17 JRE/JDK even if your system default is newer. To pin Java 17 only when working in this repository (without changing your system-wide default), [direnv](https://direnv.net) is recommended. `.envrc` is gitignored; create it locally with contents along these lines (adjust the path for your platform):
+This project requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports Maven 3.9.9 but in practice trips a `TargetPlatformArtifactResolver` binding error on 3.9.9; see [eclipse-tycho/tycho#5384](https://github.com/eclipse-tycho/tycho/issues/5384)). The `maven-enforcer-plugin` rule pins Maven `[3.9.11,)`.
 
-```sh
-# Linux (Debian/Ubuntu OpenJDK)
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-PATH_add "$JAVA_HOME/bin"
+The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11. Use `./mvnw` rather than system `mvn` — most system Maven installations are 3.9.9 and will fail on the Tycho binding error described above.
 
-# macOS (Homebrew Temurin)
-# export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-# PATH_add "$JAVA_HOME/bin"
-```
-
-Then run `direnv allow` once. `cd`-ing into the repo will activate Java 17; leaving restores your system default.
+If your system default JDK is something other than 25, you can pin Java 25 only for this repository via [direnv](https://direnv.net). `.envrc` is gitignored; create it locally with contents adjusted for your platform.
 
 ## Dependencies
 

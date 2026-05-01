@@ -12,6 +12,6 @@ public class HybridizeFunctionRefactoringContribution extends RefactoringContrib
 	@Override
 	public RefactoringDescriptor createDescriptor(String id, String project, String description, String comment,
 			Map<String, String> arguments, int flags) throws IllegalArgumentException {
-		return new HybridizeFunctionRefactoringDescriptor(id, project, description, comment, arguments);
+		return new HybridizeFunctionRefactoringDescriptor(id, description, comment, arguments);
 	}
 }
