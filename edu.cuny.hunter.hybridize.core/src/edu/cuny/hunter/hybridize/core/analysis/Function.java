@@ -209,8 +209,8 @@ public class Function {
 			decoratorsType tfFunctionDecorator = Function.this.lastHybridDecorator;
 
 			if (tfFunctionDecorator == null)
-				throw new IllegalStateException("No hybrid decorator was cached on " + Function.this
-						+ ". `computeHybridization` must run before `computeParameterExistance`.");
+				throw new IllegalStateException(
+						"No hybrid decorator was cached on " + Function.this + ". `computeHybridization` must run before `computeParameterExistance`.");
 			// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 			if (tfFunctionDecorator.func instanceof Call) {
 				Call callFunction = (Call) tfFunctionDecorator.func;
@@ -745,10 +745,10 @@ public class Function {
 	private Function.HybridizationParameters hybridizationParameters;
 
 	/**
-	 * The last hybrid decorator found on this {@link Function} during {@link #computeHybridization(IProgressMonitor)}, or {@code null} if
-	 * no hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
-	 * HybridizationParameters.computeParameterExistance} can reuse the result rather than re-running the per-decorator {@code isHybrid}
-	 * probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). Tracks #118.
+	 * The last hybrid decorator found on this {@link Function} during {@link #computeHybridization(IProgressMonitor)}, or {@code null} if no
+	 * hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
+	 * HybridizationParameters.computeParameterExistance} can reuse the result rather than re-running the per-decorator
+	 * {@code isHybrid} probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). Tracks #118.
 	 */
 	private decoratorsType lastHybridDecorator;
 
