@@ -446,8 +446,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// Tracked in https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/401.
 			Map<?, ?> errors = engine.getErrors();
 			if (!errors.isEmpty()) {
-				LOG.warn("Tensor analysis encountered " + errors.size() + " error(s) for " + project + ":");
-				errors.forEach((k, v) -> LOG.warn("  Pointer key " + k + ": " + v + "."));
+				StringBuilder summary = new StringBuilder("Tensor analysis encountered " + errors.size() + " error(s) for " + project + ":");
+				errors.forEach((k, v) -> summary.append("\n  Pointer key ").append(k).append(": ").append(v).append("."));
+				LOG.warn(summary.toString());
 			}
 		}
 
