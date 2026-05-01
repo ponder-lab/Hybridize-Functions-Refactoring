@@ -61,7 +61,7 @@ jobs:
       - if: matrix.language == 'java-kotlin'
         name: Install with Maven
         run: |
-          mvn -U \
+          ./mvnw -U \
             -s .travis.settings.xml \
             -Dgithub.username=${{ github.actor }} \
             -Dgithub.password=${{ secrets.GITHUB_TOKEN }} \
