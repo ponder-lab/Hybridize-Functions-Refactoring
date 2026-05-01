@@ -867,7 +867,7 @@ public class Function {
 
 			LOG.info("Found FQN: " + fqn + ".");
 
-			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes.
+			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) (#434).
 				subMonitor.done();
 				return true;
 			}
@@ -1547,12 +1547,12 @@ public class Function {
 		// True iff the function has a self parameter in the first position.
 		boolean selfParam = false;
 
-		// TODO: Use cast/assert statements?
+		// TODO: Use cast/assert statements? (#129).
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		argumentsType params = functionDef.args;
 
 		if (params != null) {
-			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering position parameters here.
+			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering positional parameters here. (#108).
 
 			if (actualParams != null) {
 				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
