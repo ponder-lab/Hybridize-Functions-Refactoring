@@ -436,6 +436,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (!projectToTensorTypeAnalysis.containsKey(project)) {
 			TensorTypeAnalysis analysis = engine.performAnalysis(builder);
 			projectToTensorTypeAnalysis.put(project, analysis);
+
+			// Surface tensor-analysis errors that the engine accumulated. Without this,
+			// `getErrors()` was being silently discarded; downstream refactoring decisions
+			// could be made on a partially-degraded analysis without the user knowing why.
+			// `AnalysisError` (`com.ibm.wala.cast.lsp.AnalysisError`) is not exported as
+			// API from Ariadne's OSGi bundle, so we erase the value type and rely on each
+			// entry's `toString` for the diagnostic message.
+			// Tracked in https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/401.
+			Map<?, ?> errors = engine.getErrors();
+			if (!errors.isEmpty()) {
+				StringBuilder summary = new StringBuilder(
+						"Tensor analysis encountered " + errors.size() + " error(s) for " + project + ":");
+				errors.forEach((k, v) -> summary.append("\n  Pointer key ").append(k).append(": ").append(v).append("."));
+				LOG.warn(summary.toString());
+			}
 		}
 
 		return projectToTensorTypeAnalysis.get(project);
