@@ -2374,10 +2374,10 @@
         </method>
       </class>
       <class name="reduce" allocatable="true">
-        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#reduce -->
+        <!-- https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/data/Dataset#reduce. `Dataset.reduce(initial_state, reduce_func, name)` returns the *final state* — a tensor (or structure of tensors) with the same shape/dtype as `initial_state`, not a Dataset. Pre-fix this was modeled as `read_data(arg0)`
+          virtually on the receiver, but the `reduce` class doesn't define `read_data` — the call couldn't resolve and the result was ⊤. Pass `initial_state` through directly so its tensor type flows to the caller. See wala/ML#456. -->
         <method name="do" descriptor="()LRoot;" numArgs="4" paramNames="self initial_state reduce_func name">
-          <call class="LRoot" name="read_data" descriptor="()LRoot;" type="virtual" arg0="arg0" numArgs="1" def="xx" />
-          <return value="xx" />
+          <return value="initial_state" />
         </method>
       </class>
       <class name="enumerate" allocatable="true">
