@@ -203,10 +203,10 @@ public class Function {
 		private boolean reduceRetracingParamExists;
 
 		private void computeParameterExistance() {
-			// Use the last hybrid decorator cached by `computeHybridization` (#118). That method already iterated every
-			// decorator on this function and stored the last hybrid hit in `Function.this.lastHybridDecorator`; we no
+			// Use the hybrid decorator cached by `computeHybridization` (#118). That method already iterated every
+			// decorator on this function and stored the hybrid hit in `Function.this.hybridDecorator`; we no
 			// longer need to re-run the per-decorator `isHybrid` probe here.
-			decoratorsType tfFunctionDecorator = Function.this.lastHybridDecorator;
+			decoratorsType tfFunctionDecorator = Function.this.hybridDecorator;
 
 			if (tfFunctionDecorator == null)
 				throw new IllegalStateException("No hybrid decorator was cached on " + Function.this
@@ -745,12 +745,14 @@ public class Function {
 	private Function.HybridizationParameters hybridizationParameters;
 
 	/**
-	 * The last hybrid decorator found on this {@link Function} during {@link #computeHybridization(IProgressMonitor)}, or {@code null} if
-	 * no hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
+	 * The hybrid decorator found on this {@link Function} during {@link #computeHybridization(IProgressMonitor)}, or {@code null} if no
+	 * hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
 	 * HybridizationParameters.computeParameterExistance} can reuse the result rather than re-running the per-decorator {@code isHybrid}
-	 * probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). Tracks #118.
+	 * probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). If the function carries multiple
+	 * hybrid decorators (unusual — stacking {@code @tf.function} is not semantically valid in TF), the last one in source order wins,
+	 * matching the legacy behaviour of {@code computeParameterExistance}. Tracks #118.
 	 */
-	private decoratorsType lastHybridDecorator;
+	private decoratorsType hybridDecorator;
 
 	private boolean ignoreBooleans;
 
@@ -977,6 +979,13 @@ public class Function {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
 		monitor.beginTask("Computing hybridization ...", IProgressMonitor.UNKNOWN);
 
+		// Reset cached state so a re-computation on the same instance starts clean. Without this, a previous hybrid
+		// hit could leak past a subsequent run with no (or no hybrid) decorators and leave the function incorrectly
+		// marked hybrid with stale `hybridizationParameters`. Function lifetime is currently per-refactoring-invocation
+		// so re-computation isn't reachable today, but the reset is cheap and removes a reasoning hazard.
+		this.hybridDecorator = null;
+		this.hybridizationParameters = null;
+
 		FunctionDefinition functionDefinition = this.getFunctionDefinition();
 		decoratorsType[] decoratorArray = functionDefinition.getFunctionDef().decs;
 
@@ -987,10 +996,12 @@ public class Function {
 			IPythonNature nature = this.getNature();
 			IProject project = this.getProject();
 
-			// Iterate every decorator and remember the LAST hybrid one (#118). The previous early-return-on-first
+			// Iterate every decorator and remember the hybrid one (#118). The previous early-return-on-first
 			// behaviour was correct for "is this function hybrid?" but forced HybridizationParameters to re-iterate
 			// the decorators to recover the parameter source — running the expensive `isHybrid` probe a second time.
-			// Now we run it once here, cache the last hit, and let HybridizationParameters consume the cache.
+			// Now we run it once here, cache the hit, and let HybridizationParameters consume the cache. If a function
+			// carries multiple hybrid decorators (unusual; stacking `@tf.function` is not semantically valid), the
+			// last one in source order wins, matching legacy behaviour.
 			for (decoratorsType decorator : decoratorArray) {
 				String decoratorFunctionRepresentation = NodeUtils.getFullRepresentationString(decorator.func);
 				LOG.info("Computing whether decorator: " + decoratorFunctionRepresentation + " is hybrid.");
@@ -1032,12 +1043,12 @@ public class Function {
 				}
 
 				if (hybrid)
-					this.lastHybridDecorator = decorator;
+					this.hybridDecorator = decorator;
 				monitor.worked(1);
 			}
 		}
 
-		if (this.lastHybridDecorator != null) {
+		if (this.hybridDecorator != null) {
 			this.setHybrid(TRUE);
 			LOG.info(this + " is hybrid.");
 
