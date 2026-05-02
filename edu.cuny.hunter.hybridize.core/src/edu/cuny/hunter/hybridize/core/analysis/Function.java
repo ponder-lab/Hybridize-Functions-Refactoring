@@ -163,6 +163,18 @@ public class Function {
 		private static final String REDUCE_RETRACING = "reduce_retracing";
 
 		/**
+		 * The positional parameter order of {@code tf.function} as of TensorFlow 2.9 (the version this tool's tests target). When a user
+		 * writes {@code @tf.function(some_callable, [tf.TensorSpec(...)])} the second argument binds to {@code input_signature} by
+		 * position, etc. This array lets us map a positional index back to the parameter name without consulting PyDev's symbol-resolution
+		 * machinery (which is brittle across PyDev versions and TF stub variants). The TF API is stable across the [2.0, 2.11] range we
+		 * support; if a future TF version shuffles parameters, this array — and `Util.isHybrid`'s acceptance window — would need an update.
+		 * Tracks #108.
+		 */
+		private static final String[] TF_FUNCTION_POSITIONAL_PARAMS = { FUNC, INPUT_SIGNATURE, AUTOGRAPH, JIT_COMPILE, REDUCE_RETRACING,
+				EXPERIMENTAL_IMPLEMENTS, EXPERIMENTAL_AUTOGRAPH_OPTIONS, EXPERIMENTAL_RELAX_SHAPES, EXPERIMENTAL_COMPILE,
+				EXPERIMENTAL_FOLLOW_TYPE_HINTS };
+
+		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 */
 		private boolean autoGraphParamExists;
@@ -214,45 +226,53 @@ public class Function {
 			// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 			if (tfFunctionDecorator.func instanceof Call) {
 				Call callFunction = (Call) tfFunctionDecorator.func;
-				// We only care about the actual keywords for now.
-				// TODO: Parse positional arguments (#108).
+
+				// Process positional arguments (#108). `tf.function`'s parameter order is hardcoded above in
+				// `TF_FUNCTION_POSITIONAL_PARAMS`; arg[i] binds to that array's i-th name. Excess positional args
+				// past the array length are silently ignored (Python would raise `TypeError` at decoration time,
+				// which we don't try to mirror — the precondition framework would later flag the function as
+				// non-hybridizable for unrelated reasons).
+				exprType[] positionalArgs = callFunction.args;
+				if (positionalArgs != null) {
+					int limit = Math.min(positionalArgs.length, TF_FUNCTION_POSITIONAL_PARAMS.length);
+					for (int i = 0; i < limit; i++)
+						this.markParamExists(TF_FUNCTION_POSITIONAL_PARAMS[i]);
+				}
+
+				// Process keyword arguments. Keyword args are unordered; each carries its parameter name
+				// directly. A user can mix positional and keyword in the same call (e.g.
+				// `@tf.function(my_func, autograph=False)`); both branches mark the same fields.
 				keywordType[] keywords = callFunction.keywords;
 				for (keywordType keyword : keywords)
 					if (keyword.arg instanceof NameTok) {
 						NameTok name = (NameTok) keyword.arg;
-						if (name.id.equals(FUNC))
-							// Found parameter func
-							this.funcParamExists = true;
-						else if (name.id.equals(INPUT_SIGNATURE))
-							// Found parameter input_signature
-							this.inputSignatureParamExists = true;
-						else if (name.id.equals(AUTOGRAPH))
-							// Found parameter autograph
-							this.autoGraphParamExists = true;
-						// The version of the API we are using allows
-						// parameter names jit_compile and
-						// deprecated name experimental_compile
-						else if (name.id.equals(JIT_COMPILE) || name.id.equals(EXPERIMENTAL_COMPILE))
-							// Found parameter jit_compile/experimental_compile
-							this.jitCompileParamExists = true;
-						// The version of the API we are using allows
-						// parameter names reduce_retracing
-						// and deprecated name experimental_relax_shapes
-						else if (name.id.equals(REDUCE_RETRACING) || name.id.equals(EXPERIMENTAL_RELAX_SHAPES))
-							// Found parameter reduce_retracing
-							// or experimental_relax_shapes
-							this.reduceRetracingParamExists = true;
-						else if (name.id.equals(EXPERIMENTAL_IMPLEMENTS))
-							// Found parameter experimental_implements
-							this.experimentalImplementsParamExists = true;
-						else if (name.id.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-							// Found parameter experimental_autograph_options
-							this.experimentalAutographOptionsParamExists = true;
-						else if (name.id.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-							// Found parameter experimental_follow_type_hints
-							this.experimentaFollowTypeHintsParamExists = true;
+						this.markParamExists(name.id);
 					}
 			} // else, tf.function is used without parameters.
+		}
+
+		/**
+		 * Set the appropriate {@code *ParamExists} field for the given {@code tf.function} parameter name. Recognizes both current names
+		 * and the deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
+		 * {@code reduce_retracing}). Unknown names are silently ignored — they may belong to a future TF version we don't model yet.
+		 */
+		private void markParamExists(String paramName) {
+			if (paramName.equals(FUNC))
+				this.funcParamExists = true;
+			else if (paramName.equals(INPUT_SIGNATURE))
+				this.inputSignatureParamExists = true;
+			else if (paramName.equals(AUTOGRAPH))
+				this.autoGraphParamExists = true;
+			else if (paramName.equals(JIT_COMPILE) || paramName.equals(EXPERIMENTAL_COMPILE))
+				this.jitCompileParamExists = true;
+			else if (paramName.equals(REDUCE_RETRACING) || paramName.equals(EXPERIMENTAL_RELAX_SHAPES))
+				this.reduceRetracingParamExists = true;
+			else if (paramName.equals(EXPERIMENTAL_IMPLEMENTS))
+				this.experimentalImplementsParamExists = true;
+			else if (paramName.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
+				this.experimentalAutographOptionsParamExists = true;
+			else if (paramName.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
+				this.experimentaFollowTypeHintsParamExists = true;
 		}
 
 		/**
