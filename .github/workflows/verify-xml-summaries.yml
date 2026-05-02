@@ -1,0 +1,97 @@
+name: Verify XML summaries
+
+# Detects drift between the consumer-side XML summary copies in
+# `edu.cuny.hunter.hybridize.core/` and the corresponding XMLs in the Ariadne
+# version pinned by `hybridize.target`. Background: per wala/ML#418/#419, the
+# Ariadne fat-jar's bundled XMLs aren't reachable via classloader from a
+# consuming OSGi bundle, so Hybridize ships its own copies. The version pin
+# advertises a specific Ariadne release, but `update_summaries.sh` syncs from a
+# local `~/ML` checkout that may be on master (newer than the pinned release),
+# making it easy to silently drift. This check fails on any difference.
+#
+# When the pin is a `-SNAPSHOT`, the upstream XMLs aren't immutable, so the
+# check exits 0 without comparing. (We could opportunistically diff against
+# master and warn, but that's noise more than signal.)
+#
+# Tracked in ponder-lab/Hybridize-Functions-Refactoring#440.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "edu.cuny.hunter.hybridize.core/*.xml"
+      - "hybridize.target"
+      - ".github/workflows/verify-xml-summaries.yml"
+  pull_request:
+    paths:
+      - "edu.cuny.hunter.hybridize.core/*.xml"
+      - "hybridize.target"
+      - ".github/workflows/verify-xml-summaries.yml"
+  merge_group:
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Ariadne version pin from `hybridize.target`
+        id: pin
+        run: |
+          version=$(grep -A1 'com.ibm.wala.cast.python.ml' hybridize.target \
+            | grep '<version>' \
+            | head -1 \
+            | sed -E 's|.*<version>([^<]+)</version>.*|\1|')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Pinned Ariadne version: $version"
+
+      - name: Skip on SNAPSHOT pin
+        if: endsWith(steps.pin.outputs.version, '-SNAPSHOT')
+        run: |
+          echo "::notice::Ariadne pin is a SNAPSHOT (${{ steps.pin.outputs.version }}); upstream XMLs are mutable, skipping drift check."
+          exit 0
+
+      - name: Clone Ariadne at pinned tag
+        if: ${{ !endsWith(steps.pin.outputs.version, '-SNAPSHOT') }}
+        run: |
+          git clone --depth=1 --branch="${{ steps.pin.outputs.version }}" \
+            https://github.com/ponder-lab/ML.git /tmp/ariadne-pinned
+
+      - name: Diff XML summaries against pinned Ariadne
+        if: ${{ !endsWith(steps.pin.outputs.version, '-SNAPSHOT') }}
+        run: |
+          drift=0
+
+          check() {
+            local upstream="$1" consumer="$2"
+            if [ ! -f "$upstream" ]; then
+              echo "::warning::Upstream XML missing at $upstream; the pinned Ariadne version may not ship it. Skipping."
+              return 0
+            fi
+            if ! diff -q "$upstream" "$consumer" > /dev/null; then
+              echo "::error file=$consumer::Drift detected between $consumer and the Ariadne ${{ steps.pin.outputs.version }} bundled copy."
+              echo "--- diff (Ariadne pinned vs Hybridize) ---"
+              diff "$upstream" "$consumer" || true
+              echo "--- end diff ---"
+              drift=1
+            fi
+          }
+
+          for xml in flask functools pandas pytest click abseil; do
+            check "/tmp/ariadne-pinned/com.ibm.wala.cast.python/data/$xml.xml" \
+                  "edu.cuny.hunter.hybridize.core/$xml.xml"
+          done
+
+          for xml in tensorflow numpy; do
+            check "/tmp/ariadne-pinned/com.ibm.wala.cast.python.ml/data/$xml.xml" \
+                  "edu.cuny.hunter.hybridize.core/$xml.xml"
+          done
+
+          if [ "$drift" -ne 0 ]; then
+            echo ""
+            echo "::error::One or more consumer-side XML summaries drift from Ariadne ${{ steps.pin.outputs.version }}."
+            echo "::error::Either re-sync via update_summaries.sh against the pinned tag, or bump hybridize.target's Ariadne pin."
+            exit 1
+          fi
+
+          echo "All consumer-side XML summaries match Ariadne ${{ steps.pin.outputs.version }}."
