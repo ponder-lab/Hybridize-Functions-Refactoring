@@ -10,21 +10,23 @@ The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fo
 
 ## Build / test commands
 
-The reactor is a Tycho multi-module Maven build. Java 17 is required — Tycho 2.7.5 doesn't recognize execution environments newer than `JavaSE-17` (fails at project setup with `Unknown OSGi execution environment: 'JavaSE-25'` if Maven is launched on a newer JVM). The repo uses `direnv` (`.envrc` is gitignored; recommended contents documented in `CONTRIBUTING.md`) to pin `JAVA_HOME` to a JDK 17 install per-shell, so the system default JDK can be anything.
+The reactor is a Tycho multi-module Maven build. Requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports 3.9.9 but trips a `TargetPlatformArtifactResolver` binding error on 3.9.9 — see eclipse-tycho/tycho#5384; the project's `maven-enforcer-plugin` rule pins `[3.9.11,)`). `.mvn/extensions.xml` registers `tycho-build` as a Maven core extension (required by Tycho 4+).
+
+The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11 so contributors don't need to upgrade their system Maven. **Use `./mvnw` rather than system `mvn`** — system Maven is often 3.9.9 and will fail on the Tycho binding error.
 
 ```bash
 # Full build, no tests
-mvn -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> install -DskipTests=true
+./mvnw -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> install -DskipTests=true
 
 # Tests + JaCoCo (matches CI)
-mvn -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> verify -Pjacoco
+./mvnw -U -s .travis.settings.xml -Dgithub.username=<user> -Dgithub.password=<token> verify -Pjacoco
 
 # Format check / apply (Spotless: Eclipse formatter for Java, also XML/MD/POM)
-mvn spotless:check
-mvn spotless:apply
+./mvnw spotless:check
+./mvnw spotless:apply
 
 # Checkstyle (bound to validate phase)
-mvn validate
+./mvnw validate
 ```
 
 Ariadne (`com.ibm.wala.cast.python.ml`) is fetched from GitHub Packages, which requires a `~/.m2/settings.xml` (or `-s .travis.settings.xml` with `-Dgithub.username/-Dgithub.password`) carrying a token with `read:packages`. See `CONTRIBUTING.md` and the GitHub Packages docs.
@@ -63,7 +65,7 @@ Maven reactor (see `pom.xml` `<modules>`):
 	- `core.analysis.{Refactoring, Transformation, PreconditionFailure, PreconditionSuccess, Information}` — enums forming the precondition/transformation matrix the tests assert against.
 	- `core.wala.ml/` — glue around WALA/Ariadne ML extensions.
 	- `lib/` ships several WALA jars (`com.ibm.wala.cast.python.{jython3,ml}-*-SNAPSHOT.jar`) referenced by the bundle classpath.
-	- The `*.xml` files at the module root (`tensorflow.xml`, `pandas.xml`, `flask.xml`, `pytest.xml`, `click.xml`, `abseil.xml`, `functools.xml`) are Ariadne summary files copied into this bundle so they reach the OSGi classpath at runtime. `update_summaries.sh` re-syncs them from a local `$HOME/ML` checkout. **This is a consumer-side workaround** — Ariadne ships these XMLs inside its fat-jar, but the OSGi-wrapped bundle's classloader doesn't surface them to `getClass().getClassLoader().getResourceAsStream(...)` lookups (see wala/ML#419, tracked alongside the broader thin-jar refactor at wala/ML#418). When bumping the Ariadne version, **also re-run `update_summaries.sh` and check `build.properties` `bin.includes` for any new XMLs Ariadne added** — missing XMLs surface as `IllegalArgumentException: null xmlFile` from `XMLMethodSummaryReader`.
+	- The `*.xml` files at the module root (`tensorflow.xml`, `numpy.xml`, `pandas.xml`, `flask.xml`, `pytest.xml`, `click.xml`, `abseil.xml`, `functools.xml`) are Ariadne summary files copied into this bundle so they reach the OSGi classpath at runtime. `update_summaries.sh` re-syncs them from a local `$HOME/ML` checkout. **This is a consumer-side workaround** — Ariadne ships these XMLs inside its fat-jar, but the OSGi-wrapped bundle's classloader doesn't surface them to `getClass().getClassLoader().getResourceAsStream(...)` lookups (see wala/ML#419, tracked alongside the broader thin-jar refactor at wala/ML#418). When bumping the Ariadne version, **also re-run `update_summaries.sh` and check `build.properties` `bin.includes` for any new XMLs Ariadne added** — missing XMLs surface as `IllegalArgumentException: null xmlFile` from `XMLMethodSummaryReader`.
 - `edu.cuny.hunter.hybridize.ui` — Eclipse handlers + wizard surfacing the refactoring under PyDev's "Refactor" menu / Quick Access.
 - `edu.cuny.hunter.hybridize.eval` — evaluator plug-in that runs the analysis over whole projects and emits CSVs (uses `commons-csv` from `lib/`). Driven by the launch file above.
 - `edu.cuny.hunter.hybridize.tests` — see "Running tests" above.

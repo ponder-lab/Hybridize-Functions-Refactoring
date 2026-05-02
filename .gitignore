@@ -91,7 +91,7 @@ target/
 results
 *.versionsBackup
 
-# direnv per-developer JDK pin (recommended contents in CONTRIBUTING.md)
+# Per-developer environment overrides (e.g. direnv)
 .envrc
 
 # Per-developer Claude Code settings
