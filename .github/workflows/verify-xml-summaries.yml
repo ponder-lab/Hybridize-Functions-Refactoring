@@ -1,0 +1,151 @@
+name: Verify XML summaries
+
+# Detects drift between the consumer-side XML summary copies in
+# `edu.cuny.hunter.hybridize.core/` and the corresponding XMLs in the Ariadne
+# version pinned by `hybridize.target`. Background: per wala/ML#418/#419, the
+# Ariadne fat-jar's bundled XMLs aren't reachable via classloader from a
+# consuming OSGi bundle, so Hybridize ships its own copies. The version pin
+# advertises a specific Ariadne release, but `update_summaries.sh` syncs from a
+# local `~/ML` checkout that may be on master (newer than the pinned release),
+# making it easy to silently drift. This check fails on any difference.
+#
+# When the pin is a `-SNAPSHOT`, the upstream XMLs aren't immutable, so the
+# check exits 0 without comparing. (We could opportunistically diff against
+# master and warn, but that's noise more than signal.)
+#
+# Tracked in ponder-lab/Hybridize-Functions-Refactoring#440.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "edu.cuny.hunter.hybridize.core/*.xml"
+      - "hybridize.target"
+      - ".github/workflows/verify-xml-summaries.yml"
+  pull_request:
+    paths:
+      - "edu.cuny.hunter.hybridize.core/*.xml"
+      - "hybridize.target"
+      - ".github/workflows/verify-xml-summaries.yml"
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Ariadne version pin from `hybridize.target`
+        id: pin
+        run: |
+          set -euo pipefail
+          # Match the `<dependency>` block whose `<artifactId>` is the Ariadne
+          # ML bundle, then take its `<version>`. Use a window of `-A5` rather
+          # than `-A1` so cosmetic reformatting of `hybridize.target` (extra
+          # blank lines, attribute reordering) doesn't silently produce an
+          # empty version. We grep for the `cast.python.ml` artifactId
+          # specifically (not just `wala`) to avoid false matches from other
+          # WALA bundles.
+          version=$(grep -A5 '<artifactId>com.ibm.wala.cast.python.ml</artifactId>' hybridize.target \
+            | grep '<version>' \
+            | head -1 \
+            | sed -E 's|.*<version>([^<]+)</version>.*|\1|')
+
+          if [ -z "$version" ]; then
+            echo "::error file=hybridize.target::Could not extract Ariadne version pin from hybridize.target. The <dependency> block for com.ibm.wala.cast.python.ml may have changed shape."
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Pinned Ariadne version: $version"
+
+      - name: Skip on SNAPSHOT pin
+        if: endsWith(steps.pin.outputs.version, '-SNAPSHOT')
+        run: |
+          echo "::notice::Ariadne pin is a SNAPSHOT (${{ steps.pin.outputs.version }}); upstream XMLs are mutable, skipping drift check."
+          exit 0
+
+      - name: Clone Ariadne at pinned tag
+        if: ${{ !endsWith(steps.pin.outputs.version, '-SNAPSHOT') }}
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch="${{ steps.pin.outputs.version }}" \
+            https://github.com/ponder-lab/ML.git /tmp/ariadne-pinned
+
+      - name: Diff XML summaries against pinned Ariadne
+        if: ${{ !endsWith(steps.pin.outputs.version, '-SNAPSHOT') }}
+        run: |
+          set -euo pipefail
+          drift=0
+          # Diffs that exceed this many lines get truncated in the inline log
+          # to avoid hitting GitHub Actions' log limits (especially for
+          # tensorflow.xml, which can have very large diffs). The full diff is
+          # always uploaded as an artifact below if any drift is detected.
+          MAX_INLINE_DIFF_LINES=200
+          mkdir -p /tmp/xml-drift-diffs
+
+          # Discover consumer-side XMLs by globbing rather than hardcoding the
+          # set, so adding a new XML to `edu.cuny.hunter.hybridize.core/` (and
+          # `update_summaries.sh`) doesn't also require updating this workflow.
+          # For each consumer file, locate the matching upstream by basename in
+          # either Ariadne package directory.
+          for consumer in edu.cuny.hunter.hybridize.core/*.xml; do
+            base=$(basename "$consumer")
+
+            # The Ariadne ML XMLs live under `com.ibm.wala.cast.python.ml/data/`;
+            # the rest live under `com.ibm.wala.cast.python/data/`. Find by
+            # basename to avoid hardcoding which set lives where.
+            upstream=$(find /tmp/ariadne-pinned \
+              -path "*com.ibm.wala.cast.python*/data/$base" \
+              -type f 2>/dev/null | head -1)
+
+            if [ -z "$upstream" ]; then
+              echo "::warning file=$consumer::No matching upstream XML named '$base' in Ariadne ${{ steps.pin.outputs.version }}; the consumer may have a file the pinned release doesn't ship. Skipping."
+              continue
+            fi
+
+            if [ ! -f "$consumer" ]; then
+              echo "::error file=$consumer::Consumer XML missing (loop discovered it but file is unreadable)."
+              drift=1
+              continue
+            fi
+
+            if ! diff -q "$upstream" "$consumer" > /dev/null; then
+              echo "::error file=$consumer::Drift detected between $consumer and the Ariadne ${{ steps.pin.outputs.version }} bundled copy."
+              # Save full diff to artifact directory regardless of size.
+              full_diff_file="/tmp/xml-drift-diffs/$base.diff"
+              diff -u "$upstream" "$consumer" > "$full_diff_file" || true
+              line_count=$(wc -l < "$full_diff_file")
+
+              echo "--- diff (Ariadne pinned vs Hybridize), $line_count lines ---"
+              if [ "$line_count" -gt "$MAX_INLINE_DIFF_LINES" ]; then
+                head -n "$MAX_INLINE_DIFF_LINES" "$full_diff_file"
+                echo "..."
+                echo "[diff truncated at $MAX_INLINE_DIFF_LINES lines; full diff in the 'xml-drift-diffs' build artifact]"
+              else
+                cat "$full_diff_file"
+              fi
+              echo "--- end diff ---"
+              drift=1
+            fi
+          done
+
+          if [ "$drift" -ne 0 ]; then
+            echo ""
+            echo "::error::One or more consumer-side XML summaries drift from Ariadne ${{ steps.pin.outputs.version }}."
+            echo "::error::Either re-sync via update_summaries.sh against the pinned tag, or bump hybridize.target's Ariadne pin."
+            exit 1
+          fi
+
+          echo "All consumer-side XML summaries match Ariadne ${{ steps.pin.outputs.version }}."
+
+      - name: Upload full drift diffs as artifact
+        if: ${{ failure() && !endsWith(steps.pin.outputs.version, '-SNAPSHOT') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xml-drift-diffs
+          path: /tmp/xml-drift-diffs/
+          if-no-files-found: ignore
