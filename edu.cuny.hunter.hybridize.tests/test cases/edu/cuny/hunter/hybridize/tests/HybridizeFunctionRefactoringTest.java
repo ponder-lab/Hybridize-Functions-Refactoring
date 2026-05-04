@@ -833,8 +833,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #108. Positional `autograph` argument at position 2: `@tf.function(None, None, False)`. We expect
-	 * `funcParamExists`, `inputSignatureParamExists`, and `autoGraphParamExists` to all be true.
+	 * Test for #108. Positional `autograph` argument at position 2: `@tf.function(None, None, False)`. We expect `funcParamExists`,
+	 * `inputSignatureParamExists`, and `autoGraphParamExists` to all be true.
 	 */
 	@Test
 	public void testPositionalParameterAutograph() throws Exception {
@@ -857,9 +857,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #108. Mixed positional + keyword in the same decorator: `@tf.function(None, autograph=False)`. The position-0 `func`
-	 * slot is occupied positionally; `autograph` is bound by keyword. We expect both `funcParamExists` and `autoGraphParamExists` true,
-	 * and notably `inputSignatureParamExists` false (no slot occupied at position 1, no `input_signature` keyword).
+	 * Test for #108. Mixed positional + keyword in the same decorator: `@tf.function(None, autograph=False)`. The position-0 `func` slot is
+	 * occupied positionally; `autograph` is bound by keyword. We expect both `funcParamExists` and `autoGraphParamExists` true, and notably
+	 * `inputSignatureParamExists` false (no slot occupied at position 1, no `input_signature` keyword).
 	 */
 	@Test
 	public void testMixedPositionalAndKeyword() throws Exception {
