@@ -4,6 +4,14 @@
 name: Java CI with Maven
 on:
   push:
+    # GitHub Merge Queue creates branches under `refs/heads/gh-readonly-queue/...` and pushes
+    # the queue's test commit there. That push fires this workflow's `push:` trigger AS WELL
+    # AS the `merge_group:` trigger — two runs in the same concurrency group, where the second
+    # cancels the first. The cancelled run is reported as failed to the merge queue, which
+    # kicks the PR out. Filtering out those branches from `push:` lets `merge_group:` be the
+    # sole trigger for queue-branch pushes.
+    branches-ignore:
+      - 'gh-readonly-queue/**'
   pull_request:
   merge_group:
   schedule:
