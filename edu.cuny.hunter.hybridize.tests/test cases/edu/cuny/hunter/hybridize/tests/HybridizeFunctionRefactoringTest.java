@@ -808,6 +808,80 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #108. Positional `input_signature` argument: `@tf.function(None, (tf.TensorSpec(...),))` passes `func=None` and
+	 * `input_signature=(...)` positionally. We expect both `funcParamExists` and `inputSignatureParamExists` to be true (the position-0
+	 * `func` slot is occupied even though its value is `None`; presence of the positional slot is what's detected, not its value).
+	 */
+	@Test
+	public void testPositionalParameterInputSignature() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.isFuncParamExists());
+		assertTrue(args.isInputSignatureParamExists());
+		assertTrue(!args.isAutoGraphParamExists() && !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists()
+				&& !args.isExperimentalImplementsParamExists() && !args.isExperimentalAutographOptParamExists()
+				&& !args.isExperimentalFollowTypeHintsParamExists());
+	}
+
+	/**
+	 * Test for #108. Positional `autograph` argument at position 2: `@tf.function(None, None, False)`. We expect `funcParamExists`,
+	 * `inputSignatureParamExists`, and `autoGraphParamExists` to all be true.
+	 */
+	@Test
+	public void testPositionalParameterAutograph() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.isFuncParamExists());
+		assertTrue(args.isInputSignatureParamExists());
+		assertTrue(args.isAutoGraphParamExists());
+		assertTrue(!args.isJitCompileParamExists() && !args.isReduceRetracingParamExists() && !args.isExperimentalImplementsParamExists()
+				&& !args.isExperimentalAutographOptParamExists() && !args.isExperimentalFollowTypeHintsParamExists());
+	}
+
+	/**
+	 * Test for #108. Mixed positional + keyword in the same decorator: `@tf.function(None, autograph=False)`. The position-0 `func` slot is
+	 * occupied positionally; `autograph` is bound by keyword. We expect both `funcParamExists` and `autoGraphParamExists` true, and notably
+	 * `inputSignatureParamExists` false (no slot occupied at position 1, no `input_signature` keyword).
+	 */
+	@Test
+	public void testMixedPositionalAndKeyword() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(args.isFuncParamExists());
+		assertTrue(args.isAutoGraphParamExists());
+		assertTrue(!args.isInputSignatureParamExists() && !args.isJitCompileParamExists() && !args.isReduceRetracingParamExists()
+				&& !args.isExperimentalImplementsParamExists() && !args.isExperimentalAutographOptParamExists()
+				&& !args.isExperimentalFollowTypeHintsParamExists());
+	}
+
+	/**
 	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_autograph_options
 	 */
 	@Test
