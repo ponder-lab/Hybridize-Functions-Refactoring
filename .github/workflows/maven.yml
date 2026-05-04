@@ -4,13 +4,27 @@
 name: Java CI with Maven
 on:
   push:
+    # GitHub Merge Queue creates branches under `refs/heads/gh-readonly-queue/...` and pushes
+    # the queue's test commit there. That push fires this workflow's `push:` trigger AS WELL
+    # AS the `merge_group:` trigger — two runs in the same concurrency group, where the second
+    # cancels the first. The cancelled run is reported as failed to the merge queue, which
+    # kicks the PR out. Filtering out those branches from `push:` lets `merge_group:` be the
+    # sole trigger for queue-branch pushes.
+    branches-ignore:
+      - 'gh-readonly-queue/**'
   pull_request:
   merge_group:
   schedule:
   - cron: "0 2 * * 5"
 concurrency:
-  group: ${{ github.ref }}
-  cancel-in-progress: true
+  # Group includes the workflow name so merge_group runs from different workflows don't collide.
+  # Cancel-in-progress is allowed for `pull_request` (new push to PR supersedes prior runs) and
+  # for non-tag `push` events (commits to a branch supersede prior runs); explicitly NOT for
+  # `merge_group` events, because GitHub Merge Queue spawns concurrent runs on the queue branch
+  # and cancellation marks the cancelled run as failed, kicking the PR out of the queue. Same
+  # fix as ponder-lab/ML#217.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
 jobs:
   build:
     runs-on: ubuntu-22.04
