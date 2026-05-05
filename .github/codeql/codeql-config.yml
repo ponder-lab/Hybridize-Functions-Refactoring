@@ -1,17 +1,25 @@
-# CodeQL configuration for the `actions` analysis.
+# CodeQL configuration.
 #
-# Disables the `actions/unpinned-tag` rule (which flags `uses: foo/bar@v6`-style
-# tag references on non-GitHub-owned actions, asking for a SHA pin). For this
-# repo the rule fires as a build-reproducibility concern more than a
-# supply-chain-attack concern, and version-tag pinning is an acceptable
-# trade-off — see the parallel change at ponder-lab/ML#231.
-# Re-enable by removing the `actions/unpinned-tag` exclusion below.
+# 1. Drops the `security-and-quality` query suite (kept only `security-extended`).
+#    Running both suites on the `actions` language can produce >5000 results —
+#    over CodeQL's 5000-result-per-analysis storage limit, with the overflow
+#    silently dropped. `security-and-quality` adds code-quality lint queries on
+#    top of `security-extended`'s already-broad security set; the marginal
+#    signal for our codebase is mostly noise on YAML workflows. Keeping just
+#    `security-extended` brings the result count under the cap while preserving
+#    every security-relevant query. (Same change as ponder-lab/ML#231.)
+#
+# 2. Disables the `actions/unpinned-tag` rule (which flags `uses: foo/bar@v6`-style
+#    tag references on non-GitHub-owned actions, asking for a SHA pin). For this
+#    repo the rule fires as a build-reproducibility concern more than a
+#    supply-chain-attack concern, and version-tag pinning is an acceptable
+#    trade-off — mirrors the parallel change at ponder-lab/ML#231.
+#    Re-enable by removing the `actions/unpinned-tag` exclusion below.
 
 name: "ponder-lab/Hybridize-Functions-Refactoring CodeQL config"
 
 queries:
   - uses: security-extended
-  - uses: security-and-quality
 
 query-filters:
   - exclude:
