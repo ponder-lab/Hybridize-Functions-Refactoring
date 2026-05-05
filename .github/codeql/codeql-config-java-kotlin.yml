@@ -11,8 +11,17 @@
 # `actions/unpinned-tag` rule isn't applicable to Java code, so no rule
 # exclusion is needed here either. Mirrors the parallel change at
 # ponder-lab/ML#231.
+#
+# `paths-ignore` excludes the `Formatting/` Git submodule (Eclipse formatter
+# config files; no Java code, so no findings expected — but explicit
+# exclusion is more auditable than relying on no-Java-code-no-findings).
+# **When adding or removing a submodule, update this list to match
+# `.gitmodules` — there is no automatic discovery.**
 
 name: "ponder-lab/Hybridize-Functions-Refactoring CodeQL config (java-kotlin)"
+
+paths-ignore:
+  - 'Formatting/**'
 
 queries:
   - uses: security-extended
