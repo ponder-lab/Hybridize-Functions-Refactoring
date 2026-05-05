@@ -53,6 +53,33 @@ jobs:
       - if: matrix.language == 'java-kotlin'
         run: pip3.10 install -r requirements.txt
 
+      # Auto-discover submodules and append them to the `java-kotlin` CodeQL
+      # config's `paths-ignore`. Avoids hardcoding submodule paths in the
+      # config file: if a new submodule is added (or an existing one removed),
+      # the exclusion list updates without a separate CodeQL config edit.
+      # Submodules are third-party code outside this codebase under change.
+      # Applies to `java-kotlin` only — the `actions` analysis runs on YAML
+      # workflows under `.github/workflows/`, which doesn't intersect with
+      # submodule layouts. Mirrors the parallel change at ponder-lab/ML#232.
+      - if: matrix.language == 'java-kotlin'
+        name: Append submodule paths to CodeQL paths-ignore
+        shell: bash
+        run: |
+          submodule_paths=$(git config --file .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}')
+          if [[ -n "$submodule_paths" ]]; then
+            {
+              printf '\n# Auto-appended by .github/workflows/codeql.yml from .gitmodules at scan time.\n'
+              printf 'paths-ignore:\n'
+              while IFS= read -r p; do
+                printf "  - '%s/**'\n" "$p"
+              done <<< "$submodule_paths"
+            } >> .github/codeql/codeql-config-java-kotlin.yml
+            echo "Appended paths-ignore for submodules:"
+            echo "$submodule_paths"
+          else
+            echo "No submodules found; CodeQL config unchanged."
+          fi
+
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}

@@ -11,6 +11,13 @@
 # `actions/unpinned-tag` rule isn't applicable to Java code, so no rule
 # exclusion is needed here either. Mirrors the parallel change at
 # ponder-lab/ML#231.
+#
+# Submodule paths are excluded dynamically by the workflow (see the
+# "Append submodule paths to CodeQL paths-ignore" step in `codeql.yml`):
+# the workflow reads `.gitmodules` and appends a `paths-ignore` block to
+# this file at scan time. Avoids hardcoding submodule paths so future
+# submodule additions are auto-excluded without a separate CodeQL config
+# edit. (Same pattern as ponder-lab/ML#232.)
 
 name: "ponder-lab/Hybridize-Functions-Refactoring CodeQL config (java-kotlin)"
 
