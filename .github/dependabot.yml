@@ -1,17 +1,74 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+# Dependabot configuration. See:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Approach: dependabot opens grouped PRs that a human reviews and merges
+# (typically via the merge queue + `gh pr merge --auto`). We *do not* run
+# auto-approve/auto-merge GitHub Actions workflows — those have a track
+# record of silently no-op'ing in this repo (broken `if:` guards, missing
+# `pull_request_target` triggers) and reviewing dependabot PRs takes
+# seconds when grouping reduces the volume.
 
 version: 2
 updates:
-  - package-ecosystem: "maven" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # Maven build-plugin and library bumps. Grouped so a typical week opens
+  # ONE plugin PR instead of one per plugin. Major bumps are excluded from
+  # the group (they need individual review for breaking changes).
+  - package-ecosystem: "maven"
+    directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      maven-plugins:
+        applies-to: version-updates
+        patterns:
+          - "org.apache.maven.plugins:*"
+          - "org.codehaus.mojo:*"
+          - "com.diffplug.spotless:*"
+          - "com.puppycrawl.tools:*"
+          - "org.jacoco:*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Python tooling for the test/format requirements. Grouped patch+minor;
+  # majors land as their own PRs. `patterns:` is explicit (rather than
+  # implicit-catch-all) so the group's scope stays scoped to actual tooling
+  # even if a future `directories:` expansion broadens what the pip updater
+  # sees: without `patterns:`, the group would bundle every pip dep under
+  # the updater's root, which would include test-fixture runtime deps
+  # (matplotlib, numpy, etc.) and produce grouped PRs that don't match the
+  # "tooling" framing.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      python-tooling:
+        applies-to: version-updates
+        patterns:
+          - "black"
+          - "pytest*"
+          - "mypy"
+          - "ruff"
+          - "flake8*"
+          - "coverage*"
+          - "pre-commit"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
+      # TensorFlow is pinned to 2.9.3 by the test fixtures and would force
+      # a much larger refactor across the analyzer than dependabot can
+      # safely propose. Drop the ignore once the test corpus migrates.
       - dependency-name: "tensorflow"
+
+  # GitHub Actions versions in `.github/workflows/*.yml`. These are
+  # security-relevant (action supply-chain) and shift slowly; check
+  # weekly, no grouping (each action is independent).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
