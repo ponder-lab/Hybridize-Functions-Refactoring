@@ -446,7 +446,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 							LOG.info(String.format(
 									"Can't determine FQN of function call expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-									NodeUtils.getFullRepresentationString(call), selectedText, moduleName, file, project, e));
+									NodeUtils.getFullRepresentationString(call), selectedText, moduleName, file, project), e);
 						}
 
 						if (fqn != null)
