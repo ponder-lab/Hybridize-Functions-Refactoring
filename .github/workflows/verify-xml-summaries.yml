@@ -36,7 +36,7 @@ jobs:
   verify:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract Ariadne version pin from `hybridize.target`
         id: pin
