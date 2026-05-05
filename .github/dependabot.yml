@@ -58,6 +58,39 @@ updates:
       # safely propose. Drop the ignore once the test corpus migrates.
       - dependency-name: "tensorflow"
 
+  # Test scaffolding pip manifests:
+  # - `edu.cuny.hunter.hybridize.tests/requirements.txt` (CI install set)
+  # - `edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/*/in/requirements.txt`
+  #   (per-fixture pins so the analyzer resolves the same TF surface the
+  #   test was authored against)
+  #
+  # The pin is intentional: the refactoring plug-in does not import or
+  # execute these libraries at runtime — they are inputs to Ariadne's
+  # static analysis, and the static call graphs depend on the exact
+  # 2.9.3 API surface. We want NO dependabot PRs (version-update OR
+  # security-update) against these manifests:
+  #   - `open-pull-requests-limit: 0` suppresses version-update PRs.
+  #   - `ignore: dependency-name: "*"` suppresses security-update PRs
+  #     (per github docs, ignore conditions also block security-update
+  #     PR creation when no `update-types` filter is set).
+  #
+  # Without this block, security-update PRs were being opened against
+  # individual fixture manifests (#459 was the first such PR) because
+  # dependabot security updates auto-discover ALL manifests in the repo,
+  # but ignore rules from other blocks only apply to their declared
+  # `directory:`. Existing security alerts on these manifests are
+  # bulk-dismissed with reason `not_used`; this config prevents new
+  # ones from spawning PRs.
+  - package-ecosystem: "pip"
+    directories:
+      - "/edu.cuny.hunter.hybridize.tests"
+      - "/edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
   # GitHub Actions versions in `.github/workflows/*.yml`. These are
   # security-relevant (action supply-chain) and shift slowly; check
   # weekly, no grouping (each action is independent).
