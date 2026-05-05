@@ -32,13 +32,13 @@ updates:
           - "patch"
 
   # Python tooling for the test/format requirements. Grouped patch+minor;
-  # majors land as their own PRs. `patterns:` is explicit (rather than
-  # implicit-catch-all) so the group's scope stays scoped to actual tooling
-  # even if a future `directories:` expansion broadens what the pip updater
-  # sees: without `patterns:`, the group would bundle every pip dep under
-  # the updater's root, which would include test-fixture runtime deps
-  # (matplotlib, numpy, etc.) and produce grouped PRs that don't match the
-  # "tooling" framing.
+  # majors land as their own PRs. `patterns:` lists the tooling deps
+  # actually present in `/requirements.txt` today; extend it when adding
+  # new tooling. Keeping the list tight (instead of anticipatory globs
+  # like `pytest*`) prevents accidental capture of test-fixture runtime
+  # deps if a future `directories:` expansion ever broadens what the pip
+  # updater sees — `pytest*` would match the `pytest` line in a fixture's
+  # `requirements.txt`, for instance.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -49,12 +49,6 @@ updates:
         applies-to: version-updates
         patterns:
           - "black"
-          - "pytest*"
-          - "mypy"
-          - "ruff"
-          - "flake8*"
-          - "coverage*"
-          - "pre-commit"
         update-types:
           - "minor"
           - "patch"
