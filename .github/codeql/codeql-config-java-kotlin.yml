@@ -12,14 +12,16 @@
 # exclusion is needed here either. Mirrors the parallel change at
 # ponder-lab/ML#231.
 #
-# Submodule paths are excluded dynamically by the workflow (see the
-# "Append submodule paths to CodeQL paths-ignore" step in `codeql.yml`):
-# the workflow reads `.gitmodules` and appends a `paths-ignore` block to
-# this file at scan time. Avoids hardcoding submodule paths so future
-# submodule additions are auto-excluded without a separate CodeQL config
-# edit. (Same pattern as ponder-lab/ML#232.)
+# `paths-ignore` excludes the `Formatting/` Git submodule (Eclipse formatter
+# config files; no Java code, so no findings expected — but explicit
+# exclusion is more auditable than relying on no-Java-code-no-findings).
+# **When adding or removing a submodule, update this list to match
+# `.gitmodules` — there is no automatic discovery.**
 
 name: "ponder-lab/Hybridize-Functions-Refactoring CodeQL config (java-kotlin)"
+
+paths-ignore:
+  - 'Formatting/**'
 
 queries:
   - uses: security-extended
