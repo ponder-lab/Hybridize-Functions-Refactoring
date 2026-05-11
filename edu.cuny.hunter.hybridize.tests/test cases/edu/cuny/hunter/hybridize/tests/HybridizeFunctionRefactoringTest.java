@@ -119,6 +119,7 @@ import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
@@ -1919,18 +1920,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
 
-		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
-		// semantics.
-		Set<Map.Entry<String, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(tt.getCellType(),
+		// Both dtype and shape must match the expected set. Cell-type strings are mapped to Ariadne's `DType` enum via the inverse of the
+		// canonical `dtype.name().toLowerCase()` Ariadne uses to produce them. Shapes are collapsed to integer lists to avoid depending
+		// on Dimension equality semantics.
+		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
+				.map(tt -> Map.entry(DType.valueOf(tt.getCellType().toUpperCase()),
 						tt.getDims().stream()
 								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
 								.collect(Collectors.toList())))
 				.collect(toSet());
 
-		Set<Map.Entry<String, List<Integer>>> expected = Set.of(Map.entry("float32", Arrays.asList(2, 1)),
-				Map.entry("float32", Collections.singletonList(2)));
-		assertEquals("Expected (dtype, shape) pairs {(float32, (2,1)), (float32, (2,))}", expected, dtypesAndShapes);
+		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
+				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
+		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
 
 		// Wrapper identity contract: equals/hashCode/toString.
 		assertEquals(t, t);
