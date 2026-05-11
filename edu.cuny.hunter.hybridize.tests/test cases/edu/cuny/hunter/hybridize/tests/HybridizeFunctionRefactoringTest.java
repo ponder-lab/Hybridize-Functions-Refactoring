@@ -103,10 +103,10 @@ import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
-import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.plugin.FileStub2;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
@@ -1803,10 +1803,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// no params.
-		assertEquals(0, params.args.length);
+		assertEquals(0, params.size());
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -1823,16 +1823,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
@@ -1851,16 +1851,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
@@ -1879,16 +1879,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
@@ -1953,10 +1953,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// no params.
-		assertEquals(0, params.args.length);
+		assertEquals(0, params.size());
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -1977,10 +1977,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Need to check the value (#111).
 		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// no params.
-		assertEquals(0, params.args.length);
+		assertEquals(0, params.size());
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -2000,26 +2000,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 		// TODO: And the value is true (#111).
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
+		TypeInfo typeInfo = actualParameter.getTypeInfo();
 
 		// no type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNull(annotationExpr);
+		assertNull(typeInfo);
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -2039,29 +2036,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.isHybrid());
 		assertFalse(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
+		TypeInfo typeInfo = actualParameter.getTypeInfo();
 
 		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
+		assertNotNull(typeInfo);
 
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
+		assertTrue(typeInfo.getNode() instanceof Attribute);
+		Attribute typeHint = (Attribute) typeInfo.getNode();
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
@@ -2085,29 +2079,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO: Need to check the value (#111).
 		assertTrue(function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
+		TypeInfo typeInfo = actualParameter.getTypeInfo();
 
 		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
+		assertNotNull(typeInfo);
 
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
+		assertTrue(typeInfo.getNode() instanceof Attribute);
+		Attribute typeHint = (Attribute) typeInfo.getNode();
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
@@ -2134,29 +2125,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// But, it's set to False.
 		// TODO: assert that the experimental type hints param is set to false (#111).
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		exprType[] annotations = params.annotation;
-		assertNotNull(annotations);
+		TypeInfo typeInfo = actualParameter.getTypeInfo();
 
 		// Tensor type hint.
-		assertEquals(1, annotations.length);
-		exprType annotationExpr = annotations[0];
-		assertNotNull(annotationExpr);
+		assertNotNull(typeInfo);
 
-		assertTrue(annotationExpr instanceof Attribute);
-		Attribute typeHint = (Attribute) annotationExpr;
+		assertTrue(typeInfo.getNode() instanceof Attribute);
+		Attribute typeHint = (Attribute) typeInfo.getNode();
 
 		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
 		assertEquals("tf.Tensor", attributeName);
@@ -2177,22 +2165,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2211,22 +2199,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2262,17 +2250,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertEquals(fut.isHybrid(), function.isHybrid());
 
-			argumentsType params = function.getParameters();
+			List<Parameter> params = function.getParameters();
 
-			exprType[] actualParams = params.args;
+			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.length);
+			assertEquals(expectedParameters.size(), actualParams.size());
 
-			for (int i = 0; i < actualParams.length; i++) {
-				exprType actualParameter = actualParams[i];
+			for (int i = 0; i < actualParams.size(); i++) {
+				Parameter actualParameter = actualParams.get(i);
 				assertNotNull(actualParameter);
 
-				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				String paramName = actualParameter.getName();
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
@@ -2306,17 +2294,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertEquals(fut.isHybrid(), function.isHybrid());
 
-			argumentsType params = function.getParameters();
+			List<Parameter> params = function.getParameters();
 
-			exprType[] actualParams = params.args;
+			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.length);
+			assertEquals(expectedParameters.size(), actualParams.size());
 
-			for (int i = 0; i < actualParams.length; i++) {
-				exprType actualParameter = actualParams[i];
+			for (int i = 0; i < actualParams.size(); i++) {
+				Parameter actualParameter = actualParams.get(i);
 				assertNotNull(actualParameter);
 
-				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				String paramName = actualParameter.getName();
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
@@ -2350,17 +2338,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull(function);
 			assertEquals(fut.isHybrid(), function.isHybrid());
 
-			argumentsType params = function.getParameters();
+			List<Parameter> params = function.getParameters();
 
-			exprType[] actualParams = params.args;
+			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.length);
+			assertEquals(expectedParameters.size(), actualParams.size());
 
-			for (int i = 0; i < actualParams.length; i++) {
-				exprType actualParameter = actualParams[i];
+			for (int i = 0; i < actualParams.size(); i++) {
+				Parameter actualParameter = actualParams.get(i);
 				assertNotNull(actualParameter);
 
-				String paramName = NodeUtils.getRepresentationString(actualParameter);
+				String paramName = actualParameter.getName();
 				assertEquals(expectedParameters.get(i), paramName);
 			}
 
@@ -2468,28 +2456,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// three params.
-		exprType[] actualParams = params.args;
-		assertEquals(3, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(3, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("z", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[2];
+		actualParameter = actualParams.get(2);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2507,22 +2495,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2540,22 +2528,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2573,22 +2561,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2606,22 +2594,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2639,22 +2627,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2672,22 +2660,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2705,22 +2693,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2738,22 +2726,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2771,22 +2759,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2804,22 +2792,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2837,22 +2825,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2870,22 +2858,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2903,22 +2891,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2936,22 +2924,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -2969,22 +2957,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3002,22 +2990,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3035,22 +3023,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3068,22 +3056,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3101,22 +3089,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3134,22 +3122,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3167,22 +3155,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3200,22 +3188,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3233,22 +3221,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3266,22 +3254,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3299,22 +3287,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3332,22 +3320,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3365,22 +3353,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3398,22 +3386,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3431,22 +3419,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3464,22 +3452,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3497,22 +3485,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3530,22 +3518,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3569,16 +3557,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -3602,16 +3590,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -3635,16 +3623,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -3662,22 +3650,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3695,22 +3683,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3728,22 +3716,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3761,22 +3749,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertFalse(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -3790,22 +3778,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertEquals(expectingHybridFunction, function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
@@ -4343,22 +4331,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(function);
 		assertTrue(function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
 		// two params.
-		exprType[] actualParams = params.args;
-		assertEquals(2, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(2, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams[1];
+		actualParameter = actualParams.get(1);
 		assertNotNull(actualParameter);
 
-		paramName = NodeUtils.getRepresentationString(actualParameter);
+		paramName = actualParameter.getName();
 		assertEquals("b", paramName);
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
@@ -4430,16 +4418,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -4463,16 +4451,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -4496,16 +4484,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
@@ -4529,16 +4517,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull(functionToBeEvaluated);
 
-		argumentsType params = functionToBeEvaluated.getParameters();
+		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		exprType[] actualParams = params.args;
-		assertEquals(1, actualParams.length);
+		List<Parameter> actualParams = params;
+		assertEquals(1, actualParams.size());
 
-		exprType actualParameter = actualParams[0];
+		Parameter actualParameter = actualParams.get(0);
 		assertNotNull(actualParameter);
 
-		String paramName = NodeUtils.getRepresentationString(actualParameter);
+		String paramName = actualParameter.getName();
 		assertEquals("t", paramName);
 
 		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
