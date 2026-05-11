@@ -351,8 +351,6 @@ public class Function {
 
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
-	private static final String SELF_PARAMETER_NAME = "self";
-
 	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
@@ -1602,7 +1600,7 @@ public class Function {
 			String paramName = param.getName();
 
 			// don't consider `self` as a tensor.
-			if (paramInx == 0 && paramName.equals(SELF_PARAMETER_NAME)) {
+			if (paramInx == 0 && param.isSelf()) {
 				selfParam = true;
 				continue; // next parameter.
 			}
@@ -1741,7 +1739,7 @@ public class Function {
 	 */
 	public boolean isMethod() {
 		List<Parameter> parameters = this.getParameters();
-		return parameters.size() > 1 && parameters.get(0).getName().equals(SELF_PARAMETER_NAME);
+		return parameters.size() > 1 && parameters.get(0).isSelf();
 	}
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {

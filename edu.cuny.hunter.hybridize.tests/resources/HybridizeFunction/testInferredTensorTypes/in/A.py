@@ -19,6 +19,7 @@ else:
     l = [1.0, 3.0]
 
 a = tf.constant(l)
+assert a.dtype == tf.float32
 assert a.shape == (2, 1) or a.shape == (2,)
 
 func(a)

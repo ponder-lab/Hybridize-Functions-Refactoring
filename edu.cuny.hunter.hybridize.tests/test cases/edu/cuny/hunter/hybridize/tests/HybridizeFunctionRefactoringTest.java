@@ -1919,19 +1919,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
 
-		// Both types must be float32 (same dtype).
-		for (TensorType tt : inferred)
-			assertEquals("float32", tt.getCellType());
+		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
+		// semantics.
+		Set<Map.Entry<String, List<Integer>>> dtypesAndShapes = inferred.stream()
+				.map(tt -> Map.entry(tt.getCellType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
 
-		// The shapes should be {(2, 1), (2,)} — collapse to lengths to compare without depending on Dimension equality semantics.
-		Set<List<Integer>> shapes = inferred.stream().map(tt -> tt.getDims().stream().map(d -> {
-			if (d instanceof TensorType.NumericDim)
-				return ((TensorType.NumericDim) d).value();
-			return Integer.valueOf(-1);
-		}).collect(Collectors.toList())).collect(toSet());
-
-		assertTrue("Expected shape (2, 1) among inferred types: " + shapes, shapes.contains(Arrays.asList(2, 1)));
-		assertTrue("Expected shape (2,) among inferred types: " + shapes, shapes.contains(Collections.singletonList(2)));
+		Set<Map.Entry<String, List<Integer>>> expected = Set.of(Map.entry("float32", Arrays.asList(2, 1)),
+				Map.entry("float32", Collections.singletonList(2)));
+		assertEquals("Expected (dtype, shape) pairs {(float32, (2,1)), (float32, (2,))}", expected, dtypesAndShapes);
 
 		// Wrapper identity contract: equals/hashCode/toString.
 		assertEquals(t, t);

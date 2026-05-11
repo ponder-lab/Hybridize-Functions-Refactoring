@@ -26,11 +26,16 @@ import com.ibm.wala.util.collections.Pair;
  * ({@code argumentsType} parent + positional index + owning {@link Function}) and exposes the per-parameter Ariadne tensor-type query as
  * {@link #getTensorTypes(TensorTypeAnalysis)}.
  * <p>
- * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #getTensorTypes(TensorTypeAnalysis)}, plus
- * {@code equals}/{@code hashCode}/{@code toString}. No Jython AST types leak through the public API. Constructed only by {@link Function}
- * (package-private constructor).
+ * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()},
+ * {@link #getTensorTypes(TensorTypeAnalysis)}, plus {@code equals}/{@code hashCode}/{@code toString}. No Jython AST types leak through the
+ * public API. Constructed only by {@link Function} (package-private constructor).
  */
 public final class Parameter {
+
+	/**
+	 * Conventional name of the implicit first parameter of an instance method in Python.
+	 */
+	private static final String SELF_PARAMETER_NAME = "self";
 
 	/**
 	 * Parent Jython AST node carrying every positional name expression (in {@link argumentsType#args}) and per-position annotation (in
@@ -82,6 +87,16 @@ public final class Parameter {
 	 */
 	public String getName() {
 		return NodeUtils.getRepresentationString(this.getNameExpr());
+	}
+
+	/**
+	 * Returns true iff this parameter is named {@code self} (the conventional name of an instance method's implicit first parameter). Does
+	 * not check the positional index — caller's responsibility if position matters.
+	 *
+	 * @return True iff this parameter's name is {@code self}.
+	 */
+	public boolean isSelf() {
+		return SELF_PARAMETER_NAME.equals(this.getName());
 	}
 
 	/**
