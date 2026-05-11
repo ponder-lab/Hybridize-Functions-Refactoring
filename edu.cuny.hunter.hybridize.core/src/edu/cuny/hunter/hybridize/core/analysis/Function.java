@@ -824,6 +824,7 @@ public class Function {
 
 		// Jython's `argumentsType` is the whole parameter-list node; its `.args` field is the positional/positional-or-keyword name array.
 		// `vararg`, `kwarg`, and `kwonlyargs` are sibling fields on the same node that we don't currently wrap.
+		// Tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/465.
 		argumentsType args = fd.getFunctionDef().args;
 		List<Parameter> built = new ArrayList<>();
 		if (args != null && args.args != null)
