@@ -36,9 +36,11 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.util.collections.Pair;
 
 /**
- * Analytical wrapper around a single positional Python function parameter. Holds the minimum context needed to identify the parameter
- * ({@code argumentsType} parent + positional index + owning {@link Function}) and exposes the per-parameter Ariadne tensor-type query as
- * {@link #getTensorTypes(TensorTypeAnalysis)}.
+ * Analytical wrapper around a single positional Python function parameter. Carries enough context to identify the parameter
+ * ({@code argumentsType} parent + positional index + owning {@link Function}) and hosts the per-parameter classification queries that would
+ * otherwise live on {@link Function}: type-hint detection ({@link #hasTensorTypeHint(IProgressMonitor)}), Ariadne tensor-type lookup
+ * ({@link #getTensorTypes(TensorTypeAnalysis)}), and tensor-container detection
+ * ({@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}).
  * <p>
  * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
  * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)},
@@ -71,7 +73,12 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * Owning {@link Function} back-reference. Reached for {@link Function#getContainingFile()}.
+	 * Owning {@link Function} back-reference. Reached by every analytical method on this class for project-context state and helpers:
+	 * {@link #getTypeInfo()} via {@link Function#getFunctionDefinition()}, {@link #hasTensorTypeHint(IProgressMonitor)} via
+	 * {@link Function#getContainingDocument()}/{@code getContainingModuleName}/{@code getContainingFile}/{@code getNature}/{@code getProject},
+	 * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)} via
+	 * {@code Function.tensorAnalysisIncludesParameterContainer}, and {@link #matches(LocalPointerKey)} via
+	 * {@link Function#getContainingFile()}.
 	 */
 	private final Function function;
 
