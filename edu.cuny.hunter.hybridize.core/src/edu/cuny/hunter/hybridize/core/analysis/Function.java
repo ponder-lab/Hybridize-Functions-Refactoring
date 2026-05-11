@@ -79,7 +79,6 @@ import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -543,7 +542,7 @@ public class Function {
 		return false;
 	}
 
-	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
+	static Set<Attribute> getAllAttributes(exprType node) throws Exception {
 		Set<Attribute> ret = Sets.newHashSet();
 
 		if (node instanceof Attribute)
@@ -868,7 +867,7 @@ public class Function {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
 	}
 
-	private boolean attributesHaveTensorTypeHints(Set<Attribute> attributes, IProgressMonitor monitor) throws BadLocationException {
+	boolean attributesHaveTensorTypeHints(Set<Attribute> attributes, IProgressMonitor monitor) throws BadLocationException {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
 
 		for (Attribute typeHintExpr : attributes) {
@@ -1613,22 +1612,12 @@ public class Function {
 			if (followTypeHints) {
 				LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
 
-				// try to get its type from the AST.
-				TypeInfo argTypeInfo = param.getTypeInfo();
-
-				if (argTypeInfo != null) {
-					LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
-
-					exprType node = argTypeInfo.getNode();
-					Set<Attribute> allAttributes = getAllAttributes(node);
-
-					if (this.attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
-						this.hasTensorParameter = TRUE;
-						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
-						monitor.worked(1);
-						this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
-						continue; // next parameter.
-					}
+				if (param.hasTensorTypeHint(monitor.slice(IProgressMonitor.UNKNOWN))) {
+					this.hasTensorParameter = TRUE;
+					LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
+					monitor.worked(1);
+					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
+					continue; // next parameter.
 				}
 			}
 

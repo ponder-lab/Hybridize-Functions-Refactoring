@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
@@ -28,8 +29,8 @@ import com.ibm.wala.util.collections.Pair;
  * {@link #getTensorTypes(TensorTypeAnalysis)}.
  * <p>
  * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
- * {@link #getTensorTypes(TensorTypeAnalysis)}, plus {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function}
- * (package-private constructor).
+ * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)}, plus
+ * {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function} (package-private constructor).
  */
 public final class Parameter {
 
@@ -108,6 +109,21 @@ public final class Parameter {
 	 */
 	public TypeInfo getTypeInfo() {
 		return NodeUtils.getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	}
+
+	/**
+	 * Returns true iff this parameter's declared type hint (if any) names a tensor type. Combines {@link #getTypeInfo()} with the owning
+	 * {@link Function}'s tensor-name attribute check.
+	 *
+	 * @param monitor Progress monitor for the attribute-resolution sub-work.
+	 * @return True iff a tensor-typed type hint is declared for this parameter.
+	 * @throws Exception If the underlying AST traversal or attribute resolution fails.
+	 */
+	public boolean hasTensorTypeHint(IProgressMonitor monitor) throws Exception {
+		TypeInfo argTypeInfo = this.getTypeInfo();
+		if (argTypeInfo == null)
+			return false;
+		return this.function.attributesHaveTensorTypeHints(Function.getAllAttributes(argTypeInfo.getNode()), monitor);
 	}
 
 	/**
