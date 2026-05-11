@@ -438,7 +438,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		FileUtils.IN_TESTS = true;
 		PydevTestUtils.setTestPlatformStateLocation();
 		AbstractAdditionalDependencyInfo.TESTING = true;
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
 		PythonNature.IN_TESTS = true;
 		PythonModuleManager.setTesting(true);
 
@@ -453,7 +453,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			for (String t : toAsk)
 				if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase())))
 					l.add(t);
-			return Boolean.TRUE;
+			return TRUE;
 		};
 
 		// System Python paths.
