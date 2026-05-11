@@ -867,6 +867,17 @@ public class Function {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
 	}
 
+	/**
+	 * Returns true iff the given AST type-hint node references a TensorFlow tensor type. Walks every attribute reachable from {@code node}
+	 * via {@link #getAllAttributes(exprType)} and resolves each attribute's fully-qualified name against PyDev's symbol table; the first
+	 * attribute whose FQN matches a known tensor type returns true. Unresolvable FQNs (ambiguous declaring module, missing module, or no
+	 * text selection) are logged and skipped.
+	 *
+	 * @param node The type-hint AST expression to classify (typically obtained from {@link Parameter#getTypeInfo()}).
+	 * @param monitor Progress monitor for the per-attribute resolution sub-work.
+	 * @return True iff at least one attribute reachable from {@code node} names a tensor type.
+	 * @throws Exception If the AST traversal fails. Per-attribute FQN-resolution failures are caught internally and do not propagate.
+	 */
 	boolean nodeIsTensorTypeHint(exprType node, IProgressMonitor monitor) throws Exception {
 		Set<Attribute> attributes = getAllAttributes(node);
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
