@@ -1594,7 +1594,6 @@ public class Function {
 		List<Parameter> params = this.getParameters(); // FIXME: positional only (#108).
 
 		for (Parameter param : params) {
-			int paramInx = param.getIndex();
 			String paramName = param.getName();
 
 			// don't consider `self` as a tensor.
@@ -1632,8 +1631,7 @@ public class Function {
 				}
 
 				// Check for containers of tensors.
-				if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
-						monitor.slice(IProgressMonitor.UNKNOWN))) {
+				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, monitor.slice(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
 				}
@@ -1764,7 +1762,7 @@ public class Function {
 	 * @param monitor For progress.
 	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
 	 */
-	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
+	boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
 		Set<CGNode> nodes = this.getNodes(callGraph);

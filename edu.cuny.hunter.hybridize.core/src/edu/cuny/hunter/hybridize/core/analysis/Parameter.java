@@ -13,12 +13,14 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.util.collections.Pair;
@@ -29,7 +31,8 @@ import com.ibm.wala.util.collections.Pair;
  * {@link #getTensorTypes(TensorTypeAnalysis)}.
  * <p>
  * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
- * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)}, plus
+ * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)},
+ * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}, plus
  * {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function} (package-private constructor).
  */
 public final class Parameter {
@@ -139,6 +142,22 @@ public final class Parameter {
 	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
 	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
 	 */
+	/**
+	 * Returns true iff Ariadne's tensor analysis associates a tensor-container instance key with this parameter's slot in the call graph
+	 * (i.e. the parameter receives a list/tuple/dict whose elements are tensors).
+	 *
+	 * @param tensorAnalysis Ariadne's analysis result.
+	 * @param callGraph The call graph being queried.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff the analysis associates a tensor-container with this parameter.
+	 * @throws org.eclipse.core.runtime.CoreException If the underlying analysis fails.
+	 */
+	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
+		return this.function.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), callGraph, builder, monitor);
+	}
+
 	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
 		Objects.requireNonNull(analysis);
 		Set<TensorType> result = new HashSet<>();
