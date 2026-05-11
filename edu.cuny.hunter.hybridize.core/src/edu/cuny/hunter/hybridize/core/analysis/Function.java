@@ -807,15 +807,6 @@ public class Function {
 	 */
 	private final List<Parameter> parameters;
 
-	/**
-	 * Back-channel for {@link Parameter#getTensorTypes()}: that method computes its result by iterating Ariadne's
-	 * {@link TensorTypeAnalysis}, but we deliberately do not expose {@code TensorTypeAnalysis} on {@link Parameter}'s public surface (which
-	 * is Jython/Ariadne-free by design). The {@link Function} owns the analysis — recorded here by {@link #inferTensorTensorParameters} —
-	 * and {@link Parameter}, being in the same package, reads it through {@link #getTensorTypeAnalysis()}. {@code null} until
-	 * {@code inferTensorTensorParameters} has run.
-	 */
-	private TensorTypeAnalysis tensorTypeAnalysis;
-
 	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
@@ -1434,16 +1425,6 @@ public class Function {
 		return this.parameters;
 	}
 
-	/**
-	 * Package-private back-channel read by {@link Parameter#getTensorTypes()}. {@code null} until {@link #inferTensorTensorParameters} has
-	 * run for this {@link Function}; {@link Parameter#getTensorTypes()} treats {@code null} as a precondition violation and throws.
-	 *
-	 * @return The recorded {@link TensorTypeAnalysis}, or {@code null} if {@link #inferTensorTensorParameters} has not yet run.
-	 */
-	TensorTypeAnalysis getTensorTypeAnalysis() {
-		return this.tensorTypeAnalysis;
-	}
-
 	public PreconditionSuccess getPassingPrecondition() {
 		return this.passingPrecondition;
 	}
@@ -1608,9 +1589,6 @@ public class Function {
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 
-		// Record so Parameter.getTensorTypes() can read it.
-		this.tensorTypeAnalysis = tensorAnalysis;
-
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		// True iff the function has a self parameter in the first position.
@@ -1659,9 +1637,8 @@ public class Function {
 
 			// If this function is in the call graph.
 			if (!nodes.isEmpty()) {
-				// Ask the parameter directly: does Ariadne associate any tensor type with it? Safe to call: the analysis was recorded
-				// at the top of this method, so `getTensorTypes()`'s precondition holds.
-				if (!param.getTensorTypes().isEmpty()) {
+				// Ask the parameter directly: does Ariadne associate any tensor type with it?
+				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
 					this.hasTensorParameter = Boolean.TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
 					monitor.worked(1);

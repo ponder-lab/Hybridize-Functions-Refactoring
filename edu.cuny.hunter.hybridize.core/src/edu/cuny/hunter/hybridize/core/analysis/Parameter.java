@@ -24,9 +24,9 @@ import com.ibm.wala.util.collections.Pair;
 /**
  * Analytical wrapper around a single positional Python function parameter. Holds the minimum context needed to identify the parameter
  * ({@code argumentsType} parent + positional index + owning {@link Function}) and exposes the per-parameter Ariadne tensor-type query as
- * {@link #getTensorTypes()}.
+ * {@link #getTensorTypes(TensorTypeAnalysis)}.
  * <p>
- * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #getTensorTypes()}, plus
+ * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #getTensorTypes(TensorTypeAnalysis)}, plus
  * {@code equals}/{@code hashCode}/{@code toString}. No Jython AST types leak through the public API. Constructed only by {@link Function}
  * (package-private constructor).
  */
@@ -44,8 +44,7 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * Owning {@link Function} back-reference. Reached for {@link Function#getContainingFile()} and
-	 * {@link Function#getTensorTypeAnalysis()}.
+	 * Owning {@link Function} back-reference. Reached for {@link Function#getContainingFile()}.
 	 */
 	private final Function function;
 
@@ -86,27 +85,20 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the {@link TensorType}s Ariadne's tensor analysis associates with this parameter. Computed fresh on each call (no caching)
-	 * against the {@link TensorTypeAnalysis} the owning {@link Function} has recorded.
+	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
+	 * caching) by iterating {@code analysis}.
 	 * <p>
-	 * Precondition: the owning {@link Function} has already had {@link Function#inferTensorTensorParameters} run on it (which records the
-	 * analysis); calling this beforehand is a programming error and throws.
-	 * <p>
-	 * Returns an empty (but non-null) set when the analysis has run but associated no entries with this parameter — note that with the
-	 * current {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state)
-	 * and "not a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one
-	 * of those two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query;
-	 * left for a future enhancement.
+	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter — note that with the current
+	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
+	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
+	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
+	 * future enhancement.
 	 *
+	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
 	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
-	 * @throws IllegalStateException If the owning {@link Function} has no recorded {@link TensorTypeAnalysis} yet.
 	 */
-	public Set<TensorType> getTensorTypes() {
-		TensorTypeAnalysis analysis = this.function.getTensorTypeAnalysis();
-		if (analysis == null)
-			throw new IllegalStateException(
-					"Tensor analysis has not been recorded on " + this.function + "; call Function.inferTensorTensorParameters first.");
-
+	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
+		Objects.requireNonNull(analysis);
 		Set<TensorType> result = new HashSet<>();
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
