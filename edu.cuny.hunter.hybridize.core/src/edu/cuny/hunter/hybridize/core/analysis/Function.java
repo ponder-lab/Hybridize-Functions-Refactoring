@@ -68,12 +68,10 @@ import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
 import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
-import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -359,8 +357,6 @@ public class Function {
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
-	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
-
 	/**
 	 * True iff verbose output is desired.
 	 */
@@ -540,35 +536,6 @@ public class Function {
 
 		subMonitor.done();
 		return false;
-	}
-
-	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
-		Set<Attribute> ret = Sets.newHashSet();
-
-		if (node instanceof Attribute)
-			ret.add((Attribute) node);
-
-		if (node != null)
-			node.traverse(new VisitorBase() {
-
-				@Override
-				public void traverse(SimpleNode node) throws Exception {
-					node.traverse(this);
-				}
-
-				@Override
-				protected Object unhandled_node(SimpleNode node) throws Exception {
-					return null;
-				}
-
-				@Override
-				public Object visitAttribute(Attribute node) throws Exception {
-					ret.add(node);
-					return super.visitAttribute(node);
-				}
-			});
-
-		return ret;
 	}
 
 	/**
@@ -865,55 +832,6 @@ public class Function {
 
 	public void addWarning(String message) {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
-	}
-
-	/**
-	 * Returns true iff the given AST type-hint node references a TensorFlow tensor type. Walks every attribute reachable from {@code node}
-	 * via {@link #getAllAttributes(exprType)} and resolves each attribute's fully-qualified name against PyDev's symbol table; the first
-	 * attribute whose FQN matches a known tensor type returns true. Unresolvable FQNs (ambiguous declaring module, missing module, or no
-	 * text selection) are logged and skipped.
-	 *
-	 * @param node The type-hint AST expression to classify (typically obtained from {@link Parameter#getTypeInfo()}).
-	 * @param monitor Progress monitor for the per-attribute resolution sub-work.
-	 * @return True iff at least one attribute reachable from {@code node} names a tensor type.
-	 * @throws Exception If the AST traversal fails. Per-attribute FQN-resolution failures are caught internally and do not propagate.
-	 */
-	boolean nodeIsTensorTypeHint(exprType node, IProgressMonitor monitor) throws Exception {
-		Set<Attribute> attributes = getAllAttributes(node);
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
-
-		for (Attribute typeHintExpr : attributes) {
-			// Look up the definition.
-			IDocument document = this.getContainingDocument();
-
-			String fqn;
-			PySelection selection = null;
-			try {
-				selection = Util.getSelection(typeHintExpr.attr, document);
-				fqn = Util.getFullyQualifiedName(typeHintExpr, this.getContainingModuleName(), this.getContainingFile(), selection,
-						this.getNature(), subMonitor.split(1));
-			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
-				LOG.warn(String.format(
-						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-						typeHintExpr, selection == null ? "null" : selection.getSelectedText(), this.getContainingModuleName(),
-						this.getContainingFile().getName(), this.getProject()), e);
-
-				subMonitor.worked(1);
-				continue; // next attribute.
-			}
-
-			LOG.info("Found FQN: " + fqn + ".");
-
-			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) (#434).
-				subMonitor.done();
-				return true;
-			}
-
-			subMonitor.worked(1);
-		}
-
-		subMonitor.done();
-		return false;
 	}
 
 	/**

@@ -1,17 +1,27 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static org.eclipse.core.runtime.Platform.getLog;
+
 import java.io.File;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.jface.text.IDocument;
+import org.python.pydev.core.docutils.PySelection;
+import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.google.common.collect.Sets;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -37,10 +47,17 @@ import com.ibm.wala.util.collections.Pair;
  */
 public final class Parameter {
 
+	private static final ILog LOG = getLog(Parameter.class);
+
 	/**
 	 * Conventional name of the implicit first parameter of an instance method in Python.
 	 */
 	private static final String SELF_PARAMETER_NAME = "self";
+
+	/**
+	 * Fully-qualified name of TensorFlow's tensor type, used to recognize tensor-typed type hints in {@link #hasTensorTypeHint}.
+	 */
+	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
 
 	/**
 	 * Parent Jython AST node carrying every positional name expression (in {@link argumentsType#args}) and per-position annotation (in
@@ -126,22 +143,72 @@ public final class Parameter {
 		TypeInfo argTypeInfo = this.getTypeInfo();
 		if (argTypeInfo == null)
 			return false;
-		return this.function.nodeIsTensorTypeHint(argTypeInfo.getNode(), monitor);
+
+		Set<Attribute> attributes = getAllAttributes(argTypeInfo.getNode());
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
+
+		for (Attribute typeHintExpr : attributes) {
+			IDocument document = this.function.getContainingDocument();
+
+			String fqn;
+			PySelection selection = null;
+			try {
+				selection = Util.getSelection(typeHintExpr.attr, document);
+				fqn = Util.getFullyQualifiedName(typeHintExpr, this.function.getContainingModuleName(), this.function.getContainingFile(),
+						selection, this.function.getNature(), subMonitor.split(1));
+			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+				LOG.warn(String.format(
+						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
+						typeHintExpr, selection == null ? "null" : selection.getSelectedText(), this.function.getContainingModuleName(),
+						this.function.getContainingFile().getName(), this.function.getProject()), e);
+
+				subMonitor.worked(1);
+				continue; // next attribute.
+			}
+
+			LOG.info("Found FQN: " + fqn + ".");
+
+			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) (#434).
+				subMonitor.done();
+				return true;
+			}
+
+			subMonitor.worked(1);
+		}
+
+		subMonitor.done();
+		return false;
 	}
 
-	/**
-	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
-	 * caching) by iterating {@code analysis}.
-	 * <p>
-	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter. Note that with the current
-	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
-	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
-	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
-	 * future enhancement.
-	 *
-	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
-	 */
+	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
+		Set<Attribute> ret = Sets.newHashSet();
+
+		if (node instanceof Attribute)
+			ret.add((Attribute) node);
+
+		if (node != null)
+			node.traverse(new VisitorBase() {
+
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
+
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
+
+				@Override
+				public Object visitAttribute(Attribute node) throws Exception {
+					ret.add(node);
+					return super.visitAttribute(node);
+				}
+			});
+
+		return ret;
+	}
+
 	/**
 	 * Returns true iff Ariadne's tensor analysis associates a tensor-container instance key with this parameter's slot in the call graph
 	 * (i.e. the parameter receives a list/tuple/dict whose elements are tensors).
@@ -158,6 +225,19 @@ public final class Parameter {
 		return this.function.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), callGraph, builder, monitor);
 	}
 
+	/**
+	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
+	 * caching) by iterating {@code analysis}.
+	 * <p>
+	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter. Note that with the current
+	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
+	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
+	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
+	 * future enhancement.
+	 *
+	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
+	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
+	 */
 	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
 		Objects.requireNonNull(analysis);
 		Set<TensorType> result = new HashSet<>();
