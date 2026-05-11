@@ -1826,10 +1826,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -1854,10 +1853,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -1882,10 +1880,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -2003,10 +2000,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -2039,10 +2035,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -2082,10 +2077,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -2128,10 +2122,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -2168,16 +2161,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2202,16 +2194,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2252,12 +2243,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			List<Parameter> params = function.getParameters();
 
-			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.size());
+			assertEquals(expectedParameters.size(), params.size());
 
-			for (int i = 0; i < actualParams.size(); i++) {
-				Parameter actualParameter = actualParams.get(i);
+			for (int i = 0; i < params.size(); i++) {
+				Parameter actualParameter = params.get(i);
 				assertNotNull(actualParameter);
 
 				String paramName = actualParameter.getName();
@@ -2296,12 +2286,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			List<Parameter> params = function.getParameters();
 
-			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.size());
+			assertEquals(expectedParameters.size(), params.size());
 
-			for (int i = 0; i < actualParams.size(); i++) {
-				Parameter actualParameter = actualParams.get(i);
+			for (int i = 0; i < params.size(); i++) {
+				Parameter actualParameter = params.get(i);
 				assertNotNull(actualParameter);
 
 				String paramName = actualParameter.getName();
@@ -2340,12 +2329,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			List<Parameter> params = function.getParameters();
 
-			List<Parameter> actualParams = params;
 			List<String> expectedParameters = fut.getParameters();
-			assertEquals(expectedParameters.size(), actualParams.size());
+			assertEquals(expectedParameters.size(), params.size());
 
-			for (int i = 0; i < actualParams.size(); i++) {
-				Parameter actualParameter = actualParams.get(i);
+			for (int i = 0; i < params.size(); i++) {
+				Parameter actualParameter = params.get(i);
 				assertNotNull(actualParameter);
 
 				String paramName = actualParameter.getName();
@@ -2459,22 +2447,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// three params.
-		List<Parameter> actualParams = params;
-		assertEquals(3, actualParams.size());
+		assertEquals(3, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("z", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(2);
+		actualParameter = params.get(2);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2498,16 +2485,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2531,16 +2517,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2564,16 +2549,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2597,16 +2581,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2630,16 +2613,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2663,16 +2645,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2696,16 +2677,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2729,16 +2709,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2762,16 +2741,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2795,16 +2773,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2828,16 +2805,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2861,16 +2837,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2894,16 +2869,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2927,16 +2901,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2960,16 +2933,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -2993,16 +2965,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3026,16 +2997,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3059,16 +3029,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3092,16 +3061,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3125,16 +3093,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3158,16 +3125,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3191,16 +3157,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3224,16 +3189,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3257,16 +3221,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3290,16 +3253,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3323,16 +3285,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3356,16 +3317,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3389,16 +3349,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3422,16 +3381,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3455,16 +3413,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3488,16 +3445,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3521,16 +3477,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3560,10 +3515,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -3593,10 +3547,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -3626,10 +3579,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -3653,16 +3605,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3686,16 +3637,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3719,16 +3669,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3752,16 +3701,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -3781,16 +3729,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -4334,16 +4281,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 
 		// two params.
-		List<Parameter> actualParams = params;
-		assertEquals(2, actualParams.size());
+		assertEquals(2, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
 		assertEquals("a", paramName);
 
-		actualParameter = actualParams.get(1);
+		actualParameter = params.get(1);
 		assertNotNull(actualParameter);
 
 		paramName = actualParameter.getName();
@@ -4421,10 +4367,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -4454,10 +4399,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -4487,10 +4431,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();
@@ -4520,10 +4463,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = functionToBeEvaluated.getParameters();
 
 		// one param.
-		List<Parameter> actualParams = params;
-		assertEquals(1, actualParams.size());
+		assertEquals(1, params.size());
 
-		Parameter actualParameter = actualParams.get(0);
+		Parameter actualParameter = params.get(0);
 		assertNotNull(actualParameter);
 
 		String paramName = actualParameter.getName();

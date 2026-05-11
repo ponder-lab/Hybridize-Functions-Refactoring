@@ -128,12 +128,11 @@ public class FunctionUnderTest {
 
 		List<Parameter> params = function.getParameters();
 
-		List<Parameter> actualParams = params;
 		List<String> expectedParameters = this.getParameters();
-		assertEquals(expectedParameters.size(), actualParams.size());
+		assertEquals(expectedParameters.size(), params.size());
 
-		for (int i = 0; i < actualParams.size(); i++) {
-			Parameter actualParameter = actualParams.get(i);
+		for (int i = 0; i < params.size(); i++) {
+			Parameter actualParameter = params.get(i);
 			assertNotNull(actualParameter);
 
 			String paramName = actualParameter.getName();
