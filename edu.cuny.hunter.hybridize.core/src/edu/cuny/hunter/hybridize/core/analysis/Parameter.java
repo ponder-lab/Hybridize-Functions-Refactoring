@@ -126,7 +126,7 @@ public final class Parameter {
 		TypeInfo argTypeInfo = this.getTypeInfo();
 		if (argTypeInfo == null)
 			return false;
-		return this.function.attributesHaveTensorTypeHints(Function.getAllAttributes(argTypeInfo.getNode()), monitor);
+		return this.function.nodeIsTensorTypeHint(argTypeInfo.getNode(), monitor);
 	}
 
 	/**

@@ -542,7 +542,7 @@ public class Function {
 		return false;
 	}
 
-	static Set<Attribute> getAllAttributes(exprType node) throws Exception {
+	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
 		Set<Attribute> ret = Sets.newHashSet();
 
 		if (node instanceof Attribute)
@@ -867,7 +867,8 @@ public class Function {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
 	}
 
-	boolean attributesHaveTensorTypeHints(Set<Attribute> attributes, IProgressMonitor monitor) throws BadLocationException {
+	boolean nodeIsTensorTypeHint(exprType node, IProgressMonitor monitor) throws Exception {
+		Set<Attribute> attributes = getAllAttributes(node);
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
 
 		for (Attribute typeHintExpr : attributes) {
