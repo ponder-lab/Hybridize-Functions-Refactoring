@@ -53,7 +53,7 @@ jobs:
       - if: matrix.language == 'java-kotlin'
         run: pip3.10 install -r requirements.txt
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config-${{ matrix.language }}.yml
@@ -70,6 +70,6 @@ jobs:
             -Dtycho.showEclipseLog=false \
             install -B -q -DskipTests=true
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"

@@ -1583,8 +1583,8 @@ public class Function {
 	/**
 	 * Infer which parameters are likely tensor parameters.
 	 */
-	public void inferTensorTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph,
-			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws Exception {
+	public void inferTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
 		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
 
 		Set<CGNode> nodes = this.getNodes(callGraph);

@@ -17,6 +17,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
 import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
@@ -449,7 +450,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		FileUtils.IN_TESTS = true;
 		PydevTestUtils.setTestPlatformStateLocation();
 		AbstractAdditionalDependencyInfo.TESTING = true;
-		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = Boolean.TRUE;
+		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
 		PythonNature.IN_TESTS = true;
 		PythonModuleManager.setTesting(true);
 
@@ -464,7 +465,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			for (String t : toAsk)
 				if (s.contains(StringUtils.replaceAllSlashes(t.toLowerCase())))
 					l.add(t);
-			return Boolean.TRUE;
+			return TRUE;
 		};
 
 		// System Python paths.
