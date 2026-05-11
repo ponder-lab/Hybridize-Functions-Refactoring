@@ -822,6 +822,8 @@ public class Function {
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
 
+		// Jython's `argumentsType` is the whole parameter-list node; its `.args` field is the positional / positional-or-keyword name array.
+		// `vararg`, `kwarg`, and `kwonlyargs` are sibling fields on the same node that we don't currently wrap.
 		argumentsType args = fd.getFunctionDef().args;
 		List<Parameter> built = new ArrayList<>();
 		if (args != null && args.args != null)
