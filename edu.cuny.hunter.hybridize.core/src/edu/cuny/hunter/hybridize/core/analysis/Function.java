@@ -1594,7 +1594,6 @@ public class Function {
 		List<Parameter> params = this.getParameters(); // FIXME: positional only (#108).
 
 		for (Parameter param : params) {
-			String paramName = param.getName();
 
 			// don't consider `self` as a tensor.
 			if (param.isSelf()) {
@@ -1609,13 +1608,13 @@ public class Function {
 
 			// if we are considering type hints.
 			if (followTypeHints) {
-				LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
+				LOG.info("Following type hints for: " + this + " and parameter: " + param.getName() + ".");
 
 				if (param.hasTensorTypeHint(monitor.slice(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
+					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to a type hint.");
 					monitor.worked(1);
-					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
+					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + param.getName() + ".");
 					continue; // next parameter.
 				}
 			}
@@ -1625,7 +1624,7 @@ public class Function {
 				// Ask the parameter directly: does Ariadne associate any tensor type with it?
 				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
 					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
+					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
 					monitor.worked(1);
 					continue; // next parameter.
 				}
@@ -1633,7 +1632,7 @@ public class Function {
 				// Check for containers of tensors.
 				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, monitor.slice(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
+					LOG.info(this + " likely has a tensor-like parameter: " + param.getName() + " due to tensor analysis.");
 				}
 			}
 
