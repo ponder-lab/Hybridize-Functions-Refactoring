@@ -1623,7 +1623,7 @@ public class Function {
 					Set<Attribute> allAttributes = getAllAttributes(node);
 
 					if (this.attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
-						this.hasTensorParameter = Boolean.TRUE;
+						this.hasTensorParameter = TRUE;
 						LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
 						monitor.worked(1);
 						this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
@@ -1636,7 +1636,7 @@ public class Function {
 			if (!nodes.isEmpty()) {
 				// Ask the parameter directly: does Ariadne associate any tensor type with it?
 				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
-					this.hasTensorParameter = Boolean.TRUE;
+					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
 					monitor.worked(1);
 					continue; // next parameter.
@@ -1645,7 +1645,7 @@ public class Function {
 				// Check for containers of tensors.
 				if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
 						monitor.slice(IProgressMonitor.UNKNOWN))) {
-					this.hasTensorParameter = Boolean.TRUE;
+					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
 				}
 			}
@@ -1660,7 +1660,7 @@ public class Function {
 		if (this.hasTensorParameter == null && !params.isEmpty() && !onlySelfParam)
 			// check a special case where we consider context.
 			if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
-				this.hasTensorParameter = Boolean.TRUE;
+				this.hasTensorParameter = TRUE;
 				LOG.info(this + " likely has a tensor parameter due to context.");
 				this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
 			} else if (nodes.isEmpty())
@@ -1668,7 +1668,7 @@ public class Function {
 				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this + " without a call graph node.");
 
 		if (this.hasTensorParameter == null) {
-			this.hasTensorParameter = Boolean.FALSE;
+			this.hasTensorParameter = FALSE;
 			LOG.info(this + " does not likely have a tensor parameter.");
 		}
 
