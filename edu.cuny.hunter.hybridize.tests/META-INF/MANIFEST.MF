@@ -23,6 +23,7 @@ Require-Bundle: edu.cuny.citytech.refactoring.common.tests;bundle-version="5.2.0
 Export-Package: edu.cuny.hunter.hybridize.tests
 Import-Package: com.ibm.wala.cast.python.client;version="0.1.0",
  com.ibm.wala.cast.python.loader;version="0.1.0",
+ com.ibm.wala.cast.python.ml.types;version="0.29.0",
  com.python.pydev.analysis.additionalinfo,
  org.eclipse.core.resources,
  org.eclipse.ui.plugin,
