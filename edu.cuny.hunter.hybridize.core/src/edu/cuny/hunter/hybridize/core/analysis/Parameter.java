@@ -9,6 +9,7 @@ import java.util.Set;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
+import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -26,9 +27,9 @@ import com.ibm.wala.util.collections.Pair;
  * ({@code argumentsType} parent + positional index + owning {@link Function}) and exposes the per-parameter Ariadne tensor-type query as
  * {@link #getTensorTypes(TensorTypeAnalysis)}.
  * <p>
- * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()},
- * {@link #getTensorTypes(TensorTypeAnalysis)}, plus {@code equals}/{@code hashCode}/{@code toString}. No Jython AST types leak through the
- * public API. Constructed only by {@link Function} (package-private constructor).
+ * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
+ * {@link #getTensorTypes(TensorTypeAnalysis)}, plus {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function}
+ * (package-private constructor).
  */
 public final class Parameter {
 
@@ -97,6 +98,16 @@ public final class Parameter {
 	 */
 	public boolean isSelf() {
 		return this.getIndex() == 0 && SELF_PARAMETER_NAME.equals(this.getName());
+	}
+
+	/**
+	 * Returns PyDev's AST-derived type information for this parameter (i.e. the type-hint annotation in the function's signature), or
+	 * {@code null} if no type hint is declared.
+	 *
+	 * @return The {@link TypeInfo} for this parameter, or {@code null} if no type hint is present.
+	 */
+	public TypeInfo getTypeInfo() {
+		return NodeUtils.getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
 	}
 
 	/**

@@ -1592,7 +1592,6 @@ public class Function {
 		// True iff the function has a self parameter in the first position.
 		boolean selfParam = false;
 
-		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		List<Parameter> params = this.getParameters(); // FIXME: positional only (#108).
 
 		for (Parameter param : params) {
@@ -1615,7 +1614,7 @@ public class Function {
 				LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
 
 				// try to get its type from the AST.
-				TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
+				TypeInfo argTypeInfo = param.getTypeInfo();
 
 				if (argTypeInfo != null) {
 					LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
