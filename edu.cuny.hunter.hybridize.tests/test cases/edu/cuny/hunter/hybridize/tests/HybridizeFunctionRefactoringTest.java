@@ -1895,7 +1895,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * First test for the input-signature inference work. Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the
 	 * shape-divergence/same-dtype scenario ported from wala/ML's {@code tf2_test_function8.py}: parameter {@code t} is reached by
-	 * {@code tf.constant(l)} where {@code l} is one of two literal lists of different rank — Ariadne therefore associates two
+	 * {@code tf.constant(l)} where {@code l} is one of two literal lists of different rank. Ariadne therefore associates two
 	 * {@link TensorType}s with {@code t}, both {@code float32}, with shapes {@code (2, 1)} and {@code (2,)} respectively.
 	 */
 	@Test

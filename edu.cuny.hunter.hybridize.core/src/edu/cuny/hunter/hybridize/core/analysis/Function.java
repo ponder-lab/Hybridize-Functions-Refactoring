@@ -1600,7 +1600,7 @@ public class Function {
 			String paramName = param.getName();
 
 			// don't consider `self` as a tensor.
-			if (paramInx == 0 && param.isSelf()) {
+			if (param.isSelf()) {
 				selfParam = true;
 				continue; // next parameter.
 			}

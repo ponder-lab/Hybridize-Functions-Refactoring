@@ -90,20 +90,20 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns true iff this parameter is named {@code self} (the conventional name of an instance method's implicit first parameter). Does
-	 * not check the positional index — caller's responsibility if position matters.
+	 * Returns true iff this parameter is the implicit first parameter of an instance method: positional index {@code 0} and named
+	 * {@code self} (the conventional name).
 	 *
-	 * @return True iff this parameter's name is {@code self}.
+	 * @return True iff this parameter is at index {@code 0} and is named {@code self}.
 	 */
 	public boolean isSelf() {
-		return SELF_PARAMETER_NAME.equals(this.getName());
+		return this.getIndex() == 0 && SELF_PARAMETER_NAME.equals(this.getName());
 	}
 
 	/**
 	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
 	 * caching) by iterating {@code analysis}.
 	 * <p>
-	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter — note that with the current
+	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter. Note that with the current
 	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
 	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
 	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
@@ -135,7 +135,7 @@ public final class Parameter {
 
 	/**
 	 * Returns true iff the given pointer key corresponds to this parameter in Ariadne's IR. The comparison is by source-position equality
-	 * (same containing file and same begin-line/begin-column on the parameter declaration) — Ariadne's parameter-position metadata is the
+	 * (same containing file and same begin-line/begin-column on the parameter declaration). Ariadne's parameter-position metadata is the
 	 * only stable correspondence between Jython AST nodes and WALA pointer keys.
 	 *
 	 * @param rhsPointerKey A parameter pointer key from a {@link TensorTypeAnalysis} entry.
