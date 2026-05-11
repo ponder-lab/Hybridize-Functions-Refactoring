@@ -128,7 +128,7 @@ public final class Parameter {
 
 	/**
 	 * Returns true iff the given pointer key corresponds to this parameter in Ariadne's IR. The comparison is by source-position equality
-	 * (same containing file and same begin-line / begin-column on the parameter declaration) — Ariadne's parameter-position metadata is the
+	 * (same containing file and same begin-line/begin-column on the parameter declaration) — Ariadne's parameter-position metadata is the
 	 * only stable correspondence between Jython AST nodes and WALA pointer keys.
 	 *
 	 * @param rhsPointerKey A parameter pointer key from a {@link TensorTypeAnalysis} entry.
