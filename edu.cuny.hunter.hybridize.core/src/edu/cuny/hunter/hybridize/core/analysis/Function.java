@@ -167,8 +167,8 @@ public class Function {
 		 * writes {@code @tf.function(some_callable, [tf.TensorSpec(...)])} the second argument binds to {@code input_signature} by
 		 * position, etc. This array lets us map a positional index back to the parameter name without consulting PyDev's symbol-resolution
 		 * machinery (which is brittle across PyDev versions and TF stub variants). The TF API is stable across the [2.0, 2.11] range we
-		 * support; if a future TF version shuffles parameters, this array — and `Util.isHybrid`'s acceptance window — would need an update.
-		 * Tracks #108.
+		 * support; if a future TF version shuffles parameters, this array (along with `Util.isHybrid`'s acceptance window) would need an
+		 * update. Tracks #108.
 		 */
 		private static final String[] TF_FUNCTION_POSITIONAL_PARAMS = { FUNC, INPUT_SIGNATURE, AUTOGRAPH, JIT_COMPILE, REDUCE_RETRACING,
 				EXPERIMENTAL_IMPLEMENTS, EXPERIMENTAL_AUTOGRAPH_OPTIONS, EXPERIMENTAL_RELAX_SHAPES, EXPERIMENTAL_COMPILE,
@@ -230,7 +230,7 @@ public class Function {
 				// Process positional arguments (#108). `tf.function`'s parameter order is hardcoded above in
 				// `TF_FUNCTION_POSITIONAL_PARAMS`; arg[i] binds to that array's i-th name. Excess positional args
 				// past the array length are silently ignored (Python would raise `TypeError` at decoration time,
-				// which we don't try to mirror — the precondition framework would later flag the function as
+				// which we don't try to mirror; the precondition framework would later flag the function as
 				// non-hybridizable for unrelated reasons).
 				exprType[] positionalArgs = callFunction.args;
 				if (positionalArgs != null) {
@@ -254,7 +254,7 @@ public class Function {
 		/**
 		 * Set the appropriate {@code *ParamExists} field for the given {@code tf.function} parameter name. Recognizes both current names
 		 * and the deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
-		 * {@code reduce_retracing}). Unknown names are silently ignored — they may belong to a future TF version we don't model yet.
+		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
 		 */
 		private void markParamExists(String paramName) {
 			if (paramName.equals(FUNC))
@@ -769,7 +769,7 @@ public class Function {
 	 * hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
 	 * HybridizationParameters.computeParameterExistance} can reuse the result rather than re-running the per-decorator {@code isHybrid}
 	 * probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). If the function carries multiple
-	 * hybrid decorators (unusual — stacking {@code @tf.function} is not semantically valid in TF), the last one in source order wins,
+	 * hybrid decorators (unusual; stacking {@code @tf.function} is not semantically valid in TF), the last one in source order wins,
 	 * matching the legacy behaviour of {@code computeParameterExistance}. Tracks #118.
 	 */
 	private decoratorsType hybridDecorator;
@@ -1018,7 +1018,7 @@ public class Function {
 
 			// Iterate every decorator and remember the hybrid one (#118). The previous early-return-on-first
 			// behaviour was correct for "is this function hybrid?" but forced HybridizationParameters to re-iterate
-			// the decorators to recover the parameter source — running the expensive `isHybrid` probe a second time.
+			// the decorators to recover the parameter source, running the expensive `isHybrid` probe a second time.
 			// Now we run it once here, cache the hit, and let HybridizationParameters consume the cache. If a function
 			// carries multiple hybrid decorators (unusual; stacking `@tf.function` is not semantically valid), the
 			// last one in source order wins, matching legacy behaviour.
