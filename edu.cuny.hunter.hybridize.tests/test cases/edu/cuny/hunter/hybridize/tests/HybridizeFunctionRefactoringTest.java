@@ -118,6 +118,7 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
+import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -125,6 +126,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
@@ -1877,6 +1879,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
+	}
+
+	/**
+	 * First test for the input-signature inference work. Exercises {@link Parameter#getTensorTypes()} on the shape-divergence / same-dtype
+	 * scenario ported from wala/ML's {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where
+	 * {@code l} is one of two literal lists of different rank — Ariadne therefore associates two {@link TensorType}s with {@code t}, both
+	 * {@code float32}, with shapes {@code (2, 1)} and {@code (2,)} respectively.
+	 */
+	@Test
+	public void testInferredTensorTypes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+		assertEquals(0, t.getIndex());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
+
+		// Both types must be float32 (same dtype).
+		for (TensorType tt : inferred)
+			assertEquals("float32", tt.getCellType());
+
+		// The shapes should be {(2, 1), (2,)} — collapse to lengths to compare without depending on Dimension equality semantics.
+		Set<List<Integer>> shapes = inferred.stream().map(tt -> tt.getDims().stream().map(d -> {
+			if (d instanceof TensorType.NumericDim)
+				return ((TensorType.NumericDim) d).value();
+			return Integer.valueOf(-1);
+		}).collect(Collectors.toList())).collect(toSet());
+
+		assertTrue("Expected shape (2, 1) among inferred types: " + shapes, shapes.contains(Arrays.asList(2, 1)));
+		assertTrue("Expected shape (2,) among inferred types: " + shapes, shapes.contains(Collections.singletonList(2)));
+
+		// Wrapper identity contract: equals/hashCode/toString.
+		assertEquals(t, t);
+		assertEquals(t.hashCode(), t.hashCode());
+		assertNotNull(t.toString());
 	}
 
 	/**
