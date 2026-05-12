@@ -124,7 +124,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
 
 		// Have WALA dump the call graph if appropriate.
-		CAstCallGraphUtil.AVOID_DUMP = !this.dumpCallGraph;
+		CAstCallGraphUtil.AVOID_DUMP.set(!this.dumpCallGraph);
 	}
 
 	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects) {

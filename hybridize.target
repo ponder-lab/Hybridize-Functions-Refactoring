@@ -19,15 +19,15 @@
 			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.2.0"/>
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository"/>
-			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.6.2.202310101608"/>
+			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository"/>
+			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.7.1.202605120352"/>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
-					<version>0.42.0</version>
+					<version>0.43.0</version>
 					<type>jar</type>
 				</dependency>
 			</dependencies>

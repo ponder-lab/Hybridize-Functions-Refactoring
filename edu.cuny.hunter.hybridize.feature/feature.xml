@@ -286,7 +286,7 @@ version(s), and exceptions or additional permissions here}.&quot;
     <discovery label="The Eclipse Project repository" url="https://download.eclipse.org/eclipse/updates/4.39" />
     <discovery label="Common Refactoring Framework Update Site" url="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" />
     <discovery label="PyDev Update Site" url="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" />
-    <discovery label="PONDER Lab WALA Update Site" url="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository" />
+    <discovery label="PONDER Lab WALA Update Site" url="https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository" />
   </url>
   <includes id="com.ibm.wala.ide_feature" version="0.0.0" />
   <includes id="org.python.pydev.feature" version="0.0.0" />
