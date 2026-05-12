@@ -69,7 +69,7 @@ The Eclipse-side dependency is shallow. The project uses exactly two classes fro
 - `com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule`, which the project already wraps with a local copy because the upstream class's `rootIPath` field is private.
 - `com.ibm.wala.ide.util.ProgressMonitorDelegate`, an Eclipse-to-WALA `IProgressMonitor` adapter.
 
-**Implication for Ariadne bumps:** when an Ariadne release advances its WALA dependency (e.g., 0.42.0 to 0.43.0 bumped WALA `1.6.12` to `1.7.1`), `ponder-lab/WALA` must publish a matching branch (e.g., `v1.7`) carrying p2 artifacts for that WALA version. Otherwise the Tycho build will compile (Maven Central provides the framework jars) but fail at test runtime with `AbstractMethodError`, because the older `com.ibm.wala.ide` bundle was compiled against an older `AstTranslator` API surface. Bumping Ariadne is therefore a two-step coordination: publish the new WALA p2 branch first, then bump `hybridize.target`.
+**Implication for Ariadne bumps:** when an Ariadne release advances its WALA dependency (e.g., 0.42.0 to 0.43.0 bumped WALA `1.6.12` to `1.7.1`), `ponder-lab/WALA` must publish a matching branch (e.g., `v1.7`) carrying p2 artifacts for that WALA version. Otherwise the Tycho build will compile (Maven Central provides the framework jars) but fail at test runtime with `AbstractMethodError`, because the older `com.ibm.wala.ide` bundle was compiled against an older `AstTranslator` API surface. Bumping Ariadne is therefore a two-step coordination: publish the new WALA p2 branch first, then bump `hybridize.target`. The mechanics of cutting that branch live in two wiki pages — [Updating WALA][updating-wala] on this repo's wiki, which points at [Cut a New Release][cut-wala-release] on the `ponder-lab/WALA` wiki for the actual release procedure.
 
 Switching to Maven Central is not a drop-in escape: `com.ibm.wala.ide` is **not** on Maven Central (Maven Central carries `com.ibm.wala.core`, `com.ibm.wala.cast`, `com.ibm.wala.util`, etc., but not the Eclipse-specific IDE bundle), and upstream `wala/WALA` does not publish p2 binaries itself (its `com.ibm.wala-repository/` directory contains only `category.xml` Tycho metadata, not built artifacts). Inlining `ProgressMonitorDelegate` would be trivial, but `EclipseSourceDirectoryTreeModule` cascades into `EclipseProjectPath`, `EclipseSourceFileModule`, and further `com.ibm.wala.ide.*` types — effectively forcing Hybridize to maintain its own fork of `com.ibm.wala.ide`, which is strictly worse than the current `ponder-lab/WALA` arrangement. The practical path for each Ariadne bump that changes WALA versions is to publish the matching `ponder-lab/WALA` branch first.
 
@@ -81,6 +81,8 @@ You can run the evaluator in several different ways, including as a command or a
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [evaluator wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Running-the-Evaluator
+[updating-wala]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Updating-WALA
+[cut-wala-release]: https://github.com/ponder-lab/WALA/wiki/Cut-a-new-release
 [PyDev]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
 [Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
 [Ariadne]: https://github.com/ponder-lab/ML
