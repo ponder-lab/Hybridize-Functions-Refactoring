@@ -49,17 +49,6 @@ Dependency | Update Site
 
 These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them.
 
-### Synchronizing Ariadne XML summaries
-
-Ariadne ships XML summary files (`tensorflow.xml`, `pandas.xml`, etc.) inside its fat-jar, but the OSGi-wrapped bundle's classloader does not surface them to `getClass().getClassLoader().getResourceAsStream(...)` lookups when consumed by Eclipse plug-ins like this one. As a workaround, copies of the XMLs are checked in at `edu.cuny.hunter.hybridize.core/*.xml` and listed in `edu.cuny.hunter.hybridize.core/build.properties` `bin.includes` so they reach the bundle's runtime classpath.
-
-**When bumping the Ariadne version**:
-
-1. Run `edu.cuny.hunter.hybridize.core/update_summaries.sh` to re-sync from a local `$HOME/ML` checkout.
-2. If the new Ariadne version added a new XML summary, **add a `cp` line** for it to `update_summaries.sh` and **add it to `bin.includes`** in `edu.cuny.hunter.hybridize.core/build.properties`. Otherwise the analysis fails at runtime with `IllegalArgumentException: null xmlFile` from `XMLMethodSummaryReader`.
-
-This whole pattern is consumer-side technical debt; the broader fix (thin-jar Ariadne packaging that exposes summaries as proper bundle resources) is tracked at [wala/ML#418]. The narrower fix (changing Ariadne's XML lookup mechanism so consumers do not need to re-ship the files) is tracked at [wala/ML#419].
-
 ### Why WALA Comes From the `ponder-lab/WALA` p2 Update Site
 
 The core bundle `Require-Bundle`s `com.ibm.wala.ide`, the Eclipse-PDE-aware WALA bundle. That bundle ships only via p2 update sites; WALA's Maven Central artifacts cover the framework jars (`com.ibm.wala.core`, `com.ibm.wala.cast`, etc.) but not the Eclipse-specific IDE bundle. Upstream `wala/WALA` does not publish a p2 repository; the `ponder-lab/WALA` fork's `v1.7` branch is a downstream-maintained p2 service for Eclipse-plug-in consumers like this one.
@@ -90,5 +79,3 @@ You can run the evaluator in several different ways, including as a command or a
 [WALA]: https://github.com/ponder-lab/WALA/tree/v1.7
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
 [target definition file]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/02cbd028d09f063f3e4ecd048e2435262abdde64/hybridize.target
-[wala/ML#418]: https://github.com/wala/ML/issues/418
-[wala/ML#419]: https://github.com/wala/ML/issues/419
