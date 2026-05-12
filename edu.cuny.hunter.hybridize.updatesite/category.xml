@@ -10,5 +10,5 @@
   <repository-reference location="http://download.eclipse.org/eclipse/updates/4.25" enabled="true" />
   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" enabled="true" />
   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" enabled="true" />
-  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository" enabled="true" />
+  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository" enabled="true" />
 </site>
