@@ -27,7 +27,7 @@
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
-					<version>0.42.0</version>
+					<version>0.43.0</version>
 					<type>jar</type>
 				</dependency>
 			</dependencies>
