@@ -8093,4 +8093,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, Arrays.stream(f.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
 				.filter(e -> e.getCode() == SPECULATIVE_ANALYSIS.getCode()).count());
 	}
+
+	/**
+	 * Regression test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/324: a method whose only parameter is
+	 * {@code self} (e.g., {@code def f(self):}) was previously misclassified as not-a-method because {@link Function#isMethod} required
+	 * {@code parameters.size() > 1}. After the fix it requires {@code >= 1}.
+	 */
+	@Test
+	public void testSelfOnlyMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue("A method whose only parameter is `self` should be classified as a method.", function.isMethod());
+	}
 }

@@ -1654,7 +1654,7 @@ public class Function {
 	 */
 	public boolean isMethod() {
 		List<Parameter> parameters = this.getParameters();
-		return parameters.size() > 1 && parameters.get(0).isSelf();
+		return parameters.size() >= 1 && parameters.get(0).isSelf();
 	}
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
