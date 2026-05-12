@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 25.9.0
+    hooks:
+      - id: black
+        args: ["--fast", "--extend-exclude", "/out"]
+  - repo: local
+    hooks:
+      - id: spotless-apply
+        name: Spotless Apply
+        entry: ./mvnw -s .travis.settings.xml spotless:apply
+        language: system
+        pass_filenames: false

@@ -23,6 +23,16 @@ The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11. Use `./mvnw`
 
 If your system default JDK is something other than 25, you can pin Java 25 only for this repository via [direnv](https://direnv.net). `.envrc` is gitignored; create it locally with contents adjusted for your platform.
 
+### Pre-commit Hooks
+
+The repo ships a [pre-commit](https://pre-commit.com) configuration at `.pre-commit-config.yaml` that runs Black on Python files and `./mvnw spotless:apply` on every commit. Install once after cloning:
+
+```sh
+pip install pre-commit && pre-commit install
+```
+
+After that, every `git commit` auto-formats touched files before the commit lands, so CI's `spotless:check` and `black --check` stay green. To run all hooks ad-hoc against the whole tree: `pre-commit run --all-files`.
+
 ## Dependencies
 
 All dependencies are listed in the [target definition file]. Simply set this file as your "active target", refresh and update the items in the list, and you should be good to go. However, if you plan to run the UI plug-in (and not only the tests or evaluation plug-ins), due to https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/264, you should have the following project in your workspace:
