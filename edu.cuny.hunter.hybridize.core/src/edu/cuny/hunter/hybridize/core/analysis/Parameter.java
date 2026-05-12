@@ -254,8 +254,9 @@ public final class Parameter {
 				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 				if (localPointerKey.isParameter() && this.matches(localPointerKey)) {
 					TensorVariable tensorVariable = pair.snd;
-					if (tensorVariable != null)
-						result.addAll(tensorVariable.getTypes());
+					if (tensorVariable == null)
+						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
+					result.addAll(tensorVariable.getTypes());
 				}
 			}
 		}

@@ -1914,6 +1914,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertEquals(0, t.getIndex());
 
+		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
 		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
