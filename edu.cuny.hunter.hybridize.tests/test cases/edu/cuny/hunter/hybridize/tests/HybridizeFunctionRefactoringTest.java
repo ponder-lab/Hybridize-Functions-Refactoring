@@ -8098,14 +8098,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pinning test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/156. The fixture is a pure TF1 codebase
 	 * (`import tensorflow.compat.v1 as tf` followed by `tf.disable_v2_behavior()`). The refactoring should refuse to add `@tf.function`
 	 * here, because `tf.function` either does not exist in pure TF1 or has incorrect semantics under `disable_v2_behavior`. That
-	 * precondition cannot be implemented until TF1/TF2 detection (#29) lands. Until then, this test pins the current (incorrect)
-	 * behavior: the refactoring proceeds and recommends `CONVERT_TO_HYBRID`. When #29 + the precondition land, this assertion will
-	 * fail; invert it (assert the refactoring does <i>not</i> contain `CONVERT_TO_HYBRID`) and drop the `TODO`.
-	 *
-	 * TODO: Invert assertion once #29 / #156 fix lands.
+	 * precondition cannot be implemented until TF1/TF2 detection (#29) lands; until then, this test pins the current (incorrect) behavior:
+	 * the refactoring proceeds and recommends `CONVERT_TO_HYBRID`. When the fix lands, this assertion will fail; invert it (assert the
+	 * refactoring does <i>not</i> contain `CONVERT_TO_HYBRID`) and drop the comment below.
 	 */
 	@Test
 	public void testTF1Code() throws Exception {
+		// TODO: Invert assertion once #29 / #156 fix lands.
 		Function function = this.getSingleFunction();
 		assertEquals("my_function", function.getIdentifier());
 		assertTrue("Pinning current (incorrect) behavior: the refactoring recommends `@tf.function` for TF1 code. See #156.",
