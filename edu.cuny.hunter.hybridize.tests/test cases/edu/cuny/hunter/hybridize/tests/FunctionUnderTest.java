@@ -9,11 +9,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import org.python.pydev.parser.jython.ast.argumentsType;
-import org.python.pydev.parser.jython.ast.exprType;
-import org.python.pydev.parser.visitors.NodeUtils;
-
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 
 /**
  * A specification of a Python function being tested.
@@ -129,17 +126,16 @@ public class FunctionUnderTest {
 		assertNotNull(function);
 		assertEquals(this.isHybrid(), function.isHybrid());
 
-		argumentsType params = function.getParameters();
+		List<Parameter> params = function.getParameters();
 
-		exprType[] actualParams = params.args;
 		List<String> expectedParameters = this.getParameters();
-		assertEquals(expectedParameters.size(), actualParams.length);
+		assertEquals(expectedParameters.size(), params.size());
 
-		for (int i = 0; i < actualParams.length; i++) {
-			exprType actualParameter = actualParams[i];
+		for (int i = 0; i < params.size(); i++) {
+			Parameter actualParameter = params.get(i);
 			assertNotNull(actualParameter);
 
-			String paramName = NodeUtils.getRepresentationString(actualParameter);
+			String paramName = actualParameter.getName();
 			assertEquals(expectedParameters.get(i), paramName);
 		}
 	}
