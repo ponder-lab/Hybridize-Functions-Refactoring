@@ -68,18 +68,15 @@ import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
 import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
-import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.NameTok;
-import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -87,16 +84,13 @@ import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
-import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.types.PythonTypes;
-import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
-import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -354,8 +348,6 @@ public class Function {
 
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
-	private static final String SELF_PARAMETER_NAME = "self";
-
 	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
@@ -364,8 +356,6 @@ public class Function {
 	private static Set<File> filesWithAddedImport = new HashSet<>();
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
-
-	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
 
 	/**
 	 * True iff verbose output is desired.
@@ -546,35 +536,6 @@ public class Function {
 
 		subMonitor.done();
 		return false;
-	}
-
-	private static Set<Attribute> getAllAttributes(exprType node) throws Exception {
-		Set<Attribute> ret = Sets.newHashSet();
-
-		if (node instanceof Attribute)
-			ret.add((Attribute) node);
-
-		if (node != null)
-			node.traverse(new VisitorBase() {
-
-				@Override
-				public void traverse(SimpleNode node) throws Exception {
-					node.traverse(this);
-				}
-
-				@Override
-				protected Object unhandled_node(SimpleNode node) throws Exception {
-					return null;
-				}
-
-				@Override
-				public Object visitAttribute(Attribute node) throws Exception {
-					ret.add(node);
-					return super.visitAttribute(node);
-				}
-			});
-
-		return ret;
 	}
 
 	/**
@@ -804,11 +765,27 @@ public class Function {
 
 	private Set<Transformation> transformations = new HashSet<>();
 
+	/**
+	 * Positional parameters wrapped as {@link Parameter}s. Built once in the constructor; never re-assigned. Empty if the underlying Jython
+	 * {@code args} array is null or has zero entries.
+	 */
+	private final List<Parameter> parameters;
+
 	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+
+		// Jython's `argumentsType` is the whole parameter-list node; its `.args` field is the positional/positional-or-keyword name array.
+		// `vararg`, `kwarg`, and `kwonlyargs` are sibling fields on the same node that we don't currently wrap.
+		// Tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/465.
+		argumentsType args = fd.getFunctionDef().args;
+		List<Parameter> built = new ArrayList<>();
+		if (args != null && args.args != null)
+			for (int i = 0; i < args.args.length; i++)
+				built.add(new Parameter(args, i, this));
+		this.parameters = Collections.unmodifiableList(built);
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
@@ -855,43 +832,6 @@ public class Function {
 
 	public void addWarning(String message) {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
-	}
-
-	private boolean attributesHaveTensorTypeHints(Set<Attribute> attributes, IProgressMonitor monitor) throws BadLocationException {
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
-
-		for (Attribute typeHintExpr : attributes) {
-			// Look up the definition.
-			IDocument document = this.getContainingDocument();
-
-			String fqn;
-			PySelection selection = null;
-			try {
-				selection = Util.getSelection(typeHintExpr.attr, document);
-				fqn = Util.getFullyQualifiedName(typeHintExpr, this.getContainingModuleName(), this.getContainingFile(), selection,
-						this.getNature(), subMonitor.split(1));
-			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
-				LOG.warn(String.format(
-						"Can't determine FQN of type hint expression: %s in selection: %s, module: %s, file: %s, and project: %s.",
-						typeHintExpr, selection == null ? "null" : selection.getSelectedText(), this.getContainingModuleName(),
-						this.getContainingFile().getName(), this.getProject()), e);
-
-				subMonitor.worked(1);
-				continue; // next attribute.
-			}
-
-			LOG.info("Found FQN: " + fqn + ".");
-
-			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) (#434).
-				subMonitor.done();
-				return true;
-			}
-
-			subMonitor.worked(1);
-		}
-
-		subMonitor.done();
-		return false;
 	}
 
 	/**
@@ -1402,8 +1342,14 @@ public class Function {
 		return this.getFunctionDefinition().getFunctionDef().args.args.length;
 	}
 
-	public argumentsType getParameters() {
-		return this.getFunctionDefinition().getFunctionDef().args;
+	/**
+	 * Returns this {@link Function}'s positional parameters as {@link Parameter}s. The list is built once in the constructor and is
+	 * immutable; empty if the function has no positional parameters.
+	 *
+	 * @return Unmodifiable list of {@link Parameter}s. Never {@code null}.
+	 */
+	public List<Parameter> getParameters() {
+		return this.parameters;
 	}
 
 	public PreconditionSuccess getPassingPrecondition() {
@@ -1575,91 +1521,67 @@ public class Function {
 		// True iff the function has a self parameter in the first position.
 		boolean selfParam = false;
 
-		// TODO: Use cast/assert statements? (#129).
-		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
-		argumentsType params = functionDef.args;
+		List<Parameter> params = this.getParameters(); // FIXME: positional only (#108).
 
-		if (params != null) {
-			exprType[] actualParams = params.args; // FIXME: Looks like we are only considering positional parameters here. (#108).
+		for (Parameter param : params) {
 
-			if (actualParams != null) {
-				for (int paramInx = 0; paramInx < actualParams.length; paramInx++) {
-					exprType paramExpr = actualParams[paramInx];
-					String paramName = NodeUtils.getRepresentationString(paramExpr);
+			// don't consider `self` as a tensor.
+			if (param.isSelf()) {
+				selfParam = true;
+				continue; // next parameter.
+			}
 
-					// don't consider `self` as a tensor.
-					if (paramInx == 0 && paramName.equals(SELF_PARAMETER_NAME)) {
-						selfParam = true;
-						continue; // next parameter.
-					}
+			// check a special case where we consider type hints.
+			boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
+					// TODO: Actually get the value here (#111).
+					&& this.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
 
-					// check a special case where we consider type hints.
-					boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
-							// TODO: Actually get the value here (#111).
-							&& this.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
+			// if we are considering type hints.
+			if (followTypeHints) {
+				LOG.info("Following type hints for: " + this + " and parameter: " + param.getName() + ".");
 
-					// if we are considering type hints.
-					if (followTypeHints) {
-						LOG.info("Following type hints for: " + this + " and parameter: " + paramName + ".");
-
-						// try to get its type from the AST.
-						TypeInfo argTypeInfo = NodeUtils.getTypeForParameterFromAST(paramName, functionDef);
-
-						if (argTypeInfo != null) {
-							LOG.info("Found type for parameter " + paramName + " in " + this + ": " + argTypeInfo.getActTok() + ".");
-
-							exprType node = argTypeInfo.getNode();
-							Set<Attribute> allAttributes = getAllAttributes(node);
-
-							if (this.attributesHaveTensorTypeHints(allAttributes, monitor.slice(IProgressMonitor.UNKNOWN))) {
-								this.hasTensorParameter = TRUE;
-								LOG.info(this + " likely has a tensor parameter: " + paramName + " due to a type hint.");
-								monitor.worked(1);
-								this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + paramName + ".");
-								continue; // next parameter.
-							}
-						}
-					}
-
-					// If this function is in the call graph.
-					if (!nodes.isEmpty()) {
-						// Check the tensor type analysis. Check that the methods are the same, the parameters, and so on. If we match the
-						// pointer key, then we know it's a tensor if the TensorType is not null.
-						if (this.tensorAnalysisIncludesParameter(tensorAnalysis, paramExpr, paramName,
-								monitor.slice(IProgressMonitor.UNKNOWN))) {
-							this.hasTensorParameter = TRUE;
-							LOG.info(this + " likely has a tensor parameter: " + paramName + " due to tensor analysis.");
-							monitor.worked(1);
-							continue; // next parameter.
-						}
-
-						// Check for containers of tensors.
-						if (this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, paramInx, callGraph, builder,
-								monitor.slice(IProgressMonitor.UNKNOWN))) {
-							this.hasTensorParameter = TRUE;
-							LOG.info(this + " likely has a tensor-like parameter: " + paramName + " due to tensor analysis.");
-						}
-					}
-
+				if (param.hasTensorTypeHint(monitor.slice(IProgressMonitor.UNKNOWN))) {
+					this.hasTensorParameter = TRUE;
+					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to a type hint.");
 					monitor.worked(1);
+					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + param.getName() + ".");
+					continue; // next parameter.
+				}
+			}
+
+			// If this function is in the call graph.
+			if (!nodes.isEmpty()) {
+				// Ask the parameter directly: does Ariadne associate any tensor type with it?
+				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
+					this.hasTensorParameter = TRUE;
+					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
+					monitor.worked(1);
+					continue; // next parameter.
 				}
 
-				// True if there is only one parameter that is self.
-				final boolean onlySelfParam = actualParams.length == 1 && selfParam;
+				// Check for containers of tensors.
+				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, monitor.slice(IProgressMonitor.UNKNOWN))) {
+					this.hasTensorParameter = TRUE;
+					LOG.info(this + " likely has a tensor-like parameter: " + param.getName() + " due to tensor analysis.");
+				}
+			}
 
-				// if we haven't yet determined if there's a tensor parameter and there's at least one parameter that's not only self.
-				if (this.hasTensorParameter == null && actualParams.length > 0 && !onlySelfParam)
-					// check a special case where we consider context.
-					if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
-						this.hasTensorParameter = TRUE;
-						LOG.info(this + " likely has a tensor parameter due to context.");
-						this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
-					} else if (nodes.isEmpty())
-						// if there are no nodes representing this function, then it most likely isn't called.
-						throw new CantInferTensorParametersException(
-								"Can't infer tensor parameters for " + this + " without a call graph node.");
-			} // end actualParams != null.
-		} // end params != null.
+			monitor.worked(1);
+		}
+
+		// True if there is only one parameter that is self.
+		final boolean onlySelfParam = params.size() == 1 && selfParam;
+
+		// if we haven't yet determined if there's a tensor parameter and there's at least one parameter that's not only self.
+		if (this.hasTensorParameter == null && !params.isEmpty() && !onlySelfParam)
+			// check a special case where we consider context.
+			if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
+				this.hasTensorParameter = TRUE;
+				LOG.info(this + " likely has a tensor parameter due to context.");
+				this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
+			} else if (nodes.isEmpty())
+				// if there are no nodes representing this function, then it most likely isn't called.
+				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this + " without a call graph node.");
 
 		if (this.hasTensorParameter == null) {
 			this.hasTensorParameter = FALSE;
@@ -1731,63 +1653,8 @@ public class Function {
 	 * @return True iff this {@link Function} is an instance method.
 	 */
 	public boolean isMethod() {
-		argumentsType parameters = this.getParameters();
-
-		if (parameters.args.length > 1) {
-			final exprType firstParam = parameters.args[0];
-			final String firstParamName = NodeUtils.getRepresentationString(firstParam);
-
-			if (firstParamName.equals(SELF_PARAMETER_NAME))
-				return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Returns true iff lhsParamExpr corresponds to rhsPointerKey.
-	 *
-	 * @param lhsParamExpr The "left hand side" expression to compare. Should represent a function parameter.
-	 * @param lhsParamName The name of the parameter represented by lhsParamExpr.
-	 * @param rhsPointerKey The rhsPointerKey representing the parameter.
-	 * @return True iff lhsParamExpr corresponds to rhsPointerKey.
-	 */
-	private boolean matches(exprType lhsParamExpr, String lhsParamName, LocalPointerKey rhsPointerKey) {
-		File containingFile = this.getContainingFile();
-		CGNode node = rhsPointerKey.getNode();
-		IMethod nodeMethod = node.getMethod();
-
-		if (nodeMethod instanceof AstMethod) {
-			AstMethod astMethod = (AstMethod) nodeMethod;
-			String sourceFileName = astMethod.getDeclaringClass().getSourceFileName();
-
-			// are they in the same file?
-			if (containingFile.getAbsolutePath().equals(sourceFileName)) {
-				// that also means that the module is the same according to https://bit.ly/3NcOvnz.
-
-				// we know that rhsPointerKey is a parameter.
-				assert rhsPointerKey.isParameter();
-
-				// since we know that they are in the same file, it should suffice to know whether the source positions match.
-				int lhsBeginColumn = lhsParamExpr.beginColumn;
-				int lhsBeginLine = lhsParamExpr.beginLine;
-
-				int paramIndex = rhsPointerKey.getValueNumber() - 1;
-				Position parameterPosition = astMethod.getParameterPosition(paramIndex);
-
-				if (parameterPosition != null) {
-					int rhsBeginColumn = parameterPosition.getFirstCol() + 1; // workaround https://github.com/jython/jython3/issues/48.
-					int rhsBeginLine = parameterPosition.getFirstLine();
-
-					// It should suffice to that the parameters have the same beginning column and the same beginning line. In other words,
-					// we are not checking the parameters' expression length because Ariadne includes the type hint in the length while
-					// PyDev does not.
-					return lhsBeginColumn == rhsBeginColumn && lhsBeginLine == rhsBeginLine;
-				}
-			}
-		}
-
-		return false;
+		List<Parameter> parameters = this.getParameters();
+		return parameters.size() > 1 && parameters.get(0).isSelf();
 	}
 
 	protected void setHasPythonSideEffects(Boolean hasPythonSideEffects) {
@@ -1814,44 +1681,6 @@ public class Function {
 		this.refactoring = refactoring;
 	}
 
-	private boolean tensorAnalysisIncludesParameter(TensorTypeAnalysis analysis, exprType paramExpr, String paramName,
-			IProgressMonitor monitor) {
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking tensor analysis for tensor parameters.", IProgressMonitor.UNKNOWN);
-
-		for (Pair<PointerKey, TensorVariable> pair : analysis) {
-			PointerKey pointerKey = pair.fst;
-
-			if (pointerKey instanceof LocalPointerKey) {
-				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
-
-				if (localPointerKey.isParameter()) {
-					// Does the pointer key match the parameter?
-					if (this.matches(paramExpr, paramName, localPointerKey)) {
-						LOG.info(paramExpr + " matches: " + localPointerKey + ".");
-
-						// check the existence of the tensor variable.
-						TensorVariable tensorVariable = pair.snd;
-
-						if (tensorVariable != null) {
-							subMonitor.done();
-							return true;
-						}
-
-						throw new IllegalStateException("Tensor variable was null eventhough the PointerKey is present.");
-					}
-					LOG.info(paramExpr + " does not match: " + localPointerKey + ".");
-				} else
-					LOG.info(localPointerKey + " is not a parameter.");
-			} else
-				LOG.info("Encountered non-local pointer key in tensor analysis: " + pointerKey + ".");
-
-			subMonitor.worked(1);
-		}
-
-		subMonitor.done();
-		return false;
-	}
-
 	/**
 	 * Returns true iff the given parameter represents a container in the given {@link TensorTypeAnalysis}.
 	 *
@@ -1862,7 +1691,7 @@ public class Function {
 	 * @param monitor For progress.
 	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
 	 */
-	private boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
+	boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
 		Set<CGNode> nodes = this.getNodes(callGraph);
