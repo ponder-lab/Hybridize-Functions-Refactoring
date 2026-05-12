@@ -11,3 +11,11 @@ repos:
         entry: ./mvnw spotless:apply
         language: system
         pass_filenames: false
+        # Skip when the commit touches only binary files Spotless cannot
+        # format, so we do not pay JVM-startup latency for nothing. The
+        # generic `<format>` block in `pom.xml` uses `<include>**/*</include>`
+        # (trailing-whitespace + EOF-newline rules apply to every text file),
+        # so the right filter is to exclude binary extensions rather than to
+        # whitelist specific text ones. Spotless's repo-wide apply still runs
+        # when invoked, which is why `pass_filenames: false` stays.
+        exclude: '\.(jar|zip|class|exe|dll|png|jpg|jpeg|gif|pdf|so|dylib|ico|woff|woff2|ttf|otf|bin|tar|gz|tgz)$'
