@@ -33,7 +33,7 @@ The other projects should be obtained from the target definition. If, for any re
 
 1. [PyDev 9.3 branch][PyDev].
 1. [Ariadne ponder-lab fork][Ariadne]
-1. [WALA v1.6 branch][WALA]
+1. [WALA v1.7 branch][WALA]
 
 Having PyDev in your workspace in its own "working set" is helpful to visualize the structure of the project. Import it into your Eclipse workspace under a working set named "PyDev." PyDev is already structured as Eclipse projects; you can simply import it as an existing Eclipse project (select the "search for nested projects" option). You'll need to close the "Mylyn" projects that are imported; they won't build since Mylyn has been removed from Eclipse's standard distribution.
 
@@ -45,7 +45,7 @@ Dependency | Update Site
 --- | ---
 [Common Eclipse Refactoring Framework] | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
-[WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.6/com.ibm.wala-repository
+[WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository
 
 These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them.
 
@@ -62,7 +62,7 @@ This whole pattern is consumer-side technical debt; the broader fix (thin-jar Ar
 
 ### Why WALA Comes From the `ponder-lab/WALA` p2 Update Site
 
-The core bundle `Require-Bundle`s `com.ibm.wala.ide`, the Eclipse-PDE-aware WALA bundle. That bundle ships only via p2 update sites; WALA's Maven Central artifacts cover the framework jars (`com.ibm.wala.core`, `com.ibm.wala.cast`, etc.) but not the Eclipse-specific IDE bundle. Upstream `wala/WALA` does not publish a p2 repository; the `ponder-lab/WALA` fork's `v1.6` branch is a downstream-maintained p2 service for Eclipse-plug-in consumers like this one.
+The core bundle `Require-Bundle`s `com.ibm.wala.ide`, the Eclipse-PDE-aware WALA bundle. That bundle ships only via p2 update sites; WALA's Maven Central artifacts cover the framework jars (`com.ibm.wala.core`, `com.ibm.wala.cast`, etc.) but not the Eclipse-specific IDE bundle. Upstream `wala/WALA` does not publish a p2 repository; the `ponder-lab/WALA` fork's `v1.7` branch is a downstream-maintained p2 service for Eclipse-plug-in consumers like this one.
 
 The Eclipse-side dependency is shallow. The project uses exactly two classes from `com.ibm.wala.ide.*`:
 
@@ -85,7 +85,7 @@ You can run the evaluator in several different ways, including as a command or a
 [Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
 [Ariadne]: https://github.com/ponder-lab/ML
 [Ariadne packages]: https://github.com/orgs/ponder-lab/packages?repo_name=ML
-[WALA]: https://github.com/ponder-lab/WALA/tree/v1.6
+[WALA]: https://github.com/ponder-lab/WALA/tree/v1.7
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
 [target definition file]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/02cbd028d09f063f3e4ecd048e2435262abdde64/hybridize.target
 [wala/ML#418]: https://github.com/wala/ML/issues/418
