@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <!DOCTYPE summary-spec>
-<!-- Pandas model -->
+<!-- NumPy turtle stubs (placeholder summaries for unmodeled NumPy ops). -->
 <summary-spec>
   <classloader name="PythonLoader">
     <class name="numpy" allocatable="true">
