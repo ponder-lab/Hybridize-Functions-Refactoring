@@ -60,6 +60,19 @@ Ariadne ships XML summary files (`tensorflow.xml`, `pandas.xml`, etc.) inside it
 
 This whole pattern is consumer-side technical debt; the broader fix (thin-jar Ariadne packaging that exposes summaries as proper bundle resources) is tracked at [wala/ML#418]. The narrower fix (changing Ariadne's XML lookup mechanism so consumers do not need to re-ship the files) is tracked at [wala/ML#419].
 
+### Why WALA Comes From the `ponder-lab/WALA` p2 Update Site
+
+The core bundle `Require-Bundle`s `com.ibm.wala.ide`, the Eclipse-PDE-aware WALA bundle. That bundle ships only via p2 update sites; WALA's Maven Central artifacts cover the framework jars (`com.ibm.wala.core`, `com.ibm.wala.cast`, etc.) but not the Eclipse-specific IDE bundle. Upstream `wala/WALA` does not publish a p2 repository; the `ponder-lab/WALA` fork's `v1.6` branch is a downstream-maintained p2 service for Eclipse-plug-in consumers like this one.
+
+The Eclipse-side dependency is shallow. The project uses exactly two classes from `com.ibm.wala.ide.*`:
+
+- `com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule`, which the project already wraps with a local copy because the upstream class's `rootIPath` field is private.
+- `com.ibm.wala.ide.util.ProgressMonitorDelegate`, an Eclipse-to-WALA `IProgressMonitor` adapter.
+
+**Implication for Ariadne bumps:** when an Ariadne release advances its WALA dependency (e.g., 0.42.0 to 0.43.0 bumped WALA `1.6.12` to `1.7.1`), `ponder-lab/WALA` must publish a matching branch (e.g., `v1.7`) carrying p2 artifacts for that WALA version. Otherwise the Tycho build will compile (Maven Central provides the framework jars) but fail at test runtime with `AbstractMethodError`, because the older `com.ibm.wala.ide` bundle was compiled against an older `AstTranslator` API surface. Bumping Ariadne is therefore a two-step coordination: publish the new WALA p2 branch first, then bump `hybridize.target`.
+
+Switching to Maven Central is not a drop-in escape: `com.ibm.wala.ide` is **not** on Maven Central (Maven Central carries `com.ibm.wala.core`, `com.ibm.wala.cast`, `com.ibm.wala.util`, etc., but not the Eclipse-specific IDE bundle), and upstream `wala/WALA` does not publish p2 binaries itself (its `com.ibm.wala-repository/` directory contains only `category.xml` Tycho metadata, not built artifacts). Inlining `ProgressMonitorDelegate` would be trivial, but `EclipseSourceDirectoryTreeModule` cascades into `EclipseProjectPath`, `EclipseSourceFileModule`, and further `com.ibm.wala.ide.*` types — effectively forcing Hybridize to maintain its own fork of `com.ibm.wala.ide`, which is strictly worse than the current `ponder-lab/WALA` arrangement. The practical path for each Ariadne bump that changes WALA versions is to publish the matching `ponder-lab/WALA` branch first.
+
 ### Running the Evaluator
 
 Use the `edu.cuny.hunter.hybridize.evaluator` plug-in project to run the evaluation. The evaluation process will produce several CSVs, as well as perform the transformation if desired (see below for details). For convenience, there is an [Eclipse launch configuration](https://wiki.eclipse.org/FAQ_What_is_a_launch_configuration%3F) that can be used to run the evaluation. The run configuration is named [`edu.cuny.hunter.hybridize.eval/Evaluate Hybridize Functions.launch`](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/691cbeb87be805b8bfc336e799d938a9064a5e0e/edu.cuny.hunter.hybridize.eval/Evaluate%20Hybridize%20Functions.launch). In the run configuration dialog, you can specify several arguments to the evaluator as system properties.
