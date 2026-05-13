@@ -6,7 +6,7 @@ import tensorflow as tf
 
 
 def func(t):
-	return t + 1
+    return t + 1
 
 
 func(tf.constant([1.0, 2.0]))
