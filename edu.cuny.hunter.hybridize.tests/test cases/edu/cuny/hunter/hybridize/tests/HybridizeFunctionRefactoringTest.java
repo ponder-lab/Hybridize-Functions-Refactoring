@@ -1919,11 +1919,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
 
-		// Both dtype and shape must match the expected set. Cell-type strings are mapped to Ariadne's `DType` enum via the inverse of the
-		// canonical `dtype.name().toLowerCase()` Ariadne uses to produce them. Shapes are collapsed to integer lists to avoid depending
-		// on Dimension equality semantics.
+		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
+		// semantics.
 		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(DType.valueOf(tt.getCellType().toUpperCase()),
+				.map(tt -> Map.entry(tt.getDType(),
 						tt.getDims().stream()
 								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
 								.collect(Collectors.toList())))
