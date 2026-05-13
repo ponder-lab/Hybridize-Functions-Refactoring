@@ -83,6 +83,13 @@ public final class Parameter {
 	private final Function function;
 
 	/**
+	 * The {@link TensorType}s associated with this parameter by the {@link TensorTypeAnalysis}. Populated during the
+	 * {@link Function#inferTensorParameters} pass so {@link #getTensorTypes()} can be called without re-passing the analysis. Empty by
+	 * default, never {@code null}.
+	 */
+	private Set<TensorType> tensorTypes = Collections.emptySet();
+
+	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
 	 *
 	 * @param arguments The parent {@link argumentsType} node. Non-null.
@@ -261,6 +268,26 @@ public final class Parameter {
 			}
 		}
 		return Collections.unmodifiableSet(result);
+	}
+
+	/**
+	 * Returns the {@link TensorType}s associated with this parameter, as cached during the {@link Function#inferTensorParameters} pass.
+	 * Mirrors {@link Function#getHasTensorParameter}: a no-argument read of a value the analysis pass populated, intended for use after the
+	 * pass has run.
+	 *
+	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}. Returns the empty set if the analysis pass has
+	 *         not run for the owning function.
+	 */
+	public Set<TensorType> getTensorTypes() {
+		return Collections.unmodifiableSet(this.tensorTypes);
+	}
+
+	/**
+	 * Package-private setter used by {@link Function#inferTensorParameters} to populate the cache read by the no-arg
+	 * {@link #getTensorTypes()}.
+	 */
+	void setTensorTypes(Set<TensorType> tensorTypes) {
+		this.tensorTypes = Objects.requireNonNull(tensorTypes);
 	}
 
 	private exprType getNameExpr() {

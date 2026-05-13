@@ -30,7 +30,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -200,13 +199,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
 
 	private static final String COMPARE_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.compareOutput";
-
-	/**
-	 * Captured from the most recent {@link #getFunctions(String)} invocation. Surfaces the per-project {@link TensorTypeAnalysis} so tests
-	 * that exercise {@link Parameter#getTensorTypes(TensorTypeAnalysis)} have something to pass. The suite is one-project-per-test, so the
-	 * map's single entry is unwrapped here.
-	 */
-	private TensorTypeAnalysis lastTensorTypeAnalysis;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -686,9 +678,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(status.isOK());
 		else
 			assertFalse(status.isOK());
-
-		Map<IProject, TensorTypeAnalysis> analysisMap = processor.getProjectToTensorTypeAnalysis();
-		this.lastTensorTypeAnalysis = analysisMap.isEmpty() ? null : analysisMap.values().iterator().next();
 
 		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
 		if (this.getCompareOutputTestFile()) {
@@ -1917,8 +1906,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertEquals(0, t.getIndex());
 
-		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
-		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
+		Set<TensorType> inferred = t.getTensorTypes();
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
 
@@ -1935,12 +1923,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
 		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
 
-		// Pinning assertion on `Function#inferInputSignature` for the multi-context branch. Multi-context support is not yet implemented,
-		// so the fixture's two `TensorType`s for the same parameter currently collapse to `Optional.empty`. When multi-context support
-		// lands, this assertion will fail; replace it with a positive signature check at that time.
-		// TODO: Replace with a positive `InputSignature` assertion once multi-context support is implemented.
-		assertFalse("Multi-context input currently collapses to `Optional.empty`. See `Function#inferSpec`.",
-				function.inferInputSignature(this.lastTensorTypeAnalysis).isPresent());
+		// Pinning assertion on inferInputSignature for the multi-context branch. Multi-context support is not yet implemented, so the
+		// fixture's two TensorTypes for the same parameter currently collapse to Optional.empty. When multi-context support lands, this
+		// assertion will fail; replace it with a positive signature check at that time.
+		// TODO: Replace with a positive InputSignature assertion once multi-context support is implemented.
+		assertFalse("Multi-context input currently collapses to Optional.empty. See Function.inferSpec.",
+				function.inferInputSignature().isPresent());
 
 		// Wrapper identity contract: equals/hashCode/toString.
 		assertEquals(t, t);
@@ -8120,45 +8108,71 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Input-signature inference for a function called once with a single tensor of concrete dtype and shape. The inferred signature is
-	 * exactly that single (dtype, shape) tuple, wrapped as a singleton {@link InputSignature}.
+	 * Input-signature inference for a function called once with a single tensor of concrete dtype and shape. The expected signature is a
+	 * singleton containing that single tensor type.
 	 * <p>
-	 * Two assertions:
-	 * <ol>
-	 * <li>Ariadne pin: {@code parameter.getTensorTypes(analysis)} returns the expected single {@link TensorType}.</li>
-	 * <li>Reduction: {@code function.inferInputSignature(analysis)} returns an {@link InputSignature} whose only entry is that same
-	 * {@link TensorType} instance.</li>
-	 * </ol>
+	 * The Ariadne pin and the inferred-signature reduction are compared field-by-field (dtype + dims-as-ints) against the hard-coded
+	 * expected (FLOAT32, [2]). {@link TensorType} does not override {@code equals}/{@code hashCode}; pending the upstream fix tracked at
+	 * wala/ML, equality is decomposed here.
 	 */
 	@Test
 	public void testInputSignatureScenario1() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
 
 		List<Parameter> parameters = function.getParameters();
-		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+		assertEquals("Function func has exactly one parameter t.", 1, parameters.size());
 		Parameter t = parameters.get(0);
 
-		// Ariadne pin: single tensor type seen for the single call site, with the expected concrete dtype and shape. The fixture calls
-		// `func(tf.constant([1.0, 2.0]))`, so Ariadne should infer dtype `float32` and shape `[2]`.
-		Set<TensorType> ariadne = t.getTensorTypes(this.lastTensorTypeAnalysis);
-		assertEquals("One call site yields one TensorType.", 1, ariadne.size());
-		TensorType single = ariadne.iterator().next();
-		assertEquals("Ariadne should infer dtype `float32` for `tf.constant([1.0, 2.0])`.", DType.FLOAT32, single.getDType());
-		assertNotNull("Scenario 1 requires a concrete shape; dims must not be null.", single.getDims());
-		List<Integer> shape = single.getDims().stream()
-				.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
-				.collect(Collectors.toList());
-		assertEquals("Ariadne should infer shape `[2]` for `tf.constant([1.0, 2.0])`.", List.of(2), shape);
+		DType expectedDType = DType.FLOAT32;
+		List<Integer> expectedShape = List.of(2);
 
-		// Algorithm assertion: the inferred signature wraps that single TensorType, unchanged. TensorType does not override `equals`, so
-		// identity is the right check for the single-context case.
-		Optional<InputSignature> signature = function.inferInputSignature(this.lastTensorTypeAnalysis);
-		assertTrue("Scenario 1 yields a non-empty signature.", signature.isPresent());
+		// Ariadne pin: single tensor type seen for the single call site, with the expected concrete dtype and shape. The fixture calls
+		// func(tf.constant([1.0, 2.0])), so Ariadne should infer dtype float32 and shape [2].
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertEquals("One call site yields one TensorType.", 1, ariadne.size());
+		TensorType pinned = ariadne.iterator().next();
+		assertEquals("Ariadne should infer dtype float32 for tf.constant([1.0, 2.0]).", expectedDType, pinned.getDType());
+		assertEquals("Ariadne should infer shape [2] for tf.constant([1.0, 2.0]).", expectedShape, asShape(pinned));
+
+		// Reduction: the inferred signature wraps a single TensorType. Compare dtype and shape field-by-field against the hard-coded
+		// expected. (TensorType lacks equals/hashCode, so direct equality assertion on a hard-coded expected TensorType is not
+		// meaningful; pending upstream fix.)
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue("Single-context input yields a non-empty signature.", signature.isPresent());
 		List<TensorType> specs = signature.get().parameterTypes();
 		assertEquals("Single tensor parameter, single entry in the signature.", 1, specs.size());
-		assertSame("The reduction for the single-context case is the same `TensorType` instance Ariadne produced.", single, specs.get(0));
+		TensorType inferred = specs.get(0);
+		assertEquals("Inferred signature dtype matches the expected.", expectedDType, inferred.getDType());
+		assertEquals("Inferred signature shape matches the expected.", expectedShape, asShape(inferred));
+	}
+
+	/**
+	 * Input-signature inference when the function body uses a tensor that is not a parameter (a module-level tensor closed over by the
+	 * function). The inferred signature should still contain only the parameter's TensorType, not the closure-captured tensor.
+	 */
+	@Test
+	public void testInputSignatureNonParameterTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals("Function func has exactly one parameter t.", 1, parameters.size());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue("Signature is non-empty when the single parameter is a tensor.", signature.isPresent());
+		List<TensorType> specs = signature.get().parameterTypes();
+		assertEquals("Module-level tensor closed over by the function does not leak into the signature.", 1, specs.size());
+		assertEquals("The parameter's dtype is in the signature.", DType.FLOAT32, specs.get(0).getDType());
+		assertEquals("The parameter's shape is in the signature.", List.of(2), asShape(specs.get(0)));
+	}
+
+	private static List<Integer> asShape(TensorType tt) {
+		assertNotNull("A concrete shape requires non-null dims.", tt.getDims());
+		return tt.getDims().stream()
+				.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+				.collect(Collectors.toList());
 	}
 }

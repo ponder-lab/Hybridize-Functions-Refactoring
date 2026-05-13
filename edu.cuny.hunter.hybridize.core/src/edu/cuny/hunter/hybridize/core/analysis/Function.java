@@ -1553,8 +1553,12 @@ public class Function {
 
 			// If this function is in the call graph.
 			if (!nodes.isEmpty()) {
-				// Ask the parameter directly: does Ariadne associate any tensor type with it?
-				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
+				// Ask the parameter directly: does Ariadne associate any tensor type with it? Cache the result on the parameter so
+				// subsequent reads via `Parameter#getTensorTypes()` (no-arg) do not need to re-thread the analysis.
+				Set<TensorType> tensorTypes = param.getTensorTypes(tensorAnalysis);
+				param.setTensorTypes(tensorTypes);
+
+				if (!tensorTypes.isEmpty()) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
 					monitor.worked(1);
@@ -1594,37 +1598,42 @@ public class Function {
 	}
 
 	/**
-	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter that Ariadne
-	 * associates with at least one tensor type.
+	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
+	 * tensor-type analysis associated with at least one tensor type.
 	 * <p>
-	 * For each non-{@code self} parameter, this method asks Ariadne for the set of {@link TensorType}s seen across call contexts (via
-	 * {@link Parameter#getTensorTypes}) and reduces that set to a single {@link TensorType}. A parameter with an empty set is excluded from
-	 * the signature; the {@link Parameter#getTensorTypes} Javadoc notes that empty is ambiguous between "not a tensor" and "tensor with
-	 * unknown types" pending a lattice-distinguishing Ariadne-side query, and treating empty as "not a tensor" is the practical default
-	 * until that lands.
+	 * Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the values are computed during {@link #inferTensorParameters}
+	 * (which caches per-parameter tensor types on each {@link Parameter}), and this method reads those cached values.
+	 * <p>
+	 * For each non-{@code self} parameter, this method reads {@link Parameter#getTensorTypes()} and reduces that set to a single
+	 * {@link TensorType}. A parameter with an empty cached set is excluded from the signature: the
+	 * {@link Parameter#getTensorTypes(TensorTypeAnalysis)} Javadoc notes that the iterator-based query collapses two upstream lattice
+	 * states ("tensor with unknown types" and "not a tensor") into the same empty result, and treating empty as "not a tensor" is the
+	 * practical default until a richer Ariadne-side query lands.
 	 * <p>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context and other non-concrete cases
 	 * return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
 	 *
-	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
 	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
 	 *         {@link #inferSpec} cannot reduce one of the per-parameter sets.
 	 */
-	public Optional<InputSignature> inferInputSignature(TensorTypeAnalysis analysis) {
-		Objects.requireNonNull(analysis);
+	public Optional<InputSignature> inferInputSignature() {
+		List<TensorType> specs = new ArrayList<>();
 
-		List<Parameter> params = this.getParameters();
-		List<TensorType> perParameter = new ArrayList<>();
-
-		for (Parameter param : params) {
+		for (Parameter param : this.getParameters()) {
 			// `self` is excluded from the signature.
 			if (param.isSelf())
 				continue;
 
-			Set<TensorType> contexts = param.getTensorTypes(analysis);
+			Set<TensorType> contexts = param.getTensorTypes();
 			if (contexts.isEmpty())
-				// Ambiguous per Parameter#getTensorTypes Javadoc: "not a tensor" or "tensor with unknown types". Practical default
-				// pending the Ariadne-side lattice query: treat as "not a tensor" and exclude from the signature.
+				// Ariadne's tensor-type lattice (source of truth: class-level Javadoc on
+				// `com.ibm.wala.cast.python.ml.client.TensorGenerator`)
+				// distinguishes ⊤ ("unknown tensor") from ⊥ ("not a tensor") from a concrete set of types. Generators encode the
+				// distinction in their shape/dtype outputs (`null` shape vs empty set; `EnumSet.of(DType.UNKNOWN)` vs empty set), and
+				// the analysis propagates it through `TensorVariable.state`. But `TensorTypeAnalysis.iterator()` (the surface this
+				// query goes through) filters to entries with `state != null && !state.isEmpty()`, collapsing ⊤ and ⊥ into the same
+				// "no result" outcome. Until a richer Ariadne-side query exposes the distinction, treat empty as "not a tensor" and
+				// exclude the parameter from the signature.
 				continue;
 
 			Optional<TensorType> spec = inferSpec(contexts);
@@ -1632,13 +1641,13 @@ public class Function {
 				// Reduction returned bottom for this parameter; the whole signature collapses.
 				return Optional.empty();
 
-			perParameter.add(spec.get());
+			specs.add(spec.get());
 		}
 
-		if (perParameter.isEmpty())
+		if (specs.isEmpty())
 			return Optional.empty();
 
-		return Optional.of(new InputSignature(perParameter));
+		return Optional.of(new InputSignature(specs));
 	}
 
 	/**
