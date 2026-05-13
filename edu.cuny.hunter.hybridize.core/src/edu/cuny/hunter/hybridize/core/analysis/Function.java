@@ -87,6 +87,7 @@ import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInst
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
@@ -1652,11 +1653,23 @@ public class Function {
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
-		if (contexts.size() == 1)
-			return Optional.of(contexts.iterator().next());
+		if (contexts.size() != 1)
+			// TODO: multi-context handling (scenarios 2-7). Subsequent PRs will extend.
+			return Optional.empty();
 
-		// TODO: multi-context handling (scenarios 2-7). Subsequent PRs will extend.
-		return Optional.empty();
+		TensorType single = contexts.iterator().next();
+
+		// Scenario 1 requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`). The non-concrete
+		// cases (scenarios 5, 6, 7, 10) return `Optional.empty` pending implementation in subsequent PRs.
+		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
+			return Optional.empty();
+		if (single.getDims() == null)
+			return Optional.empty();
+		for (TensorType.Dimension<?> dim : single.getDims())
+			if (!(dim instanceof TensorType.NumericDim))
+				return Optional.empty();
+
+		return Optional.of(single);
 	}
 
 	private boolean hasTensorContext() {

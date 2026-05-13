@@ -8134,10 +8134,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
 		Parameter t = parameters.get(0);
 
-		// Ariadne pin: single tensor type seen for the single call site.
+		// Ariadne pin: single tensor type seen for the single call site, with the expected concrete dtype and shape. The fixture calls
+		// `func(tf.constant([1.0, 2.0]))`, so Ariadne should infer dtype `float32` and shape `[2]`.
 		Set<TensorType> ariadne = t.getTensorTypes(this.lastTensorTypeAnalysis);
 		assertEquals("One call site yields one TensorType.", 1, ariadne.size());
 		TensorType single = ariadne.iterator().next();
+		assertEquals("Ariadne should infer dtype `float32` for `tf.constant([1.0, 2.0])`.", DType.FLOAT32, single.getDType());
+		assertNotNull("Scenario 1 requires a concrete shape; dims must not be null.", single.getDims());
+		List<Integer> shape = single.getDims().stream()
+				.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+				.collect(Collectors.toList());
+		assertEquals("Ariadne should infer shape `[2]` for `tf.constant([1.0, 2.0])`.", List.of(2), shape);
 
 		// Algorithm assertion: the inferred signature wraps that single TensorType, unchanged. TensorType does not override `equals`, so
 		// identity is the right check for the single-context case.
