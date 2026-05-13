@@ -1533,6 +1533,13 @@ public class Function {
 				continue; // next parameter.
 			}
 
+			// Populate the tensor-type cache up front whenever Ariadne has anything to say about this parameter, so subsequent reads via
+			// `Parameter#getTensorTypes()` (no-arg, no analysis-threading) see a consistent value regardless of which branch below we take.
+			// In particular, the `followTypeHints` shortcut below `continue`s before reaching the Ariadne query block; populating here
+			// keeps the cache correct for type-hint parameters that Ariadne also classified from the call site.
+			if (!nodes.isEmpty())
+				param.setTensorTypes(param.getTensorTypes(tensorAnalysis));
+
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
 					// TODO: Actually get the value here (#111).
@@ -1553,10 +1560,7 @@ public class Function {
 
 			// If this function is in the call graph.
 			if (!nodes.isEmpty()) {
-				// Ask the parameter directly: does Ariadne associate any tensor type with it? Cache the result on the parameter so
-				// subsequent reads via `Parameter#getTensorTypes()` (no-arg) do not need to re-thread the analysis.
-				Set<TensorType> tensorTypes = param.getTensorTypes(tensorAnalysis);
-				param.setTensorTypes(tensorTypes);
+				Set<TensorType> tensorTypes = param.getTensorTypes();
 
 				if (!tensorTypes.isEmpty()) {
 					this.hasTensorParameter = TRUE;
