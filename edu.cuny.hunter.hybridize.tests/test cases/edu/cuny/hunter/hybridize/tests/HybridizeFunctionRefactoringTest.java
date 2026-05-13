@@ -30,6 +30,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -51,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -129,6 +131,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -8107,5 +8110,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("C.f", function.getIdentifier());
 		assertEquals(1, function.getNumberOfParameters());
 		assertTrue("A method whose only parameter is `self` should be classified as a method.", function.isMethod());
+	}
+
+	/**
+	 * Scenario 1 of the input-signature inference algorithm: single call site, single dtype, single concrete shape. The trivial happy path
+	 * of Algorithm 2—the inferred signature is exactly that single (dtype, shape) tuple, wrapped as a singleton {@link InputSignature}.
+	 * <p>
+	 * Two assertions per the per-scenario discipline:
+	 * <ol>
+	 * <li>Ariadne pin: {@code parameter.getTensorTypes(analysis)} returns the expected single {@link TensorType}.</li>
+	 * <li>Algorithm assertion: {@code function.inferInputSignature(analysis)} returns an {@link InputSignature} whose only entry is that
+	 * same {@link TensorType} instance.</li>
+	 * </ol>
+	 */
+	@Test
+	public void testInputSignatureScenario1() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+		Parameter t = parameters.get(0);
+
+		// Ariadne pin: single tensor type seen for the single call site.
+		Set<TensorType> ariadne = t.getTensorTypes(this.lastTensorTypeAnalysis);
+		assertEquals("One call site yields one TensorType.", 1, ariadne.size());
+		TensorType single = ariadne.iterator().next();
+
+		// Algorithm assertion: the inferred signature wraps that single TensorType, unchanged. TensorType does not override `equals`, so
+		// identity is the right check for the single-context case.
+		Optional<InputSignature> signature = function.inferInputSignature(this.lastTensorTypeAnalysis);
+		assertTrue("Scenario 1 yields a non-empty signature.", signature.isPresent());
+		List<TensorType> specs = signature.get().parameterTypes();
+		assertEquals("Single tensor parameter, single entry in the signature.", 1, specs.size());
+		assertSame("Algorithm 2's output for the single-context case is the same `TensorType` instance Ariadne produced.", single,
+				specs.get(0));
 	}
 }

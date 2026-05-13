@@ -87,6 +87,7 @@ import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInst
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
@@ -1589,6 +1590,73 @@ public class Function {
 		}
 
 		monitor.done();
+	}
+
+	/**
+	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter that Ariadne
+	 * associates with at least one tensor type. Implements Algorithm 2 of the approach.
+	 * <p>
+	 * For each non-{@code self} parameter, this method asks Ariadne for the set of {@link TensorType}s seen across call contexts (via
+	 * {@link Parameter#getTensorTypes}) and reduces that set to a single {@link TensorType}. A parameter with an empty set is excluded from
+	 * the signature; the {@link Parameter#getTensorTypes} Javadoc notes that empty is ambiguous between "not a tensor" and "tensor with
+	 * unknown types" pending a lattice-distinguishing Ariadne-side query, and treating empty as "not a tensor" is the practical default
+	 * until that lands.
+	 * <p>
+	 * Current scope: scenario 1 of the catalog only—single context, single concrete shape, single concrete dtype. Multi-context cases
+	 * (scenarios 2-7) and the open-spec cases (9, 13) return {@link Optional#empty} for now; subsequent scenarios extend
+	 * {@link #inferSpec}.
+	 *
+	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
+	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
+	 *         {@link #inferSpec} cannot reduce one of the per-parameter sets.
+	 */
+	public Optional<InputSignature> inferInputSignature(TensorTypeAnalysis analysis) {
+		Objects.requireNonNull(analysis);
+
+		List<Parameter> params = this.getParameters();
+		List<TensorType> perParameter = new ArrayList<>();
+
+		for (Parameter param : params) {
+			// `self` is excluded from the signature per the algorithm's spec (scenario 12).
+			if (param.isSelf())
+				continue;
+
+			Set<TensorType> contexts = param.getTensorTypes(analysis);
+			if (contexts.isEmpty())
+				// Ambiguous per Parameter#getTensorTypes Javadoc: "not a tensor" or "tensor with unknown types". Practical default
+				// pending the Ariadne-side lattice query: treat as "not a tensor" and exclude from the signature.
+				continue;
+
+			Optional<TensorType> spec = inferSpec(contexts);
+			if (spec.isEmpty())
+				// Algorithm 2 returned bottom for this parameter; the whole signature collapses.
+				return Optional.empty();
+
+			perParameter.add(spec.get());
+		}
+
+		if (perParameter.isEmpty())
+			return Optional.empty();
+
+		return Optional.of(new InputSignature(perParameter));
+	}
+
+	/**
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}—the per-parameter
+	 * core of Algorithm 2.
+	 * <p>
+	 * Current scope: scenario 1 (single-context: returns the singleton input). All other scenarios return {@link Optional#empty} pending
+	 * implementation in subsequent PRs.
+	 *
+	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
+	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
+	 */
+	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
+		if (contexts.size() == 1)
+			return Optional.of(contexts.iterator().next());
+
+		// TODO: multi-context handling (scenarios 2-7). Subsequent PRs will extend.
+		return Optional.empty();
 	}
 
 	private boolean hasTensorContext() {
