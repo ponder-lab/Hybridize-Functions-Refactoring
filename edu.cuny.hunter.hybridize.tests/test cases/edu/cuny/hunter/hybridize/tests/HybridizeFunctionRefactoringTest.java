@@ -48,6 +48,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -1910,8 +1911,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 
 		Set<TensorType> expected = Set.of(
-				new TensorType(DType.FLOAT32.name().toLowerCase(), List.of(new TensorType.NumericDim(2), new TensorType.NumericDim(1))),
-				new TensorType(DType.FLOAT32.name().toLowerCase(), List.of(new TensorType.NumericDim(2))));
+				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2), new TensorType.NumericDim(1))),
+				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2))));
 		assertEquals(expected, inferred);
 
 		// Pinning assertion on inferInputSignature for the multi-context branch. Multi-context support is not yet implemented, so the
@@ -8112,7 +8113,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, parameters.size());
 		Parameter t = parameters.get(0);
 
-		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(), List.of(new TensorType.NumericDim(2)));
+		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
 
 		Set<TensorType> ariadne = t.getTensorTypes();
 		assertEquals(Set.of(expected), ariadne);
@@ -8135,7 +8136,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> parameters = function.getParameters();
 		assertEquals(1, parameters.size());
 
-		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(), List.of(new TensorType.NumericDim(2)));
+		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
 
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertTrue(signature.isPresent());
