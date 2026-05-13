@@ -55,22 +55,8 @@ Dependency | Update Site
 --- | ---
 [Common Eclipse Refactoring Framework] | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
-[WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository
 
-These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them.
-
-### Why WALA Comes From the `ponder-lab/WALA` p2 Update Site
-
-The core bundle `Require-Bundle`s `com.ibm.wala.ide`, the Eclipse-PDE-aware WALA bundle. That bundle ships only via p2 update sites; WALA's Maven Central artifacts cover the framework jars (`com.ibm.wala.core`, `com.ibm.wala.cast`, etc.) but not the Eclipse-specific IDE bundle. Upstream `wala/WALA` does not publish a p2 repository; the `ponder-lab/WALA` fork's `v1.7` branch is a downstream-maintained p2 service for Eclipse-plug-in consumers like this one.
-
-The Eclipse-side dependency is shallow. The project uses exactly two classes from `com.ibm.wala.ide.*`:
-
-- `com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule`, which the project already wraps with a local copy because the upstream class's `rootIPath` field is private.
-- `com.ibm.wala.ide.util.ProgressMonitorDelegate`, an Eclipse-to-WALA `IProgressMonitor` adapter.
-
-**Implication for Ariadne bumps:** when an Ariadne release advances its WALA dependency (e.g., 0.42.0 to 0.43.0 bumped WALA `1.6.12` to `1.7.1`), `ponder-lab/WALA` must publish a matching branch (e.g., `v1.7`) carrying p2 artifacts for that WALA version. Otherwise the Tycho build will compile (Maven Central provides the framework jars) but fail at test runtime with `AbstractMethodError`, because the older `com.ibm.wala.ide` bundle was compiled against an older `AstTranslator` API surface. Bumping Ariadne is therefore a two-step coordination: publish the new WALA p2 branch first, then bump `hybridize.target`. The mechanics of cutting that branch live in two wiki pages — [Updating WALA][updating-wala] on this repo's wiki, which points at [Cut a New Release][cut-wala-release] on the `ponder-lab/WALA` wiki for the actual release procedure.
-
-Switching to Maven Central is not a drop-in escape: `com.ibm.wala.ide` is **not** on Maven Central (Maven Central carries `com.ibm.wala.core`, `com.ibm.wala.cast`, `com.ibm.wala.util`, etc., but not the Eclipse-specific IDE bundle), and upstream `wala/WALA` does not publish p2 binaries itself (its `com.ibm.wala-repository/` directory contains only `category.xml` Tycho metadata, not built artifacts). Inlining `ProgressMonitorDelegate` would be trivial, but `EclipseSourceDirectoryTreeModule` cascades into `EclipseProjectPath`, `EclipseSourceFileModule`, and further `com.ibm.wala.ide.*` types — effectively forcing Hybridize to maintain its own fork of `com.ibm.wala.ide`, which is strictly worse than the current `ponder-lab/WALA` arrangement. The practical path for each Ariadne bump that changes WALA versions is to publish the matching `ponder-lab/WALA` branch first.
+These update sites are also listed in the [target definition file]. Thus, you shouldn't need them unless you plan to make changes to them. WALA is consumed from Maven Central via Tycho's `<location type="Maven">`; no separate update site is required.
 
 ### Running the Evaluator
 
@@ -80,12 +66,9 @@ You can run the evaluator in several different ways, including as a command or a
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [evaluator wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Running-the-Evaluator
-[updating-wala]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Updating-WALA
-[cut-wala-release]: https://github.com/ponder-lab/WALA/wiki/Cut-a-new-release
 [PyDev]: https://github.com/ponder-lab/Pydev/tree/pydev_9_3
 [Common Eclipse Refactoring Framework]: https://github.com/ponder-lab/Common-Eclipse-Refactoring-Framework
 [Ariadne]: https://github.com/ponder-lab/ML
 [Ariadne packages]: https://github.com/orgs/ponder-lab/packages?repo_name=ML
-[WALA]: https://github.com/ponder-lab/WALA/tree/v1.7
 [GitHub Packages Documentation]: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages
 [target definition file]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/blob/02cbd028d09f063f3e4ecd048e2435262abdde64/hybridize.target
