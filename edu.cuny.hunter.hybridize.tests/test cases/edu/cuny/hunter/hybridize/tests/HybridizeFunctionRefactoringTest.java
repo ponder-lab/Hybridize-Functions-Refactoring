@@ -1935,6 +1935,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
 		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
 
+		// Pinning assertion on `Function#inferInputSignature` for the multi-context branch. Scenarios 2-7 are not yet implemented, so
+		// multi-context inputs (this fixture's two `TensorType`s for the same parameter) currently collapse to `Optional.empty`. When
+		// the corresponding scenario PR lands, this assertion will fail; replace it with a positive signature check for the
+		// shape-divergence case (`shape=(None, 1)` per the design memo's scenario 3).
+		// TODO: Replace with a positive `InputSignature` assertion once scenarios 2-7 of Algorithm 2 are implemented.
+		assertFalse("Multi-context input currently collapses to `Optional.empty` pending scenarios 2-7. See `Function#inferSpec`.",
+				function.inferInputSignature(this.lastTensorTypeAnalysis).isPresent());
+
 		// Wrapper identity contract: equals/hashCode/toString.
 		assertEquals(t, t);
 		assertEquals(t.hashCode(), t.hashCode());
