@@ -1,6 +1,6 @@
-# Scenario 1 of the input-signature inference algorithm: single call site, single dtype, single
-# concrete shape. The trivial happy path of Algorithm 2—the inferred signature is exactly that
-# single (dtype, shape) tuple, wrapped as a singleton InputSignature.
+# Smallest input-signature inference case: a function called once with a single tensor of
+# concrete dtype and shape. The inferred signature is exactly that single (dtype, shape) tuple,
+# wrapped as a singleton InputSignature.
 
 import tensorflow as tf
 

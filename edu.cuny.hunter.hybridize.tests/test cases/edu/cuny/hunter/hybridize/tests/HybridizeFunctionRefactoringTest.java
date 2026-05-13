@@ -1935,12 +1935,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
 		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
 
-		// Pinning assertion on `Function#inferInputSignature` for the multi-context branch. Scenarios 2-7 are not yet implemented, so
-		// multi-context inputs (this fixture's two `TensorType`s for the same parameter) currently collapse to `Optional.empty`. When
-		// the corresponding scenario PR lands, this assertion will fail; replace it with a positive signature check for the
-		// shape-divergence case (`shape=(None, 1)` per the design memo's scenario 3).
-		// TODO: Replace with a positive `InputSignature` assertion once scenarios 2-7 of Algorithm 2 are implemented.
-		assertFalse("Multi-context input currently collapses to `Optional.empty` pending scenarios 2-7. See `Function#inferSpec`.",
+		// Pinning assertion on `Function#inferInputSignature` for the multi-context branch. Multi-context support is not yet implemented,
+		// so the fixture's two `TensorType`s for the same parameter currently collapse to `Optional.empty`. When multi-context support
+		// lands, this assertion will fail; replace it with a positive signature check at that time.
+		// TODO: Replace with a positive `InputSignature` assertion once multi-context support is implemented.
+		assertFalse("Multi-context input currently collapses to `Optional.empty`. See `Function#inferSpec`.",
 				function.inferInputSignature(this.lastTensorTypeAnalysis).isPresent());
 
 		// Wrapper identity contract: equals/hashCode/toString.
@@ -8121,14 +8120,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Scenario 1 of the input-signature inference algorithm: single call site, single dtype, single concrete shape. The trivial happy path
-	 * of Algorithm 2—the inferred signature is exactly that single (dtype, shape) tuple, wrapped as a singleton {@link InputSignature}.
+	 * Input-signature inference for a function called once with a single tensor of concrete dtype and shape. The inferred signature is
+	 * exactly that single (dtype, shape) tuple, wrapped as a singleton {@link InputSignature}.
 	 * <p>
-	 * Two assertions per the per-scenario discipline:
+	 * Two assertions:
 	 * <ol>
 	 * <li>Ariadne pin: {@code parameter.getTensorTypes(analysis)} returns the expected single {@link TensorType}.</li>
-	 * <li>Algorithm assertion: {@code function.inferInputSignature(analysis)} returns an {@link InputSignature} whose only entry is that
-	 * same {@link TensorType} instance.</li>
+	 * <li>Reduction: {@code function.inferInputSignature(analysis)} returns an {@link InputSignature} whose only entry is that same
+	 * {@link TensorType} instance.</li>
 	 * </ol>
 	 */
 	@Test
@@ -8160,7 +8159,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Scenario 1 yields a non-empty signature.", signature.isPresent());
 		List<TensorType> specs = signature.get().parameterTypes();
 		assertEquals("Single tensor parameter, single entry in the signature.", 1, specs.size());
-		assertSame("Algorithm 2's output for the single-context case is the same `TensorType` instance Ariadne produced.", single,
-				specs.get(0));
+		assertSame("The reduction for the single-context case is the same `TensorType` instance Ariadne produced.", single, specs.get(0));
 	}
 }

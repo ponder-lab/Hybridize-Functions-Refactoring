@@ -1595,7 +1595,7 @@ public class Function {
 
 	/**
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter that Ariadne
-	 * associates with at least one tensor type. Implements Algorithm 2 of the approach.
+	 * associates with at least one tensor type.
 	 * <p>
 	 * For each non-{@code self} parameter, this method asks Ariadne for the set of {@link TensorType}s seen across call contexts (via
 	 * {@link Parameter#getTensorTypes}) and reduces that set to a single {@link TensorType}. A parameter with an empty set is excluded from
@@ -1603,9 +1603,8 @@ public class Function {
 	 * unknown types" pending a lattice-distinguishing Ariadne-side query, and treating empty as "not a tensor" is the practical default
 	 * until that lands.
 	 * <p>
-	 * Current scope: scenario 1 of the catalog only—single context, single concrete shape, single concrete dtype. Multi-context cases
-	 * (scenarios 2-7) and the open-spec cases (9, 13) return {@link Optional#empty} for now; subsequent scenarios extend
-	 * {@link #inferSpec}.
+	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context and other non-concrete cases
+	 * return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
 	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
@@ -1618,7 +1617,7 @@ public class Function {
 		List<TensorType> perParameter = new ArrayList<>();
 
 		for (Parameter param : params) {
-			// `self` is excluded from the signature per the algorithm's spec (scenario 12).
+			// `self` is excluded from the signature.
 			if (param.isSelf())
 				continue;
 
@@ -1630,7 +1629,7 @@ public class Function {
 
 			Optional<TensorType> spec = inferSpec(contexts);
 			if (spec.isEmpty())
-				// Algorithm 2 returned bottom for this parameter; the whole signature collapses.
+				// Reduction returned bottom for this parameter; the whole signature collapses.
 				return Optional.empty();
 
 			perParameter.add(spec.get());
@@ -1643,24 +1642,23 @@ public class Function {
 	}
 
 	/**
-	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}—the per-parameter
-	 * core of Algorithm 2.
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
 	 * <p>
-	 * Current scope: scenario 1 (single-context: returns the singleton input). All other scenarios return {@link Optional#empty} pending
-	 * implementation in subsequent PRs.
+	 * Current scope: a single-context input with concrete dtype and concrete shape returns the singleton unchanged. Multi-context and other
+	 * non-concrete cases return {@link Optional#empty} pending future PRs.
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
 		if (contexts.size() != 1)
-			// TODO: multi-context handling (scenarios 2-7). Subsequent PRs will extend.
+			// TODO: multi-context handling. Subsequent PRs will extend.
 			return Optional.empty();
 
 		TensorType single = contexts.iterator().next();
 
-		// Scenario 1 requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`). The non-concrete
-		// cases (scenarios 5, 6, 7, 10) return `Optional.empty` pending implementation in subsequent PRs.
+		// The single-context case requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`).
+		// Non-concrete cases return `Optional.empty` pending implementation in subsequent PRs.
 		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
 			return Optional.empty();
 		if (single.getDims() == null)
