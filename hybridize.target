@@ -65,9 +65,6 @@
 				<repository>
 					<id>github</id>
 					<url>https://maven.pkg.github.com/ponder-lab/ML</url>
-					<snapshots>
-						<enabled>true</enabled>
-					</snapshots>
 				</repository>
 			</repositories>
 		</location>
