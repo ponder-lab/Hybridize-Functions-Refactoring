@@ -18,9 +18,39 @@
 			<repository location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite"/>
 			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.2.0"/>
 		</location>
-		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-			<repository location="https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository"/>
-			<unit id="com.ibm.wala.ide_feature.feature.group" version="1.7.1.202605120352"/>
+		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
+			<dependencies>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.core</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.cast</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.shrike</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.util</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.ide</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+			</dependencies>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>

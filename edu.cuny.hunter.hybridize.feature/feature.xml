@@ -286,9 +286,7 @@ version(s), and exceptions or additional permissions here}.&quot;
     <discovery label="The Eclipse Project repository" url="https://download.eclipse.org/eclipse/updates/4.39" />
     <discovery label="Common Refactoring Framework Update Site" url="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" />
     <discovery label="PyDev Update Site" url="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" />
-    <discovery label="PONDER Lab WALA Update Site" url="https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository" />
   </url>
-  <includes id="com.ibm.wala.ide_feature" version="0.0.0" />
   <includes id="org.python.pydev.feature" version="0.0.0" />
   <requires>
     <import plugin="org.eclipse.ltk.core.refactoring" version="3.12.200" match="greaterOrEqual" />
@@ -298,7 +296,6 @@ version(s), and exceptions or additional permissions here}.&quot;
     <import plugin="com.python.pydev.refactoring" version="9.3.3" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.resources" version="3.18.0" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.runtime" version="3.26.0" match="greaterOrEqual" />
-    <import plugin="com.ibm.wala.ide" version="1.6.2" match="greaterOrEqual" />
     <import plugin="org.eclipse.core.commands" />
     <import plugin="org.eclipse.jface.text" />
     <import plugin="org.eclipse.text" version="3.12.200" match="greaterOrEqual" />
@@ -343,7 +340,6 @@ version(s), and exceptions or additional permissions here}.&quot;
   </requires>
   <plugin id="edu.cuny.hunter.hybridize.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.hunter.hybridize.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.cast.python.ml" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.citytech.refactoring.common.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.citytech.refactoring.common.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
 </feature>
