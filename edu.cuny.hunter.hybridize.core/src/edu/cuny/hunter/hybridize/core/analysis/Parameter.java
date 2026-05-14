@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
+import static java.util.Collections.unmodifiableSet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.core.runtime.SubMonitor.convert;
 import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
@@ -10,7 +11,6 @@ import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString
 import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -470,7 +470,7 @@ public final class Parameter {
 				}
 			}
 		}
-		return Collections.unmodifiableSet(result);
+		return unmodifiableSet(result);
 	}
 
 	private exprType getNameExpr() {
