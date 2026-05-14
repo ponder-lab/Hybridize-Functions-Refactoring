@@ -4,7 +4,9 @@ import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.core.runtime.SubMonitor.convert;
+import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
 import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString;
+import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
 import java.util.Collections;
@@ -138,8 +140,34 @@ public final class Parameter {
 	 *
 	 * @return The {@link TypeInfo} for this parameter, or {@code null} if no type hint is present.
 	 */
-	public TypeInfo getTypeInfo() {
-		return NodeUtils.getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	protected TypeInfo getTypeInfo() {
+		return getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	}
+
+	/**
+	 * Returns the fully-qualified name of this parameter's declared type hint, or {@code null} if no type hint is declared.
+	 * <p>
+	 * Only supports simple type hints that are directly {@link Attribute} expressions; more complex hints (e.g. subscripted generics) are
+	 * not supported and may trigger an exception.
+	 *
+	 * @return The fully-qualified name of the declared type hint, or {@code null} if no type hint is present.
+	 * @throws IllegalStateException If a type hint is declared but its AST node is not an {@link Attribute} (e.g., a subscripted generic
+	 *         like {@code List[Tensor]}).
+	 */
+	public String getTypeHintName() {
+		// get the type hint.
+		TypeInfo typeInfo = this.getTypeInfo();
+
+		if (typeInfo == null)
+			// no type hint declared.
+			return null;
+
+		exprType node = typeInfo.getNode();
+
+		if (node instanceof Attribute attribute)
+			return getFullRepresentationString(attribute);
+
+		throw new IllegalStateException("Unexpected type hint node type: " + node.getClass() + " for parameter: " + this + ".");
 	}
 
 	/**

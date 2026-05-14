@@ -101,12 +101,10 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
-import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.plugin.FileStub2;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
@@ -2009,10 +2007,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// no type hint.
-		assertNull(typeInfo);
+		assertNull(typeHintName);
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -2044,16 +2042,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2086,16 +2078,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2130,17 +2115,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
-		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
-
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		String typeHintName = actualParameter.getTypeHintName();
+		assertEquals("tf.Tensor", typeHintName);
 
 		// NOTE: Set to assertFalse() when #111 is fixed.
 		assertTrue(function.getHasTensorParameter());
