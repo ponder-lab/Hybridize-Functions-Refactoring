@@ -1,6 +1,10 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.eclipse.core.runtime.SubMonitor.convert;
+import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString;
 
 import java.io.File;
 import java.util.Collections;
@@ -115,7 +119,7 @@ public final class Parameter {
 	 * @return The parameter name.
 	 */
 	public String getName() {
-		return NodeUtils.getRepresentationString(this.getNameExpr());
+		return getRepresentationString(this.getNameExpr());
 	}
 
 	/**
@@ -152,7 +156,7 @@ public final class Parameter {
 			return false;
 
 		Set<Attribute> attributes = getAllAttributes(argTypeInfo.getNode());
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
+		SubMonitor subMonitor = convert(monitor, "Examining type hints.", attributes.size() * 2);
 
 		for (Attribute typeHintExpr : attributes) {
 			IDocument document = this.function.getContainingDocument();
@@ -160,8 +164,8 @@ public final class Parameter {
 			String fqn;
 			PySelection selection = null;
 			try {
-				selection = Util.getSelection(typeHintExpr.attr, document);
-				fqn = Util.getFullyQualifiedName(typeHintExpr, this.function.getContainingModuleName(), this.function.getContainingFile(),
+				selection = getSelection(typeHintExpr.attr, document);
+				fqn = getFullyQualifiedName(typeHintExpr, this.function.getContainingModuleName(), this.function.getContainingFile(),
 						selection, this.function.getNature(), subMonitor.split(1));
 			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
 				LOG.warn(String.format(
