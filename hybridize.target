@@ -22,13 +22,19 @@
 			<dependencies>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
+					<artifactId>com.ibm.wala.cast</artifactId>
+					<version>1.7.2</version>
+					<type>jar</type>
+				</dependency>
+				<dependency>
+					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.core</artifactId>
 					<version>1.7.2</version>
 					<type>jar</type>
 				</dependency>
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
-					<artifactId>com.ibm.wala.cast</artifactId>
+					<artifactId>com.ibm.wala.ide</artifactId>
 					<version>1.7.2</version>
 					<type>jar</type>
 				</dependency>
@@ -41,12 +47,6 @@
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.util</artifactId>
-					<version>1.7.2</version>
-					<type>jar</type>
-				</dependency>
-				<dependency>
-					<groupId>com.ibm.wala</groupId>
-					<artifactId>com.ibm.wala.ide</artifactId>
 					<version>1.7.2</version>
 					<type>jar</type>
 				</dependency>
@@ -65,9 +65,6 @@
 				<repository>
 					<id>github</id>
 					<url>https://maven.pkg.github.com/ponder-lab/ML</url>
-					<snapshots>
-						<enabled>true</enabled>
-					</snapshots>
 				</repository>
 			</repositories>
 		</location>
