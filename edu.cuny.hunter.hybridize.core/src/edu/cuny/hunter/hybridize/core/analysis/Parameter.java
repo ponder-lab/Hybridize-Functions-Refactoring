@@ -58,16 +58,9 @@ import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
 
 /**
- * Analytical wrapper around a single positional Python function parameter. Carries enough context to identify the parameter
- * ({@code argumentsType} parent + positional index + owning {@link Function}) and hosts the per-parameter classification queries that would
- * otherwise live on {@link Function}: type-hint detection ({@link #hasTensorTypeHint(IProgressMonitor)}), Ariadne tensor-type lookup
- * ({@link #getTensorTypes(TensorTypeAnalysis)}), and tensor-container detection
- * ({@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}).
- * <p>
- * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
- * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)},
- * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}, plus
- * {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function} (package-private constructor).
+ * A representation of a Python function parameter.
+ *
+ * @author <a href="mailto:khatchad@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public final class Parameter {
 
