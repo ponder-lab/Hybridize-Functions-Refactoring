@@ -340,12 +340,6 @@ version(s), and exceptions or additional permissions here}.&quot;
   </requires>
   <plugin id="edu.cuny.hunter.hybridize.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.hunter.hybridize.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.cast" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.shrike" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.util" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.ide" download-size="0" install-size="0" version="0.0.0" unpack="false" />
-  <plugin id="wrapped.com.ibm.wala.com.ibm.wala.cast.python.ml" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.citytech.refactoring.common.core" download-size="0" install-size="0" version="0.0.0" unpack="false" />
   <plugin id="edu.cuny.citytech.refactoring.common.ui" download-size="0" install-size="0" version="0.0.0" unpack="false" />
 </feature>
