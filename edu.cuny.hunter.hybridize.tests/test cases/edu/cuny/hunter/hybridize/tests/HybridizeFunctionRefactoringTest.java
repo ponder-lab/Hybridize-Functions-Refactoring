@@ -8103,4 +8103,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Expected a lattice-⊤ tensor marker (either null TensorType or TensorType with null dims).",
 				inferred.stream().anyMatch(tt -> tt == null || tt.getDims() == null));
 	}
+
+	/**
+	 * Regression guard for lattice ⊥: a non-tensor parameter must still infer no tensor types.
+	 */
+	@Test
+	public void testInferredTensorTypesBottomNotTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertFalse(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter x = parameters.get(0);
+		assertNotNull(x);
+		assertEquals("x", x.getName());
+
+		Set<TensorType> inferred = x.getTensorTypes();
+		assertNotNull(inferred);
+		assertTrue("A non-tensor parameter should remain lattice ⊥.", inferred.isEmpty());
+	}
 }
