@@ -19,6 +19,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
+import static java.lang.System.getProperty;
 import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
@@ -652,7 +653,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			@Override
 			public String getCharset(boolean checkImplicit) throws CoreException {
-				return System.getProperty("file.encoding");
+				return getProperty("file.encoding");
 			}
 
 			@Override
