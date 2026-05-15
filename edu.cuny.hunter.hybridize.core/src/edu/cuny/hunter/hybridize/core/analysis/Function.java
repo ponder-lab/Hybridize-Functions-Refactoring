@@ -1402,6 +1402,7 @@ public class Function {
 	public void inferTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering tensor parameters...", IProgressMonitor.UNKNOWN);
+		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		// True iff the function has a self parameter in the first position.
 		boolean selfParam = false;
@@ -1416,7 +1417,7 @@ public class Function {
 				continue; // skip self parameters.
 			}
 
-			if (param.isTensorTyped(tensorAnalysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
+			if (param.isTensorTyped(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
 				this.hasTensorParameter = TRUE;
 				subMonitor.worked(1);
 				continue; // next parameter.
@@ -1435,7 +1436,7 @@ public class Function {
 				this.hasTensorParameter = TRUE;
 				LOG.info(this + " likely has a tensor parameter due to context.");
 				this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
-			} else if (this.getNodes(callGraph).isEmpty())
+			} else if (nodes.isEmpty())
 				// if there are no nodes representing this function, then it most likely isn't called.
 				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this + " without a call graph node.");
 

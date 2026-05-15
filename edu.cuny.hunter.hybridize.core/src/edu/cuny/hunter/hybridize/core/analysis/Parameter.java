@@ -366,15 +366,14 @@ public final class Parameter {
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param paramInx The index of the parameter under question.
-	 * @param callGraph The {@link PythonSSAPropagationCallGraphBuilder}
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
 	 * @param builder The {@link CallGraphBuilder}.
 	 * @param monitor For progress.
 	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
 	 */
-	protected boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
+	protected boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
-		Set<CGNode> nodes = this.function.getNodes(callGraph);
 		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
 
 		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
@@ -419,7 +418,12 @@ public final class Parameter {
 	 */
 	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
-		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), callGraph, builder, monitor);
+		return this.hasTensorContainer(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
+		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
 	/**
@@ -508,7 +512,12 @@ public final class Parameter {
 	 */
 	public boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 99);
+		return this.isTensorTyped(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
 
 		try {
 			// don't consider `self` as a tensor.
@@ -524,40 +533,41 @@ public final class Parameter {
 			if (followTypeHints) {
 				LOG.info("Following type hints for: " + this.function + " and parameter: " + this.getName() + ".");
 
-				if (this.hasTensorTypeHint(subMonitor.split(33))) {
+				if (this.hasTensorTypeHint(subMonitor.split(1))) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(2);
 					return true;
 				}
 			} else
-				subMonitor.worked(33);
+				subMonitor.worked(1);
 
 			// If this function is in the call graph.
-			if (!this.function.getNodes(callGraph).isEmpty()) {
+			if (!nodes.isEmpty()) {
 				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
 				if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
-					subMonitor.worked(33);
+					subMonitor.worked(1);
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(1);
 					return true;
 				}
 
-				subMonitor.worked(33);
+				subMonitor.worked(1);
 
 				// Phase 3: check for containers of tensors.
-				if (this.hasTensorContainer(tensorAnalysis, callGraph, builder, subMonitor.split(33))) {
+				if (this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1))) {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
 					return true;
 				}
 			} else
-				subMonitor.worked(66);
+				subMonitor.worked(2);
 
 			return false;
 		} finally {
-			subMonitor.worked(99);
 			subMonitor.done();
 		}
 	}
