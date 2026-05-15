@@ -1418,8 +1418,9 @@ public class Function {
 
 			if (param.isTensorTyped(tensorAnalysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
 				this.hasTensorParameter = TRUE;
+				subMonitor.worked(1);
 				LOG.info(this + " likely has a tensor parameter.");
-				continue;
+				continue; // next parameter.
 			}
 
 			subMonitor.worked(1);

@@ -527,8 +527,7 @@ public final class Parameter {
 
 				if (this.hasTensorTypeHint(subMonitor.split(33))) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
-					this.function.addInfo(TYPE_INFERENCING,
-							"Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					return true;
 				}
 			} else {
@@ -555,10 +554,8 @@ public final class Parameter {
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
 					return true;
 				}
-			} else {
-				subMonitor.worked(33);
-				subMonitor.worked(33);
-			}
+			} else
+				subMonitor.worked(66);
 
 			return false;
 		} finally {
