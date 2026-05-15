@@ -1890,53 +1890,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the shape-divergence/same-dtype scenario ported from wala/ML's
-	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
-	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
-	 * {@code (2, 1)} and {@code (2,)} respectively.
-	 */
-	@Test
-	public void testInferredTensorTypes() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> parameters = function.getParameters();
-		assertNotNull(parameters);
-		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
-
-		Parameter t = parameters.get(0);
-		assertEquals("t", t.getName());
-		assertEquals(0, t.getIndex());
-
-		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
-		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
-		assertNotNull(inferred);
-		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
-
-		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
-		// semantics.
-		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(tt.getDType(),
-						tt.getDims().stream()
-								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
-								.collect(Collectors.toList())))
-				.collect(toSet());
-
-		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
-				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
-		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
-
-		// Wrapper identity contract: equals/hashCode/toString.
-		assertEquals(t, t);
-		assertEquals(t.hashCode(), t.hashCode());
-		assertNotNull(t.toString());
-	}
-
-	/**
 	 * Test for #2. Here, the function has no parameters and is hybrid. Thus, it's not likely to have a tensor parameter.
 	 */
 	@Test
@@ -8083,5 +8036,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("C.f", function.getIdentifier());
 		assertEquals(1, function.getNumberOfParameters());
 		assertTrue("A method whose only parameter is `self` should be classified as a method.", function.isMethod());
+	}
+
+	/**
+	 * Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
+	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
+	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 */
+	@Test
+	public void testInferredTensorTypes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+		assertEquals(0, t.getIndex());
+
+		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
+		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
+		assertNotNull(inferred);
+		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
+
+		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
+		// semantics.
+		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
+				.map(tt -> Map.entry(tt.getDType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
+
+		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
+				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
+		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
+
+		// Wrapper identity contract: equals/hashCode/toString.
+		assertEquals(t, t);
+		assertEquals(t.hashCode(), t.hashCode());
+		assertNotNull(t.toString());
 	}
 }
