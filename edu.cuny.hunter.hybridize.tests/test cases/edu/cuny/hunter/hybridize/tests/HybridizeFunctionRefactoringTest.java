@@ -645,7 +645,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			@Override
 			public IPath getFullPath() {
-				// NOTE: This is incorrect when implemenng https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
+				// NOTE: This is incorrect when implementing https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
 				return org.eclipse.core.runtime.Path.fromOSString(inputTestFile.getAbsolutePath());
 			}
 
