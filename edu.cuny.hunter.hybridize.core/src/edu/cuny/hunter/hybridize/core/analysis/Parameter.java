@@ -421,8 +421,8 @@ public final class Parameter {
 		return this.hasTensorContainer(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
 	}
 
-	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
-			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
+	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
 		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
