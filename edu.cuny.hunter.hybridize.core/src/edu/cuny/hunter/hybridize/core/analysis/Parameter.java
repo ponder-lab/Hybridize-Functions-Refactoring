@@ -121,15 +121,6 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the owning {@link Function} of this parameter.
-	 *
-	 * @return The owning function.
-	 */
-	protected Function getFunction() {
-		return this.function;
-	}
-
-	/**
 	 * Returns the identifier text of this parameter as declared (e.g. {@code "x"}, {@code "self"}). Derived from the underlying Jython name
 	 * expression via {@link NodeUtils#getRepresentationString}.
 	 *
@@ -382,7 +373,7 @@ public final class Parameter {
 	protected boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
-		Set<CGNode> nodes = this.getFunction().getNodes(callGraph);
+		Set<CGNode> nodes = this.function.getNodes(callGraph);
 		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
 
 		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
