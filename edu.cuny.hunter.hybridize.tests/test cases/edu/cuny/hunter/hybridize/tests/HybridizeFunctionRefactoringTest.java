@@ -23,6 +23,7 @@ import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
 import static org.eclipse.core.resources.ResourceAttributes.fromFile;
+import static org.eclipse.core.runtime.Path.fromOSString;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ltk.core.refactoring.RefactoringStatus.INFO;
 import static org.junit.Assert.assertEquals;
@@ -646,7 +647,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			@Override
 			public IPath getFullPath() {
 				// NOTE: This is incorrect when implementing https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
-				return org.eclipse.core.runtime.Path.fromOSString(inputTestFile.getAbsolutePath());
+				return fromOSString(inputTestFile.getAbsolutePath());
 			}
 
 			@Override
