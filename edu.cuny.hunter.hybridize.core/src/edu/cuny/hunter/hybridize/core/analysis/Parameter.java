@@ -371,8 +371,8 @@ public final class Parameter {
 	 * @param monitor For progress.
 	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
 	 */
-	protected boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
-			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
+	protected static boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
 		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
 
@@ -414,7 +414,7 @@ public final class Parameter {
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
 	 * @return True iff the analysis associates a tensor-container with this parameter.
-	 * @throws org.eclipse.core.runtime.CoreException If the underlying analysis fails.
+	 * @throws CoreException If the underlying analysis fails.
 	 */
 	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws CoreException {
@@ -422,8 +422,8 @@ public final class Parameter {
 	}
 
 	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws CoreException {
-		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
+			IProgressMonitor monitor) {
+		return tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
 	/**
