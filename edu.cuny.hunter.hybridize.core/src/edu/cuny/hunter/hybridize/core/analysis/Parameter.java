@@ -417,12 +417,12 @@ public final class Parameter {
 	 * @throws org.eclipse.core.runtime.CoreException If the underlying analysis fails.
 	 */
 	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
+			IProgressMonitor monitor) throws CoreException {
 		return this.hasTensorContainer(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
 	}
 
 	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
+			IProgressMonitor monitor) throws CoreException {
 		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
