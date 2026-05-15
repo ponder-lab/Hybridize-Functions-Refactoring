@@ -93,6 +93,11 @@ public final class Parameter {
 	 */
 	private final Function function;
 
+	/**
+	 * Cache of tensor-container instance keys for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
+	 * discarded when the analysis is re-run and a new object is returned. Each value is a set of instance keys that the analysis associates
+	 * with containers of tensors (e.g. lists/tuples/dicts whose elements are tensors).
+	 */
 	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
@@ -515,6 +520,16 @@ public final class Parameter {
 		return this.isTensorTyped(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
 	}
 
+	/**
+	 * Returns true iff this parameter is likely to be tensor-typed.
+	 *
+	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
+	 * @throws Exception If the underlying analysis or AST traversal fails.
+	 */
 	boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
