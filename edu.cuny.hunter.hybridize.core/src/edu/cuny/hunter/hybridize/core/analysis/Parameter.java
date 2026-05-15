@@ -529,9 +529,8 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					return true;
 				}
-			} else {
+			} else
 				subMonitor.worked(33);
-			}
 
 			// If this function is in the call graph.
 			if (!this.function.getNodes(callGraph).isEmpty()) {
