@@ -119,7 +119,6 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
-import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
@@ -197,13 +196,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
 
 	private static final String COMPARE_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.compareOutput";
-
-	/**
-	 * Captured from the most recent {@link #getFunctions(String)} invocation. Surfaces the per-project {@link TensorTypeAnalysis} so tests
-	 * that exercise {@link Parameter#getTensorTypes(TensorTypeAnalysis)} have something to pass. The suite is one-project-per-test, so the
-	 * map's single entry is unwrapped here.
-	 */
-	private TensorTypeAnalysis lastTensorTypeAnalysis;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -683,9 +675,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(status.isOK());
 		else
 			assertFalse(status.isOK());
-
-		Map<IProject, TensorTypeAnalysis> analysisMap = processor.getProjectToTensorTypeAnalysis();
-		this.lastTensorTypeAnalysis = analysisMap.isEmpty() ? null : analysisMap.values().iterator().next();
 
 		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
 		if (this.getCompareOutputTestFile()) {
@@ -8041,7 +8030,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
 	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
 	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
 	 * {@code (2, 1)} and {@code (2,)} respectively.
@@ -8063,8 +8052,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertEquals(0, t.getIndex());
 
-		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
-		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
+		Set<TensorType> inferred = t.getTensorTypes();
 		assertNotNull(inferred);
 		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
 

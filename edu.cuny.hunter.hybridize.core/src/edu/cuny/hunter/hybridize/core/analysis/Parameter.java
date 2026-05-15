@@ -89,6 +89,11 @@ public final class Parameter {
 	private final int index;
 
 	/**
+	 * The possible {@link TensorType}s of this {@link Parameter}.
+	 */
+	private Set<TensorType> tensorTypes;
+
+	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
@@ -154,6 +159,19 @@ public final class Parameter {
 	 */
 	protected TypeInfo getTypeInfo() {
 		return getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	}
+
+	/**
+	 * Returns the set of possible {@link TensorType}s for this {@link Parameter}.
+	 *
+	 * @return The set of possible {@link TensorType}s for this {@link Parameter}.
+	 */
+	public Set<TensorType> getTensorTypes() {
+		return this.tensorTypes;
+	}
+
+	protected void setTensorTypes(Set<TensorType> tensorTypes) {
+		this.tensorTypes = tensorTypes;
 	}
 
 	/**
@@ -432,18 +450,17 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
+	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
-	 * Returns an empty set when the analysis associated no entries with this parameter. Note that with the current
+	 * Infers an empty set when the analysis associated no entries with this parameter. Note that with the current
 	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
 	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
 	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
 	 * future enhancement.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types.
 	 */
-	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
+	void inferTensorTypes(TensorTypeAnalysis analysis) {
 		Set<TensorType> result = new HashSet<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
@@ -459,7 +476,7 @@ public final class Parameter {
 			}
 		}
 
-		return unmodifiableSet(result);
+		this.setTensorTypes(unmodifiableSet(result));
 	}
 
 	private exprType getNameExpr() {
@@ -560,7 +577,9 @@ public final class Parameter {
 			// If this function is in the call graph.
 			if (!nodes.isEmpty()) {
 				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
-				if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
+				this.inferTensorTypes(tensorAnalysis);
+
+				if (!this.getTensorTypes().isEmpty()) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
