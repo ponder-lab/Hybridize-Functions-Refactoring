@@ -546,11 +546,10 @@ public final class Parameter {
 			if (!nodes.isEmpty()) {
 				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
 				if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
-					subMonitor.worked(1);
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
-					subMonitor.worked(1);
+					subMonitor.worked(2);
 					return true;
 				}
 
