@@ -432,21 +432,20 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
-	 * caching) by iterating {@code analysis}.
+	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
-	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter. Note that with the current
+	 * Returns an empty set when the analysis associated no entries with this parameter. Note that with the current
 	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
 	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
 	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
 	 * future enhancement.
 	 *
-	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
+	 * @param analysis The {@link TensorTypeAnalysis} to query.
+	 * @return Unmodifiable, possibly-empty set of inferred tensor types.
 	 */
 	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
-		Objects.requireNonNull(analysis);
 		Set<TensorType> result = new HashSet<>();
+
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
 			if (pointerKey instanceof LocalPointerKey) {
@@ -459,6 +458,7 @@ public final class Parameter {
 				}
 			}
 		}
+
 		return unmodifiableSet(result);
 	}
 
