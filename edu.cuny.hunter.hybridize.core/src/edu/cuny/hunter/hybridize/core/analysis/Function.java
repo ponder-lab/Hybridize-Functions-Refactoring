@@ -2,7 +2,6 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
-import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
@@ -1412,52 +1411,16 @@ public class Function {
 		subMonitor.setWorkRemaining(params.size());
 
 		for (Parameter param : params) {
-
-			// don't consider `self` as a tensor.
 			if (param.isSelf()) {
 				selfParam = true;
+				subMonitor.worked(1);
+				continue; // skip self parameters.
+			}
+
+			if (param.isTensorTyped(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
+				this.hasTensorParameter = TRUE;
+				subMonitor.worked(1);
 				continue; // next parameter.
-			}
-
-			// check a special case where we consider type hints.
-			boolean followTypeHints = this.getAlwaysFollowTypeHints() || this.getHybridizationParameters() != null
-					// TODO: Actually get the value here (#111).
-					&& this.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
-
-			// if we are considering type hints.
-			if (followTypeHints) {
-				LOG.info("Following type hints for: " + this + " and parameter: " + param.getName() + ".");
-
-				if (param.hasTensorTypeHint(subMonitor.split(IProgressMonitor.UNKNOWN))) {
-					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to a type hint.");
-					subMonitor.worked(1);
-					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + param.getName() + ".");
-					continue; // next parameter.
-				}
-			}
-
-			// If this function is in the call graph.
-			if (!nodes.isEmpty()) {
-				// Ask the parameter directly: does Ariadne associate any tensor type with it?
-				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
-					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
-					subMonitor.worked(1);
-					this.addInfo(TYPE_INFERENCING,
-							"Used tensor type analysis to infer tensor type for parameter: " + param.getName() + ".");
-					continue; // next parameter.
-				}
-
-				// Check for containers of tensors.
-				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
-					this.hasTensorParameter = TRUE;
-					LOG.info(this + " likely has a tensor-like parameter: " + param.getName() + " due to tensor analysis.");
-					subMonitor.worked(1);
-					this.addInfo(TYPE_INFERENCING,
-							"Used tensor type analysis to infer tensor container type for parameter: " + param.getName() + ".");
-					continue; // next parameter.
-				}
 			}
 
 			subMonitor.worked(1);

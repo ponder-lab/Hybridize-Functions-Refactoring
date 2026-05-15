@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static java.util.Collections.unmodifiableSet;
@@ -365,15 +366,14 @@ public final class Parameter {
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param paramInx The index of the parameter under question.
-	 * @param callGraph The {@link PythonSSAPropagationCallGraphBuilder}
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
 	 * @param builder The {@link CallGraphBuilder}.
 	 * @param monitor For progress.
 	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
 	 */
-	protected boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, CallGraph callGraph,
-			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) throws CoreException {
+	protected static boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
-		Set<CGNode> nodes = this.function.getNodes(callGraph);
 		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
 
 		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
@@ -414,11 +414,16 @@ public final class Parameter {
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
 	 * @return True iff the analysis associates a tensor-container with this parameter.
-	 * @throws org.eclipse.core.runtime.CoreException If the underlying analysis fails.
+	 * @throws CoreException If the underlying analysis fails.
 	 */
 	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
-		return this.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), callGraph, builder, monitor);
+			IProgressMonitor monitor) throws CoreException {
+		return this.hasTensorContainer(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) {
+		return tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
 	/**
@@ -493,6 +498,77 @@ public final class Parameter {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Returns true iff this parameter is likely to be tensor-typed.
+	 *
+	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
+	 * @param callGraph The call graph for the project.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
+	 * @throws Exception If the underlying analysis or AST traversal fails.
+	 */
+	public boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
+		return this.isTensorTyped(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
+
+		try {
+			// don't consider `self` as a tensor.
+			if (this.isSelf())
+				return false;
+
+			// check a special case where we consider type hints.
+			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
+					// TODO: Actually get the value here (#111).
+					&& this.function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
+
+			// Phase 1: type hints.
+			if (followTypeHints) {
+				LOG.info("Following type hints for: " + this.function + " and parameter: " + this.getName() + ".");
+
+				if (this.hasTensorTypeHint(subMonitor.split(1))) {
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
+					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(2);
+					return true;
+				}
+			} else
+				subMonitor.worked(1);
+
+			// If this function is in the call graph.
+			if (!nodes.isEmpty()) {
+				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
+				if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(2);
+					return true;
+				}
+
+				subMonitor.worked(1);
+
+				// Phase 3: check for containers of tensors.
+				if (this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1))) {
+					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
+					return true;
+				}
+			} else
+				subMonitor.worked(2);
+
+			return false;
+		} finally {
+			subMonitor.done();
+		}
 	}
 
 	@Override
