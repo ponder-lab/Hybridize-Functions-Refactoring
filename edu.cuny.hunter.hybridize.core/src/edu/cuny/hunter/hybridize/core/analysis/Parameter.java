@@ -504,10 +504,10 @@ public final class Parameter {
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
 	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
-	 * @throws CoreException If the underlying analysis or AST traversal fails.
+	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
 	public boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws CoreException {
+			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 99);
 
 		try {
