@@ -510,52 +510,60 @@ public final class Parameter {
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 99);
 
-		// don't consider `self` as a tensor.
-		if (this.isSelf()) {
+		try {
+			// don't consider `self` as a tensor.
+			if (this.isSelf()) {
+				return false;
+			}
+
+			// check a special case where we consider type hints.
+			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
+					// TODO: Actually get the value here (#111).
+					&& this.function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
+
+			// Phase 1: type hints.
+			if (followTypeHints) {
+				LOG.info("Following type hints for: " + this.function + " and parameter: " + this.getName() + ".");
+
+				if (this.hasTensorTypeHint(subMonitor.split(33))) {
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+					return true;
+				}
+			} else {
+				subMonitor.worked(33);
+			}
+
+			// If this function is in the call graph.
+			if (!this.function.getNodes(callGraph).isEmpty()) {
+				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
+				if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
+					subMonitor.worked(33);
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+					return true;
+				}
+
+				subMonitor.worked(33);
+
+				// Phase 3: check for containers of tensors.
+				if (this.hasTensorContainer(tensorAnalysis, callGraph, builder, subMonitor.split(33))) {
+					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
+					return true;
+				}
+			} else {
+				subMonitor.worked(33);
+				subMonitor.worked(33);
+			}
+
 			return false;
+		} finally {
+			subMonitor.done();
 		}
-
-		// check a special case where we consider type hints.
-		boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
-				// TODO: Actually get the value here (#111).
-				&& this.function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
-
-		// if we are considering type hints.
-		if (followTypeHints) {
-			LOG.info("Following type hints for: " + this.function + " and parameter: " + this.getName() + ".");
-
-			if (this.hasTensorTypeHint(subMonitor.split(33))) {
-				LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
-				subMonitor.done();
-				this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
-				return true;
-			}
-		}
-
-		// If this function is in the call graph.
-		if (!this.function.getNodes(callGraph).isEmpty()) {
-			// Ask the parameter directly: does Ariadne associate any tensor type with it?
-			if (!this.getTensorTypes(tensorAnalysis).isEmpty()) {
-				LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
-				subMonitor.done();
-				this.function.addInfo(TYPE_INFERENCING,
-						"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
-				return true;
-			}
-
-			subMonitor.worked(33);
-
-			// Check for containers of tensors.
-			if (this.hasTensorContainer(tensorAnalysis, callGraph, builder, subMonitor.split(33))) {
-				LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
-				subMonitor.done();
-				this.function.addInfo(TYPE_INFERENCING,
-						"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	@Override
