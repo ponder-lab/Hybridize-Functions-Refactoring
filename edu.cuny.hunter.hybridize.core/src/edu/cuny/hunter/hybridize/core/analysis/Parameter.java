@@ -557,6 +557,7 @@ public final class Parameter {
 
 			return false;
 		} finally {
+			subMonitor.worked(99);
 			subMonitor.done();
 		}
 	}
