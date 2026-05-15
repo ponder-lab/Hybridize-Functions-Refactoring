@@ -512,9 +512,8 @@ public final class Parameter {
 
 		try {
 			// don't consider `self` as a tensor.
-			if (this.isSelf()) {
+			if (this.isSelf())
 				return false;
-			}
 
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
