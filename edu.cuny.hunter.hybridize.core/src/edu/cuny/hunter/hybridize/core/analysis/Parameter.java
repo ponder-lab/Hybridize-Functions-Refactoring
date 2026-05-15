@@ -88,12 +88,7 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * Owning {@link Function} back-reference. Reached by every analytical method on this class for project-context state and helpers:
-	 * {@link #getTypeInfo()} via {@link Function#getFunctionDefinition()}, {@link #hasTensorTypeHint(IProgressMonitor)} via
-	 * {@link Function#getContainingDocument()}/{@code getContainingModuleName}/{@code getContainingFile}/{@code getNature}/{@code getProject},
-	 * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)} via
-	 * {@code Function.tensorAnalysisIncludesParameterContainer}, and {@link #matches(LocalPointerKey)} via
-	 * {@link Function#getContainingFile()}.
+	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
 
