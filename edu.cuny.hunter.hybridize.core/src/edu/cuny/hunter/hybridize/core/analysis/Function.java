@@ -1444,6 +1444,8 @@ public class Function {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
 					monitor.worked(1);
+					this.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor type for parameter: " + param.getName() + ".");
 					continue; // next parameter.
 				}
 
@@ -1451,6 +1453,10 @@ public class Function {
 				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, monitor.slice(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor-like parameter: " + param.getName() + " due to tensor analysis.");
+					monitor.worked(1);
+					this.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor container type for parameter: " + param.getName() + ".");
+					continue; // next parameter.
 				}
 			}
 
