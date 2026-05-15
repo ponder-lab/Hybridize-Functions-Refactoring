@@ -1402,7 +1402,7 @@ public class Function {
 	 */
 	public void inferTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
-		monitor.beginTask("Analyzing whether function has a tensor parameter.", IProgressMonitor.UNKNOWN);
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering tensor parameters...", IProgressMonitor.UNKNOWN);
 
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
@@ -1410,6 +1410,7 @@ public class Function {
 		boolean selfParam = false;
 
 		List<Parameter> params = this.getParameters(); // FIXME: positional only (#108).
+		subMonitor.setWorkRemaining(params.size());
 
 		for (Parameter param : params) {
 
@@ -1428,10 +1429,10 @@ public class Function {
 			if (followTypeHints) {
 				LOG.info("Following type hints for: " + this + " and parameter: " + param.getName() + ".");
 
-				if (param.hasTensorTypeHint(monitor.slice(IProgressMonitor.UNKNOWN))) {
+				if (param.hasTensorTypeHint(subMonitor.split(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to a type hint.");
-					monitor.worked(1);
+					subMonitor.worked(1);
 					this.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + param.getName() + ".");
 					continue; // next parameter.
 				}
@@ -1443,24 +1444,24 @@ public class Function {
 				if (!param.getTensorTypes(tensorAnalysis).isEmpty()) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor parameter: " + param.getName() + " due to tensor analysis.");
-					monitor.worked(1);
+					subMonitor.worked(1);
 					this.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + param.getName() + ".");
 					continue; // next parameter.
 				}
 
 				// Check for containers of tensors.
-				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, monitor.slice(IProgressMonitor.UNKNOWN))) {
+				if (param.hasTensorContainer(tensorAnalysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
 					this.hasTensorParameter = TRUE;
 					LOG.info(this + " likely has a tensor-like parameter: " + param.getName() + " due to tensor analysis.");
-					monitor.worked(1);
+					subMonitor.worked(1);
 					this.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + param.getName() + ".");
 					continue; // next parameter.
 				}
 			}
 
-			monitor.worked(1);
+			subMonitor.worked(1);
 		}
 
 		// True if there is only one parameter that is self.
@@ -1482,7 +1483,7 @@ public class Function {
 			LOG.info(this + " does not likely have a tensor parameter.");
 		}
 
-		monitor.done();
+		subMonitor.done();
 	}
 
 	private boolean hasTensorContext() {
