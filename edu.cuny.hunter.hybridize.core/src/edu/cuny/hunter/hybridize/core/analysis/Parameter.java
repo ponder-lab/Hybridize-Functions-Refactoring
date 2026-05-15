@@ -452,11 +452,9 @@ public final class Parameter {
 	/**
 	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
-	 * Infers an empty set when the analysis associated no entries with this parameter. Note that with the current
-	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
-	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
-	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
-	 * future enhancement.
+	 * Infers an empty set when the analysis associated no entries with this parameter (⊥, not a tensor). If a matching entry exists but its
+	 * tensor state is unknown (e.g., a null/empty {@link TensorVariable} state), records {@code null} in the inferred set to preserve the
+	 * wala/ML lattice contract for ⊤ (tensor with unknown shape/type information).
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
 	 */
@@ -469,9 +467,16 @@ public final class Parameter {
 				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
 				if (localPointerKey.isParameter() && this.matches(localPointerKey)) {
 					TensorVariable tensorVariable = pair.snd;
-					if (tensorVariable == null)
-						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
-					result.addAll(tensorVariable.getTypes());
+					if (tensorVariable == null) {
+						result.add(null);
+						continue;
+					}
+
+					Set<TensorType> types = tensorVariable.getTypes();
+					if (types == null || types.isEmpty())
+						result.add(null);
+					else
+						result.addAll(types);
 				}
 			}
 		}

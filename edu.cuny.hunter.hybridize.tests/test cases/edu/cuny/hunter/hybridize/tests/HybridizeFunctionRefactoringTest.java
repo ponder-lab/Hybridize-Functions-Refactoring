@@ -8074,4 +8074,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(t.hashCode(), t.hashCode());
 		assertNotNull(t.toString());
 	}
+
+	/**
+	 * Regression test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/377: a tensor-typed parameter whose shape is
+	 * unknown (lattice ⊤) must still be recognized as tensor-typed.
+	 */
+	@Test
+	public void testInferredTensorTypesUnknownShapeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertNotNull(t);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertFalse("A tensor with unknown shape/type (⊤) must not collapse to ⊥.", inferred.isEmpty());
+		assertTrue("Expected a lattice-⊤ tensor marker (either null TensorType or TensorType with null dims).",
+				inferred.stream().anyMatch(tt -> tt == null || tt.getDims() == null));
+	}
 }
