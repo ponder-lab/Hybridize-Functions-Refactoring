@@ -1403,7 +1403,6 @@ public class Function {
 	public void inferTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering tensor parameters...", IProgressMonitor.UNKNOWN);
-
 		Set<CGNode> nodes = this.getNodes(callGraph);
 
 		// True iff the function has a self parameter in the first position.
