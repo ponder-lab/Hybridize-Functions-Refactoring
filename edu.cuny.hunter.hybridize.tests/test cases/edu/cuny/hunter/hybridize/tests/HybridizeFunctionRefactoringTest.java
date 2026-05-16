@@ -8338,4 +8338,62 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", x.isTensor());
 		assertFalse("Function with no tensor classification: `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
 	}
+
+	/**
+	 * Regression test for #486 (shape-⊤). A tensor-typed parameter whose shape Ariadne cannot resolve must surface the shape-⊤ marker (a
+	 * {@link TensorType} with {@code null} {@linkplain TensorType#getDims() dims}) so downstream code can distinguish it from a concrete
+	 * shape. The marker is visible at the {@link Parameter#getTensorTypes()} level because the {@code TensorTypeAnalysis} iterator emits
+	 * the underlying {@link TensorType} unchanged.
+	 */
+	@Test
+	public void testInferredTensorTypesUnknownShapeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertFalse("Iterator must surface the TensorType for a shape-⊤ parameter.", inferred.isEmpty());
+		assertTrue("Expected a shape-⊤ marker (TensorType with null dims).", inferred.stream().anyMatch(tt -> tt.getDims() == null));
+	}
+
+	/**
+	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
+	 * {@link Parameter#getTensorTypes()} level. Note this empty observation does not directly correspond to the wala/ML lattice ⊥ (empty
+	 * shape or dtype set at the generator level)—the {@code TensorTypeAnalysis} iterator filters {@code state == null} (variable-level ⊤)
+	 * and {@code state.isEmpty()} (variable-level ⊥) indistinguishably, so Hybridize sees both as "no iterator entry." This test pins the
+	 * no-iterator-entry behavior for a non-tensor argument; finer lattice distinctions would require a richer Ariadne-side query.
+	 */
+	@Test
+	public void testInferredTensorTypesBottomNotTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertFalse(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		Set<TensorType> inferred = x.getTensorTypes();
+		assertNotNull(inferred);
+		assertTrue("Non-tensor parameter yields no iterator entry, so the inferred set is empty.", inferred.isEmpty());
+	}
 }
