@@ -8100,8 +8100,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> inferred = t.getTensorTypes();
 		assertNotNull(inferred);
 		assertFalse("A tensor with unknown shape/type (⊤) must not collapse to ⊥.", inferred.isEmpty());
-		assertTrue("Expected a lattice-⊤ tensor marker (either null TensorType or TensorType with null dims).",
-				inferred.stream().anyMatch(tt -> tt == null || tt.getDims() == null));
+		assertTrue("Expected a lattice-⊤ tensor marker with unknown dtype and unknown rank.",
+				inferred.stream().anyMatch(tt -> tt != null && tt.getDims() == null && tt.getDType() == DType.UNKNOWN));
 	}
 
 	/**

@@ -39,6 +39,7 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.classLoader.IClass;
@@ -76,6 +77,11 @@ public final class Parameter {
 	 * Fully-qualified name of TensorFlow's tensor type, used to recognize tensor-typed type hints in {@link #hasTensorTypeHint}.
 	 */
 	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
+
+	/**
+	 * Lattice ⊤ sentinel for tensor inference: tensor exists but both dtype/shape precision are unknown.
+	 */
+	private static final TensorType TOP_UNKNOWN_TENSOR_TYPE = new TensorType(DType.UNKNOWN, null);
 
 	/**
 	 * Parent Jython AST node carrying every positional name expression (in {@link argumentsType#args}) and per-position annotation (in
@@ -453,8 +459,9 @@ public final class Parameter {
 	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
 	 * Infers an empty set when the analysis associated no entries with this parameter (⊥, not a tensor). If a matching entry exists but its
-	 * tensor state is unknown (e.g., a null/empty {@link TensorVariable} state), records {@code null} in the inferred set to preserve the
-	 * wala/ML lattice contract for ⊤ (tensor with unknown shape/type information).
+	 * tensor state is unknown (e.g., a null/empty {@link TensorVariable} state), records {@link #TOP_UNKNOWN_TENSOR_TYPE} (dtype
+	 * {@link DType#UNKNOWN}, null dims) to preserve the wala/ML lattice contract for ⊤ (tensor with unknown shape/type information) without
+	 * exposing null elements to callers.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
 	 */
@@ -468,13 +475,13 @@ public final class Parameter {
 				if (localPointerKey.isParameter() && this.matches(localPointerKey)) {
 					TensorVariable tensorVariable = pair.snd;
 					if (tensorVariable == null) {
-						result.add(null);
+						result.add(TOP_UNKNOWN_TENSOR_TYPE);
 						continue;
 					}
 
 					Set<TensorType> types = tensorVariable.getTypes();
 					if (types == null || types.isEmpty())
-						result.add(null);
+						result.add(TOP_UNKNOWN_TENSOR_TYPE);
 					else
 						result.addAll(types);
 				}
