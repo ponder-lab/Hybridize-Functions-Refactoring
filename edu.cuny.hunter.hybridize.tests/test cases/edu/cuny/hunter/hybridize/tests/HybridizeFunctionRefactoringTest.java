@@ -1911,7 +1911,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 
 		Set<TensorType> expected = Set.of(
-				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2), new TensorType.NumericDim(1))),
+				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT),
+						List.of(new TensorType.NumericDim(2), new TensorType.NumericDim(1))),
 				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2))));
 		assertEquals(expected, inferred);
 
@@ -8125,7 +8126,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Input-signature inference when the function body uses a tensor that is not a parameter (a module-level tensor closed over by the
-	 * function). The inferred signature should still contain only the parameter's TensorType, not the closure-captured tensor.
+	 * function). The inferred signature should still contain only the parameter's TensorType, not the closure-captured tensor. The closure
+	 * tensor's shape is intentionally distinct from the parameter's to make a leak observable: an implementation that collected all tensors
+	 * and deduplicated by `TensorType` would surface both shapes and fail the singleton assertion.
 	 */
 	@Test
 	public void testInputSignatureNonParameterTensor() throws Exception {
@@ -8141,5 +8144,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertTrue(signature.isPresent());
 		assertEquals(List.of(expected), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Input-signature inference when the singleton {@link TensorType} carries a concrete dtype but shape-⊤ (null dims), as produced by
+	 * `tf.keras.Input(shape=json.loads(...))` where Ariadne cannot trace `json.loads`. `inferSpec`'s `single.getDims() == null` branch
+	 * fires and {@link Function#inferInputSignature} returns {@link Optional#empty}. Pins the singleton-non-concrete branch so future
+	 * regressions that re-accept shape-⊤ inputs as concrete signatures fail this test.
+	 */
+	@Test
+	public void testInputSignatureShapeUnknown() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertFalse("Expected a non-empty TensorType set so we exercise the singleton branch, not the no-iterator-entry one.",
+				ariadne.isEmpty());
+		assertTrue("Expected a shape-⊤ marker (TensorType with null dims) so `inferSpec`'s shape-⊤ branch fires.",
+				ariadne.stream().anyMatch(tt -> tt.getDims() == null));
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Singleton with null dims must yield Optional.empty from `inferInputSignature`.", signature.isPresent());
 	}
 }

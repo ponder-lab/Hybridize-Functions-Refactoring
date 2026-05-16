@@ -9,4 +9,7 @@ def func(t):
     return t + 1
 
 
-func(tf.constant([1.0, 2.0]))
+x = tf.constant([1.0, 2.0])
+assert x.dtype == tf.float32
+assert x.shape == (2,)
+func(x)
