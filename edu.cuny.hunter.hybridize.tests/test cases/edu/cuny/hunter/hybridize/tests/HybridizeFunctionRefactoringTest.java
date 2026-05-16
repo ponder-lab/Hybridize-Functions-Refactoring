@@ -8101,6 +8101,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Parameter-level → function-level reflection.
 		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+
+		// Tighter cache→classifier invariant: non-empty `getTensorTypes()` ⇒ `isTensor() == TRUE`.
+		assertFalse("Tensor parameter must have a non-empty `getTensorTypes()` cache (Phase 2 fired).", t.getTensorTypes().isEmpty());
 	}
 
 	/**
@@ -8123,5 +8126,57 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			if (!param.isSelf())
 				assertNotEquals("`getHasTensorParameter()` is FALSE ⇒ no non-self parameter classifies as tensor-typed.", Boolean.TRUE,
 						param.isTensor());
+	}
+
+	/**
+	 * Regression test for #498: a `self` parameter classifies as non-tensor unconditionally (early-return in
+	 * {@link Parameter#classifyAsTensor}). The owning function has only `self`, so `Function.getHasTensorParameter() == FALSE`: the
+	 * speculative-context fallback is gated on `!onlySelfParam`, and the function name `f` doesn't match the regex anyway.
+	 */
+	@Test
+	public void testSelfParameterClassification() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertFalse("Self-only method has no tensor parameter.", function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter self = parameters.get(0);
+		assertEquals("self", self.getName());
+
+		assertTrue("Parameter `self` must classify as self.", self.isSelf());
+		assertEquals("Self parameter must classify as non-tensor unconditionally.", Boolean.FALSE, self.isTensor());
+	}
+
+	/**
+	 * Regression test for #498: pins the asymmetry that {@link Function#getHasTensorParameter} {@code == TRUE} does NOT imply
+	 * {@code ∃ non-self param p : p.isTensor() == TRUE}. The speculative-context fallback (in {@link Function#inferTensorParameters}) can
+	 * set `hasTensorParameter = TRUE` based on function name + class lineage, with zero parameter-level tensor evidence.
+	 */
+	@Test
+	public void testSpeculativeContextOverridesParameterEvidence() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("__call__", function.getSimpleName());
+
+		// Function-level signal: speculative-context fired.
+		assertTrue("Speculative-context override sets `getHasTensorParameter()` to TRUE.", function.getHasTensorParameter());
+
+		// Parameter-level signal: no individual parameter classifies as tensor-typed (no type hint, no Ariadne call-site classification,
+		// no container).
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter self = parameters.get(0);
+		Parameter x = parameters.get(1);
+		assertEquals("self", self.getName());
+		assertEquals("x", x.getName());
+
+		assertEquals(Boolean.FALSE, self.isTensor());
+		assertEquals("Asymmetry: function-level TRUE does not imply parameter-level TRUE under speculative-context override.",
+				Boolean.FALSE, x.isTensor());
 	}
 }
