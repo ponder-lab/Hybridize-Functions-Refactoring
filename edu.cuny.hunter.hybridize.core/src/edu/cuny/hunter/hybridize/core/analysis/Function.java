@@ -1417,7 +1417,8 @@ public class Function {
 				continue; // skip self parameters.
 			}
 
-			if (param.isTensorTyped(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN))) {
+			param.classifyAsTensor(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
+			if (Boolean.TRUE.equals(param.isTensor())) {
 				this.hasTensorParameter = TRUE;
 				subMonitor.worked(1);
 				continue; // next parameter.

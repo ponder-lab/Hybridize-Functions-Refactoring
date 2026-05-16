@@ -8074,4 +8074,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(t.hashCode(), t.hashCode());
 		assertNotNull(t.toString());
 	}
+
+	/**
+	 * Regression test for #498: pins the classifier→query contract on `Parameter`. After {@link Parameter#classifyAsTensor} runs
+	 * (transitively via {@link Function#inferTensorParameters}), {@link Parameter#isTensor} returns the cached classification: {@code TRUE}
+	 * for a tensor parameter, {@code FALSE} for a non-tensor parameter. Also pins the function-level reflection:
+	 * {@link Function#getHasTensorParameter} is {@code TRUE} iff at least one non-{@code self} parameter has
+	 * {@code Parameter.isTensor() == TRUE} (modulo the speculative-context override, which this fixture doesn't trigger).
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContract() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter t = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("t", t.getName());
+		assertEquals("n", n.getName());
+
+		// Classifier→query contract.
+		assertEquals("Parameter `t` (tensor call site) classifies as tensor-typed.", Boolean.TRUE, t.isTensor());
+		assertEquals("Parameter `n` (non-tensor call site) classifies as non-tensor.", Boolean.FALSE, n.isTensor());
+
+		// Parameter-level → function-level reflection.
+		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498 (reverse direction): if {@link Function#getHasTensorParameter} is {@code FALSE}, then no non-{@code self}
+	 * parameter has {@code Parameter.isTensor() == TRUE}. The fixture uses a function named `f` (outside the speculative-context regex)
+	 * with two non-tensor int arguments, so the speculative-context fallback does not fire.
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContractReverse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertFalse("Function with no tensor parameters and no speculative-context match: `getHasTensorParameter()` is FALSE.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		for (Parameter param : parameters)
+			if (!param.isSelf())
+				assertNotEquals("`getHasTensorParameter()` is FALSE ⇒ no non-self parameter classifies as tensor-typed.", Boolean.TRUE,
+						param.isTensor());
+	}
 }
