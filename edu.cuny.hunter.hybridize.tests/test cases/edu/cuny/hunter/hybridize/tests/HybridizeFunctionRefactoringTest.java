@@ -50,6 +50,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -8337,5 +8338,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", x.isTensor());
 		assertFalse("Function with no tensor classification: `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #495: under `experimental_follow_type_hints=True` with a `tf.Tensor` type hint, the per-Parameter tensor-types
+	 * cache must be populated even though `Parameter.classifyAsTensor`'s Phase 1 (type hints) returns true before Phase 2 (Ariadne query)
+	 * runs. Without the hoist landed in #496, `param.getTensorTypes()` returned the empty default for type-hint-classified parameters even
+	 * when Ariadne had a concrete `TensorType` from the call site.
+	 */
+	@Test
+	public void testInferredTensorTypesUnderFollowTypeHints() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue("Function is decorated with `@tf.function(experimental_follow_type_hints=True)`.", function.isHybrid());
+		assertTrue("The `experimental_follow_type_hints` parameter is supplied on the `tf.function` decorator.",
+				function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
+		assertTrue("The function has a tensor parameter (via the type hint).", function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		// The load-bearing assertion: the cache is populated from the call site's `tf.constant([1.0, 2.0])`, even though Phase 1's
+		// type-hint hit causes `classifyAsTensor` to return true before Phase 2 reads the cache. Without the hoist, this assertion fails
+		// (the cache stays at the empty default).
+		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
+		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
+				t.getTensorTypes());
 	}
 }
