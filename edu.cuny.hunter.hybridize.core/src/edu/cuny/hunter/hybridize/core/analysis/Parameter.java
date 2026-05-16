@@ -94,6 +94,12 @@ public final class Parameter {
 	private Set<TensorType> tensorTypes;
 
 	/**
+	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
+	 * by {@link #isTensorTyped} when Phase 3 ({@link #hasTensorContainer}) fires. {@code null} until classification has run.
+	 */
+	private Boolean tensorContainer;
+
+	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
@@ -172,6 +178,21 @@ public final class Parameter {
 
 	protected void setTensorTypes(Set<TensorType> tensorTypes) {
 		this.tensorTypes = tensorTypes;
+	}
+
+	/**
+	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
+	 * tensors). Populated during {@link #isTensorTyped}'s Phase 3. Returns {@code null} if classification has not yet run.
+	 * <p>
+	 * Distinct from {@link #getTensorTypes()}: a tensor container is recognized as tensor-typed by Phase 3's container detection, but
+	 * Ariadne does not emit a single {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from
+	 * "direct tensor" should use this method.
+	 *
+	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not, or
+	 *         {@code null} if classification has not yet run.
+	 */
+	public Boolean isTensorContainer() {
+		return this.tensorContainer;
 	}
 
 	/**
@@ -590,7 +611,9 @@ public final class Parameter {
 				subMonitor.worked(1);
 
 				// Phase 3: check for containers of tensors.
-				if (this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1))) {
+				boolean isContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+				this.tensorContainer = isContainer;
+				if (isContainer) {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
