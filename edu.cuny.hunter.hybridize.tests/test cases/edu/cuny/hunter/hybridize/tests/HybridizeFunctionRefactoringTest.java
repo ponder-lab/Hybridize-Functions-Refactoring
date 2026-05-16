@@ -50,9 +50,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -128,6 +130,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -1878,6 +1881,51 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
+	}
+
+	/**
+	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
+	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
+	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 */
+	@Test
+	public void testInferredTensorTypes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+		assertEquals(0, t.getIndex());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+
+		Set<TensorType> expected = Set.of(
+				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT),
+						List.of(new TensorType.NumericDim(2), new TensorType.NumericDim(1))),
+				new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2))));
+		assertEquals(expected, inferred);
+
+		// Pinning assertion on inferInputSignature for the multi-context branch. Multi-context support is not yet implemented, so the
+		// fixture's two TensorTypes for the same parameter currently collapse to Optional.empty. When multi-context support lands, this
+		// assertion will fail; replace it with a positive signature check at that time.
+		// TODO: Replace with a positive InputSignature assertion once multi-context support is implemented.
+		assertFalse("Multi-context input currently collapses to Optional.empty. See Function.inferSpec.",
+				function.inferInputSignature().isPresent());
+
+		// Wrapper identity contract: equals/hashCode/toString.
+		assertEquals(t, t);
+		assertEquals(t.hashCode(), t.hashCode());
+		assertNotNull(t.toString());
 	}
 
 	/**
@@ -8030,48 +8078,74 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
-	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
-	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
-	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 * Input-signature inference for a function called once with a single tensor of concrete dtype and shape. The expected signature is a
+	 * singleton containing that single tensor type.
 	 */
 	@Test
-	public void testInferredTensorTypes() throws Exception {
+	public void testInputSignatureScenario1() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
 
 		List<Parameter> parameters = function.getParameters();
-		assertNotNull(parameters);
-		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
-
+		assertEquals(1, parameters.size());
 		Parameter t = parameters.get(0);
-		assertEquals("t", t.getName());
-		assertEquals(0, t.getIndex());
 
-		Set<TensorType> inferred = t.getTensorTypes();
-		assertNotNull(inferred);
-		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
+		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
 
-		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
-		// semantics.
-		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(tt.getDType(),
-						tt.getDims().stream()
-								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
-								.collect(Collectors.toList())))
-				.collect(toSet());
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertEquals(Set.of(expected), ariadne);
 
-		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
-				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
-		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(expected), signature.get().parameterTypes());
+	}
 
-		// Wrapper identity contract: equals/hashCode/toString.
-		assertEquals(t, t);
-		assertEquals(t.hashCode(), t.hashCode());
-		assertNotNull(t.toString());
+	/**
+	 * Input-signature inference when the function body uses a tensor that is not a parameter (a module-level tensor closed over by the
+	 * function). The inferred signature should still contain only the parameter's TensorType, not the closure-captured tensor. The closure
+	 * tensor's shape is intentionally distinct from the parameter's to make a leak observable: an implementation that collected all tensors
+	 * and deduplicated by `TensorType` would surface both shapes and fail the singleton assertion.
+	 */
+	@Test
+	public void testInputSignatureNonParameterTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+
+		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(expected), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Input-signature inference when the singleton {@link TensorType} carries a concrete dtype but shape-⊤ (null dims), as produced by
+	 * `tf.keras.Input(shape=json.loads(...))` where Ariadne cannot trace `json.loads`. `inferSpec`'s `single.getDims() == null` branch
+	 * fires and {@link Function#inferInputSignature} returns {@link Optional#empty}. Pins the singleton-non-concrete branch so future
+	 * regressions that re-accept shape-⊤ inputs as concrete signatures fail this test.
+	 */
+	@Test
+	public void testInputSignatureShapeUnknown() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertFalse("Expected a non-empty TensorType set so we exercise the singleton branch, not the no-iterator-entry one.",
+				ariadne.isEmpty());
+		assertTrue("Expected a shape-⊤ marker (TensorType with null dims) so `inferSpec`'s shape-⊤ branch fires.",
+				ariadne.stream().anyMatch(tt -> tt.getDims() == null));
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Singleton with null dims must yield Optional.empty from `inferInputSignature`.", signature.isPresent());
 	}
 }

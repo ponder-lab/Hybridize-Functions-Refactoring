@@ -84,6 +84,8 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
+import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
@@ -1446,6 +1448,87 @@ public class Function {
 		}
 
 		subMonitor.done();
+	}
+
+	/**
+	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
+	 * tensor-type analysis associated with at least one tensor type.
+	 * <p>
+	 * Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the values are computed during {@link #inferTensorParameters}
+	 * (which caches per-parameter tensor types on each {@link Parameter}), and this method reads those cached values.
+	 * <p>
+	 * For each non-{@code self} parameter, this method reads {@link Parameter#getTensorTypes()} and reduces that set to a single
+	 * {@link TensorType}. A parameter with an empty cached set is excluded from the signature: the {@link Parameter#getTensorTypes()}
+	 * Javadoc notes that the iterator-based query collapses two upstream lattice states ("tensor with unknown types" and "not a tensor")
+	 * into the same empty result, and treating empty as "not a tensor" is the practical default until a richer Ariadne-side query lands.
+	 * <p>
+	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context and other non-concrete cases
+	 * return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 *
+	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
+	 *         {@link #inferSpec} cannot reduce one of the per-parameter sets.
+	 */
+	public Optional<InputSignature> inferInputSignature() {
+		List<TensorType> specs = new ArrayList<>();
+
+		for (Parameter param : this.getParameters()) {
+			// `self` is excluded from the signature.
+			if (param.isSelf())
+				continue;
+
+			Set<TensorType> contexts = param.getTensorTypes();
+			if (contexts.isEmpty())
+				// Ariadne's tensor-type lattice (source of truth: class-level Javadoc on
+				// `com.ibm.wala.cast.python.ml.client.TensorGenerator`)
+				// distinguishes ⊤ ("unknown tensor") from ⊥ ("not a tensor") from a concrete set of types. Generators encode the
+				// distinction in their shape/dtype outputs (`null` shape vs empty set; `EnumSet.of(DType.UNKNOWN)` vs empty set), and
+				// the analysis propagates it through `TensorVariable.state`. But `TensorTypeAnalysis.iterator()` (the surface this
+				// query goes through) filters to entries with `state != null && !state.isEmpty()`, collapsing ⊤ and ⊥ into the same
+				// "no result" outcome. Until a richer Ariadne-side query exposes the distinction, treat empty as "not a tensor" and
+				// exclude the parameter from the signature.
+				continue;
+
+			Optional<TensorType> spec = inferSpec(contexts);
+			if (spec.isEmpty())
+				// Reduction returned bottom for this parameter; the whole signature collapses.
+				return Optional.empty();
+
+			specs.add(spec.get());
+		}
+
+		if (specs.isEmpty())
+			return Optional.empty();
+
+		return Optional.of(new InputSignature(specs));
+	}
+
+	/**
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
+	 * <p>
+	 * Current scope: a single-context input with concrete dtype and concrete shape returns the singleton unchanged. Multi-context and other
+	 * non-concrete cases return {@link Optional#empty} pending future PRs.
+	 *
+	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
+	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
+	 */
+	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
+		if (contexts.size() != 1)
+			// TODO: multi-context handling. Subsequent PRs will extend.
+			return Optional.empty();
+
+		TensorType single = contexts.iterator().next();
+
+		// The single-context case requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`).
+		// Non-concrete cases return `Optional.empty` pending implementation in subsequent PRs.
+		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
+			return Optional.empty();
+		if (single.getDims() == null)
+			return Optional.empty();
+		for (TensorType.Dimension<?> dim : single.getDims())
+			if (!(dim instanceof TensorType.NumericDim))
+				return Optional.empty();
+
+		return Optional.of(single);
 	}
 
 	private boolean hasTensorContext() {

@@ -12,6 +12,7 @@ import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString
 import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -89,14 +90,16 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * The possible {@link TensorType}s of this {@link Parameter}.
-	 */
-	private Set<TensorType> tensorTypes;
-
-	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
+
+	/**
+	 * The {@link TensorType}s associated with this parameter by the {@link TensorTypeAnalysis}. Populated during the
+	 * {@link Function#inferTensorParameters} pass so {@link #getTensorTypes()} can be called without re-passing the analysis. Empty by
+	 * default, never {@code null}.
+	 */
+	private Set<TensorType> tensorTypes = Collections.emptySet();
 
 	/**
 	 * Cache of tensor-container instance keys for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
@@ -159,19 +162,6 @@ public final class Parameter {
 	 */
 	protected TypeInfo getTypeInfo() {
 		return getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
-	}
-
-	/**
-	 * Returns the set of possible {@link TensorType}s for this {@link Parameter}.
-	 *
-	 * @return The set of possible {@link TensorType}s for this {@link Parameter}.
-	 */
-	public Set<TensorType> getTensorTypes() {
-		return this.tensorTypes;
-	}
-
-	protected void setTensorTypes(Set<TensorType> tensorTypes) {
-		this.tensorTypes = tensorTypes;
 	}
 
 	/**
@@ -477,6 +467,26 @@ public final class Parameter {
 		}
 
 		this.setTensorTypes(unmodifiableSet(result));
+	}
+
+	/**
+	 * Returns the {@link TensorType}s associated with this parameter, as cached during the {@link Function#inferTensorParameters} pass.
+	 * Mirrors {@link Function#getHasTensorParameter}: a no-argument read of a value the analysis pass populated, intended for use after the
+	 * pass has run.
+	 *
+	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}. Returns the empty set if the analysis pass has
+	 *         not run for the owning function.
+	 */
+	public Set<TensorType> getTensorTypes() {
+		return Collections.unmodifiableSet(this.tensorTypes);
+	}
+
+	/**
+	 * Package-private setter used by {@link Function#inferTensorParameters} to populate the cache read by the no-arg
+	 * {@link #getTensorTypes()}.
+	 */
+	void setTensorTypes(Set<TensorType> tensorTypes) {
+		this.tensorTypes = Objects.requireNonNull(tensorTypes);
 	}
 
 	private exprType getNameExpr() {
