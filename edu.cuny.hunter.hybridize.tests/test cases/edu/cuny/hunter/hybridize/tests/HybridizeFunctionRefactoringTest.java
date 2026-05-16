@@ -8266,4 +8266,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Type hint honored via the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.", Boolean.TRUE, x.isTensor());
 		assertTrue("Type-hint-classified parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
 	}
+
+	/**
+	 * Regression test for #498: pins classification across a method-style call (self + tensor parameter in the same function). Both
+	 * parameters classify per-parameter: `self.isTensor() == FALSE` (self-check), `t.isTensor() == TRUE` (Ariadne classifies from the
+	 * tensor call site). The function reflects the parameter-level tensor signal.
+	 */
+	@Test
+	public void testMethodWithSelfAndTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter self = parameters.get(0);
+		Parameter t = parameters.get(1);
+		assertEquals("self", self.getName());
+		assertEquals("t", t.getName());
+
+		assertTrue("Parameter `self` classifies as self.", self.isSelf());
+		assertEquals("Self parameter classifies as non-tensor.", Boolean.FALSE, self.isTensor());
+		assertEquals("Tensor parameter `t` classifies as tensor-typed.", Boolean.TRUE, t.isTensor());
+		assertTrue("Method with a tensor parameter ⇒ `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: pins that Phase 1's `hasTensorTypeHint` is specific to TF tensor types. An `int` type hint does NOT
+	 * classify the parameter as tensor-typed, even under the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.
+	 */
+	@Test
+	public void testNonTensorTypeHintNotClassified() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertEquals("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", Boolean.FALSE, x.isTensor());
+		assertFalse("Function with no tensor classification: `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
+	}
 }
