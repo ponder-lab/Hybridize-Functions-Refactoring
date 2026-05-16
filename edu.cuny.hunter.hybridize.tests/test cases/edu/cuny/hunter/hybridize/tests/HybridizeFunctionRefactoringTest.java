@@ -8179,4 +8179,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Asymmetry: function-level TRUE does not imply parameter-level TRUE under speculative-context override.",
 				Boolean.FALSE, x.isTensor());
 	}
+
+	/**
+	 * Regression test for #498: a function with no parameters trivially has no tensor parameter. Pins the empty-param-list edge case:
+	 * {@code Function.getHasTensorParameter() == FALSE} (the classification loop iterates over an empty list).
+	 */
+	@Test
+	public void testZeroParameterFunctionHasNoTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals(0, function.getParameters().size());
+		assertFalse("Zero-parameter function has no tensor parameter.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: pins that ALL non-self tensor parameters classify independently. Two-tensor-parameter fixture; both
+	 * parameters individually classify as tensor-typed, and the function reflects the OR.
+	 */
+	@Test
+	public void testMultipleTensorParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter a = parameters.get(0);
+		Parameter b = parameters.get(1);
+		assertEquals("a", a.getName());
+		assertEquals("b", b.getName());
+
+		assertEquals("First tensor parameter classifies as tensor-typed.", Boolean.TRUE, a.isTensor());
+		assertEquals("Second tensor parameter classifies as tensor-typed independently of the first.", Boolean.TRUE, b.isTensor());
+		assertTrue("Function with multiple tensor parameters has `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: under the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`, a tensor-typed type hint classifies the
+	 * parameter even when the per-decorator `experimental_follow_type_hints` flag is absent. Pins that the `followTypeHints` predicate is
+	 * the OR of (global flag, per-decorator flag) and that either alone suffices.
+	 */
+	@Test
+	public void testTensorTypeHintHonoredViaGlobalFlag() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertTrue("Function is decorated with `@tf.function`.", function.isHybrid());
+		assertFalse("`experimental_follow_type_hints` is NOT supplied on the decorator.",
+				function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertEquals("Type hint honored via the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.", Boolean.TRUE, x.isTensor());
+		assertTrue("Type-hint-classified parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+	}
 }
