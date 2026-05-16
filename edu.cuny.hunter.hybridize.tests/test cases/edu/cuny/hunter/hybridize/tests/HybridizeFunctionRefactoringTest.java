@@ -8077,13 +8077,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Regression test for #497: a tensor-container parameter (reached via a list-of-tensors call site) classifies as tensor-typed via
-	 * {@link Parameter#isTensorTyped}'s Phase 3 but does not populate the per-Parameter {@link Set} of {@link TensorType}s (the container
-	 * itself is not a tensor in Ariadne's analysis). Pins three relationships:
+	 * {@link Parameter#classifyAsTensor}'s Phase 3 but does not populate the per-Parameter {@link Set} of {@link TensorType}s (the
+	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:
 	 * <ul>
 	 * <li>{@link Function#getHasTensorParameter} reflects the parameter-level Phase 3 result.
-	 * <li>The new {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
-	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache that this PR
-	 * documents.
+	 * <li>The {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
+	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache.
 	 * </ul>
 	 */
 	@Test
@@ -8092,7 +8091,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 
-		// Parameter-level Phase 3 classification ⇒ function-level reflection.
 		assertTrue("Function with a tensor-container parameter classifies as having a tensor parameter.", function.getHasTensorParameter());
 
 		List<Parameter> parameters = function.getParameters();
@@ -8100,13 +8098,57 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter a = parameters.get(0);
 		assertEquals("a", a.getName());
 
-		// Phase 3 cache (new in #497): explicit container classification.
-		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, a.isTensorContainer());
+		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", TRUE, a.isTensorContainer());
 
-		// Asymmetry pin: `getTensorTypes()` stays empty because Ariadne does not emit a single TensorType for the container itself;
-		// Phase 2's cache-population path runs but finds nothing for this parameter.
 		Set<TensorType> tensorTypes = a.getTensorTypes();
 		assertTrue("Container parameter must not surface a direct TensorType through `getTensorTypes()`.",
 				tensorTypes == null || tensorTypes.isEmpty());
+	}
+
+	/**
+	 * Regression test for #498: pins the classifier→query contract on `Parameter`. After {@link Parameter#classifyAsTensor} runs
+	 * (transitively via {@link Function#inferTensorParameters}), {@link Parameter#isTensor} returns the cached classification: {@code TRUE}
+	 * for a tensor parameter, {@code FALSE} for a non-tensor parameter. Also pins the function-level reflection:
+	 * {@link Function#getHasTensorParameter} is {@code TRUE} iff at least one non-{@code self} parameter has
+	 * {@code Parameter.isTensor() == TRUE} (modulo the speculative-context override, which this fixture doesn't trigger).
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContract() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter t = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("t", t.getName());
+		assertEquals("n", n.getName());
+
+		assertTrue("Parameter `t` (tensor call site) classifies as tensor-typed.", t.isTensor());
+		assertFalse("Parameter `n` (non-tensor call site) classifies as non-tensor.", n.isTensor());
+
+		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498 (reverse direction): if {@link Function#getHasTensorParameter} is {@code FALSE}, then no non-{@code self}
+	 * parameter has {@code Parameter.isTensor() == TRUE}. The fixture uses a function named `f` (outside the speculative-context regex)
+	 * with two non-tensor int arguments, so the speculative-context fallback does not fire.
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContractReverse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertFalse("Function with no tensor parameters and no speculative-context match: `getHasTensorParameter()` is FALSE.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		for (Parameter param : parameters)
+			if (!param.isSelf())
+				assertFalse("`getHasTensorParameter()` is FALSE ⇒ no non-self parameter classifies as tensor-typed.", param.isTensor());
 	}
 }

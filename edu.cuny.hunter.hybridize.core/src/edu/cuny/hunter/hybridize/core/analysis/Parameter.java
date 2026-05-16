@@ -4,6 +4,8 @@ import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
+import static java.lang.Boolean.FALSE;
+import static java.lang.Boolean.TRUE;
 import static java.util.Collections.unmodifiableSet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.core.runtime.SubMonitor.convert;
@@ -95,12 +97,18 @@ public final class Parameter {
 
 	/**
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
-	 * by {@link #isTensorTyped} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
+	 * by {@link #classifyAsTensor} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
 	 * (type hints) and the Phase 2 (Ariadne) cache is empty. Earlier-returning phases (self, type-hint hit, non-empty Phase 2 result, or
 	 * empty call-graph nodes) leave this field at its default. {@code null} therefore means either classification has not run or it ran but
 	 * did not reach Phase 3.
 	 */
 	private Boolean tensorContainer;
+
+	/**
+	 * Cached "is this parameter likely tensor-typed?" classification produced by {@link #classifyAsTensor}. {@code null} until the
+	 * classifier has run.
+	 */
+	private Boolean isTensor;
 
 	/**
 	 * Owning {@link Function} back-reference.
@@ -550,38 +558,40 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns true iff this parameter is likely to be tensor-typed.
+	 * Classifies this parameter as tensor-typed (or not) by combining type-hint detection, Ariadne's tensor-type analysis, and
+	 * tensor-container detection. Populates the {@link #isTensor()} cache; the boolean result is also returned for convenience.
 	 *
 	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
 	 * @param callGraph The call graph for the project.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
-	public boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+	public void classifyAsTensor(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
-		return this.isTensorTyped(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+		this.classifyAsTensor(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
 	}
 
 	/**
-	 * Returns true iff this parameter is likely to be tensor-typed.
+	 * Classifies this parameter as tensor-typed (or not) by combining type-hint detection, Ariadne's tensor-type analysis, and
+	 * tensor-container detection. Populates the {@link #isTensor()} cache.
 	 *
 	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
 	 * @param nodes The call graph nodes corresponding to the owning function.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
-	boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+	void classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
 
 		try {
 			// don't consider `self` as a tensor.
-			if (this.isSelf())
-				return false;
+			if (this.isSelf()) {
+				this.isTensor = FALSE;
+				return;
+			}
 
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
@@ -596,7 +606,8 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					return true;
+					this.isTensor = TRUE;
+					return;
 				}
 			} else
 				subMonitor.worked(1);
@@ -611,7 +622,8 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					return true;
+					this.isTensor = TRUE;
+					return;
 				}
 
 				subMonitor.worked(1);
@@ -623,15 +635,26 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
-					return true;
+					this.isTensor = TRUE;
+					return;
 				}
 			} else
 				subMonitor.worked(2);
 
-			return false;
+			this.isTensor = FALSE;
 		} finally {
 			subMonitor.done();
 		}
+	}
+
+	/**
+	 * Returns the cached "is this parameter likely tensor-typed?" classification produced by {@link #classifyAsTensor}. Returns
+	 * {@code null} if the classifier has not yet run.
+	 *
+	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if classification has not yet run.
+	 */
+	public Boolean isTensor() {
+		return this.isTensor;
 	}
 
 	@Override
