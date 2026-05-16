@@ -19,10 +19,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
+import static java.lang.System.getProperty;
 import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
 import static org.eclipse.core.resources.ResourceAttributes.fromFile;
+import static org.eclipse.core.runtime.Path.fromOSString;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ltk.core.refactoring.RefactoringStatus.INFO;
 import static org.junit.Assert.assertEquals;
@@ -103,12 +105,10 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
-import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.plugin.FileStub2;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
@@ -121,7 +121,6 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
-import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
@@ -643,13 +642,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			@Override
 			public IPath getFullPath() {
-				// NOTE: This is incorrect when implemenng https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
-				return org.eclipse.core.runtime.Path.fromOSString(inputTestFile.getAbsolutePath());
+				// NOTE: This is incorrect when implementing https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
+				return fromOSString(inputTestFile.getAbsolutePath());
 			}
 
 			@Override
 			public String getCharset(boolean checkImplicit) throws CoreException {
-				return System.getProperty("file.encoding");
+				return getProperty("file.encoding");
 			}
 
 			@Override
@@ -1885,7 +1884,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
 	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
 	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
 	 * {@code (2, 1)} and {@code (2,)} respectively.
@@ -2000,10 +1999,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// no type hint.
-		assertNull(typeInfo);
+		assertNull(typeHintName);
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -2035,16 +2034,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2077,16 +2070,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2121,17 +2107,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
-		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
-
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		String typeHintName = actualParameter.getTypeHintName();
+		assertEquals("tf.Tensor", typeHintName);
 
 		// NOTE: Set to assertFalse() when #111 is fixed.
 		assertTrue(function.getHasTensorParameter());

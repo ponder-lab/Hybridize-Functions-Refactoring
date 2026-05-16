@@ -1,13 +1,24 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
+import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
+import static java.util.Collections.unmodifiableSet;
 import static org.eclipse.core.runtime.Platform.getLog;
+import static org.eclipse.core.runtime.SubMonitor.convert;
+import static org.python.pydev.parser.visitors.NodeUtils.getFullRepresentationString;
+import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString;
+import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.SubMonitor;
@@ -21,31 +32,37 @@ import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.parser.visitors.TypeInfo;
 
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
+import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
+import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
+import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ssa.IR;
+import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Pair;
 
 /**
- * Analytical wrapper around a single positional Python function parameter. Carries enough context to identify the parameter
- * ({@code argumentsType} parent + positional index + owning {@link Function}) and hosts the per-parameter classification queries that would
- * otherwise live on {@link Function}: type-hint detection ({@link #hasTensorTypeHint(IProgressMonitor)}), Ariadne tensor-type lookup
- * ({@link #getTensorTypes(TensorTypeAnalysis)}), and tensor-container detection
- * ({@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}).
- * <p>
- * Intentionally narrow public surface: {@link #getIndex()}, {@link #getName()}, {@link #isSelf()}, {@link #getTypeInfo()},
- * {@link #hasTensorTypeHint(IProgressMonitor)}, {@link #getTensorTypes(TensorTypeAnalysis)},
- * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)}, plus
- * {@code equals}/{@code hashCode}/{@code toString}. Constructed only by {@link Function} (package-private constructor).
+ * A representation of a Python function parameter.
+ *
+ * @author <a href="mailto:khatchad@hunter.cuny.edu">Raffi Khatchadourian</a>
  */
 public final class Parameter {
 
@@ -73,12 +90,7 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * Owning {@link Function} back-reference. Reached by every analytical method on this class for project-context state and helpers:
-	 * {@link #getTypeInfo()} via {@link Function#getFunctionDefinition()}, {@link #hasTensorTypeHint(IProgressMonitor)} via
-	 * {@link Function#getContainingDocument()}/{@code getContainingModuleName}/{@code getContainingFile}/{@code getNature}/{@code getProject},
-	 * {@link #hasTensorContainer(TensorTypeAnalysis, CallGraph, PythonSSAPropagationCallGraphBuilder, IProgressMonitor)} via
-	 * {@code Function.tensorAnalysisIncludesParameterContainer}, and {@link #matches(LocalPointerKey)} via
-	 * {@link Function#getContainingFile()}.
+	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
 
@@ -88,6 +100,13 @@ public final class Parameter {
 	 * default, never {@code null}.
 	 */
 	private Set<TensorType> tensorTypes = Collections.emptySet();
+
+	/**
+	 * Cache of tensor-container instance keys for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
+	 * discarded when the analysis is re-run and a new object is returned. Each value is a set of instance keys that the analysis associates
+	 * with containers of tensors (e.g. lists/tuples/dicts whose elements are tensors).
+	 */
+	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -122,7 +141,7 @@ public final class Parameter {
 	 * @return The parameter name.
 	 */
 	public String getName() {
-		return NodeUtils.getRepresentationString(this.getNameExpr());
+		return getRepresentationString(this.getNameExpr());
 	}
 
 	/**
@@ -141,8 +160,34 @@ public final class Parameter {
 	 *
 	 * @return The {@link TypeInfo} for this parameter, or {@code null} if no type hint is present.
 	 */
-	public TypeInfo getTypeInfo() {
-		return NodeUtils.getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	protected TypeInfo getTypeInfo() {
+		return getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
+	}
+
+	/**
+	 * Returns the fully-qualified name of this parameter's declared type hint, or {@code null} if no type hint is declared.
+	 * <p>
+	 * Only supports simple type hints that are directly {@link Attribute} expressions; more complex hints (e.g. subscripted generics) are
+	 * not supported and may trigger an exception.
+	 *
+	 * @return The fully-qualified name of the declared type hint, or {@code null} if no type hint is present.
+	 * @throws IllegalStateException If a type hint is declared but its AST node is not an {@link Attribute} (e.g., a subscripted generic
+	 *         like {@code List[Tensor]}).
+	 */
+	public String getTypeHintName() {
+		// get the type hint.
+		TypeInfo typeInfo = this.getTypeInfo();
+
+		if (typeInfo == null)
+			// no type hint declared.
+			return null;
+
+		exprType node = typeInfo.getNode();
+
+		if (node instanceof Attribute attribute)
+			return getFullRepresentationString(attribute);
+
+		throw new IllegalStateException("Unexpected type hint node type: " + node.getClass() + " for parameter: " + this + ".");
 	}
 
 	/**
@@ -159,7 +204,7 @@ public final class Parameter {
 			return false;
 
 		Set<Attribute> attributes = getAllAttributes(argTypeInfo.getNode());
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining type hints.", attributes.size() * 2);
+		SubMonitor subMonitor = convert(monitor, "Examining type hints.", attributes.size() * 2);
 
 		for (Attribute typeHintExpr : attributes) {
 			IDocument document = this.function.getContainingDocument();
@@ -167,8 +212,8 @@ public final class Parameter {
 			String fqn;
 			PySelection selection = null;
 			try {
-				selection = Util.getSelection(typeHintExpr.attr, document);
-				fqn = Util.getFullyQualifiedName(typeHintExpr, this.function.getContainingModuleName(), this.function.getContainingFile(),
+				selection = getSelection(typeHintExpr.attr, document);
+				fqn = getFullyQualifiedName(typeHintExpr, this.function.getContainingModuleName(), this.function.getContainingFile(),
 						selection, this.function.getNature(), subMonitor.split(1));
 			} catch (AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
 				LOG.warn(String.format(
@@ -224,6 +269,156 @@ public final class Parameter {
 	}
 
 	/**
+	 * Returns true if the given {@link InstanceKey} is contained in the given {@link Set} of tensor container {@link InstanceKey}s. Also
+	 * returns true if the given {@link InstanceKey} represents a container whose constituent elements are contained in the given
+	 * {@link Set}.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param tensorContainers A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder}.
+	 * @return True iff either the given {@link InstanceKey} is a member of the given {@link Set} or the given {@link InstanceKey} is itself
+	 *         a container whose elements are (ultimately) contained in the given {@link Set}.
+	 */
+	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		return isTensorContainer(instanceKey, tensorContainers, builder, new HashSet<>());
+	}
+
+	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+			PythonSSAPropagationCallGraphBuilder builder, Set<InstanceKey> seen) {
+		if (tensorContainers.contains(instanceKey))
+			return true;
+
+		seen.add(instanceKey);
+
+		if (Util.isContainerType(instanceKey.getConcreteType().getReference())) {
+			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory())
+					.getPointerKeyForObjectCatalog(instanceKey);
+			Iterable<InstanceKey> catalogPointsToSet = builder.getPointerAnalysis().getPointsToSet(catalogPointerKey);
+
+			for (InstanceKey catalogInstanceKey : catalogPointsToSet)
+				if (catalogInstanceKey instanceof ConstantKey<?>) {
+					ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
+					Object value = constantKey.getValue();
+
+					if (value != null) {
+						IClass concreteType = instanceKey.getConcreteType();
+						IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
+						PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
+						Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
+
+						for (InstanceKey fieldInstanceKey : fieldPointsToSet)
+							if (!seen.contains(fieldInstanceKey) && isTensorContainer(fieldInstanceKey, tensorContainers, builder, seen))
+								return true;
+					}
+				} else if (catalogInstanceKey instanceof AllocationSiteInNode || catalogInstanceKey instanceof ScopeMappingInstanceKey) {
+					AllocationSiteInNode asin = getAllocationSiteInNode(catalogInstanceKey);
+
+					if (!seen.contains(asin))
+						return isTensorContainer(asin, tensorContainers, builder, seen);
+				} else
+					throw new IllegalArgumentException(
+							"Not expecting a catalog instance of " + instanceKey + " to be: " + catalogInstanceKey.getClass());
+		}
+
+		return false;
+	}
+
+	private static TypeReference getTypeReference(InstanceKey instanceKey) {
+		if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
+			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
+			return asin.getConcreteType().getReference();
+		} else if (instanceKey instanceof ConstantKey<?>) {
+			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
+			return constantKey.getConcreteType().getReference();
+		} else
+			throw new IllegalStateException("Not expecting: " + instanceKey.getClass());
+	}
+
+	/**
+	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 *
+	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
+	 * @param monitor Progress.
+	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 */
+	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
+		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
+
+		Set<InstanceKey> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
+			Set<InstanceKey> tensorContainers = new HashSet<>();
+
+			for (Pair<PointerKey, TensorVariable> pair : k) {
+				PointerKey pointerKey = pair.fst;
+
+				if (pointerKey instanceof InstanceFieldPointerKey) {
+					InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
+					InstanceKey instanceKey = ifpk.getInstanceKey();
+					TypeReference reference = getTypeReference(instanceKey);
+
+					if (reference != null && Util.isContainerType(reference)) {
+						// We have a match.
+						// check the existence of the tensor variable.
+						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
+						tensorContainers.add(instanceKey);
+					}
+				}
+
+				progress.worked(1);
+			}
+
+			return tensorContainers;
+		});
+
+		progress.done();
+		return result;
+	}
+
+	/**
+	 * Returns true iff the given parameter represents a container in the given {@link TensorTypeAnalysis}.
+	 *
+	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
+	 * @param paramInx The index of the parameter under question.
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
+	 * @param builder The {@link CallGraphBuilder}.
+	 * @param monitor For progress.
+	 * @return True iff the given {@link TensorTypeAnalysis} includes a container corresponding to the given parameter index.
+	 */
+	protected static boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
+		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
+		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
+
+		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1;
+
+			if (i >= ir.getNumberOfParameters()) {
+				LOG.warn("Parameter index (" + i + ") must be inbounds (" + ir.getNumberOfParameters() + "). Skipping: "
+						+ ir.getMethod().getSignature());
+				continue;
+			}
+
+			int param = ir.getParameter(i); // the first argument is the function being invoked.
+
+			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
+			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
+
+			for (InstanceKey instanceKey : paramPointsToSet)
+				if (isTensorContainer(instanceKey, tensorContainers, builder)) {
+					progress.done();
+					return true;
+				}
+
+			loopProgress.worked(1);
+		}
+
+		return false;
+	}
+
+	/**
 	 * Returns true iff Ariadne's tensor analysis associates a tensor-container instance key with this parameter's slot in the call graph
 	 * (i.e. the parameter receives a list/tuple/dict whose elements are tensors).
 	 *
@@ -232,29 +427,32 @@ public final class Parameter {
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
 	 * @return True iff the analysis associates a tensor-container with this parameter.
-	 * @throws org.eclipse.core.runtime.CoreException If the underlying analysis fails.
+	 * @throws CoreException If the underlying analysis fails.
 	 */
 	public boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
-			IProgressMonitor monitor) throws org.eclipse.core.runtime.CoreException {
-		return this.function.tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), callGraph, builder, monitor);
+			IProgressMonitor monitor) throws CoreException {
+		return this.hasTensorContainer(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) {
+		return tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
 	}
 
 	/**
-	 * Returns the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. Computed fresh on each call (no
-	 * caching) by iterating {@code analysis}.
+	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
-	 * Returns an empty (but non-null) set when the analysis associated no entries with this parameter. Note that with the current
+	 * Infers an empty set when the analysis associated no entries with this parameter. Note that with the current
 	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
 	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
 	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
 	 * future enhancement.
 	 *
-	 * @param analysis The {@link TensorTypeAnalysis} to query. Non-null.
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
+	 * @param analysis The {@link TensorTypeAnalysis} to query.
 	 */
-	public Set<TensorType> getTensorTypes(TensorTypeAnalysis analysis) {
-		Objects.requireNonNull(analysis);
+	void inferTensorTypes(TensorTypeAnalysis analysis) {
 		Set<TensorType> result = new HashSet<>();
+
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
 			if (pointerKey instanceof LocalPointerKey) {
@@ -267,7 +465,8 @@ public final class Parameter {
 				}
 			}
 		}
-		return Collections.unmodifiableSet(result);
+
+		this.setTensorTypes(unmodifiableSet(result));
 	}
 
 	/**
@@ -333,6 +532,89 @@ public final class Parameter {
 		return false;
 	}
 
+	/**
+	 * Returns true iff this parameter is likely to be tensor-typed.
+	 *
+	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
+	 * @param callGraph The call graph for the project.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
+	 * @throws Exception If the underlying analysis or AST traversal fails.
+	 */
+	public boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
+		return this.isTensorTyped(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+	}
+
+	/**
+	 * Returns true iff this parameter is likely to be tensor-typed.
+	 *
+	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff this parameter is likely to be tensor-typed based on a combination of type hints and Ariadne's analysis.
+	 * @throws Exception If the underlying analysis or AST traversal fails.
+	 */
+	boolean isTensorTyped(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+			IProgressMonitor monitor) throws Exception {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
+
+		try {
+			// don't consider `self` as a tensor.
+			if (this.isSelf())
+				return false;
+
+			// check a special case where we consider type hints.
+			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
+					// TODO: Actually get the value here (#111).
+					&& this.function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
+
+			// Phase 1: type hints.
+			if (followTypeHints) {
+				LOG.info("Following type hints for: " + this.function + " and parameter: " + this.getName() + ".");
+
+				if (this.hasTensorTypeHint(subMonitor.split(1))) {
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
+					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(2);
+					return true;
+				}
+			} else
+				subMonitor.worked(1);
+
+			// If this function is in the call graph.
+			if (!nodes.isEmpty()) {
+				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
+				this.inferTensorTypes(tensorAnalysis);
+
+				if (!this.getTensorTypes().isEmpty()) {
+					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+					subMonitor.worked(2);
+					return true;
+				}
+
+				subMonitor.worked(1);
+
+				// Phase 3: check for containers of tensors.
+				if (this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1))) {
+					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
+					this.function.addInfo(TYPE_INFERENCING,
+							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
+					return true;
+				}
+			} else
+				subMonitor.worked(2);
+
+			return false;
+		} finally {
+			subMonitor.done();
+		}
+	}
+
 	@Override
 	public int hashCode() {
 		return Objects.hash(this.function, Integer.valueOf(this.index), this.getName());
@@ -352,5 +634,12 @@ public final class Parameter {
 	@Override
 	public String toString() {
 		return this.getName() + "@" + this.index + " of " + this.function;
+	}
+
+	/**
+	 * Clears any cached analysis results.
+	 */
+	public static void clearCaches() {
+		tensorContainersCache.clear();
 	}
 }
