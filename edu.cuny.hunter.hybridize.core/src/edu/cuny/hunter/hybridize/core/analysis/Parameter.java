@@ -530,7 +530,7 @@ public final class Parameter {
 
 	/**
 	 * Classifies this parameter as tensor-typed (or not) by combining type-hint detection, Ariadne's tensor-type analysis, and
-	 * tensor-container detection. Populates the {@link #isTensor()} cache; the boolean result is also returned for convenience.
+	 * tensor-container detection. Populates the {@link #isTensor()} cache. Read the result via {@link #isTensor()} after this call returns.
 	 *
 	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
 	 * @param callGraph The call graph for the project.
