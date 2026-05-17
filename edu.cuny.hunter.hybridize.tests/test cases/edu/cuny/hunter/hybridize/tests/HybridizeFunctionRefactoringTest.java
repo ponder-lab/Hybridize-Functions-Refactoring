@@ -8106,10 +8106,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
-	 * {@link Parameter#getTensorTypes()} level. Note this empty observation does not directly correspond to the wala/ML lattice ⊥ (empty
-	 * shape or dtype set at the generator level)—the {@code TensorTypeAnalysis} iterator filters {@code state == null} (variable-level ⊤)
-	 * and {@code state.isEmpty()} (variable-level ⊥) indistinguishably, so Hybridize sees both as "no iterator entry." This test pins the
-	 * no-iterator-entry behavior for a non-tensor argument; finer lattice distinctions would require a richer Ariadne-side query.
+	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
+	 * objects (`getDims() == null` for shape-⊤, `getDType() == DType.UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
+	 * variable corresponds to Ariadne's ⊥ classification (provably not a tensor) when generators are contract-compliant—they emit a
+	 * placeholder {@code TensorType(UNKNOWN, null)} for "tensor with unknown info" cases, so an empty {@code state} means no generator
+	 * classified the variable as a tensor. The iterator filter (`state != null && !state.isEmpty()`) collapses "variable not analyzed" with
+	 * this not-a-tensor case at the API surface; both behave identically for downstream consumers.
 	 */
 	@Test
 	public void testInferredTensorTypesBottomNotTensor() throws Exception {

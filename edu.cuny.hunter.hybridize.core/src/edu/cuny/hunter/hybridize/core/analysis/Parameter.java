@@ -453,25 +453,30 @@ public final class Parameter {
 	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
 	 * The lattice contract (see {@code Tensor Type Generators} in {@code com.ibm.wala.cast.python.ml/CONTRIBUTING.md}) lives at the
-	 * generator level (`getDefaultShapes`/`getDefaultDTypes`), not at the {@link TensorTypeAnalysis} iterator level: ⊤ ({@code null} shape
-	 * or {@code EnumSet.of(DType.UNKNOWN)}) and ⊥ (empty set on shape or dtype) are generator outputs. By the time results reach the
-	 * iterator, they are accumulated into a {@code TensorVariable.state} of type {@code Set<TensorType>}, and the iterator filters its
-	 * output to {@code state != null && !state.isEmpty()}.
+	 * <em>per-shape and per-dtype</em> level <em>inside</em> each {@link TensorType}: {@link TensorType#getDims()} {@code == null} is
+	 * shape-⊤, {@link TensorType#getDType()} {@code == DType.UNKNOWN} is dtype-⊤; the two axes are orthogonal. Empty-set outputs from a
+	 * generator's {@code getDefaultShapes} or {@code getDefaultDTypes} mean ⊥ at that generator's call site (per the contract tables).
+	 * <p>
+	 * {@code TensorVariable.state} (the accumulated {@code Set<TensorType>} the iterator surfaces) is <em>not</em> itself a lattice point.
+	 * Generators that classify a variable as a tensor but cannot determine shape/dtype emit a placeholder {@code TensorType(UNKNOWN, null)}
+	 * per the orthogonality rule, so a non-empty state means "Ariadne has at least one tensor classification (possibly ⊤ on either axis)"
+	 * and an empty state means "no generator emitted a TensorType for this variable" (effectively ⊥ at the variable level, under
+	 * contract-compliant generators). {@link TensorTypeAnalysis#iterator} filters its output to {@code state != null && !state.isEmpty()},
+	 * which collapses the iterator-side "variable not analyzed" case with the "Ariadne classified as not-a-tensor" case—both surface as no
+	 * entry.
 	 * <p>
 	 * What this method exposes to callers:
 	 * <ul>
-	 * <li>Empty {@code Set<TensorType>}: the iterator yielded no entry for this parameter. Iterator-filtered cases (no bound
-	 * {@code TensorVariable}, {@code state == null}, or {@code state.isEmpty()}) are indistinguishable at this layer—Hybridize does not see
-	 * which generator-side lattice point produced the absence.
-	 * <li>Non-empty {@code Set<TensorType>}: at least one {@code TensorType} was emitted. Individual entries may carry shape-⊤
-	 * ({@link TensorType#getDims()} {@code == null}) or dtype-⊤ ({@link TensorType#getDType()} {@code == DType.UNKNOWN}). The two axes are
-	 * orthogonal (per the {@code Tensor Types—getTensorTypes} note in the same file). Callers that need to branch on the lattice should
-	 * inspect each {@link TensorType}'s dims and dtype directly.
+	 * <li>Empty {@code Set<TensorType>}: no iterator entry for this parameter. Equivalent to "Hybridize has no information"—either Ariadne
+	 * didn't analyze the variable or it classified the variable as not-a-tensor. Both behave identically for downstream consumers (e.g.,
+	 * {@code Function.inferInputSignature} excludes the parameter from the inferred signature).
+	 * <li>Non-empty {@code Set<TensorType>}: Ariadne emitted at least one {@code TensorType}. Individual entries may carry shape-⊤ (null
+	 * dims) or dtype-⊤ ({@code DType.UNKNOWN}). Callers that need the lattice signal should inspect each {@code TensorType}'s dims and
+	 * dtype directly.
 	 * </ul>
-	 * The {@code null} {@code TensorVariable} branch is a contract assertion: {@link TensorTypeAnalysis#iterator} filters its output to
-	 * entries with non-null state, so a {@code null} {@code TensorVariable} paired with a {@code LocalPointerKey} cannot happen under the
-	 * current contract. If it ever does, the {@link IllegalStateException} surfaces the upstream invariant violation rather than silently
-	 * coercing it.
+	 * The {@code null} {@code TensorVariable} branch is a defensive contract assertion: {@link TensorTypeAnalysis#iterator} filters its
+	 * output to non-null {@code TensorVariable}s, so the {@code IllegalStateException} would only fire on a future Ariadne contract
+	 * violation rather than under any current path.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
 	 */
