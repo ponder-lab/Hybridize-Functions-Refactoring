@@ -95,7 +95,10 @@ public final class Parameter {
 
 	/**
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
-	 * by {@link #isTensorTyped} when Phase 3 ({@link #hasTensorContainer}) fires. {@code null} until classification has run.
+	 * by {@link #isTensorTyped} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
+	 * (type hints) and the Phase 2 (Ariadne) cache is empty. Earlier-returning phases (self, type-hint hit, non-empty Phase 2 result, or
+	 * empty call-graph nodes) leave this field at its default. {@code null} therefore means either classification has not run or it ran but
+	 * did not reach Phase 3.
 	 */
 	private Boolean tensorContainer;
 
@@ -182,14 +185,17 @@ public final class Parameter {
 
 	/**
 	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
-	 * tensors). Populated during {@link #isTensorTyped}'s Phase 3. Returns {@code null} if classification has not yet run.
+	 * tensors). Populated only when {@link #isTensorTyped}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
+	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
+	 * classification has not run or did not reach Phase 3.
 	 * <p>
 	 * Distinct from {@link #getTensorTypes()}: a tensor container is recognized as tensor-typed by Phase 3's container detection, but
 	 * Ariadne does not emit a single {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from
 	 * "direct tensor" should use this method.
 	 *
-	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not, or
-	 *         {@code null} if classification has not yet run.
+	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not classify
+	 *         the parameter as a tensor container, or {@code null} if Phase 3 did not run (classification not started, or returned
+	 *         earlier).
 	 */
 	public Boolean isTensorContainer() {
 		return this.tensorContainer;
