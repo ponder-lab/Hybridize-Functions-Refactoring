@@ -8172,7 +8172,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter a = parameters.get(0);
 		assertEquals("a", a.getName());
 
-		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, a.isTensorContainer());
+		assertTrue("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", a.isTensorContainer());
 
 		// Asymmetry pin: `getTensorTypes()` stays empty because Ariadne does not emit a single TensorType for the container itself;
 		// Phase 2's cache-population path runs but finds nothing for this parameter.
