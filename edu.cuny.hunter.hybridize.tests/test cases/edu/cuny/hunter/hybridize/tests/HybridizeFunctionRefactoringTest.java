@@ -8156,8 +8156,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Regression test for #498: a `self` parameter classifies as non-tensor unconditionally (early-return in
-	 * {@link Parameter#classifyAsTensor}). The owning function has only `self`, so `Function.getHasTensorParameter() == FALSE`: the
+	 * Regression test for #498: a `self` parameter is skipped by `Function.inferTensorParameters` (the classifier never runs on it), so its
+	 * cached `isTensor()` stays {@code null}. The owning function has only `self`, so `Function.getHasTensorParameter() == FALSE`: the
 	 * speculative-context fallback is gated on `!onlySelfParam`, and the function name `f` doesn't match the regex anyway.
 	 */
 	@Test
@@ -8174,7 +8174,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("self", self.getName());
 
 		assertTrue("Parameter `self` must classify as self.", self.isSelf());
-		assertEquals("Self parameter must classify as non-tensor unconditionally.", Boolean.FALSE, self.isTensor());
+		assertNotEquals("Self parameter is not classified as tensor-typed by `Function.inferTensorParameters` (skipped).", TRUE,
+				self.isTensor());
 	}
 
 	/**
@@ -8202,9 +8203,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("self", self.getName());
 		assertEquals("x", x.getName());
 
-		assertEquals(Boolean.FALSE, self.isTensor());
-		assertEquals("Asymmetry: function-level TRUE does not imply parameter-level TRUE under speculative-context override.",
-				Boolean.FALSE, x.isTensor());
+		assertNotEquals("Self parameter is skipped by classifier; not classified as tensor.", TRUE, self.isTensor());
+		assertFalse("Asymmetry: function-level TRUE does not imply parameter-level TRUE under speculative-context override.", x.isTensor());
 	}
 
 	/**
@@ -8238,8 +8238,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("a", a.getName());
 		assertEquals("b", b.getName());
 
-		assertEquals("First tensor parameter classifies as tensor-typed.", Boolean.TRUE, a.isTensor());
-		assertEquals("Second tensor parameter classifies as tensor-typed independently of the first.", Boolean.TRUE, b.isTensor());
+		assertTrue("First tensor parameter classifies as tensor-typed.", a.isTensor());
+		assertTrue("Second tensor parameter classifies as tensor-typed independently of the first.", b.isTensor());
 		assertTrue("Function with multiple tensor parameters has `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
 	}
 
@@ -8263,14 +8263,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter x = parameters.get(0);
 		assertEquals("x", x.getName());
 
-		assertEquals("Type hint honored via the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.", Boolean.TRUE, x.isTensor());
+		assertTrue("Type hint honored via the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.", x.isTensor());
 		assertTrue("Type-hint-classified parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
 	}
 
 	/**
-	 * Regression test for #498: pins classification across a method-style call (self + tensor parameter in the same function). Both
-	 * parameters classify per-parameter: `self.isTensor() == FALSE` (self-check), `t.isTensor() == TRUE` (Ariadne classifies from the
-	 * tensor call site). The function reflects the parameter-level tensor signal.
+	 * Regression test for #498: pins classification across a method-style call (self + tensor parameter in the same function). Self is
+	 * skipped by `Function.inferTensorParameters` (cache stays at default); `t` is classified by Ariadne from the tensor call site. The
+	 * function reflects the parameter-level tensor signal.
 	 */
 	@Test
 	public void testMethodWithSelfAndTensorParameter() throws Exception {
@@ -8286,8 +8286,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 
 		assertTrue("Parameter `self` classifies as self.", self.isSelf());
-		assertEquals("Self parameter classifies as non-tensor.", Boolean.FALSE, self.isTensor());
-		assertEquals("Tensor parameter `t` classifies as tensor-typed.", Boolean.TRUE, t.isTensor());
+		assertNotEquals("Self parameter is skipped by classifier; not classified as tensor.", TRUE, self.isTensor());
+		assertTrue("Tensor parameter `t` classifies as tensor-typed.", t.isTensor());
 		assertTrue("Method with a tensor parameter ⇒ `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
 	}
 
@@ -8306,7 +8306,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter x = parameters.get(0);
 		assertEquals("x", x.getName());
 
-		assertEquals("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", Boolean.FALSE, x.isTensor());
+		assertFalse("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", x.isTensor());
 		assertFalse("Function with no tensor classification: `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
 	}
 }

@@ -1411,11 +1411,14 @@ public class Function {
 		subMonitor.setWorkRemaining(params.size());
 
 		for (Parameter param : params) {
-			if (param.isSelf())
+			if (param.isSelf()) {
 				selfParam = true;
+				subMonitor.worked(1);
+				continue; // skip self parameters.
+			}
 
 			param.classifyAsTensor(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
-			if (Boolean.TRUE.equals(param.isTensor()))
+			if (TRUE.equals(param.isTensor()))
 				this.hasTensorParameter = TRUE;
 
 			subMonitor.worked(1);
