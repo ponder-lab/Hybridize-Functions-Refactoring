@@ -565,7 +565,7 @@ public final class Parameter {
 	 * @param callGraph The call graph for the project.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return {@code true} if this parameter is classified as tensor-typed; {@code false} otherwise.
+	 * @return true if this parameter is classified as tensor-typed; false otherwise.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
 	public boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
@@ -581,7 +581,7 @@ public final class Parameter {
 	 * @param nodes The call graph nodes corresponding to the owning function.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return {@code true} if this parameter is classified as tensor-typed; {@code false} otherwise.
+	 * @return true if this parameter is classified as tensor-typed; false otherwise.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
 	boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
