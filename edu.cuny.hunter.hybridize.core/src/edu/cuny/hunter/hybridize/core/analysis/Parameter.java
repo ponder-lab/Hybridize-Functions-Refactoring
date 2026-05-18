@@ -94,6 +94,15 @@ public final class Parameter {
 	private Set<TensorType> tensorTypes;
 
 	/**
+	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
+	 * by {@link #isTensorTyped} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
+	 * (type hints) and the Phase 2 (Ariadne) cache is empty. Earlier-returning phases (self, type-hint hit, non-empty Phase 2 result, or
+	 * empty call-graph nodes) leave this field at its default. {@code null} therefore means either classification has not run or it ran but
+	 * did not reach Phase 3.
+	 */
+	private Boolean tensorContainer;
+
+	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
@@ -172,6 +181,24 @@ public final class Parameter {
 
 	protected void setTensorTypes(Set<TensorType> tensorTypes) {
 		this.tensorTypes = tensorTypes;
+	}
+
+	/**
+	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
+	 * tensors). Populated only when {@link #isTensorTyped}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
+	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
+	 * classification has not run or did not reach Phase 3.
+	 * <p>
+	 * Distinct from {@link #getTensorTypes()}: a tensor container is recognized as tensor-typed by Phase 3's container detection, but
+	 * Ariadne does not emit a single {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from
+	 * "direct tensor" should use this method.
+	 *
+	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not classify
+	 *         the parameter as a tensor container, or {@code null} if Phase 3 did not run (classification not started, or returned
+	 *         earlier).
+	 */
+	public Boolean isTensorContainer() {
+		return this.tensorContainer;
 	}
 
 	/**
@@ -590,7 +617,9 @@ public final class Parameter {
 				subMonitor.worked(1);
 
 				// Phase 3: check for containers of tensors.
-				if (this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1))) {
+				boolean isContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+				this.tensorContainer = isContainer;
+				if (isContainer) {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
