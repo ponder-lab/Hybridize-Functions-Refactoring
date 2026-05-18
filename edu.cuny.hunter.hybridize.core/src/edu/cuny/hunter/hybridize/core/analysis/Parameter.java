@@ -556,6 +556,13 @@ public final class Parameter {
 			if (this.isSelf())
 				return false;
 
+			// Populate the tensor-types cache up front whenever Ariadne has anything to say about this parameter, so subsequent reads via
+			// `getTensorTypes()` (no-arg) see a consistent value regardless of which classification phase below fires. In particular, the
+			// type-hint shortcut (Phase 1) `return`s before reaching the Ariadne query; populating here keeps the cache correct for
+			// type-hint parameters that Ariadne also classified from the call site.
+			if (!nodes.isEmpty())
+				this.inferTensorTypes(tensorAnalysis);
+
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
 					// TODO: Actually get the value here (#111).
@@ -576,9 +583,8 @@ public final class Parameter {
 
 			// If this function is in the call graph.
 			if (!nodes.isEmpty()) {
-				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
-				this.inferTensorTypes(tensorAnalysis);
-
+				// Phase 2: read the tensor-types cache populated above. If Ariadne associated any tensor type with this parameter, treat it
+				// as tensor-typed.
 				if (!this.getTensorTypes().isEmpty()) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
