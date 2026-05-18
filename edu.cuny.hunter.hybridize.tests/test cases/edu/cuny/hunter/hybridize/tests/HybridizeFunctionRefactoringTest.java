@@ -50,7 +50,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -122,6 +121,7 @@ import org.python.pydev.ui.BundleInfoStub;
 
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -8060,10 +8060,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
 		// semantics.
 		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(tt.getDType(),
-						tt.getDims().stream()
-								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
-								.collect(Collectors.toList())))
+				.map(tt -> Map.entry(tt.getDType(), tt.getDims().stream()
+						.map(d -> d instanceof NumericDim ? ((NumericDim) d).value() : Integer.valueOf(-1)).collect(Collectors.toList())))
 				.collect(toSet());
 
 		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
@@ -8103,7 +8101,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The load-bearing assertion: the cache is populated from the call site's `tf.constant([1.0, 2.0])`, even though Phase 1's
 		// type-hint hit causes `isTensorTyped` to return true before Phase 2 reads the cache. Without the hoist, this assertion fails
 		// (the cache stays at the empty default).
-		TensorType expected = new TensorType(DType.FLOAT32.name().toLowerCase(Locale.ROOT), List.of(new TensorType.NumericDim(2)));
+		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
 		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
 				t.getTensorTypes());
 	}
