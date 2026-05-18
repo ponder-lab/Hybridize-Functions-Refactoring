@@ -8091,7 +8091,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 
-		// Parameter-level Phase 3 classification ⇒ function-level reflection.
 		assertTrue("Function with a tensor-container parameter classifies as having a tensor parameter.", function.getHasTensorParameter());
 
 		List<Parameter> parameters = function.getParameters();
@@ -8099,7 +8098,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter a = parameters.get(0);
 		assertEquals("a", a.getName());
 
-		// Phase 3 cache (new in #497): explicit container classification.
 		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, a.isTensorContainer());
 
 		// Asymmetry pin: `getTensorTypes()` stays empty because Ariadne does not emit a single TensorType for the container itself;
@@ -8129,11 +8127,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertEquals("n", n.getName());
 
-		// Classifier→query contract.
 		assertTrue("Parameter `t` (tensor call site) classifies as tensor-typed.", t.isTensor());
 		assertFalse("Parameter `n` (non-tensor call site) classifies as non-tensor.", n.isTensor());
 
-		// Parameter-level → function-level reflection.
 		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
 
 		// Tighter cache→classifier invariant: non-empty `getTensorTypes()` ⇒ `isTensor() == TRUE`.
