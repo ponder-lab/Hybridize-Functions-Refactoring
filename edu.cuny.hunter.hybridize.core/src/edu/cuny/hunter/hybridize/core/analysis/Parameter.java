@@ -487,11 +487,31 @@ public final class Parameter {
 	/**
 	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
 	 * <p>
-	 * Infers an empty set when the analysis associated no entries with this parameter. Note that with the current
-	 * {@link TensorTypeAnalysis#iterator()} contract, "tensor with unknown types" (i.e. a {@code TensorVariable} with empty state) and "not
-	 * a tensor" (no {@code TensorVariable} bound to the matching pointer key) are indistinguishable, so an empty result means one of those
-	 * two cases without telling them apart. Honoring the wala/ML lattice distinction would require a richer Ariadne-side query; left for a
-	 * future enhancement.
+	 * The lattice contract (see {@code Tensor Type Generators} in {@code com.ibm.wala.cast.python.ml/CONTRIBUTING.md}) lives at the
+	 * <em>per-shape and per-dtype</em> level <em>inside</em> each {@link TensorType}: {@link TensorType#getDims()} {@code == null} is
+	 * shape-⊤, {@link TensorType#getDType()} {@code == DType.UNKNOWN} is dtype-⊤; the two axes are orthogonal. Empty-set outputs from a
+	 * generator's {@code getDefaultShapes} or {@code getDefaultDTypes} mean ⊥ at that generator's call site (per the contract tables).
+	 * <p>
+	 * {@code TensorVariable.state} (the accumulated {@code Set<TensorType>} the iterator surfaces) is <em>not</em> itself a lattice point.
+	 * Generators that classify a variable as a tensor but cannot determine shape/dtype emit a placeholder {@code TensorType(UNKNOWN, null)}
+	 * per the orthogonality rule, so a non-empty state means "Ariadne has at least one tensor classification (possibly ⊤ on either axis)"
+	 * and an empty state means "no generator emitted a TensorType for this variable" (effectively ⊥ at the variable level, under
+	 * contract-compliant generators). {@link TensorTypeAnalysis#iterator} filters its output to {@code state != null && !state.isEmpty()},
+	 * which collapses the iterator-side "variable not analyzed" case with the "Ariadne classified as not-a-tensor" case—both surface as no
+	 * entry.
+	 * <p>
+	 * What this method exposes to callers:
+	 * <ul>
+	 * <li>Empty {@code Set<TensorType>}: no iterator entry for this parameter. Equivalent to "Hybridize has no information"—either Ariadne
+	 * didn't analyze the variable or it classified the variable as not-a-tensor. Both behave identically for downstream consumers (e.g.,
+	 * {@code Function.inferInputSignature} excludes the parameter from the inferred signature).
+	 * <li>Non-empty {@code Set<TensorType>}: Ariadne emitted at least one {@code TensorType}. Individual entries may carry shape-⊤ (null
+	 * dims) or dtype-⊤ ({@code DType.UNKNOWN}). Callers that need the lattice signal should inspect each {@code TensorType}'s dims and
+	 * dtype directly.
+	 * </ul>
+	 * The {@code null} {@code TensorVariable} branch is a defensive contract assertion: {@link TensorTypeAnalysis#iterator} filters its
+	 * output to non-null {@code TensorVariable}s, so the {@code IllegalStateException} would only fire on a future Ariadne contract
+	 * violation rather than under any current path.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
 	 */
@@ -622,6 +642,13 @@ public final class Parameter {
 			if (!nodes.isEmpty()) {
 				// Phase 2: read the tensor-types cache populated above. If Ariadne associated any tensor type with this parameter, treat it
 				// as tensor-typed.
+				//
+				// Under contract-compliant generators (per wala/ML CONTRIBUTING.md, "Tensor Type Generators"), a non-empty
+				// `getTensorTypes()` corresponds to "Ariadne classifies this as a tensor (possibly with ⊤ on shape or dtype)"; empty
+				// corresponds to ⊥ (not a tensor). The lattice is per-axis inside individual `TensorType`s; the aggregation in
+				// `TensorGenerator.getTensorTypes` upstream of us folds any ⊥-on-an-axis into "no TensorType emitted," so a non-empty
+				// state here means at least one (shape, dtype) combination survived without either axis being ⊥. We trust the iterator
+				// output rather than re-validating lattice consistency on our side.
 				if (!this.getTensorTypes().isEmpty()) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
