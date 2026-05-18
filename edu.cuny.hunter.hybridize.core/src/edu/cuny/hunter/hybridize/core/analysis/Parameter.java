@@ -559,30 +559,32 @@ public final class Parameter {
 
 	/**
 	 * Classifies this parameter as tensor-typed (or not) by combining type-hint detection, Ariadne's tensor-type analysis, and
-	 * tensor-container detection. Populates the {@link #isTensor()} cache. Read the result via {@link #isTensor()} after this call returns.
+	 * tensor-container detection. Populates the {@link #isTensor()} cache and returns the same verdict for caller convenience.
 	 *
 	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
 	 * @param callGraph The call graph for the project.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
+	 * @return {@code true} if this parameter is classified as tensor-typed; {@code false} otherwise.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
-	public void classifyAsTensor(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+	public boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
-		this.classifyAsTensor(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
+		return this.classifyAsTensor(tensorAnalysis, this.function.getNodes(callGraph), builder, monitor);
 	}
 
 	/**
 	 * Classifies this parameter as tensor-typed (or not) by combining type-hint detection, Ariadne's tensor-type analysis, and
-	 * tensor-container detection. Populates the {@link #isTensor()} cache.
+	 * tensor-container detection. Populates the {@link #isTensor()} cache and returns the same verdict for caller convenience.
 	 *
 	 * @param tensorAnalysis Ariadne's tensor type analysis for the project.
 	 * @param nodes The call graph nodes corresponding to the owning function.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
+	 * @return {@code true} if this parameter is classified as tensor-typed; {@code false} otherwise.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
-	void classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
+	boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
 
@@ -590,7 +592,7 @@ public final class Parameter {
 			// don't consider `self` as a tensor.
 			if (this.isSelf()) {
 				this.isTensor = FALSE;
-				return;
+				return false;
 			}
 
 			// check a special case where we consider type hints.
@@ -607,7 +609,7 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
 					this.isTensor = TRUE;
-					return;
+					return true;
 				}
 			} else
 				subMonitor.worked(1);
@@ -623,7 +625,7 @@ public final class Parameter {
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
 					this.isTensor = TRUE;
-					return;
+					return true;
 				}
 
 				subMonitor.worked(1);
@@ -636,12 +638,13 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
 					this.isTensor = TRUE;
-					return;
+					return true;
 				}
 			} else
 				subMonitor.worked(2);
 
 			this.isTensor = FALSE;
+			return false;
 		} finally {
 			subMonitor.done();
 		}

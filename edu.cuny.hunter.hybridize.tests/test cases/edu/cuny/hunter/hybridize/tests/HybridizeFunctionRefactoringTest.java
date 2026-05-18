@@ -8132,6 +8132,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Tighter cache→classifier invariant: non-empty `getTensorTypes()` ⇒ `isTensor() == TRUE`.
 		assertFalse("Tensor parameter must have a non-empty `getTensorTypes()` cache (Phase 2 fired).", t.getTensorTypes().isEmpty());
+
+		// The call site is `tf.constant([1.0, 2.0])`: shape (2,), dtype float32.
+		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+				.map(tt -> Map.entry(tt.getDType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
+		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
+				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+
+		// Non-tensor parameter must not surface a TensorType.
+		assertTrue("Non-tensor parameter `n` must have an empty `getTensorTypes()` cache.", n.getTensorTypes().isEmpty());
 	}
 
 	/**
@@ -8289,6 +8302,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotEquals("Self parameter is skipped by classifier; not classified as tensor.", TRUE, self.isTensor());
 		assertTrue("Tensor parameter `t` classifies as tensor-typed.", t.isTensor());
 		assertTrue("Method with a tensor parameter ⇒ `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+
+		// The call site is `C().m(tf.constant([1.0, 2.0]))`: shape (2,), dtype float32.
+		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+				.map(tt -> Map.entry(tt.getDType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
+		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
+				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
 	}
 
 	/**
