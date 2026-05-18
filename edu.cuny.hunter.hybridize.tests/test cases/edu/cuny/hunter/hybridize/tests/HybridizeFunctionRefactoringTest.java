@@ -8081,9 +8081,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:
 	 * <ul>
 	 * <li>{@link Function#getHasTensorParameter} reflects the parameter-level Phase 3 result.
-	 * <li>The new {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
-	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache that this PR
-	 * documents.
+	 * <li>The {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
+	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache.
 	 * </ul>
 	 */
 	@Test
