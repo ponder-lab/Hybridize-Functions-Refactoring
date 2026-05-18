@@ -599,6 +599,12 @@ public final class Parameter {
 				// Phase 2: ask the parameter directly whether Ariadne associates any tensor type with it.
 				this.inferTensorTypes(tensorAnalysis);
 
+				// Under contract-compliant generators (per wala/ML CONTRIBUTING.md, "Tensor Type Generators"), a non-empty
+				// `getTensorTypes()` corresponds to "Ariadne classifies this as a tensor (possibly with ⊤ on shape or dtype)"; empty
+				// corresponds to ⊥ (not a tensor). The lattice is per-axis inside individual `TensorType`s; the aggregation in
+				// `TensorGenerator.getTensorTypes` upstream of us folds any ⊥-on-an-axis into "no TensorType emitted," so a non-empty
+				// state here means at least one (shape, dtype) combination survived without either axis being ⊥. We trust the iterator
+				// output rather than re-validating lattice consistency on our side.
 				if (!this.getTensorTypes().isEmpty()) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
