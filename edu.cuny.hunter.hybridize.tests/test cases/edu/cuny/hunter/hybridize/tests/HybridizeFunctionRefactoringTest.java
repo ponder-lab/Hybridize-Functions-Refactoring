@@ -8081,8 +8081,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:
 	 * <ul>
 	 * <li>{@link Function#getHasTensorParameter} reflects the parameter-level Phase 3 result.
-	 * <li>The {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
-	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache.
+	 * <li>The new {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
+	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache that this PR
+	 * documents.
 	 * </ul>
 	 */
 	@Test
@@ -8091,6 +8092,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
 
+		// Parameter-level Phase 3 classification ⇒ function-level reflection.
 		assertTrue("Function with a tensor-container parameter classifies as having a tensor parameter.", function.getHasTensorParameter());
 
 		List<Parameter> parameters = function.getParameters();
@@ -8098,8 +8100,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter a = parameters.get(0);
 		assertEquals("a", a.getName());
 
-		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", TRUE, a.isTensorContainer());
+		// Phase 3 cache (new in #497): explicit container classification.
+		assertEquals("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, a.isTensorContainer());
 
+		// Asymmetry pin: `getTensorTypes()` stays empty because Ariadne does not emit a single TensorType for the container itself;
+		// Phase 2's cache-population path runs but finds nothing for this parameter.
 		Set<TensorType> tensorTypes = a.getTensorTypes();
 		assertTrue("Container parameter must not surface a direct TensorType through `getTensorTypes()`.",
 				tensorTypes == null || tensorTypes.isEmpty());
