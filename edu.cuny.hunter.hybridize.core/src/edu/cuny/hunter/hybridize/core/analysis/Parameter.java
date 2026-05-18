@@ -565,7 +565,7 @@ public final class Parameter {
 	 * @param callGraph The call graph for the project.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return true if this parameter is classified as tensor-typed; false otherwise.
+	 * @return True iff this parameter is classified as tensor-typed.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
 	public boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
@@ -581,7 +581,7 @@ public final class Parameter {
 	 * @param nodes The call graph nodes corresponding to the owning function.
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
-	 * @return true if this parameter is classified as tensor-typed; false otherwise.
+	 * @return True iff this parameter is classified as tensor-typed.
 	 * @throws Exception If the underlying analysis or AST traversal fails.
 	 */
 	boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
@@ -590,10 +590,8 @@ public final class Parameter {
 
 		try {
 			// don't consider `self` as a tensor.
-			if (this.isSelf()) {
-				this.isTensor = FALSE;
-				return false;
-			}
+			if (this.isSelf())
+				return this.isTensor = FALSE;
 
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
@@ -608,8 +606,7 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					this.isTensor = TRUE;
-					return true;
+					return this.isTensor = TRUE;
 				}
 			} else
 				subMonitor.worked(1);
@@ -624,8 +621,7 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					this.isTensor = TRUE;
-					return true;
+					return this.isTensor = TRUE;
 				}
 
 				subMonitor.worked(1);
@@ -637,14 +633,12 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
-					this.isTensor = TRUE;
-					return true;
+					return this.isTensor = TRUE;
 				}
 			} else
 				subMonitor.worked(2);
 
-			this.isTensor = FALSE;
-			return false;
+			return this.isTensor = FALSE;
 		} finally {
 			subMonitor.done();
 		}
