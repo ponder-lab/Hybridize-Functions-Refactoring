@@ -8127,11 +8127,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertEquals("n", n.getName());
 
-		// Classifier→query contract.
 		assertTrue("Parameter `t` (tensor call site) classifies as tensor-typed.", t.isTensor());
 		assertFalse("Parameter `n` (non-tensor call site) classifies as non-tensor.", n.isTensor());
 
-		// Parameter-level → function-level reflection.
 		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
 
 		// Tighter cache→classifier invariant: non-empty `getTensorTypes()` ⇒ `isTensor() == TRUE`.
