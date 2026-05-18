@@ -501,7 +501,7 @@ public final class Parameter {
 			}
 		}
 
-		this.setTensorTypes(unmodifiableSet(result));
+		this.setTensorTypes(result);
 	}
 
 	/**
@@ -513,15 +513,16 @@ public final class Parameter {
 	 *         not run for the owning function.
 	 */
 	public Set<TensorType> getTensorTypes() {
-		return Collections.unmodifiableSet(this.tensorTypes);
+		return this.tensorTypes;
 	}
 
 	/**
 	 * Package-private setter used by {@link Function#inferTensorParameters} to populate the cache read by the no-arg
-	 * {@link #getTensorTypes()}.
+	 * {@link #getTensorTypes()}. Wraps the given set in an unmodifiable view at write-time so the no-allocation getter returns an
+	 * already-immutable reference.
 	 */
 	void setTensorTypes(Set<TensorType> tensorTypes) {
-		this.tensorTypes = Objects.requireNonNull(tensorTypes);
+		this.tensorTypes = unmodifiableSet(Objects.requireNonNull(tensorTypes));
 	}
 
 	private exprType getNameExpr() {

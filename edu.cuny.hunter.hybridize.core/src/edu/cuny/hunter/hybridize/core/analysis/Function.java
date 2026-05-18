@@ -1462,8 +1462,8 @@ public class Function {
 	 * Javadoc notes that the iterator-based query collapses two upstream lattice states ("tensor with unknown types" and "not a tensor")
 	 * into the same empty result, and treating empty as "not a tensor" is the practical default until a richer Ariadne-side query lands.
 	 * <p>
-	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context and other non-concrete cases
-	 * return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
+	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
 	 *
 	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
 	 *         {@link #inferSpec} cannot reduce one of the per-parameter sets.
@@ -1478,14 +1478,8 @@ public class Function {
 
 			Set<TensorType> contexts = param.getTensorTypes();
 			if (contexts.isEmpty())
-				// Ariadne's tensor-type lattice (source of truth: class-level Javadoc on
-				// `com.ibm.wala.cast.python.ml.client.TensorGenerator`)
-				// distinguishes ⊤ ("unknown tensor") from ⊥ ("not a tensor") from a concrete set of types. Generators encode the
-				// distinction in their shape/dtype outputs (`null` shape vs empty set; `EnumSet.of(DType.UNKNOWN)` vs empty set), and
-				// the analysis propagates it through `TensorVariable.state`. But `TensorTypeAnalysis.iterator()` (the surface this
-				// query goes through) filters to entries with `state != null && !state.isEmpty()`, collapsing ⊤ and ⊥ into the same
-				// "no result" outcome. Until a richer Ariadne-side query exposes the distinction, treat empty as "not a tensor" and
-				// exclude the parameter from the signature.
+				// See Parameter.inferTensorTypes for the lattice-collapse rationale: empty here means either Ariadne didn't analyze the
+				// variable or classified it as not-a-tensor; both surface identically and exclude the parameter from the signature.
 				continue;
 
 			Optional<TensorType> spec = inferSpec(contexts);
@@ -1505,28 +1499,27 @@ public class Function {
 	/**
 	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
 	 * <p>
-	 * Current scope: a single-context input with concrete dtype and concrete shape returns the singleton unchanged. Multi-context and other
-	 * non-concrete cases return {@link Optional#empty} pending future PRs.
+	 * Current scope: a single-context input with concrete dtype and concrete shape returns the singleton unchanged. Multi-context (#507)
+	 * and other non-concrete cases (#494) return {@link Optional#empty} pending future PRs.
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
 		if (contexts.size() != 1)
-			// TODO: multi-context handling. Subsequent PRs will extend.
+			// TODO(#507): multi-context handling.
 			return Optional.empty();
 
 		TensorType single = contexts.iterator().next();
 
 		// The single-context case requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`).
-		// Non-concrete cases return `Optional.empty` pending implementation in subsequent PRs.
+		// Non-concrete cases return `Optional.empty`; branch coverage tracked at #494.
 		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
 			return Optional.empty();
 		if (single.getDims() == null)
 			return Optional.empty();
-		for (TensorType.Dimension<?> dim : single.getDims())
-			if (!(dim instanceof TensorType.NumericDim))
-				return Optional.empty();
+		if (single.getDims().stream().anyMatch(d -> !(d instanceof TensorType.NumericDim)))
+			return Optional.empty();
 
 		return Optional.of(single);
 	}
