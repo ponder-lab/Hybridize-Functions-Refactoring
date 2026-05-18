@@ -8074,4 +8074,70 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(t.hashCode(), t.hashCode());
 		assertNotNull(t.toString());
 	}
+
+	/**
+	 * Regression test for #486 (shape-⊤). A tensor-typed parameter whose shape Ariadne cannot resolve must surface the shape-⊤ marker (a
+	 * {@link TensorType} with {@code null} {@linkplain TensorType#getDims() dims}) so downstream code can distinguish it from a concrete
+	 * shape. The marker is visible at the {@link Parameter#getTensorTypes()} level because the {@code TensorTypeAnalysis} iterator emits
+	 * the underlying {@link TensorType} unchanged.
+	 */
+	@Test
+	public void testInferredTensorTypesUnknownShapeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		// NOTE: This assertion is fragile. The fixture relies on Ariadne NOT seeing through `json.loads("[32]")` to defeat shape inference.
+		// If Ariadne ever learns to model `json.loads` for compile-time-constant string inputs (tracked at wala/ML#536), this fixture stops
+		// producing a shape-⊤ marker and the assertions below flip. The Hybridize-side follow-up to swap to a more durable shape-⊤ source
+		// is tracked at #491. Tight assertions (exact size + null dims) ensure that future Ariadne changes—either dropping the marker or
+		// emitting additional TensorTypes alongside it—are caught cleanly rather than silently masked.
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertNull("Expected shape-⊤ marker (null dims).", only.getDims());
+	}
+
+	/**
+	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
+	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
+	 * objects (`getDims() == null` for shape-⊤, `getDType() == DType.UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
+	 * variable corresponds to Ariadne's ⊥ classification (provably not a tensor) when generators are contract-compliant—they emit a
+	 * placeholder {@code TensorType(UNKNOWN, null)} for "tensor with unknown info" cases, so an empty {@code state} means no generator
+	 * classified the variable as a tensor. The iterator filter (`state != null && !state.isEmpty()`) collapses "variable not analyzed" with
+	 * this not-a-tensor case at the API surface; both behave identically for downstream consumers.
+	 */
+	@Test
+	public void testInferredTensorTypesBottomNotTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertFalse(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		Set<TensorType> inferred = x.getTensorTypes();
+		assertNotNull(inferred);
+		assertTrue("Non-tensor parameter yields no iterator entry, so the inferred set is empty.", inferred.isEmpty());
+	}
 }
