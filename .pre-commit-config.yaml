@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 26.3.1
+    hooks:
+      - id: black
+        args: ["--fast", "--extend-exclude", "/out"]
+  - repo: local
+    hooks:
+      - id: spotless-apply
+        name: Spotless Apply
+        entry: ./mvnw spotless:apply
+        language: system
+        pass_filenames: false
+        # Skip when the commit touches only binary files Spotless's `<format>`
+        # block in `pom.xml` already excludes, so we do not pay JVM-startup
+        # latency for nothing. Mirrors the pom's binary excludes exactly:
+        # any extension not in this list will still trigger the hook, and
+        # Spotless will apply (or skip) per its own rules. The generic
+        # `<format>` uses `<include>**/*</include>`, so the right filter is
+        # to exclude only what the pom already excludes -- not a broader set
+        # that would mask CI failures on non-pom-excluded files.
+        # Spotless's repo-wide apply still runs when invoked, which is why
+        # `pass_filenames: false` stays.
+        exclude: '\.(class|dll|exe|gif|jar|jpg|pdf|png|zip)$'

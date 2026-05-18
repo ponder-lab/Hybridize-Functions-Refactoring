@@ -55,7 +55,6 @@ Dependency | Update Site
 --- | ---
 [Common Eclipse Refactoring Framework] | https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Java-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite
 [PyDev] | https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite
-[WALA] | https://raw.githubusercontent.com/ponder-lab/WALA/v1.7/com.ibm.wala-repository
 
 ## Contributing
 

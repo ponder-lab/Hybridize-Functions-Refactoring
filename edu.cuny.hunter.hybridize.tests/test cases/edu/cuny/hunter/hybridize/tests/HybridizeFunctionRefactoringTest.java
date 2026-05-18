@@ -19,10 +19,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
+import static java.lang.System.getProperty;
 import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toSet;
 import static org.eclipse.core.resources.ResourceAttributes.fromFile;
+import static org.eclipse.core.runtime.Path.fromOSString;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.ltk.core.refactoring.RefactoringStatus.INFO;
 import static org.junit.Assert.assertEquals;
@@ -101,12 +103,10 @@ import org.python.pydev.parser.PyParser.ParserInfo;
 import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.Token;
-import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.visitors.NodeUtils;
-import org.python.pydev.parser.visitors.TypeInfo;
 import org.python.pydev.plugin.FileStub2;
 import org.python.pydev.plugin.PydevPlugin;
 import org.python.pydev.plugin.PydevTestUtils;
@@ -119,9 +119,9 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
-import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -197,13 +197,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
 
 	private static final String COMPARE_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.compareOutput";
-
-	/**
-	 * Captured from the most recent {@link #getFunctions(String)} invocation. Surfaces the per-project {@link TensorTypeAnalysis} so tests
-	 * that exercise {@link Parameter#getTensorTypes(TensorTypeAnalysis)} have something to pass. The suite is one-project-per-test, so the
-	 * map's single entry is unwrapped here.
-	 */
-	private TensorTypeAnalysis lastTensorTypeAnalysis;
 
 	/**
 	 * Add a module to the given {@link IPythonNature}.
@@ -647,13 +640,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			@Override
 			public IPath getFullPath() {
-				// NOTE: This is incorrect when implemenng https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
-				return org.eclipse.core.runtime.Path.fromOSString(inputTestFile.getAbsolutePath());
+				// NOTE: This is incorrect when implementing https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
+				return fromOSString(inputTestFile.getAbsolutePath());
 			}
 
 			@Override
 			public String getCharset(boolean checkImplicit) throws CoreException {
-				return System.getProperty("file.encoding");
+				return getProperty("file.encoding");
 			}
 
 			@Override
@@ -683,9 +676,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(status.isOK());
 		else
 			assertFalse(status.isOK());
-
-		Map<IProject, TensorTypeAnalysis> analysisMap = processor.getProjectToTensorTypeAnalysis();
-		this.lastTensorTypeAnalysis = analysisMap.isEmpty() ? null : analysisMap.values().iterator().next();
 
 		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
 		if (this.getCompareOutputTestFile()) {
@@ -1892,54 +1882,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes(TensorTypeAnalysis)} on the shape-divergence/same-dtype scenario ported from wala/ML's
-	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
-	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
-	 * {@code (2, 1)} and {@code (2,)} respectively.
-	 */
-	@Test
-	public void testInferredTensorTypes() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> parameters = function.getParameters();
-		assertNotNull(parameters);
-		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
-
-		Parameter t = parameters.get(0);
-		assertEquals("t", t.getName());
-		assertEquals(0, t.getIndex());
-
-		assertNotNull("Test helper should have captured the per-project tensor analysis.", this.lastTensorTypeAnalysis);
-		Set<TensorType> inferred = t.getTensorTypes(this.lastTensorTypeAnalysis);
-		assertNotNull(inferred);
-		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
-
-		// Both dtype and shape must match the expected set. Cell-type strings are mapped to Ariadne's `DType` enum via the inverse of the
-		// canonical `dtype.name().toLowerCase()` Ariadne uses to produce them. Shapes are collapsed to integer lists to avoid depending
-		// on Dimension equality semantics.
-		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(DType.valueOf(tt.getCellType().toUpperCase()),
-						tt.getDims().stream()
-								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
-								.collect(Collectors.toList())))
-				.collect(toSet());
-
-		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
-				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
-		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
-
-		// Wrapper identity contract: equals/hashCode/toString.
-		assertEquals(t, t);
-		assertEquals(t.hashCode(), t.hashCode());
-		assertNotNull(t.toString());
-	}
-
-	/**
 	 * Test for #2. Here, the function has no parameters and is hybrid. Thus, it's not likely to have a tensor parameter.
 	 */
 	@Test
@@ -2010,10 +1952,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// no type hint.
-		assertNull(typeInfo);
+		assertNull(typeHintName);
 
 		assertFalse(function.getHasTensorParameter());
 	}
@@ -2045,16 +1987,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
 		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2087,16 +2023,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
+		String typeHintName = actualParameter.getTypeHintName();
 
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		assertEquals("tf.Tensor", typeHintName);
 
 		assertTrue(function.getHasTensorParameter());
 	}
@@ -2131,17 +2060,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		String paramName = actualParameter.getName();
 		assertEquals("x", paramName);
 
-		// get the type hint.
-		TypeInfo typeInfo = actualParameter.getTypeInfo();
-
-		// Tensor type hint.
-		assertNotNull(typeInfo);
-
-		assertTrue(typeInfo.getNode() instanceof Attribute);
-		Attribute typeHint = (Attribute) typeInfo.getNode();
-
-		String attributeName = NodeUtils.getFullRepresentationString(typeHint);
-		assertEquals("tf.Tensor", attributeName);
+		String typeHintName = actualParameter.getTypeHintName();
+		assertEquals("tf.Tensor", typeHintName);
 
 		// NOTE: Set to assertFalse() when #111 is fixed.
 		assertTrue(function.getHasTensorParameter());
@@ -8109,5 +8029,423 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("my_function", function.getIdentifier());
 		assertTrue("Pinning current (incorrect) behavior: the refactoring recommends `@tf.function` for TF1-style code. See #156.",
 				function.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Regression test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/324: a method whose only parameter is
+	 * {@code self} (e.g., {@code def f(self):}) was previously misclassified as not-a-method because {@link Function#isMethod} required
+	 * {@code parameters.size() > 1}. After the fix it requires {@code >= 1}.
+	 */
+	@Test
+	public void testSelfOnlyMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("C.f", function.getIdentifier());
+		assertEquals(1, function.getNumberOfParameters());
+		assertTrue("A method whose only parameter is `self` should be classified as a method.", function.isMethod());
+	}
+
+	/**
+	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
+	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
+	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 */
+	@Test
+	public void testInferredTensorTypes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+		assertEquals(0, t.getIndex());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
+
+		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
+		// semantics.
+		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
+				.map(tt -> Map.entry(tt.getDType(), tt.getDims().stream()
+						.map(d -> d instanceof NumericDim ? ((NumericDim) d).value() : Integer.valueOf(-1)).collect(Collectors.toList())))
+				.collect(toSet());
+
+		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
+				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
+		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
+
+		// Wrapper identity contract: equals/hashCode/toString.
+		assertEquals(t, t);
+		assertEquals(t.hashCode(), t.hashCode());
+		assertNotNull(t.toString());
+	}
+
+	/**
+	 * Regression test for #497: a tensor-container parameter (reached via a list-of-tensors call site) classifies as tensor-typed via
+	 * {@link Parameter#classifyAsTensor}'s Phase 3 but does not populate the per-Parameter {@link Set} of {@link TensorType}s (the
+	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:
+	 * <ul>
+	 * <li>{@link Function#getHasTensorParameter} reflects the parameter-level Phase 3 result.
+	 * <li>The {@link Parameter#isTensorContainer} cache returns {@code TRUE} for this parameter.
+	 * <li>{@link Parameter#getTensorTypes} stays empty—the asymmetry between the boolean classifier and the type-set cache.
+	 * </ul>
+	 */
+	@Test
+	public void testTensorContainerParameterCache() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertTrue("Function with a tensor-container parameter classifies as having a tensor parameter.", function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter a = parameters.get(0);
+		assertEquals("a", a.getName());
+
+		assertTrue("Phase 3 classification must populate the `isTensorContainer` cache to TRUE.", a.isTensorContainer());
+
+		// Asymmetry pin: `getTensorTypes()` stays empty because Ariadne does not emit a single TensorType for the container itself;
+		// Phase 2's cache-population path runs but finds nothing for this parameter.
+		Set<TensorType> tensorTypes = a.getTensorTypes();
+		assertTrue("Container parameter must not surface a direct TensorType through `getTensorTypes()`.",
+				tensorTypes == null || tensorTypes.isEmpty());
+	}
+
+	/**
+	 * Regression test for #498: pins the classifier→query contract on `Parameter`. After {@link Parameter#classifyAsTensor} runs
+	 * (transitively via {@link Function#inferTensorParameters}), {@link Parameter#isTensor} returns the cached classification: {@code TRUE}
+	 * for a tensor parameter, {@code FALSE} for a non-tensor parameter. Also pins the function-level reflection:
+	 * {@link Function#getHasTensorParameter} is {@code TRUE} iff at least one non-{@code self} parameter has
+	 * {@code Parameter.isTensor() == TRUE} (modulo the speculative-context override, which this fixture doesn't trigger).
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContract() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter t = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("t", t.getName());
+		assertEquals("n", n.getName());
+
+		assertTrue("Parameter `t` (tensor call site) classifies as tensor-typed.", t.isTensor());
+		assertFalse("Parameter `n` (non-tensor call site) classifies as non-tensor.", n.isTensor());
+
+		assertTrue("Function has at least one tensor parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+
+		// Tighter cache→classifier invariant: non-empty `getTensorTypes()` ⇒ `isTensor() == TRUE`.
+		assertFalse("Tensor parameter must have a non-empty `getTensorTypes()` cache (Phase 2 fired).", t.getTensorTypes().isEmpty());
+
+		// The call site is `tf.constant([1.0, 2.0])`: shape (2,), dtype float32.
+		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+				.map(tt -> Map.entry(tt.getDType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
+		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
+				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+
+		// Non-tensor parameter must not surface a TensorType.
+		assertTrue("Non-tensor parameter `n` must have an empty `getTensorTypes()` cache.", n.getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Regression test for #498 (reverse direction): if {@link Function#getHasTensorParameter} is {@code FALSE}, then no non-{@code self}
+	 * parameter has {@code Parameter.isTensor() == TRUE}. The fixture uses a function named `f` (outside the speculative-context regex)
+	 * with two non-tensor int arguments, so the speculative-context fallback does not fire.
+	 */
+	@Test
+	public void testParameterClassifyAsTensorContractReverse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertFalse("Function with no tensor parameters and no speculative-context match: `getHasTensorParameter()` is FALSE.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		for (Parameter param : parameters)
+			if (!param.isSelf())
+				assertFalse("`getHasTensorParameter()` is FALSE ⇒ no non-self parameter classifies as tensor-typed.", param.isTensor());
+	}
+
+	/**
+	 * Regression test for #498: a `self` parameter is skipped by `Function.inferTensorParameters` (the classifier never runs on it), so its
+	 * cached `isTensor()` stays {@code null}. The owning function has only `self`, so `Function.getHasTensorParameter() == FALSE`: the
+	 * speculative-context fallback is gated on `!onlySelfParam`, and the function name `f` doesn't match the regex anyway.
+	 */
+	@Test
+	public void testSelfParameterClassification() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertFalse("Self-only method has no tensor parameter.", function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter self = parameters.get(0);
+		assertEquals("self", self.getName());
+
+		assertTrue("Parameter `self` must classify as self.", self.isSelf());
+		assertNotEquals("Self parameter is not classified as tensor-typed by `Function.inferTensorParameters` (skipped).", TRUE,
+				self.isTensor());
+	}
+
+	/**
+	 * Regression test for #498: pins the asymmetry that {@link Function#getHasTensorParameter} {@code == TRUE} does NOT imply
+	 * {@code ∃ non-self param p : p.isTensor() == TRUE}. The speculative-context fallback (in {@link Function#inferTensorParameters}) can
+	 * set `hasTensorParameter = TRUE` based on function name + class lineage, with zero parameter-level tensor evidence.
+	 */
+	@Test
+	public void testSpeculativeContextOverridesParameterEvidence() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals("__call__", function.getSimpleName());
+
+		// Function-level signal: speculative-context fired.
+		assertTrue("Speculative-context override sets `getHasTensorParameter()` to TRUE.", function.getHasTensorParameter());
+
+		// Parameter-level signal: no individual parameter classifies as tensor-typed (no type hint, no Ariadne call-site classification,
+		// no container).
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter self = parameters.get(0);
+		Parameter x = parameters.get(1);
+		assertEquals("self", self.getName());
+		assertEquals("x", x.getName());
+
+		assertNotEquals("Self parameter is skipped by classifier; not classified as tensor.", TRUE, self.isTensor());
+		assertFalse("Asymmetry: function-level TRUE does not imply parameter-level TRUE under speculative-context override.", x.isTensor());
+	}
+
+	/**
+	 * Regression test for #498: a function with no parameters trivially has no tensor parameter. Pins the empty-param-list edge case:
+	 * {@code Function.getHasTensorParameter() == FALSE} (the classification loop iterates over an empty list).
+	 */
+	@Test
+	public void testZeroParameterFunctionHasNoTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertEquals(0, function.getParameters().size());
+		assertFalse("Zero-parameter function has no tensor parameter.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: pins that ALL non-self tensor parameters classify independently. Two-tensor-parameter fixture; both
+	 * parameters individually classify as tensor-typed, and the function reflects the OR.
+	 */
+	@Test
+	public void testMultipleTensorParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter a = parameters.get(0);
+		Parameter b = parameters.get(1);
+		assertEquals("a", a.getName());
+		assertEquals("b", b.getName());
+
+		assertTrue("First tensor parameter classifies as tensor-typed.", a.isTensor());
+		assertTrue("Second tensor parameter classifies as tensor-typed independently of the first.", b.isTensor());
+		assertTrue("Function with multiple tensor parameters has `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: under the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`, a tensor-typed type hint classifies the
+	 * parameter even when the per-decorator `experimental_follow_type_hints` flag is absent. Pins that the `followTypeHints` predicate is
+	 * the OR of (global flag, per-decorator flag) and that either alone suffices.
+	 */
+	@Test
+	public void testTensorTypeHintHonoredViaGlobalFlag() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		assertTrue("Function is decorated with `@tf.function`.", function.isHybrid());
+		assertFalse("`experimental_follow_type_hints` is NOT supplied on the decorator.",
+				function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertTrue("Type hint honored via the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.", x.isTensor());
+		assertTrue("Type-hint-classified parameter ⇒ `getHasTensorParameter()` is TRUE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #498: pins classification across a method-style call (self + tensor parameter in the same function). Self is
+	 * skipped by `Function.inferTensorParameters` (cache stays at default); `t` is classified by Ariadne from the tensor call site. The
+	 * function reflects the parameter-level tensor signal.
+	 */
+	@Test
+	public void testMethodWithSelfAndTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter self = parameters.get(0);
+		Parameter t = parameters.get(1);
+		assertEquals("self", self.getName());
+		assertEquals("t", t.getName());
+
+		assertTrue("Parameter `self` classifies as self.", self.isSelf());
+		assertNotEquals("Self parameter is skipped by classifier; not classified as tensor.", TRUE, self.isTensor());
+		assertTrue("Tensor parameter `t` classifies as tensor-typed.", t.isTensor());
+		assertTrue("Method with a tensor parameter ⇒ `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+
+		// The call site is `C().m(tf.constant([1.0, 2.0]))`: shape (2,), dtype float32.
+		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+				.map(tt -> Map.entry(tt.getDType(),
+						tt.getDims().stream()
+								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
+								.collect(Collectors.toList())))
+				.collect(toSet());
+		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
+				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+	}
+
+	/**
+	 * Regression test for #498: pins that Phase 1's `hasTensorTypeHint` is specific to TF tensor types. An `int` type hint does NOT
+	 * classify the parameter as tensor-typed, even under the test harness's global `ALWAYS_FOLLOW_TYPE_HINTS=true`.
+	 */
+	@Test
+	public void testNonTensorTypeHintNotClassified() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertFalse("Non-tensor type hint (`int`) must NOT classify the parameter as tensor-typed.", x.isTensor());
+		assertFalse("Function with no tensor classification: `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Regression test for #486 (shape-⊤). A tensor-typed parameter whose shape Ariadne cannot resolve must surface the shape-⊤ marker (a
+	 * {@link TensorType} with {@code null} {@linkplain TensorType#getDims() dims}) so downstream code can distinguish it from a concrete
+	 * shape. The marker is visible at the {@link Parameter#getTensorTypes()} level because the {@code TensorTypeAnalysis} iterator emits
+	 * the underlying {@link TensorType} unchanged.
+	 */
+	@Test
+	public void testInferredTensorTypesUnknownShapeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		// NOTE: This assertion is fragile. The fixture relies on Ariadne NOT seeing through `json.loads("[32]")` to defeat shape inference.
+		// If Ariadne ever learns to model `json.loads` for compile-time-constant string inputs (tracked at wala/ML#536), this fixture stops
+		// producing a shape-⊤ marker and the assertions below flip. The Hybridize-side follow-up to swap to a more durable shape-⊤ source
+		// is tracked at #491. Tight assertions (exact size + null dims) ensure that future Ariadne changes—either dropping the marker or
+		// emitting additional TensorTypes alongside it—are caught cleanly rather than silently masked.
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertNull("Expected shape-⊤ marker (null dims).", only.getDims());
+	}
+
+	/**
+	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
+	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
+	 * objects (`getDims() == null` for shape-⊤, `getDType() == DType.UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
+	 * variable corresponds to Ariadne's ⊥ classification (provably not a tensor) when generators are contract-compliant—they emit a
+	 * placeholder {@code TensorType(UNKNOWN, null)} for "tensor with unknown info" cases, so an empty {@code state} means no generator
+	 * classified the variable as a tensor. The iterator filter (`state != null && !state.isEmpty()`) collapses "variable not analyzed" with
+	 * this not-a-tensor case at the API surface; both behave identically for downstream consumers.
+	 */
+	@Test
+	public void testInferredTensorTypesBottomNotTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertFalse(function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		Set<TensorType> inferred = x.getTensorTypes();
+		assertNotNull(inferred);
+		assertTrue("Non-tensor parameter yields no iterator entry, so the inferred set is empty.", inferred.isEmpty());
+	}
+
+	/**
+	 * Regression test for #495: under `experimental_follow_type_hints=True` with a `tf.Tensor` type hint, the per-Parameter tensor-types
+	 * cache must be populated even though `Parameter.classifyAsTensor`'s Phase 1 (type hints) returns true before Phase 2 (Ariadne query)
+	 * runs. Without the hoist landed in #496, `param.getTensorTypes()` returned the empty default for type-hint-classified parameters even
+	 * when Ariadne had a concrete `TensorType` from the call site.
+	 */
+	@Test
+	public void testInferredTensorTypesUnderFollowTypeHints() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue("Function is decorated with `@tf.function(experimental_follow_type_hints=True)`.", function.isHybrid());
+		assertTrue("The `experimental_follow_type_hints` parameter is supplied on the `tf.function` decorator.",
+				function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists());
+		assertTrue("The function has a tensor parameter (via the type hint).", function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		// The load-bearing assertion: the cache is populated from the call site's `tf.constant([1.0, 2.0])`, even though Phase 1's
+		// type-hint hit causes `classifyAsTensor` to return true before Phase 2 reads the cache. Without the hoist, this assertion fails
+		// (the cache stays at the empty default).
+		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
+				t.getTensorTypes());
 	}
 }
