@@ -8100,12 +8100,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<TensorType> inferred = t.getTensorTypes();
 		assertNotNull(inferred);
-		assertFalse("Iterator must surface the TensorType for a shape-⊤ parameter.", inferred.isEmpty());
 		// NOTE: This assertion is fragile. The fixture relies on Ariadne NOT seeing through `json.loads("[32]")` to defeat shape inference.
 		// If Ariadne ever learns to model `json.loads` for compile-time-constant string inputs (tracked at wala/ML#536), this fixture stops
-		// producing a shape-⊤ marker and the assertion below flips. The Hybridize-side follow-up to swap to a more durable shape-⊤ source
-		// is tracked at #491.
-		assertTrue("Expected a shape-⊤ marker (TensorType with null dims).", inferred.stream().anyMatch(tt -> tt.getDims() == null));
+		// producing a shape-⊤ marker and the assertions below flip. The Hybridize-side follow-up to swap to a more durable shape-⊤ source
+		// is tracked at #491. Tight assertions (exact size + null dims) ensure that future Ariadne changes—either dropping the marker or
+		// emitting additional TensorTypes alongside it—are caught cleanly rather than silently masked.
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertNull("Expected shape-⊤ marker (null dims).", only.getDims());
 	}
 
 	/**
