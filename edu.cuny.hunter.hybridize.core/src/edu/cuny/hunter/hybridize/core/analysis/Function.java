@@ -1418,8 +1418,11 @@ public class Function {
 			}
 
 			param.classifyAsTensor(tensorAnalysis, nodes, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
-			if (TRUE.equals(param.isTensor()))
+			if (TRUE.equals(param.isTensor())) {
 				this.hasTensorParameter = TRUE;
+				subMonitor.worked(1);
+				continue; // next parameter.
+			}
 
 			subMonitor.worked(1);
 		}

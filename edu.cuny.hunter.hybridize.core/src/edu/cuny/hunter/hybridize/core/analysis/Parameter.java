@@ -193,7 +193,7 @@ public final class Parameter {
 
 	/**
 	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
-	 * tensors). Populated only when {@link #isTensorTyped}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
+	 * tensors). Populated only when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
 	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
 	 * classification has not run or did not reach Phase 3.
 	 * <p>
