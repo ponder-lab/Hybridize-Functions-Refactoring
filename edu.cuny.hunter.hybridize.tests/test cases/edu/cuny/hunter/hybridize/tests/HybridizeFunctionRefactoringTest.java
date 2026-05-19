@@ -2237,6 +2237,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getHasTensorParameter());
 		}
+
+		// Precision audit. Top-level call: `dense_layer(tf.ones([3, 2]), tf.ones([2, 2]), tf.ones([2]))`. Inside the body,
+		// `add(tf.matmul(x, w), b)` calls `add` with the matmul result and `b`. Reading the semantics, every tensor here is FLOAT32
+		// with concrete shape: dense_layer's `x` is (3, 2), `w` is (2, 2), `b` is (2,); add's `a` is the matmul output (3, 2), and add's
+		// `b` threads through from dense_layer's `b` so it is also (2,).
+		Function denseLayerFunc = nameToFunctions.get("dense_layer").iterator().next();
+		List<Parameter> dlParams = denseLayerFunc.getParameters();
+		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2)))), dlParams.get(0).getTensorTypes());
+		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), dlParams.get(1).getTensorTypes());
+		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))), dlParams.get(2).getTensorTypes());
+		Optional<InputSignature> dlSig = denseLayerFunc.inferInputSignature();
+		assertTrue(dlSig.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
+				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))),
+				new TensorType(FLOAT32, List.of(new NumericDim(2)))), dlSig.get().parameterTypes());
+
+		Function addFunc = nameToFunctions.get("add").iterator().next();
+		List<Parameter> addParams = addFunc.getParameters();
+		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2)))), addParams.get(0).getTensorTypes());
+		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))), addParams.get(1).getTensorTypes());
+		Optional<InputSignature> addSig = addFunc.inferInputSignature();
+		assertTrue(addSig.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
+				new TensorType(FLOAT32, List.of(new NumericDim(2)))), addSig.get().parameterTypes());
 	}
 
 	/**
@@ -2280,6 +2304,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getHasTensorParameter());
 		}
+
+		// Precision audit. `image = tf.zeros([1, 200, 200, 100])` followed by `conv_fn(image)`. Single call, single tensor parameter,
+		// FLOAT32 dtype, shape (1, 200, 200, 100).
+		Function convFn = nameToFunctions.get("conv_fn").iterator().next();
+		Parameter image = convFn.getParameters().get(0);
+		TensorType expectedImage = new TensorType(FLOAT32,
+				List.of(new NumericDim(1), new NumericDim(200), new NumericDim(200), new NumericDim(100)));
+		assertEquals(Set.of(expectedImage), image.getTensorTypes());
+		Optional<InputSignature> convFnSig = convFn.inferInputSignature();
+		assertTrue(convFnSig.isPresent());
+		assertEquals(List.of(expectedImage), convFnSig.get().parameterTypes());
 	}
 
 	/**
@@ -2323,6 +2358,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue("Expecting " + function + " to likely have a tensor-like parameter.", function.getHasTensorParameter());
 		}
+
+		// Precision audit. `double` is called with `tf.constant(1)` (INT32), `tf.constant(1.1)` (FLOAT32), and `tf.constant("a")` /
+		// `tf.constant("b")` (STRING). Multi-context with three distinct dtypes — algorithm drops signature on dtype disagreement
+		// (|D| != 1).
+		Function dbl = nameToFunctions.get("double").iterator().next();
+		Parameter a = dbl.getParameters().get(0);
+		assertTrue("Expected multi-context tensor types from diverging dtypes.", a.getTensorTypes().size() > 1);
+		Optional<InputSignature> dblSig = dbl.inferInputSignature();
+		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
 	}
 
 	/**
