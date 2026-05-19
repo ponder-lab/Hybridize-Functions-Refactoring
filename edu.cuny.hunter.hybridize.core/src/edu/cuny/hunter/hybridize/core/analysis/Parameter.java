@@ -623,7 +623,7 @@ public final class Parameter {
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
 					// TODO: Actually get the value here (#111).
-					&& this.function.getHybridizationParameters().isExperimentalFollowTypeHintsParamExists();
+					&& this.function.getHybridizationParameters().hasExperimentalFollowTypeHintsParam();
 
 			// Phase 1: type hints.
 			if (followTypeHints) {

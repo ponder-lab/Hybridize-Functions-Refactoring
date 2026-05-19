@@ -491,14 +491,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isAutoGraphParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalAutographOptParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalFollowTypeHintsParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isExperimentalImplementsParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isFuncParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isInputSignatureParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isJitCompileParamExists());
-		printer.print(hybridizationParameters == null ? null : hybridizationParameters.isReduceRetracingParamExists());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasAutoGraphParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasExperimentalAutographOptionsParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasExperimentalFollowTypeHintsParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasExperimentalImplementsParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasFuncParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasInputSignatureParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasJitCompileParam());
+		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasReduceRetracingParam());
 
 		printer.print(function.getRefactoring());
 		printer.print(function.getPassingPrecondition());
