@@ -12,7 +12,10 @@ with g.as_default():
     c = tf.constant(30.0)
     assert c.graph is g
 
-result = value_index(
-    tf.Tensor(g.get_operations()[0], 0, tf.float32),
-    tf.Tensor(g.get_operations()[0], 0, tf.float32),
-)
+a_val = tf.Tensor(g.get_operations()[0], 0, tf.float32)
+b_val = tf.Tensor(g.get_operations()[0], 0, tf.float32)
+assert a_val.dtype == tf.float32
+assert a_val.shape == ()
+assert b_val.dtype == tf.float32
+assert b_val.shape == ()
+result = value_index(a_val, b_val)
