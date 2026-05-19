@@ -678,10 +678,9 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the cached "is this parameter likely tensor-typed?" classification produced by {@link #classifyAsTensor}. Returns
-	 * {@code null} if the classifier has not yet run.
+	 * Returns the cached tensor-typed classification produced by {@link #classifyAsTensor}.
 	 *
-	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if classification has not yet run.
+	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run.
 	 */
 	public Boolean isTensor() {
 		return this.tensor;
