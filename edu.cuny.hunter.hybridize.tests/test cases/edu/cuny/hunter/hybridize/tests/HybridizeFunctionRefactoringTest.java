@@ -8187,6 +8187,69 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
+	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
+	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509
+	 * (the tool-side recovery: extend the `Parameter` API to surface container constituents).
+	 */
+	@Test
+	public void testInputSignatureContainerParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertTrue("Parameter `xs` should be classified as tensor-typed via Phase 3 (container).", xs.isTensor());
+		assertEquals("Phase 3 must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, xs.isTensorContainer());
+		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
+				xs.getTensorTypes().isEmpty());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
+		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+	}
+
+	/**
+	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
+	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
+	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays
+	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509.
+	 */
+	@Test
+	public void testInputSignatureTypeHintOnly() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertTrue("Parameter `x` should be classified as tensor-typed via Phase 1 (type hint).", x.isTensor());
+		assertTrue("Parameter `x` must have an empty `getTensorTypes()` cache (call site supplies a non-tensor).",
+				x.getTensorTypes().isEmpty());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
+		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+	}
+
+	/**
 	 * Regression test for #508 category (a). A function with a mixed (tensor + non-tensor) parameter list: `t` is a tensor (Phase-2 hit via
 	 * the `tf.constant(...)` call site) and `n` is a non-tensor (`int` literal at the call site). The non-tensor parameter `n` blocks
 	 * input-signature inference: `inferInputSignature()` returns `Optional.empty` and the function emits an `INPUT_SIGNATURE_INFERENCE`
