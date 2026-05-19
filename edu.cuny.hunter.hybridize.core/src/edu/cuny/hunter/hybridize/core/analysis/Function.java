@@ -87,6 +87,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
@@ -1557,7 +1558,7 @@ public class Function {
 			return Optional.empty();
 		if (single.getDims() == null)
 			return Optional.empty();
-		if (single.getDims().stream().anyMatch(d -> !(d instanceof TensorType.NumericDim)))
+		if (single.getDims().stream().anyMatch(d -> !(d instanceof NumericDim)))
 			return Optional.empty();
 
 		return Optional.of(single);
