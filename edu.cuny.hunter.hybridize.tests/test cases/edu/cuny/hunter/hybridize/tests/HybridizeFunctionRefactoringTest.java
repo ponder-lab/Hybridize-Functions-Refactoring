@@ -3777,7 +3777,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter59() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> params = function.getParameters();
+		assertEquals(2, params.size());
+
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
+
+		assertTrue(function.getHasTensorParameter());
+
+		// Precision audit. `tf.RaggedTensor.from_nested_row_splits(values, splits)` — runtime dtype=int32, shape=(3, None, None).
+		// Ariadne emits an INT32 TensorType with three dims: a known constant 3 followed by two unknown (null) dims, matching the
+		// runtime shape exactly.
+		TensorType ariadne = new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null));
+		assertEquals(Set.of(ariadne), a.getTensorTypes());
+		assertEquals(Set.of(ariadne), b.getTensorTypes());
+
+		// Algorithm replaces null dims with `SymbolicDim("?")` wildcards in the inferred signature — the partial-null per-dim case
+		// degrades to per-dim wildcards rather than a whole shape-⊤ drop.
+		TensorType inferred = new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(inferred, inferred), sig.get().parameterTypes());
 	}
 
 	/**
