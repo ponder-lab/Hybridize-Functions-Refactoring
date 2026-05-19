@@ -14,7 +14,6 @@ import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString
 import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -92,11 +91,9 @@ public final class Parameter {
 	private final int index;
 
 	/**
-	 * The {@link TensorType}s associated with this parameter by the {@link TensorTypeAnalysis}. Populated during the
-	 * {@link Function#inferTensorParameters} pass so {@link #getTensorTypes()} can be called without re-passing the analysis. Empty by
-	 * default, never {@code null}.
+	 * The possible {@link TensorType}s of this {@link Parameter}.
 	 */
-	private Set<TensorType> tensorTypes = Collections.emptySet();
+	private Set<TensorType> tensorTypes;
 
 	/**
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
@@ -182,29 +179,16 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the {@link TensorType}s associated with this parameter, as cached during the {@link Function#inferTensorParameters} pass.
-	 * Mirrors {@link Function#getHasTensorParameter}: a no-argument read of a value the analysis pass populated, intended for use after the
-	 * pass has run.
-	 * <p>
-	 * The empty set is overloaded: it can mean either (1) the analysis pass has not run for the owning function or (2) the pass ran and
-	 * Ariadne associated no {@link TensorType} with this parameter. Callers that need to distinguish those cases should consult
-	 * {@link #isTensor()} instead—{@code null} means "classifier has not run," {@code FALSE} means "ran and not classified as tensor,"
-	 * {@code TRUE} means "classified as tensor" (in which case {@link #getTensorTypes()} may still be empty if classification came from a
-	 * type hint or container detection rather than Ariadne call-site evidence).
+	 * Returns the set of possible {@link TensorType}s for this {@link Parameter}.
 	 *
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
+	 * @return The set of possible {@link TensorType}s for this {@link Parameter}.
 	 */
 	public Set<TensorType> getTensorTypes() {
 		return this.tensorTypes;
 	}
 
-	/**
-	 * Package-private setter used by {@link Function#inferTensorParameters} to populate the cache read by the no-arg
-	 * {@link #getTensorTypes()}. Wraps the given set in an unmodifiable view at write-time so the no-allocation getter returns an
-	 * already-immutable reference.
-	 */
-	void setTensorTypes(Set<TensorType> tensorTypes) {
-		this.tensorTypes = unmodifiableSet(Objects.requireNonNull(tensorTypes));
+	protected void setTensorTypes(Set<TensorType> tensorTypes) {
+		this.tensorTypes = tensorTypes;
 	}
 
 	/**
@@ -547,7 +531,7 @@ public final class Parameter {
 			}
 		}
 
-		this.setTensorTypes(result);
+		this.setTensorTypes(unmodifiableSet(result));
 	}
 
 	private exprType getNameExpr() {

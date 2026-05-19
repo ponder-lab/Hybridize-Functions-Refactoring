@@ -1537,10 +1537,9 @@ public class Function {
 	}
 
 	/**
-	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}, following Algorithm
-	 * 2 of the input-signature-inference approach:
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType} via three steps:
 	 * <ol>
-	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the algorithm's
+	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the
 	 * {@code |D| ≠ 1 ⇒ ⊥} branch). If the agreed dtype is {@code UNKNOWN} (dtype-⊤), also drop—pending #494, since {@code tf.UNKNOWN} isn't
 	 * a valid runtime dtype for {@code tf.function(input_signature=...)}.
 	 * <li><b>Rank consensus or shape-⊤.</b> If any context has {@code dims == null} (unknown rank) or the ranks disagree across contexts,
@@ -1554,7 +1553,7 @@ public class Function {
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for the dtype-⊥ and dtype-⊤ branches.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
-		// Step 1: dtype consensus. The paper's `|D| ≠ 1 ⇒ ⊥` branch covers both the heterogeneous-dtype case and the empty-set case
+		// Step 1: dtype consensus. The `|D| ≠ 1 ⇒ ⊥` branch covers both the heterogeneous-dtype case and the empty-set case
 		// (already filtered upstream by `inferInputSignature`'s `contexts.isEmpty()` check).
 		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
 		if (dtypes.size() != 1)
@@ -1564,8 +1563,8 @@ public class Function {
 			// dtype-⊤: `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Conservative drop, pending #494.
 			return Optional.empty();
 
-		// Step 2: rank consensus or shape-⊤. The paper's "any t has shape = null or ranks disagree" branch emits TensorSpec(shape=None,
-		// dtype=...), preserving the dtype axis even when the shape axis degrades.
+		// Step 2: rank consensus or shape-⊤. When any context has shape = null or ranks disagree, emit TensorSpec(shape=None, dtype=...),
+		// preserving the dtype axis even when the shape axis degrades.
 		boolean anyNullRank = contexts.stream().anyMatch(t -> t.getDims() == null);
 		Set<Integer> ranks = contexts.stream().filter(t -> t.getDims() != null).map(t -> t.getDims().size()).collect(Collectors.toSet());
 		if (anyNullRank || ranks.size() != 1)
@@ -1573,7 +1572,7 @@ public class Function {
 
 		int rank = ranks.iterator().next();
 
-		// Step 3: per-dim consensus or wildcard. Per the paper, if `|D_j| = 1` and the single value is concrete, keep it; else `None`.
+		// Step 3: per-dim consensus or wildcard. If `|D_j| = 1` and the single value is concrete, keep it; else `None`.
 		List<Dimension<?>> shape = new ArrayList<>(rank);
 		for (int j = 0; j < rank; j++) {
 			final int pos = j;

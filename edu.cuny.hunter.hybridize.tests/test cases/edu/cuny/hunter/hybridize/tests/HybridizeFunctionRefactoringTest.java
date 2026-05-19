@@ -1915,9 +1915,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				new TensorType(DType.FLOAT32, List.of(new NumericDim(2))));
 		assertEquals(expected, inferred);
 
-		// Multi-context input with rank disagreement (rank 2 vs rank 1) per Algorithm 2: dtype consensus passes (both float32), shape
-		// axis degrades to ⊥ (null dims). `inferInputSignature` emits a coarse `TensorType(FLOAT32, null)` signature rather than
-		// dropping the parameter.
+		// Multi-context input with rank disagreement (rank 2 vs rank 1): dtype consensus passes (both float32), shape axis degrades
+		// to ⊥ (null dims). `inferInputSignature` emits a coarse `TensorType(FLOAT32, null)` signature rather than dropping the
+		// parameter.
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertTrue("Multi-context rank-disagreement emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
@@ -8128,8 +8128,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Input-signature inference when the singleton {@link TensorType} carries a concrete dtype but shape-⊤ (null dims), as produced by
-	 * `tf.keras.Input(shape=json.loads(...))` where Ariadne cannot trace `json.loads`. Per Algorithm 2's shape-axis degrades-independently
-	 * property, the dtype carries through (concrete `float32`) while the shape axis emits ⊤; the result is a valid coarse
+	 * `tf.keras.Input(shape=json.loads(...))` where Ariadne cannot trace `json.loads`. The shape and dtype axes degrade independently: the
+	 * dtype carries through (concrete `float32`) while the shape axis emits ⊤; the result is a valid coarse
 	 * {@link TensorType}{@code (FLOAT32, null)} signature rather than a dropped parameter.
 	 */
 	@Test
@@ -8157,9 +8157,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Regression test for #494 / #507 per-dim wildcard emission. The parameter `t` is reached by two same-rank (rank 1) tensors of
-	 * differing size at position 0: shape (2,) and shape (3,). Per Algorithm 2 step 3, the per-dim consensus check at position 0 fails
-	 * (|D_0| = 2), so `inferSpec` emits a `SymbolicDim("?")` wildcard at that position. Dtype consensus passes (both float32), so the
-	 * emitted signature is `TensorType(FLOAT32, [SymbolicDim("?")])`.
+	 * differing size at position 0: shape (2,) and shape (3,). The per-dim consensus check at position 0 fails (|D_0| = 2), so `inferSpec`
+	 * emits a `SymbolicDim("?")` wildcard at that position. Dtype consensus passes (both float32), so the emitted signature is
+	 * `TensorType(FLOAT32, [SymbolicDim("?")])`.
 	 */
 	@Test
 	public void testInputSignaturePerDimWildcard() throws Exception {
