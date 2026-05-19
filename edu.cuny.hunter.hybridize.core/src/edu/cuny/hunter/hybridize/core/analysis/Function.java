@@ -172,42 +172,42 @@ public class Function {
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter autograph.
 		 */
-		private boolean hasAutoGraphParam;
+		private boolean autoGraphParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 */
-		private boolean hasExperimentalFollowTypeHintsParam;
+		private boolean experimentalFollowTypeHintsParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_autograph_options.
 		 */
-		private boolean hasExperimentalAutographOptionsParam;
+		private boolean experimentalAutographOptionsParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter experimental_implements.
 		 */
-		private boolean hasExperimentalImplementsParam;
+		private boolean experimentalImplementsParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter func.
 		 */
-		private boolean hasFuncParam;
+		private boolean funcParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter input_signature.
 		 */
-		private boolean hasInputSignatureParam;
+		private boolean inputSignatureParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 */
-		private boolean hasJitCompileParam;
+		private boolean jitCompileParam;
 
 		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter reduce_retracing.
 		 */
-		private boolean hasReduceRetracingParam;
+		private boolean reduceRetracingParam;
 
 		private void computeParameterExistance() {
 			// Use the hybrid decorator cached by `computeHybridization` (#118). That method already iterated every
@@ -247,27 +247,27 @@ public class Function {
 		}
 
 		/**
-		 * Set the appropriate {@code has*Param} field for the given {@code tf.function} parameter name. Recognizes both current names and
-		 * the deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
+		 * Set the appropriate {@code *Param} field for the given {@code tf.function} parameter name. Recognizes both current names and the
+		 * deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
 		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
 		 */
 		private void markParamExists(String paramName) {
 			if (paramName.equals(FUNC))
-				this.hasFuncParam = true;
+				this.funcParam = true;
 			else if (paramName.equals(INPUT_SIGNATURE))
-				this.hasInputSignatureParam = true;
+				this.inputSignatureParam = true;
 			else if (paramName.equals(AUTOGRAPH))
-				this.hasAutoGraphParam = true;
+				this.autoGraphParam = true;
 			else if (paramName.equals(JIT_COMPILE) || paramName.equals(EXPERIMENTAL_COMPILE))
-				this.hasJitCompileParam = true;
+				this.jitCompileParam = true;
 			else if (paramName.equals(REDUCE_RETRACING) || paramName.equals(EXPERIMENTAL_RELAX_SHAPES))
-				this.hasReduceRetracingParam = true;
+				this.reduceRetracingParam = true;
 			else if (paramName.equals(EXPERIMENTAL_IMPLEMENTS))
-				this.hasExperimentalImplementsParam = true;
+				this.experimentalImplementsParam = true;
 			else if (paramName.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-				this.hasExperimentalAutographOptionsParam = true;
+				this.experimentalAutographOptionsParam = true;
 			else if (paramName.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-				this.hasExperimentalFollowTypeHintsParam = true;
+				this.experimentalFollowTypeHintsParam = true;
 		}
 
 		/**
@@ -276,7 +276,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter autograph.
 		 */
 		public boolean hasAutoGraphParam() {
-			return this.hasAutoGraphParam;
+			return this.autoGraphParam;
 		}
 
 		/**
@@ -285,7 +285,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter experimental_autograph_options.
 		 */
 		public boolean hasExperimentalAutographOptionsParam() {
-			return this.hasExperimentalAutographOptionsParam;
+			return this.experimentalAutographOptionsParam;
 		}
 
 		/**
@@ -294,7 +294,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter experimental_follow_type_hints.
 		 */
 		public boolean hasExperimentalFollowTypeHintsParam() {
-			return this.hasExperimentalFollowTypeHintsParam;
+			return this.experimentalFollowTypeHintsParam;
 		}
 
 		/**
@@ -303,7 +303,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter experimental_implements.
 		 */
 		public boolean hasExperimentalImplementsParam() {
-			return this.hasExperimentalImplementsParam;
+			return this.experimentalImplementsParam;
 		}
 
 		/**
@@ -312,7 +312,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter func.
 		 */
 		public boolean hasFuncParam() {
-			return this.hasFuncParam;
+			return this.funcParam;
 		}
 
 		/**
@@ -321,7 +321,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter input_signature.
 		 */
 		public boolean hasInputSignatureParam() {
-			return this.hasInputSignatureParam;
+			return this.inputSignatureParam;
 		}
 
 		/**
@@ -330,7 +330,7 @@ public class Function {
 		 * @return True iff this {@link decoratorsType} has parameter jit_compile.
 		 */
 		public boolean hasJitCompileParam() {
-			return this.hasJitCompileParam;
+			return this.jitCompileParam;
 		}
 
 		/**
@@ -339,7 +339,7 @@ public class Function {
 		 * @return True iff this {@link Function} has parameter reduce_retracing.
 		 */
 		public boolean hasReduceRetracingParam() {
-			return this.hasReduceRetracingParam;
+			return this.reduceRetracingParam;
 		}
 	}
 
