@@ -252,22 +252,16 @@ public class Function {
 		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
 		 */
 		private void markParam(String paramName) {
-			if (paramName.equals(FUNC))
-				this.funcParam = true;
-			else if (paramName.equals(INPUT_SIGNATURE))
-				this.inputSignatureParam = true;
-			else if (paramName.equals(AUTOGRAPH))
-				this.autoGraphParam = true;
-			else if (paramName.equals(JIT_COMPILE) || paramName.equals(EXPERIMENTAL_COMPILE))
-				this.jitCompileParam = true;
-			else if (paramName.equals(REDUCE_RETRACING) || paramName.equals(EXPERIMENTAL_RELAX_SHAPES))
-				this.reduceRetracingParam = true;
-			else if (paramName.equals(EXPERIMENTAL_IMPLEMENTS))
-				this.experimentalImplementsParam = true;
-			else if (paramName.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-				this.experimentalAutographOptionsParam = true;
-			else if (paramName.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-				this.experimentalFollowTypeHintsParam = true;
+			switch (paramName) {
+			case FUNC -> this.funcParam = true;
+			case INPUT_SIGNATURE -> this.inputSignatureParam = true;
+			case AUTOGRAPH -> this.autoGraphParam = true;
+			case JIT_COMPILE, EXPERIMENTAL_COMPILE -> this.jitCompileParam = true;
+			case REDUCE_RETRACING, EXPERIMENTAL_RELAX_SHAPES -> this.reduceRetracingParam = true;
+			case EXPERIMENTAL_IMPLEMENTS -> this.experimentalImplementsParam = true;
+			case EXPERIMENTAL_AUTOGRAPH_OPTIONS -> this.experimentalAutographOptionsParam = true;
+			case EXPERIMENTAL_FOLLOW_TYPE_HINTS -> this.experimentalFollowTypeHintsParam = true;
+			}
 		}
 
 		/**
