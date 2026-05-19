@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static edu.cuny.hunter.hybridize.core.analysis.Function.PLUGIN_ID;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
@@ -53,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -122,6 +124,7 @@ import org.python.pydev.ui.BundleInfoStub;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -129,6 +132,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -1879,6 +1883,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("x", paramName);
 
 		assertFalse(function.getHasTensorParameter());
+	}
+
+	/**
+	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
+	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
+	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
+	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 */
+	@Test
+	public void testInferredTensorTypes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+		assertEquals(0, t.getIndex());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+
+		Set<TensorType> expected = Set.of(new TensorType(DType.FLOAT32, List.of(new NumericDim(2), new NumericDim(1))),
+				new TensorType(DType.FLOAT32, List.of(new NumericDim(2))));
+		assertEquals(expected, inferred);
+
+		// Multi-context input with rank disagreement (rank 2 vs rank 1): dtype consensus passes (both float32), shape axis degrades
+		// to ⊥ (null dims). `inferInputSignature` emits a coarse `TensorType(FLOAT32, null)` signature rather than dropping the
+		// parameter.
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue("Multi-context rank-disagreement emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
+		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertNull("Spec dims must be null (shape-⊤ from rank disagreement).", spec.getDims());
+
+		// Wrapper identity contract: equals/hashCode/toString.
+		assertEquals(t, t);
+		assertEquals(t.hashCode(), t.hashCode());
+		assertNotNull(t.toString());
 	}
 
 	/**
@@ -8031,47 +8081,238 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Exercises {@link Parameter#getTensorTypes()} on the shape-divergence/same-dtype scenario ported from wala/ML's
-	 * {@code tf2_test_function8.py}: parameter {@code t} is reached by {@code tf.constant(l)} where {@code l} is one of two literal lists
-	 * of different rank. Ariadne therefore associates two {@link TensorType}s with {@code t}, both {@code float32}, with shapes
-	 * {@code (2, 1)} and {@code (2,)} respectively.
+	 * Input-signature inference for a function called once with a single tensor of concrete dtype and shape. The expected signature is a
+	 * singleton containing that single tensor type.
 	 */
 	@Test
-	public void testInferredTensorTypes() throws Exception {
+	public void testInputSignatureScenario1() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
 
 		List<Parameter> parameters = function.getParameters();
-		assertNotNull(parameters);
-		assertEquals("Function `func` has exactly one parameter `t`.", 1, parameters.size());
-
+		assertEquals(1, parameters.size());
 		Parameter t = parameters.get(0);
+
+		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertEquals(Set.of(expected), ariadne);
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(expected), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Input-signature inference when the function body uses a tensor that is not a parameter (a module-level tensor closed over by the
+	 * function). The inferred signature should still contain only the parameter's TensorType, not the closure-captured tensor. The closure
+	 * tensor's shape is intentionally distinct from the parameter's to make a leak observable: an implementation that collected all tensors
+	 * and deduplicated by `TensorType` would surface both shapes and fail the singleton assertion.
+	 */
+	@Test
+	public void testInputSignatureNonParameterTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+
+		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(expected), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Input-signature inference when the singleton {@link TensorType} carries a concrete dtype but shape-⊤ (null dims), as produced by
+	 * `tf.keras.Input(shape=json.loads(...))` where Ariadne cannot trace `json.loads`. The shape and dtype axes degrade independently: the
+	 * dtype carries through (concrete `float32`) while the shape axis emits ⊤; the result is a valid coarse
+	 * {@link TensorType}{@code (FLOAT32, null)} signature rather than a dropped parameter.
+	 */
+	@Test
+	public void testInputSignatureShapeUnknown() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+
+		Set<TensorType> ariadne = t.getTensorTypes();
+		assertEquals("Expected exactly one TensorType so we exercise the singleton branch, not the multi-context one.", 1, ariadne.size());
+		TensorType single = ariadne.iterator().next();
+		assertNull("Expected a shape-⊤ marker (TensorType with null dims).", single.getDims());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue("Singleton with null dims emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
+		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertNull("Spec dims must be null (shape-⊤).", spec.getDims());
+	}
+
+	/**
+	 * Regression test for #494 / #507 per-dim wildcard emission. The parameter `t` is reached by two same-rank (rank 1) tensors of
+	 * differing size at position 0: shape (2,) and shape (3,). The per-dim consensus check at position 0 fails (|D_0| = 2), so `inferSpec`
+	 * emits a `SymbolicDim("?")` wildcard at that position. Dtype consensus passes (both float32), so the emitted signature is
+	 * `TensorType(FLOAT32, [SymbolicDim("?")])`.
+	 */
+	@Test
+	public void testInputSignaturePerDimWildcard() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+
+		Set<TensorType> ariadne = t.getTensorTypes();
+		Set<TensorType> expectedAriadne = Set.of(new TensorType(DType.FLOAT32, List.of(new NumericDim(2))),
+				new TensorType(DType.FLOAT32, List.of(new NumericDim(3))));
+		assertEquals("Expected two TensorTypes of disagreeing size at position 0.", expectedAriadne, ariadne);
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue("Per-dim disagreement emits a wildcard-shape signature.", signature.isPresent());
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
+		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertNotNull("Spec dims must be non-null (rank consensus).", spec.getDims());
+		assertEquals("Spec must be rank 1.", 1, spec.getDims().size());
+		assertTrue("Position 0 must be a wildcard SymbolicDim.", spec.getDims().get(0) instanceof SymbolicDim);
+	}
+
+	/**
+	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
+	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
+	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509
+	 * (the tool-side recovery: extend the `Parameter` API to surface container constituents).
+	 */
+	@Test
+	public void testInputSignatureContainerParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertTrue("Parameter `xs` should be classified as tensor-typed via Phase 3 (container).", xs.isTensor());
+		assertEquals("Phase 3 must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, xs.isTensorContainer());
+		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
+				xs.getTensorTypes().isEmpty());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
+		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+	}
+
+	/**
+	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
+	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
+	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays
+	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509.
+	 */
+	@Test
+	public void testInputSignatureTypeHintOnly() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		assertTrue("Parameter `x` should be classified as tensor-typed via Phase 1 (type hint).", x.isTensor());
+		assertTrue("Parameter `x` must have an empty `getTensorTypes()` cache (call site supplies a non-tensor).",
+				x.getTensorTypes().isEmpty());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
+		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+	}
+
+	/**
+	 * Regression test for #508 category (a). A function with a mixed (tensor + non-tensor) parameter list: `t` is a tensor (Phase-2 hit via
+	 * the `tf.constant(...)` call site) and `n` is a non-tensor (`int` literal at the call site). The non-tensor parameter `n` blocks
+	 * input-signature inference: `inferInputSignature()` returns `Optional.empty` and the function emits an `INPUT_SIGNATURE_INFERENCE`
+	 * INFO status with the source-side recovery suggestion (annotate `n` as `tf.Tensor`, wrap call sites with `tf.constant(...)`, rerun).
+	 */
+	@Test
+	public void testInputSignatureNonTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter t = parameters.get(0);
+		Parameter n = parameters.get(1);
 		assertEquals("t", t.getName());
-		assertEquals(0, t.getIndex());
+		assertEquals("n", n.getName());
 
-		Set<TensorType> inferred = t.getTensorTypes();
-		assertNotNull(inferred);
-		assertEquals("Two tensor types should be inferred (shape divergence, same dtype).", 2, inferred.size());
+		assertTrue("Parameter `t` should be classified as tensor-typed (Phase 2 hit).", t.isTensor());
+		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
 
-		// Both dtype and shape must match the expected set. Shapes are collapsed to integer lists to avoid depending on Dimension equality
-		// semantics.
-		Set<Map.Entry<DType, List<Integer>>> dtypesAndShapes = inferred.stream()
-				.map(tt -> Map.entry(tt.getDType(), tt.getDims().stream()
-						.map(d -> d instanceof NumericDim ? ((NumericDim) d).value() : Integer.valueOf(-1)).collect(Collectors.toList())))
-				.collect(toSet());
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Mixed (tensor + non-tensor) parameter list must yield Optional.empty.", signature.isPresent());
 
-		Set<Map.Entry<DType, List<Integer>>> expected = Set.of(Map.entry(DType.FLOAT32, Arrays.asList(2, 1)),
-				Map.entry(DType.FLOAT32, Collections.singletonList(2)));
-		assertEquals("Expected (dtype, shape) pairs {(FLOAT32, (2,1)), (FLOAT32, (2,))}", expected, dtypesAndShapes);
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status when a non-tensor parameter blocks inference.", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `n`.", entry.getMessage().contains("`n`"));
+		assertTrue("Status message must suggest the source-side recovery (annotate as `tf.Tensor`).",
+				entry.getMessage().contains("tf.Tensor"));
+	}
 
-		// Wrapper identity contract: equals/hashCode/toString.
-		assertEquals(t, t);
-		assertEquals(t.hashCode(), t.hashCode());
-		assertNotNull(t.toString());
+	/**
+	 * Regression test for #508 category (a) accumulation. A function with multiple non-tensor parameters must emit one
+	 * `INPUT_SIGNATURE_INFERENCE` INFO per blocking parameter in a single `inferInputSignature` call, not just the first one. Pins the
+	 * accumulate-then-return semantics so developers see all source-side recovery suggestions at once rather than discovering them
+	 * one-at-a-time across refactoring reruns.
+	 */
+	@Test
+	public void testInputSignatureMultipleNonTensorParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter m = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("m", m.getName());
+		assertEquals("n", n.getName());
+
+		assertFalse("Parameter `m` should not be classified as tensor-typed.", m.isTensor());
+		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("All-non-tensor parameter list must yield Optional.empty.", signature.isPresent());
+
+		List<RefactoringStatusEntry> infoEntries = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).collect(Collectors.toList());
+
+		assertEquals("Expected one INPUT_SIGNATURE_INFERENCE INFO per blocking parameter.", 2, infoEntries.size());
+		assertTrue("Expected an INFO citing parameter `m`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`m`")));
+		assertTrue("Expected an INFO citing parameter `n`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`n`")));
 	}
 
 	/**

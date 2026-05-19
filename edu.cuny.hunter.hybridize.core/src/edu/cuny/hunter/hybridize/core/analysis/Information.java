@@ -12,7 +12,14 @@ public enum Information {
 	/**
 	 * Context being used.
 	 */
-	SPECULATIVE_ANALYSIS(2);
+	SPECULATIVE_ANALYSIS(2),
+
+	/**
+	 * Information related to {@link Function#inferInputSignature} — diagnostics emitted when input-signature inference is dropped because a
+	 * parameter blocks it (e.g., not classified as tensor-typed, or classified by type hint / container detection without concrete
+	 * shape/dtype evidence).
+	 */
+	INPUT_SIGNATURE_INFERENCE(3);
 
 	static {
 		// check that the codes are unique.

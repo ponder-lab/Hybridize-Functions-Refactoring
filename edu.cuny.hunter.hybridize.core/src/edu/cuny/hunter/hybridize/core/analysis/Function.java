@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -84,6 +85,11 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
+import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
@@ -1446,6 +1452,160 @@ public class Function {
 		}
 
 		subMonitor.done();
+	}
+
+	/**
+	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
+	 * tensor-type analysis associated with at least one tensor type.
+	 * <p>
+	 * Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the values are computed during {@link #inferTensorParameters}
+	 * (which caches per-parameter tensor types on each {@link Parameter}), and this method reads those cached values.
+	 * <p>
+	 * For each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()} into three categories:
+	 * <ul>
+	 * <li>Truly non-tensor ({@code isTensor() != TRUE}): drop the signature and emit a per-parameter INFO suggesting the source-side
+	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
+	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
+	 * flow over the parameter.
+	 * <li>Tensor-classified by type hint or container detection but no concrete shape/dtype evidence
+	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): drop the signature and emit a per-parameter INFO noting that the
+	 * tool-side recovery (extending the {@link Parameter} API to expose this signal) is tracked at #509.
+	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
+	 * reduced spec to the signature.
+	 * </ul>
+	 * <p>
+	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
+	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 *
+	 * @return The inferred signature, or {@link Optional#empty} if any non-{@code self} parameter blocks inference or if {@link #inferSpec}
+	 *         cannot reduce one of the per-parameter sets.
+	 */
+	public Optional<InputSignature> inferInputSignature() {
+		List<TensorType> specs = new ArrayList<>();
+		boolean blocked = false;
+
+		for (Parameter param : this.getParameters()) {
+			// `self` is excluded from the signature.
+			if (param.isSelf())
+				continue;
+
+			Boolean classified = param.isTensor();
+			if (classified == null || !classified) {
+				// Category (a): truly non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
+				// problem. Emit a source-side recovery suggestion. The tool does not synthesize a TensorType here because wrapping
+				// a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the parameter (`range(n)`
+				// becomes problematic, `if n > 0` becomes `tf.cond`, etc.). See #508 for the design decision. Continue the loop so
+				// all blocking parameters surface their INFOs in one pass instead of one per refactoring rerun.
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + param.getName() + "` of `" + this + "` is not classified as tensor-typed and prevents "
+								+ "input-signature inference. Consider changing `" + param.getName() + "` to accept a `tf.Tensor` "
+								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
+								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
+								+ "a complete input signature including `" + param.getName() + "`.");
+				blocked = true;
+				continue;
+			}
+
+			Set<TensorType> contexts = param.getTensorTypes();
+			if (contexts.isEmpty()) {
+				// Category (b): tensor-classified by Phase 1 (type hint) or Phase 3 (container) but no Phase 2 (Ariadne call-site)
+				// shape/dtype evidence. Recovery is tool-side (extend the Parameter API to surface what Ariadne already knows for
+				// containers, or extract dtype information from typed annotations), tracked at #509.
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
+								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
+								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
+				blocked = true;
+				continue;
+			}
+
+			Optional<TensorType> spec = inferSpec(contexts);
+			if (spec.isEmpty()) {
+				// Reduction returned bottom for this parameter; the whole signature collapses. Per-parameter INFO emission for the
+				// `inferSpec`-side drops (multi-context, dtype-⊤, symbolic dim) is tracked at #510.
+				blocked = true;
+				continue;
+			}
+
+			specs.add(spec.get());
+		}
+
+		if (blocked || specs.isEmpty())
+			return Optional.empty();
+
+		return Optional.of(new InputSignature(specs));
+	}
+
+	/**
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType} via three steps:
+	 * <ol>
+	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the
+	 * {@code |D| ≠ 1 ⇒ ⊥} branch). If the agreed dtype is {@code UNKNOWN} (dtype-⊤), also drop—pending #494, since {@code tf.UNKNOWN} isn't
+	 * a valid runtime dtype for {@code tf.function(input_signature=...)}.
+	 * <li><b>Rank consensus or shape-⊤.</b> If any context has {@code dims == null} (unknown rank) or the ranks disagree across contexts,
+	 * emit a coarse {@code TensorType(dtype, null)} (shape-⊤). This is a valid, runtime-accepted signature.
+	 * <li><b>Per-position consensus or wildcard.</b> For each dimension position, if all contexts agree on a concrete value, keep it;
+	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. Any non-{@link NumericDim} context dim also yields a wildcard at that
+	 * position.
+	 * </ol>
+	 *
+	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
+	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for the dtype-⊥ and dtype-⊤ branches.
+	 */
+	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
+		// Step 1: dtype consensus. Walk the contexts; any disagreement drops the signature.
+		DType dtype = null;
+		for (TensorType t : contexts) {
+			DType d = t.getDType();
+			if (dtype == null)
+				dtype = d;
+			else if (!dtype.equals(d))
+				// Heterogeneous dtype across contexts: drop the signature (the `|D| ≠ 1 ⇒ ⊥` branch).
+				return Optional.empty();
+		}
+		if (dtype == null || dtype == DType.UNKNOWN)
+			// Empty contexts (filtered upstream by `inferInputSignature`'s `contexts.isEmpty()` check) or dtype-⊤. The latter is a
+			// conservative drop because `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Pending #494.
+			return Optional.empty();
+
+		// Step 2: rank consensus or shape-⊤. If any context has shape = null or ranks disagree, emit `TensorType(dtype, null)`,
+		// preserving the dtype axis even when the shape axis degrades.
+		// `rank` uses -1 as a "not yet set" sentinel: dim list sizes are always non-negative, so the sentinel can't collide. A boxed
+		// `Integer rank = null` would compile-fail under the bundle's strict null-analysis (-err:+nullAnalysis) on the auto-unboxing
+		// sites below.
+		int rank = -1;
+		for (TensorType t : contexts) {
+			List<Dimension<?>> dims = t.getDims();
+			if (dims == null)
+				return Optional.of(new TensorType(dtype, null));
+			if (rank == -1)
+				rank = dims.size();
+			else if (rank != dims.size())
+				return Optional.of(new TensorType(dtype, null));
+		}
+
+		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
+		// `SymbolicDim("?")` wildcard.
+		List<Dimension<?>> shape = new ArrayList<>(rank);
+		for (int j = 0; j < rank; j++) {
+			Dimension<?> consensus = null;
+			boolean disagreement = false;
+			for (TensorType t : contexts) {
+				Dimension<?> d = t.getDims().get(j);
+				if (consensus == null)
+					consensus = d;
+				else if (!consensus.equals(d)) {
+					disagreement = true;
+					break;
+				}
+			}
+			if (!disagreement && consensus instanceof NumericDim)
+				shape.add(consensus);
+			else
+				shape.add(new SymbolicDim("?"));
+		}
+
+		return Optional.of(new TensorType(dtype, shape));
 	}
 
 	private boolean hasTensorContext() {
