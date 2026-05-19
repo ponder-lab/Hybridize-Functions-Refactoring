@@ -105,10 +105,10 @@ public final class Parameter {
 	private Boolean tensorContainer;
 
 	/**
-	 * Cached "is this parameter likely tensor-typed?" classification produced by {@link #classifyAsTensor}. {@code null} until the
-	 * classifier has run.
+	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
+	 * {@code TRUE} or {@code FALSE}.
 	 */
-	private Boolean isTensor;
+	private Boolean tensor;
 
 	/**
 	 * Owning {@link Function} back-reference.
@@ -611,7 +611,7 @@ public final class Parameter {
 		try {
 			// don't consider `self` as a tensor.
 			if (this.isSelf())
-				return this.isTensor = FALSE;
+				return this.tensor = FALSE;
 
 			// Populate the tensor-types cache up front whenever Ariadne has anything to say about this parameter, so subsequent reads via
 			// `getTensorTypes()` (no-arg) see a consistent value regardless of which classification phase below fires. In particular, the
@@ -633,7 +633,7 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					return this.isTensor = TRUE;
+					return this.tensor = TRUE;
 				}
 			} else
 				subMonitor.worked(1);
@@ -654,7 +654,7 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 					subMonitor.worked(2);
-					return this.isTensor = TRUE;
+					return this.tensor = TRUE;
 				}
 
 				subMonitor.worked(1);
@@ -666,12 +666,12 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
-					return this.isTensor = TRUE;
+					return this.tensor = TRUE;
 				}
 			} else
 				subMonitor.worked(2);
 
-			return this.isTensor = FALSE;
+			return this.tensor = FALSE;
 		} finally {
 			subMonitor.done();
 		}
@@ -684,7 +684,7 @@ public final class Parameter {
 	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if classification has not yet run.
 	 */
 	public Boolean isTensor() {
-		return this.isTensor;
+		return this.tensor;
 	}
 
 	@Override
