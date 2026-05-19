@@ -209,15 +209,15 @@ public class Function {
 		 */
 		private boolean reduceRetracingParam;
 
-		private void computeParameterExistance() {
+		private void computeParameters() {
 			// Use the hybrid decorator cached by `computeHybridization` (#118). That method already iterated every
 			// decorator on this function and stored the hybrid hit in `Function.this.hybridDecorator`; we no
 			// longer need to re-run the per-decorator `isHybrid` probe here.
 			decoratorsType tfFunctionDecorator = Function.this.hybridDecorator;
 
 			if (tfFunctionDecorator == null)
-				throw new IllegalStateException("No hybrid decorator was cached on " + Function.this
-						+ ". computeHybridization must run before computeParameterExistance.");
+				throw new IllegalStateException(
+						"No hybrid decorator was cached on " + Function.this + ". computeHybridization must run before computeParameters.");
 			// tfFunctionDecorator must be an instance of Call, because that's the only way we have parameters.
 			if (tfFunctionDecorator.func instanceof Call) {
 				Call callFunction = (Call) tfFunctionDecorator.func;
@@ -231,7 +231,7 @@ public class Function {
 				if (positionalArgs != null) {
 					int limit = Math.min(positionalArgs.length, TF_FUNCTION_POSITIONAL_PARAMS.length);
 					for (int i = 0; i < limit; i++)
-						this.markParamExists(TF_FUNCTION_POSITIONAL_PARAMS[i]);
+						this.markParam(TF_FUNCTION_POSITIONAL_PARAMS[i]);
 				}
 
 				// Process keyword arguments. Keyword args are unordered; each carries its parameter name
@@ -241,7 +241,7 @@ public class Function {
 				for (keywordType keyword : keywords)
 					if (keyword.arg instanceof NameTok) {
 						NameTok name = (NameTok) keyword.arg;
-						this.markParamExists(name.id);
+						this.markParam(name.id);
 					}
 			} // else, tf.function is used without parameters.
 		}
@@ -251,23 +251,17 @@ public class Function {
 		 * deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
 		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
 		 */
-		private void markParamExists(String paramName) {
-			if (paramName.equals(FUNC))
-				this.funcParam = true;
-			else if (paramName.equals(INPUT_SIGNATURE))
-				this.inputSignatureParam = true;
-			else if (paramName.equals(AUTOGRAPH))
-				this.autoGraphParam = true;
-			else if (paramName.equals(JIT_COMPILE) || paramName.equals(EXPERIMENTAL_COMPILE))
-				this.jitCompileParam = true;
-			else if (paramName.equals(REDUCE_RETRACING) || paramName.equals(EXPERIMENTAL_RELAX_SHAPES))
-				this.reduceRetracingParam = true;
-			else if (paramName.equals(EXPERIMENTAL_IMPLEMENTS))
-				this.experimentalImplementsParam = true;
-			else if (paramName.equals(EXPERIMENTAL_AUTOGRAPH_OPTIONS))
-				this.experimentalAutographOptionsParam = true;
-			else if (paramName.equals(EXPERIMENTAL_FOLLOW_TYPE_HINTS))
-				this.experimentalFollowTypeHintsParam = true;
+		private void markParam(String paramName) {
+			switch (paramName) {
+			case FUNC -> this.funcParam = true;
+			case INPUT_SIGNATURE -> this.inputSignatureParam = true;
+			case AUTOGRAPH -> this.autoGraphParam = true;
+			case JIT_COMPILE, EXPERIMENTAL_COMPILE -> this.jitCompileParam = true;
+			case REDUCE_RETRACING, EXPERIMENTAL_RELAX_SHAPES -> this.reduceRetracingParam = true;
+			case EXPERIMENTAL_IMPLEMENTS -> this.experimentalImplementsParam = true;
+			case EXPERIMENTAL_AUTOGRAPH_OPTIONS -> this.experimentalAutographOptionsParam = true;
+			case EXPERIMENTAL_FOLLOW_TYPE_HINTS -> this.experimentalFollowTypeHintsParam = true;
+			}
 		}
 
 		/**
@@ -621,10 +615,10 @@ public class Function {
 	/**
 	 * The hybrid decorator found on this {@link Function} during {@link #computeHybridization(IProgressMonitor)}, or {@code null} if no
 	 * hybrid decorator was found (or hybridization has not yet been computed). Cached so that {@code
-	 * HybridizationParameters.computeParameterExistance} can reuse the result rather than re-running the per-decorator {@code isHybrid}
-	 * probe (which is the slow part of decorator analysis: it walks selections, modules, and natures). If the function carries multiple
-	 * hybrid decorators (unusual; stacking {@code @tf.function} is not semantically valid in TF), the last one in source order wins,
-	 * matching the legacy behaviour of {@code computeParameterExistance}. Tracks #118.
+	 * HybridizationParameters.computeParameters} can reuse the result rather than re-running the per-decorator {@code isHybrid} probe
+	 * (which is the slow part of decorator analysis: it walks selections, modules, and natures). If the function carries multiple hybrid
+	 * decorators (unusual; stacking {@code @tf.function} is not semantically valid in TF), the last one in source order wins, matching the
+	 * legacy behaviour of {@code computeParameters}. Tracks #118.
 	 */
 	private decoratorsType hybridDecorator;
 
@@ -908,7 +902,7 @@ public class Function {
 			// Compute the hybridization parameters since we know now that this function is hybrid.
 			LOG.info("Computing hybridization parameters.");
 			this.hybridizationParameters = new HybridizationParameters();
-			this.hybridizationParameters.computeParameterExistance();
+			this.hybridizationParameters.computeParameters();
 		} else {
 			this.setHybrid(FALSE);
 			LOG.info(this + " is not hybrid.");
