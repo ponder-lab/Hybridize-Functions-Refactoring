@@ -1553,33 +1553,51 @@ public class Function {
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for the dtype-⊥ and dtype-⊤ branches.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
-		// Step 1: dtype consensus. The `|D| ≠ 1 ⇒ ⊥` branch covers both the heterogeneous-dtype case and the empty-set case
-		// (already filtered upstream by `inferInputSignature`'s `contexts.isEmpty()` check).
-		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
-		if (dtypes.size() != 1)
-			return Optional.empty();
-		DType dtype = dtypes.iterator().next();
+		// Step 1: dtype consensus. Walk the contexts; any disagreement drops the signature.
+		DType dtype = null;
+		for (TensorType t : contexts) {
+			DType d = t.getDType();
+			if (dtype == null)
+				dtype = d;
+			else if (!dtype.equals(d))
+				// Heterogeneous dtype across contexts: drop the signature (the `|D| ≠ 1 ⇒ ⊥` branch).
+				return Optional.empty();
+		}
 		if (dtype == null || dtype == DType.UNKNOWN)
-			// dtype-⊤: `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Conservative drop, pending #494.
+			// Empty contexts (filtered upstream by `inferInputSignature`'s `contexts.isEmpty()` check) or dtype-⊤. The latter is a
+			// conservative drop because `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Pending #494.
 			return Optional.empty();
 
-		// Step 2: rank consensus or shape-⊤. When any context has shape = null or ranks disagree, emit TensorSpec(shape=None, dtype=...),
+		// Step 2: rank consensus or shape-⊤. If any context has shape = null or ranks disagree, emit `TensorType(dtype, null)`,
 		// preserving the dtype axis even when the shape axis degrades.
-		boolean anyNullRank = contexts.stream().anyMatch(t -> t.getDims() == null);
-		Set<Integer> ranks = contexts.stream().filter(t -> t.getDims() != null).map(t -> t.getDims().size()).collect(Collectors.toSet());
-		if (anyNullRank || ranks.size() != 1)
-			return Optional.of(new TensorType(dtype, null));
+		Integer rank = null;
+		for (TensorType t : contexts) {
+			List<Dimension<?>> dims = t.getDims();
+			if (dims == null)
+				return Optional.of(new TensorType(dtype, null));
+			if (rank == null)
+				rank = dims.size();
+			else if (rank != dims.size())
+				return Optional.of(new TensorType(dtype, null));
+		}
 
-		int rank = ranks.iterator().next();
-
-		// Step 3: per-dim consensus or wildcard. If `|D_j| = 1` and the single value is concrete, keep it; else `None`.
+		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
+		// `SymbolicDim("?")` wildcard.
 		List<Dimension<?>> shape = new ArrayList<>(rank);
 		for (int j = 0; j < rank; j++) {
-			final int pos = j;
-			Set<Dimension<?>> distinct = contexts.stream().map(t -> t.getDims().get(pos)).collect(Collectors.toSet());
-			Dimension<?> only = distinct.size() == 1 ? distinct.iterator().next() : null;
-			if (only instanceof NumericDim)
-				shape.add(only);
+			Dimension<?> consensus = null;
+			boolean disagreement = false;
+			for (TensorType t : contexts) {
+				Dimension<?> d = t.getDims().get(j);
+				if (consensus == null)
+					consensus = d;
+				else if (!consensus.equals(d)) {
+					disagreement = true;
+					break;
+				}
+			}
+			if (!disagreement && consensus instanceof NumericDim)
+				shape.add(consensus);
 			else
 				shape.add(new SymbolicDim("?"));
 		}
