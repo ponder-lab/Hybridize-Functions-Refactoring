@@ -2704,23 +2704,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Precision audit. `tf.fill([1, 2], 2)` and `tf.fill([2, 2], 1)` — fill-value is int, so INT32 dtype; shapes (1, 2) and (2, 2).
+		TensorType expectedA = new TensorType(INT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType expectedB = new TensorType(INT32, List.of(new NumericDim(2), new NumericDim(2)));
+		assertEquals(Set.of(expectedA), a.getTensorTypes());
+		assertEquals(Set.of(expectedB), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
 	}
 
 	/**
@@ -2736,23 +2736,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Precision audit. `tf.eye(2, 3)` × 2 — identity matrix; FLOAT32 default dtype; shape (2, 3).
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3)));
+		assertEquals(Set.of(expected), a.getTensorTypes());
+		assertEquals(Set.of(expected), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
 	}
 
 	/**
@@ -2768,23 +2767,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Precision audit. `tf.zeros_like([1, 2])` × 2 — input is a Python int list of length 2; output is INT32 shape (2,).
+		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
+		assertEquals(Set.of(expected), a.getTensorTypes());
+		assertEquals(Set.of(expected), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
 	}
 
 	/**
@@ -2800,23 +2798,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Precision audit. `tf.one_hot([0, 1, 2], 3)` × 2 — input length 3 + depth 3; default FLOAT32 dtype; output shape (3, 3).
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3)));
+		assertEquals(Set.of(expected), a.getTensorTypes());
+		assertEquals(Set.of(expected), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
 	}
 
 	/**
@@ -2832,23 +2829,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter a = params.get(0);
+		assertEquals("a", a.getName());
+		Parameter b = params.get(1);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Precision audit. `tf.convert_to_tensor(1)` / `tf.convert_to_tensor(2)` — Python ints → INT32 scalar (rank-0).
+		TensorType expected = new TensorType(INT32, List.of());
+		assertEquals(Set.of(expected), a.getTensorTypes());
+		assertEquals(Set.of(expected), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
 	}
 
 	/**
