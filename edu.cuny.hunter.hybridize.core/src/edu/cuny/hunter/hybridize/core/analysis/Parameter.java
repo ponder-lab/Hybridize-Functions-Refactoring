@@ -528,9 +528,14 @@ public final class Parameter {
 	 * Returns the {@link TensorType}s associated with this parameter, as cached during the {@link Function#inferTensorParameters} pass.
 	 * Mirrors {@link Function#getHasTensorParameter}: a no-argument read of a value the analysis pass populated, intended for use after the
 	 * pass has run.
+	 * <p>
+	 * The empty set is overloaded: it can mean either (1) the analysis pass has not run for the owning function or (2) the pass ran and
+	 * Ariadne associated no {@link TensorType} with this parameter. Callers that need to distinguish those cases should consult
+	 * {@link #isTensor()} instead—{@code null} means "classifier has not run," {@code FALSE} means "ran and not classified as tensor,"
+	 * {@code TRUE} means "classified as tensor" (in which case {@link #getTensorTypes()} may still be empty if classification came from a
+	 * type hint or container detection rather than Ariadne call-site evidence).
 	 *
-	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}. Returns the empty set if the analysis pass has
-	 *         not run for the owning function.
+	 * @return Unmodifiable, possibly-empty set of inferred tensor types. Never {@code null}.
 	 */
 	public Set<TensorType> getTensorTypes() {
 		return this.tensorTypes;

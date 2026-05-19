@@ -8184,6 +8184,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression test for #508 category (a) accumulation. A function with multiple non-tensor parameters must emit one
+	 * `INPUT_SIGNATURE_INFERENCE` INFO per blocking parameter in a single `inferInputSignature` call, not just the first one. Pins the
+	 * accumulate-then-return semantics so developers see all source-side recovery suggestions at once rather than discovering them
+	 * one-at-a-time across refactoring reruns.
+	 */
+	@Test
+	public void testInputSignatureMultipleNonTensorParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter m = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("m", m.getName());
+		assertEquals("n", n.getName());
+
+		assertFalse("Parameter `m` should not be classified as tensor-typed.", m.isTensor());
+		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("All-non-tensor parameter list must yield Optional.empty.", signature.isPresent());
+
+		List<RefactoringStatusEntry> infoEntries = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).collect(Collectors.toList());
+
+		assertEquals("Expected one INPUT_SIGNATURE_INFERENCE INFO per blocking parameter.", 2, infoEntries.size());
+		assertTrue("Expected an INFO citing parameter `m`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`m`")));
+		assertTrue("Expected an INFO citing parameter `n`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`n`")));
+	}
+
+	/**
 	 * Regression test for #497: a tensor-container parameter (reached via a list-of-tensors call site) classifies as tensor-typed via
 	 * {@link Parameter#classifyAsTensor}'s Phase 3 but does not populate the per-Parameter {@link Set} of {@link TensorType}s (the
 	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:

@@ -1479,6 +1479,7 @@ public class Function {
 	 */
 	public Optional<InputSignature> inferInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
+		boolean blocked = false;
 
 		for (Parameter param : this.getParameters()) {
 			// `self` is excluded from the signature.
@@ -1488,16 +1489,18 @@ public class Function {
 			Boolean classified = param.isTensor();
 			if (classified == null || !classified) {
 				// Category (a): truly non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
-				// problem. Emit a source-side recovery suggestion and drop the signature. The tool does not synthesize a TensorType
-				// here because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the
-				// parameter (`range(n)` becomes problematic, `if n > 0` becomes `tf.cond`, etc.). See #508 for the design decision.
+				// problem. Emit a source-side recovery suggestion. The tool does not synthesize a TensorType here because wrapping
+				// a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the parameter (`range(n)`
+				// becomes problematic, `if n > 0` becomes `tf.cond`, etc.). See #508 for the design decision. Continue the loop so
+				// all blocking parameters surface their INFOs in one pass instead of one per refactoring rerun.
 				this.addInfo(INPUT_SIGNATURE_INFERENCE,
 						"Parameter `" + param.getName() + "` of `" + this + "` is not classified as tensor-typed and prevents "
 								+ "input-signature inference. Consider changing `" + param.getName() + "` to accept a `tf.Tensor` "
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
-				return Optional.empty();
+				blocked = true;
+				continue;
 			}
 
 			Set<TensorType> contexts = param.getTensorTypes();
@@ -1509,18 +1512,22 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
 								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
 								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
-				return Optional.empty();
+				blocked = true;
+				continue;
 			}
 
 			Optional<TensorType> spec = inferSpec(contexts);
-			if (spec.isEmpty())
-				// Reduction returned bottom for this parameter; the whole signature collapses.
-				return Optional.empty();
+			if (spec.isEmpty()) {
+				// Reduction returned bottom for this parameter; the whole signature collapses. Per-parameter INFO emission for the
+				// `inferSpec`-side drops (multi-context, dtype-⊤, symbolic dim) is tracked at #510.
+				blocked = true;
+				continue;
+			}
 
 			specs.add(spec.get());
 		}
 
-		if (specs.isEmpty())
+		if (blocked || specs.isEmpty())
 			return Optional.empty();
 
 		return Optional.of(new InputSignature(specs));
@@ -1543,7 +1550,9 @@ public class Function {
 		TensorType single = contexts.iterator().next();
 
 		// The single-context case requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`).
-		// Non-concrete cases return `Optional.empty`; branch coverage tracked at #494.
+		// Non-concrete cases return `Optional.empty`; branch coverage tracked at #494. The `!NumericDim` short-circuit is conservative
+		// pending that coverage—a SymbolicDim (e.g., dynamic batch axis) could in principle map to a `None`-position in the emitted
+		// TensorSpec, but until #494's per-branch test pins that mapping, dropping is the safe default.
 		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
 			return Optional.empty();
 		if (single.getDims() == null)
