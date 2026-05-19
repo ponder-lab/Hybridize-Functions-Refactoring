@@ -1570,12 +1570,15 @@ public class Function {
 
 		// Step 2: rank consensus or shape-⊤. If any context has shape = null or ranks disagree, emit `TensorType(dtype, null)`,
 		// preserving the dtype axis even when the shape axis degrades.
-		Integer rank = null;
+		// `rank` uses -1 as a "not yet set" sentinel: dim list sizes are always non-negative, so the sentinel can't collide. A boxed
+		// `Integer rank = null` would compile-fail under the bundle's strict null-analysis (-err:+nullAnalysis) on the auto-unboxing
+		// sites below.
+		int rank = -1;
 		for (TensorType t : contexts) {
 			List<Dimension<?>> dims = t.getDims();
 			if (dims == null)
 				return Optional.of(new TensorType(dtype, null));
-			if (rank == null)
+			if (rank == -1)
 				rank = dims.size();
 			else if (rank != dims.size())
 				return Optional.of(new TensorType(dtype, null));
