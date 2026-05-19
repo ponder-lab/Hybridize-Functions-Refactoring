@@ -87,7 +87,9 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
 import com.ibm.wala.classLoader.IClass;
@@ -1535,33 +1537,55 @@ public class Function {
 	}
 
 	/**
-	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
-	 * <p>
-	 * Current scope: a single-context input with concrete dtype and concrete shape returns the singleton unchanged. Multi-context (#507)
-	 * and other non-concrete cases (#494) return {@link Optional#empty} pending future PRs.
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}, following Algorithm
+	 * 2 of the input-signature-inference approach:
+	 * <ol>
+	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the algorithm's
+	 * {@code |D| ≠ 1 ⇒ ⊥} branch). If the agreed dtype is {@code UNKNOWN} (dtype-⊤), also drop—pending #494, since {@code tf.UNKNOWN} isn't
+	 * a valid runtime dtype for {@code tf.function(input_signature=...)}.
+	 * <li><b>Rank consensus or shape-⊤.</b> If any context has {@code dims == null} (unknown rank) or the ranks disagree across contexts,
+	 * emit a coarse {@code TensorType(dtype, null)} (shape-⊤). This is a valid, runtime-accepted signature.
+	 * <li><b>Per-position consensus or wildcard.</b> For each dimension position, if all contexts agree on a concrete value, keep it;
+	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. Any non-{@link NumericDim} context dim also yields a wildcard at that
+	 * position.
+	 * </ol>
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
-	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for cases not yet implemented.
+	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for the dtype-⊥ and dtype-⊤ branches.
 	 */
 	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
-		if (contexts.size() != 1)
-			// TODO(#507): multi-context handling.
+		// Step 1: dtype consensus. The paper's `|D| ≠ 1 ⇒ ⊥` branch covers both the heterogeneous-dtype case and the empty-set case
+		// (already filtered upstream by `inferInputSignature`'s `contexts.isEmpty()` check).
+		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
+		if (dtypes.size() != 1)
+			return Optional.empty();
+		DType dtype = dtypes.iterator().next();
+		if (dtype == null || dtype == DType.UNKNOWN)
+			// dtype-⊤: `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Conservative drop, pending #494.
 			return Optional.empty();
 
-		TensorType single = contexts.iterator().next();
+		// Step 2: rank consensus or shape-⊤. The paper's "any t has shape = null or ranks disagree" branch emits TensorSpec(shape=None,
+		// dtype=...), preserving the dtype axis even when the shape axis degrades.
+		boolean anyNullRank = contexts.stream().anyMatch(t -> t.getDims() == null);
+		Set<Integer> ranks = contexts.stream().filter(t -> t.getDims() != null).map(t -> t.getDims().size()).collect(Collectors.toSet());
+		if (anyNullRank || ranks.size() != 1)
+			return Optional.of(new TensorType(dtype, null));
 
-		// The single-context case requires both a concrete dtype and a concrete shape (non-null dims list, every dim a `NumericDim`).
-		// Non-concrete cases return `Optional.empty`; branch coverage tracked at #494. The `!NumericDim` short-circuit is conservative
-		// pending that coverage—a SymbolicDim (e.g., dynamic batch axis) could in principle map to a `None`-position in the emitted
-		// TensorSpec, but until #494's per-branch test pins that mapping, dropping is the safe default.
-		if (single.getDType() == null || single.getDType() == DType.UNKNOWN)
-			return Optional.empty();
-		if (single.getDims() == null)
-			return Optional.empty();
-		if (single.getDims().stream().anyMatch(d -> !(d instanceof NumericDim)))
-			return Optional.empty();
+		int rank = ranks.iterator().next();
 
-		return Optional.of(single);
+		// Step 3: per-dim consensus or wildcard. Per the paper, if `|D_j| = 1` and the single value is concrete, keep it; else `None`.
+		List<Dimension<?>> shape = new ArrayList<>(rank);
+		for (int j = 0; j < rank; j++) {
+			final int pos = j;
+			Set<Dimension<?>> distinct = contexts.stream().map(t -> t.getDims().get(pos)).collect(Collectors.toSet());
+			Dimension<?> only = distinct.size() == 1 ? distinct.iterator().next() : null;
+			if (only instanceof NumericDim)
+				shape.add(only);
+			else
+				shape.add(new SymbolicDim("?"));
+		}
+
+		return Optional.of(new TensorType(dtype, shape));
 	}
 
 	private boolean hasTensorContext() {
