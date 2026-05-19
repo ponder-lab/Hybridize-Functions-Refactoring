@@ -1,5 +1,6 @@
 package edu.cuny.hunter.hybridize.tests;
 
+import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.FLOAT32;
 import static edu.cuny.hunter.hybridize.core.analysis.Function.PLUGIN_ID;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
@@ -1911,8 +1912,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> inferred = t.getTensorTypes();
 		assertNotNull(inferred);
 
-		Set<TensorType> expected = Set.of(new TensorType(DType.FLOAT32, List.of(new NumericDim(2), new NumericDim(1))),
-				new TensorType(DType.FLOAT32, List.of(new NumericDim(2))));
+		Set<TensorType> expected = Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(1))),
+				new TensorType(FLOAT32, List.of(new NumericDim(2))));
 		assertEquals(expected, inferred);
 
 		// Multi-context input with rank disagreement (rank 2 vs rank 1): dtype consensus passes (both float32), shape axis degrades
@@ -1922,7 +1923,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Multi-context rank-disagreement emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
-		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNull("Spec dims must be null (shape-⊤ from rank disagreement).", spec.getDims());
 
 		// Wrapper identity contract: equals/hashCode/toString.
@@ -2134,19 +2135,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// two params.
 		assertEquals(2, params.size());
 
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
+		Parameter a = params.get(0);
+		assertNotNull(a);
+		assertEquals("a", a.getName());
 
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
+		Parameter b = params.get(1);
+		assertNotNull(b);
+		assertEquals("b", b.getName());
 
 		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+
+		// Layer 1 (per-parameter ground truth): the .py calls `add(tf.ones([1, 2]), tf.ones([2, 2]))` once. Reading the semantics, `a`
+		// should bind to a tensor of shape (1, 2) dtype float32 and `b` to a tensor of shape (2, 2) dtype float32.
+		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		assertEquals(Set.of(expectedA), a.getTensorTypes());
+		assertEquals(Set.of(expectedB), b.getTensorTypes());
+
+		// Layer 2 (algorithm): the per-parameter ground truths combine into a two-parameter signature with each parameter pinned to its
+		// concrete (shape, dtype).
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(expectedA, expectedB), signature.get().parameterTypes());
 	}
 
 	/**
@@ -8094,7 +8104,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, parameters.size());
 		Parameter t = parameters.get(0);
 
-		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
 
 		Set<TensorType> ariadne = t.getTensorTypes();
 		assertEquals(Set.of(expected), ariadne);
@@ -8119,7 +8129,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> parameters = function.getParameters();
 		assertEquals(1, parameters.size());
 
-		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
 
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertTrue(signature.isPresent());
@@ -8151,7 +8161,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Singleton with null dims emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
-		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNull("Spec dims must be null (shape-⊤).", spec.getDims());
 	}
 
@@ -8172,15 +8182,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter t = parameters.get(0);
 
 		Set<TensorType> ariadne = t.getTensorTypes();
-		Set<TensorType> expectedAriadne = Set.of(new TensorType(DType.FLOAT32, List.of(new NumericDim(2))),
-				new TensorType(DType.FLOAT32, List.of(new NumericDim(3))));
+		Set<TensorType> expectedAriadne = Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2))),
+				new TensorType(FLOAT32, List.of(new NumericDim(3))));
 		assertEquals("Expected two TensorTypes of disagreeing size at position 0.", expectedAriadne, ariadne);
 
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertTrue("Per-dim disagreement emits a wildcard-shape signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
-		assertEquals("Spec dtype must be FLOAT32.", DType.FLOAT32, spec.getDType());
+		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNotNull("Spec dims must be non-null (rank consensus).", spec.getDims());
 		assertEquals("Spec must be rank 1.", 1, spec.getDims().size());
 		assertTrue("Position 0 must be a wildcard SymbolicDim.", spec.getDims().get(0) instanceof SymbolicDim);
@@ -8383,7 +8393,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tShapesDtypes);
 
 		// Non-tensor parameter must not surface a TensorType.
 		assertTrue("Non-tensor parameter `n` must have an empty `getTensorTypes()` cache.", n.getTensorTypes().isEmpty());
@@ -8553,7 +8563,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(DType.FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tShapesDtypes);
 	}
 
 	/**
@@ -8613,7 +8623,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
 	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
-	 * objects (`getDims() == null` for shape-⊤, `getDType() == DType.UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
+	 * objects (`getDims() == null` for shape-⊤, `getDType() == UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
 	 * variable corresponds to Ariadne's ⊥ classification (provably not a tensor) when generators are contract-compliant—they emit a
 	 * placeholder {@code TensorType(UNKNOWN, null)} for "tensor with unknown info" cases, so an empty {@code state} means no generator
 	 * classified the variable as a tensor. The iterator filter (`state != null && !state.isEmpty()`) collapses "variable not analyzed" with
@@ -8668,7 +8678,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The load-bearing assertion: the cache is populated from the call site's `tf.constant([1.0, 2.0])`, even though Phase 1's
 		// type-hint hit causes `classifyAsTensor` to return true before Phase 2 reads the cache. Without the hoist, this assertion fails
 		// (the cache stays at the empty default).
-		TensorType expected = new TensorType(DType.FLOAT32, List.of(new NumericDim(2)));
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
 		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
 				t.getTensorTypes());
 	}
