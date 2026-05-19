@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
@@ -1457,16 +1458,24 @@ public class Function {
 	 * Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the values are computed during {@link #inferTensorParameters}
 	 * (which caches per-parameter tensor types on each {@link Parameter}), and this method reads those cached values.
 	 * <p>
-	 * For each non-{@code self} parameter, this method reads {@link Parameter#getTensorTypes()} and reduces that set to a single
-	 * {@link TensorType}. A parameter with an empty cached set is excluded from the signature: the {@link Parameter#getTensorTypes()}
-	 * Javadoc notes that the iterator-based query collapses two upstream lattice states ("tensor with unknown types" and "not a tensor")
-	 * into the same empty result, and treating empty as "not a tensor" is the practical default until a richer Ariadne-side query lands.
+	 * For each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()} into three categories:
+	 * <ul>
+	 * <li>Truly non-tensor ({@code isTensor() != TRUE}): drop the signature and emit a per-parameter INFO suggesting the source-side
+	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
+	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
+	 * flow over the parameter.
+	 * <li>Tensor-classified by type hint or container detection but no concrete shape/dtype evidence
+	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): drop the signature and emit a per-parameter INFO noting that the
+	 * tool-side recovery (extending the {@link Parameter} API to expose this signal) is tracked at #509.
+	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
+	 * reduced spec to the signature.
+	 * </ul>
 	 * <p>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
 	 *
-	 * @return The inferred signature, or {@link Optional#empty} if no non-{@code self} parameter has any associated tensor types or if
-	 *         {@link #inferSpec} cannot reduce one of the per-parameter sets.
+	 * @return The inferred signature, or {@link Optional#empty} if any non-{@code self} parameter blocks inference or if {@link #inferSpec}
+	 *         cannot reduce one of the per-parameter sets.
 	 */
 	public Optional<InputSignature> inferInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
@@ -1476,11 +1485,32 @@ public class Function {
 			if (param.isSelf())
 				continue;
 
+			Boolean classified = param.isTensor();
+			if (classified == null || !classified) {
+				// Category (a): truly non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
+				// problem. Emit a source-side recovery suggestion and drop the signature. The tool does not synthesize a TensorType
+				// here because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the
+				// parameter (`range(n)` becomes problematic, `if n > 0` becomes `tf.cond`, etc.). See #508 for the design decision.
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + param.getName() + "` of `" + this + "` is not classified as tensor-typed and prevents "
+								+ "input-signature inference. Consider changing `" + param.getName() + "` to accept a `tf.Tensor` "
+								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
+								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
+								+ "a complete input signature including `" + param.getName() + "`.");
+				return Optional.empty();
+			}
+
 			Set<TensorType> contexts = param.getTensorTypes();
-			if (contexts.isEmpty())
-				// See Parameter.inferTensorTypes for the lattice-collapse rationale: empty here means either Ariadne didn't analyze the
-				// variable or classified it as not-a-tensor; both surface identically and exclude the parameter from the signature.
-				continue;
+			if (contexts.isEmpty()) {
+				// Category (b): tensor-classified by Phase 1 (type hint) or Phase 3 (container) but no Phase 2 (Ariadne call-site)
+				// shape/dtype evidence. Recovery is tool-side (extend the Parameter API to surface what Ariadne already knows for
+				// containers, or extract dtype information from typed annotations), tracked at #509.
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
+								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
+								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
+				return Optional.empty();
+			}
 
 			Optional<TensorType> spec = inferSpec(contexts);
 			if (spec.isEmpty())

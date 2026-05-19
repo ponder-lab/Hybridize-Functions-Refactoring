@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static edu.cuny.hunter.hybridize.core.analysis.Function.PLUGIN_ID;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.CANT_APPROXIMATE_RECURSION;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS;
@@ -8147,6 +8148,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = function.inferInputSignature();
 		assertFalse("Singleton with null dims must yield Optional.empty from `inferInputSignature`.", signature.isPresent());
+	}
+
+	/**
+	 * Regression test for #508 category (a). A function with a mixed (tensor + non-tensor) parameter list: `t` is a tensor (Phase-2 hit via
+	 * the `tf.constant(...)` call site) and `n` is a non-tensor (`int` literal at the call site). The non-tensor parameter `n` blocks
+	 * input-signature inference: `inferInputSignature()` returns `Optional.empty` and the function emits an `INPUT_SIGNATURE_INFERENCE`
+	 * INFO status with the source-side recovery suggestion (annotate `n` as `tf.Tensor`, wrap call sites with `tf.constant(...)`, rerun).
+	 */
+	@Test
+	public void testInputSignatureNonTensorParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter t = parameters.get(0);
+		Parameter n = parameters.get(1);
+		assertEquals("t", t.getName());
+		assertEquals("n", n.getName());
+
+		assertTrue("Parameter `t` should be classified as tensor-typed (Phase 2 hit).", t.isTensor());
+		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("Mixed (tensor + non-tensor) parameter list must yield Optional.empty.", signature.isPresent());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status when a non-tensor parameter blocks inference.", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `n`.", entry.getMessage().contains("`n`"));
+		assertTrue("Status message must suggest the source-side recovery (annotate as `tf.Tensor`).",
+				entry.getMessage().contains("tf.Tensor"));
 	}
 
 	/**
