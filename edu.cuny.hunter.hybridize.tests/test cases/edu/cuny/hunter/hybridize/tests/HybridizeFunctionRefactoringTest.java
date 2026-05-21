@@ -2361,11 +2361,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		// Precision audit. `double` is called with `tf.constant(1)` (INT32), `tf.constant(1.1)` (FLOAT32), and `tf.constant("a")` /
-		// `tf.constant("b")` (STRING). Multi-context with three distinct dtypes — algorithm drops signature on dtype disagreement
-		// (|D| != 1).
+		// `tf.constant("b")` (STRING). Multi-context with three distinct scalar dtypes — algorithm drops signature on dtype
+		// disagreement (|D| != 1).
 		Function dbl = nameToFunctions.get("double").iterator().next();
 		Parameter a = dbl.getParameters().get(0);
-		assertTrue("Expected multi-context tensor types from diverging dtypes.", a.getTensorTypes().size() > 1);
+		assertEquals(Set.of(new TensorType(INT32, List.of()), new TensorType(FLOAT32, List.of()), new TensorType(DType.STRING, List.of())),
+				a.getTensorTypes());
 		Optional<InputSignature> dblSig = dbl.inferInputSignature();
 		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
 	}
