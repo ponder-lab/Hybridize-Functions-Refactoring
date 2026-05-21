@@ -3795,14 +3795,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(function.getHasTensorParameter());
 
 		// Precision audit. `tf.RaggedTensor.from_nested_row_splits(values, splits)` — runtime dtype=int32, shape=(3, None, None).
-		// Ariadne emits an INT32 TensorType with three dims: a known constant 3 followed by two unknown (null) dims, matching the
-		// runtime shape exactly.
+		// Ariadne emits an INT32 TensorType with three dims: a known constant 3 followed by two raggedness markers (raw null).
+		// TODO(wala/ML#544): flip the `null` entries to `new RaggedDim()` once Ariadne ships the typed sentinel.
 		TensorType ariadne = new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null));
 		assertEquals(Set.of(ariadne), a.getTensorTypes());
 		assertEquals(Set.of(ariadne), b.getTensorTypes());
 
-		// Algorithm replaces null dims with `SymbolicDim("?")` wildcards in the inferred signature — the partial-null per-dim case
-		// degrades to per-dim wildcards rather than a whole shape-⊤ drop.
+		// Algorithm collapses ragged markers to `SymbolicDim("?")` wildcards in the inferred signature, producing a `TensorSpec`-shaped
+		// signature that admits the runtime call but loses the raggedness signal.
+		// TODO(#524): flip from a `TensorSpec` with wildcards to a `RaggedTensorSpec` once the consumer-side emission lands.
 		TensorType inferred = new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
 		Optional<InputSignature> sig = function.inferInputSignature();
 		assertTrue(sig.isPresent());
