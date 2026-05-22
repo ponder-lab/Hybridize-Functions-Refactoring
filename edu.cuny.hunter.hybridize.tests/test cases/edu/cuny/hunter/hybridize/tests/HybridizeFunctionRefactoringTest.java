@@ -3774,6 +3774,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Precision-audit overload: in addition to the structural checks of {@link #testHasLikelyTensorParameterHelper()}, asserts that both
+	 * parameters carry exactly {@code layer1} as their inferred tensor type (Layer 1) and that the inferred input signature is
+	 * {@code [layer2, layer2]} (Layer 2). When Layer 1 and Layer 2 agree (the common case), pass the same {@link TensorType} for both
+	 * arguments. The two-layer form is needed when an upstream representation gap or an algorithm-side collapse produces a Layer-2 type
+	 * strictly distinct from Layer 1 (e.g., ragged tensors—see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored canonical
+	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524). Signature-drop cases must still inline their own
+	 * {@link Optional#empty} assertion.
+	 */
+	private void testHasLikelyTensorParameterHelper(TensorType layer1, TensorType layer2) throws Exception {
+		testHasLikelyTensorParameterHelper(false, true);
+		Function function = this.getFunctions().iterator().next();
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		assertEquals(Set.of(layer1), a.getTensorTypes());
+		assertEquals(Set.of(layer1), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(layer2, layer2), sig.get().parameterTypes());
+	}
+
+	/**
 	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`.
 	 */
 	@Test
@@ -3815,7 +3836,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter60() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3823,7 +3845,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter61() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3831,7 +3854,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter62() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3839,7 +3863,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter63() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3847,7 +3872,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter64() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3855,7 +3881,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter65() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3863,7 +3890,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter66() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, java.util.Arrays.asList(new NumericDim(3), null, null)),
+				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
