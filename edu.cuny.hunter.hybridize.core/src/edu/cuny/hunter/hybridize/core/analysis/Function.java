@@ -1466,12 +1466,10 @@ public class Function {
 
 	/**
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
-	 * tensor-type analysis associated with at least one tensor type.
-	 * <p>
-	 * Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the values are computed during {@link #inferTensorParameters}
-	 * (which caches per-parameter tensor types on each {@link Parameter}), and this method reads those cached values.
-	 * <p>
-	 * For each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()} into three categories:
+	 * tensor-type analysis associated with at least one tensor type. Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the
+	 * values are computed during {@link #inferTensorParameters} (which caches per-parameter tensor types on each {@link Parameter}), and
+	 * this method reads those cached values. For each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()}
+	 * into three categories:
 	 * <ul>
 	 * <li>Truly non-tensor ({@code isTensor() != TRUE}): drop the signature and emit a per-parameter INFO suggesting the source-side
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
@@ -1483,7 +1481,6 @@ public class Function {
 	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
 	 * reduced spec to the signature.
 	 * </ul>
-	 * <p>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
 	 *
@@ -1547,9 +1544,7 @@ public class Function {
 	}
 
 	/**
-	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
-	 * <p>
-	 * Three steps:
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}. Three steps:
 	 * <ol>
 	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the
 	 * {@code |D| ≠ 1 ⇒ ⊥} branch). If the agreed dtype is {@code UNKNOWN} (dtype-⊤), also drop—pending #494, since {@code tf.UNKNOWN} isn't

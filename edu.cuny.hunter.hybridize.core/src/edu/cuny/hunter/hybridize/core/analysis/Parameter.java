@@ -195,11 +195,9 @@ public final class Parameter {
 	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
 	 * tensors). Populated only when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
 	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
-	 * classification has not run or did not reach Phase 3.
-	 * <p>
-	 * Distinct from {@link #getTensorTypes()}: a tensor container is recognized as tensor-typed by Phase 3's container detection, but
-	 * Ariadne does not emit a single {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from
-	 * "direct tensor" should use this method.
+	 * classification has not run or did not reach Phase 3. Distinct from {@link #getTensorTypes()}: a tensor container is recognized as
+	 * tensor-typed by Phase 3's container detection, but Ariadne does not emit a single {@link TensorType} for the container itself.
+	 * Consumers that distinguish "container of tensors" from "direct tensor" should use this method.
 	 *
 	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not classify
 	 *         the parameter as a tensor container, or {@code null} if Phase 3 did not run (classification not started, or returned
@@ -210,10 +208,9 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns the fully-qualified name of this parameter's declared type hint, or {@code null} if no type hint is declared.
-	 * <p>
-	 * Only supports simple type hints that are directly {@link Attribute} expressions; more complex hints (e.g. subscripted generics) are
-	 * not supported and may trigger an exception.
+	 * Returns the fully-qualified name of this parameter's declared type hint, or {@code null} if no type hint is declared. Only supports
+	 * simple type hints that are directly {@link Attribute} expressions; more complex hints (e.g. subscripted generics) are not supported
+	 * and may trigger an exception.
 	 *
 	 * @return The fully-qualified name of the declared type hint, or {@code null} if no type hint is present.
 	 * @throws IllegalStateException If a type hint is declared but its AST node is not an {@link Attribute} (e.g., a subscripted generic
@@ -485,22 +482,18 @@ public final class Parameter {
 	}
 
 	/**
-	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter.
-	 * <p>
-	 * The lattice contract (see {@code Tensor Type Generators} in {@code com.ibm.wala.cast.python.ml/CONTRIBUTING.md}) lives at the
-	 * <em>per-shape and per-dtype</em> level <em>inside</em> each {@link TensorType}: {@link TensorType#getDims()} {@code == null} is
-	 * shape-⊤, {@link TensorType#getDType()} {@code == DType.UNKNOWN} is dtype-⊤; the two axes are orthogonal. Empty-set outputs from a
-	 * generator's {@code getDefaultShapes} or {@code getDefaultDTypes} mean ⊥ at that generator's call site (per the contract tables).
-	 * <p>
-	 * {@code TensorVariable.state} (the accumulated {@code Set<TensorType>} the iterator surfaces) is <em>not</em> itself a lattice point.
-	 * Generators that classify a variable as a tensor but cannot determine shape/dtype emit a placeholder {@code TensorType(UNKNOWN, null)}
-	 * per the orthogonality rule, so a non-empty state means "Ariadne has at least one tensor classification (possibly ⊤ on either axis)"
-	 * and an empty state means "no generator emitted a TensorType for this variable" (effectively ⊥ at the variable level, under
-	 * contract-compliant generators). {@link TensorTypeAnalysis#iterator} filters its output to {@code state != null && !state.isEmpty()},
-	 * which collapses the iterator-side "variable not analyzed" case with the "Ariadne classified as not-a-tensor" case—both surface as no
-	 * entry.
-	 * <p>
-	 * What this method exposes to callers:
+	 * Infers the {@link TensorType}s the given {@link TensorTypeAnalysis} associates with this parameter. The lattice contract (see
+	 * {@code Tensor Type Generators} in {@code com.ibm.wala.cast.python.ml/CONTRIBUTING.md}) lives at the <em>per-shape and per-dtype</em>
+	 * level <em>inside</em> each {@link TensorType}: {@link TensorType#getDims()} {@code == null} is shape-⊤, {@link TensorType#getDType()}
+	 * {@code == DType.UNKNOWN} is dtype-⊤; the two axes are orthogonal. Empty-set outputs from a generator's {@code getDefaultShapes} or
+	 * {@code getDefaultDTypes} mean ⊥ at that generator's call site (per the contract tables). {@code TensorVariable.state} (the
+	 * accumulated {@code Set<TensorType>} the iterator surfaces) is <em>not</em> itself a lattice point. Generators that classify a
+	 * variable as a tensor but cannot determine shape/dtype emit a placeholder {@code TensorType(UNKNOWN, null)} per the orthogonality
+	 * rule, so a non-empty state means "Ariadne has at least one tensor classification (possibly ⊤ on either axis)" and an empty state
+	 * means "no generator emitted a TensorType for this variable" (effectively ⊥ at the variable level, under contract-compliant
+	 * generators). {@link TensorTypeAnalysis#iterator} filters its output to {@code state != null && !state.isEmpty()}, which collapses the
+	 * iterator-side "variable not analyzed" case with the "Ariadne classified as not-a-tensor" case—both surface as no entry. What this
+	 * method exposes to callers:
 	 * <ul>
 	 * <li>Empty {@code Set<TensorType>}: no iterator entry for this parameter. Equivalent to "Hybridize has no information"—either Ariadne
 	 * didn't analyze the variable or it classified the variable as not-a-tensor. Both behave identically for downstream consumers (e.g.,

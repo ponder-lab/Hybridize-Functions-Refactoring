@@ -8515,7 +8515,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tensorShapesDtypes);
+				Set.of(Map.entry(FLOAT32, List.of(2))), tensorShapesDtypes);
 
 		// Non-tensor parameter must not surface a TensorType.
 		assertTrue("Non-tensor parameter `n` must have an empty `getTensorTypes()` cache.", n.getTensorTypes().isEmpty());
@@ -8685,7 +8685,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tensorShapesDtypes);
+				Set.of(Map.entry(FLOAT32, List.of(2))), tensorShapesDtypes);
 	}
 
 	/**
