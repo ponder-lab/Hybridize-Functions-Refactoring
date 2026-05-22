@@ -3823,6 +3823,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Precision-audit overload for the canonical case where Layer 1 and Layer 2 agree (dense tensors with concrete shape and dtype).
+	 * Delegates to {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers.
+	 *
+	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelper(TensorType expected) throws Exception {
+		testHasLikelyTensorParameterHelper(expected, expected);
+	}
+
+	/**
 	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`.
 	 */
 	@Test
@@ -4071,7 +4082,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter83() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4079,7 +4090,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter84() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4087,7 +4098,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter85() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4095,7 +4106,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter86() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4103,23 +4114,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter87() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(4))));
 	}
 
 	/**
-	 * Test for #2 for TF API `random.gamma`.
+	 * Test for #2 for TF API `random.normal`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter88() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(4))));
 	}
 
 	/**
-	 * Test for #2 for TF API `random.gamma`.
+	 * Test for #2 for TF API `random.normal`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter89() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(4))));
 	}
 
 	/**
@@ -4127,7 +4138,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter90() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4135,7 +4146,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter91() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(10), new NumericDim(2))));
 	}
 
 	/**
@@ -4143,7 +4154,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter92() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -4151,7 +4162,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter93() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
