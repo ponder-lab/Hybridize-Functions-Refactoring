@@ -3737,6 +3737,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
 	}
 
+	/**
+	 * Runs the structural assertions for the canonical two-parameter {@code (a, b)} fixture shape. Returns the validated {@link Function}
+	 * so callers performing additional assertions (e.g., the precision-audit overload at
+	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)}) can reuse the same instance instead of triggering a second
+	 * {@link #getFunctions()} pass.
+	 */
 	private Function testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter)
 			throws Exception {
 		Set<Function> functions = this.getFunctions();
