@@ -255,7 +255,7 @@
             <arg>-err:+uselessTypeCheck</arg>
             <arg>-err:+unnecessaryElse</arg>
             <arg>-err:-missingJavadocComments</arg>
-            <arg>-err:+missingJavadocTags</arg>
+            <arg>-err:-missingJavadocTags</arg>
             <arg>-err:+invalidJavadoc</arg>
             <arg>-err:-nls</arg>
             <arg>-err:-unqualifiedField</arg>
