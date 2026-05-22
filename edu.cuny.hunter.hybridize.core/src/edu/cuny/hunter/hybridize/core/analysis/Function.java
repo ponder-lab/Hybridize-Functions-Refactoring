@@ -1580,6 +1580,8 @@ public class Function {
 
 		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
 		// `SymbolicDim("?")` wildcard.
+		// TODO(wala/ML#544, #524): once Ariadne ships a typed `RaggedDim` and this side emits `RaggedTensorSpec`, branch on
+		// raggedness here rather than collapsing every non-`NumericDim` to a wildcard.
 		List<Dimension<?>> shape = new ArrayList<>(rank);
 		for (int j = 0; j < rank; j++) {
 			Dimension<?> consensus = null;
