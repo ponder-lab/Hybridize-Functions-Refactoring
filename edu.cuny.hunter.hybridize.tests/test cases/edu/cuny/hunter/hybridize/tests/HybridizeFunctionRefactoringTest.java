@@ -3823,8 +3823,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for the canonical case where Layer 1 and Layer 2 agree (dense tensors with concrete shape and dtype).
-	 * Delegates to {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers.
+	 * Precision-audit overload for fixtures where Layer 1 and Layer 2 agree numerically. Delegates to
+	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers. Suitable for dense tensors
+	 * with concrete shape and dtype, and also for sparse-tensor fixtures whose numerical assertions match the dense form even though their
+	 * runtime spec emission is semantically distinct (see #533).
 	 *
 	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
 	 * @throws Exception If the underlying analysis fails.
