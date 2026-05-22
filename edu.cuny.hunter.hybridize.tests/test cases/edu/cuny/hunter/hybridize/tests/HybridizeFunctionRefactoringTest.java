@@ -4303,7 +4303,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -4311,7 +4313,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -4319,7 +4323,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
