@@ -239,10 +239,11 @@ public class Util {
 	}
 
 	/**
-	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 * Returns the {@link exprType} associated with the given {@link decoratorsType}'s {@code function} attribute.
 	 *
-	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its "function."
-	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s "function."
+	 * @param decorator The {@link decoratorsType} for which to retrieve the associated {@link exprType} from its {@code function}
+	 *        attribute.
+	 * @return The {@link exprType} associated with the given {@link decoratorsType}'s {@code function} attribute.
 	 */
 	public static exprType getExpressionFromFunction(decoratorsType decorator) {
 		exprType func = decorator.func;

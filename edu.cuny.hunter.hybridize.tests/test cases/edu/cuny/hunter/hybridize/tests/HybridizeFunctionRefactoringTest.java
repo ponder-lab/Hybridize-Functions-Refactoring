@@ -532,6 +532,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Returns whether the input test Python file should be executed under {@code python3.10} before analysis.
+	 *
 	 * @return True iff the input test Python file should be executed.
 	 */
 	public boolean getRunInputTestFile() {
@@ -539,6 +541,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Returns whether the output test Python file should be compared against the expected output after analysis.
+	 *
 	 * @return True iff the output test Python file should be compared.
 	 */
 	public boolean getCompareOutputTestFile() {
@@ -6761,7 +6765,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing.
 	 */
 	@Test
 	public void testRetracing() throws Exception {
@@ -6776,7 +6780,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing.
 	 */
 	@Test
 	public void testRetracing2() throws Exception {
@@ -6793,7 +6797,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing.
 	 */
 	@Test
 	public void testRetracing3() throws Exception {
@@ -6814,7 +6818,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing.
 	 */
 	@Test
 	public void testRetracing4() throws Exception {
@@ -6834,7 +6838,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing,
+	 * Test https://www.tensorflow.org/versions/r2.9/api_docs/python/tf/function#retracing.
 	 */
 	@Test
 	public void testRetracing5() throws Exception {
@@ -8349,7 +8353,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("xs", xs.getName());
 
 		assertTrue("Parameter `xs` should be classified as tensor-typed via Phase 3 (container).", xs.isTensor());
-		assertEquals("Phase 3 must populate the `isTensorContainer` cache to TRUE.", Boolean.TRUE, xs.isTensorContainer());
+		assertEquals("Phase 3 must populate the `isTensorContainer` cache to TRUE.", TRUE, xs.isTensorContainer());
 		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
 				xs.getTensorTypes().isEmpty());
 
@@ -8521,14 +8525,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Tensor parameter must have a non-empty `getTensorTypes()` cache (Phase 2 fired).", t.getTensorTypes().isEmpty());
 
 		// The call site is `tf.constant([1.0, 2.0])`: shape (2,), dtype float32.
-		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+		Set<Map.Entry<DType, List<Integer>>> tensorShapesDtypes = t.getTensorTypes().stream()
 				.map(tt -> Map.entry(tt.getDType(),
 						tt.getDims().stream()
 								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+				Set.of(Map.entry(FLOAT32, List.of(2))), tensorShapesDtypes);
 
 		// Non-tensor parameter must not surface a TensorType.
 		assertTrue("Non-tensor parameter `n` must have an empty `getTensorTypes()` cache.", n.getTensorTypes().isEmpty());
@@ -8691,14 +8695,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Method with a tensor parameter ⇒ `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
 
 		// The call site is `C().m(tf.constant([1.0, 2.0]))`: shape (2,), dtype float32.
-		Set<Map.Entry<DType, List<Integer>>> tShapesDtypes = t.getTensorTypes().stream()
+		Set<Map.Entry<DType, List<Integer>>> tensorShapesDtypes = t.getTensorTypes().stream()
 				.map(tt -> Map.entry(tt.getDType(),
 						tt.getDims().stream()
 								.map(d -> d instanceof TensorType.NumericDim ? ((TensorType.NumericDim) d).value() : Integer.valueOf(-1))
 								.collect(Collectors.toList())))
 				.collect(toSet());
 		assertEquals("Tensor parameter `t` from `tf.constant([1.0, 2.0])` has dtype FLOAT32 and shape (2,).",
-				Set.of(Map.entry(FLOAT32, Collections.singletonList(2))), tShapesDtypes);
+				Set.of(Map.entry(FLOAT32, List.of(2))), tensorShapesDtypes);
 	}
 
 	/**
