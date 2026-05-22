@@ -822,7 +822,7 @@ public class Function {
 	}
 
 	/**
-	 * Discovers if this {@link Function} is hybrid. If so, populated this {@link Function}'s {@link HybridizationParameters}.
+	 * Discovers if this {@link Function} is hybrid. If so, populates this {@link Function}'s {@link HybridizationParameters}.
 	 *
 	 * @param monitor Progress monitor signaled while computing hybridization.
 	 */

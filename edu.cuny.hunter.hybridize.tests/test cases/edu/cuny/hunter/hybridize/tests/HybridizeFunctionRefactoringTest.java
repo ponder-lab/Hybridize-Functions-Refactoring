@@ -394,7 +394,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Runs python on the file presented by the given {@link Path}.
 	 *
 	 * @param path The {@link Path} of the file to interpret.
-	 * @return The exist code.
+	 * @return The exit code.
 	 * @throws IOException If launching the python subprocess or reading its output fails.
 	 * @throws InterruptedException If the current thread is interrupted while waiting for python to complete.
 	 */
