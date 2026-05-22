@@ -4170,7 +4170,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4178,7 +4180,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4186,7 +4190,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4194,7 +4200,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter97() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
@@ -4202,7 +4208,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter98() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
@@ -4210,7 +4216,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter99() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
