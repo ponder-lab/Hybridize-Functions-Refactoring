@@ -1547,7 +1547,9 @@ public class Function {
 	}
 
 	/**
-	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType} via three steps:
+	 * Reduces the multi-context set of {@link TensorType}s seen for a single parameter to a single {@link TensorType}.
+	 * <p>
+	 * Three steps:
 	 * <ol>
 	 * <li><b>Dtype consensus.</b> If the per-context dtypes don't agree on a single value, return {@link Optional#empty} (the
 	 * {@code |D| ≠ 1 ⇒ ⊥} branch). If the agreed dtype is {@code UNKNOWN} (dtype-⊤), also drop—pending #494, since {@code tf.UNKNOWN} isn't
