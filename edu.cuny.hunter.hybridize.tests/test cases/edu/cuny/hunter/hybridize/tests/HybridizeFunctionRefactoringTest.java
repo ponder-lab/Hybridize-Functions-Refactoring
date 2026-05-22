@@ -4226,7 +4226,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter100() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
@@ -4234,7 +4235,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter101() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
@@ -4242,7 +4244,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter102() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
@@ -4250,7 +4253,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter103() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
@@ -4258,7 +4262,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter104() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
