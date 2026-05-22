@@ -210,6 +210,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param ast the ast that defines the module
 	 * @param modName the module name
 	 * @param natureToAdd the nature where the module should be added
+	 * @param f the file backing the module on disk
 	 * @throws MisconfigurationException on project's misconfiguration.
 	 */
 	@SuppressWarnings("unused")
@@ -227,6 +228,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Checks if the size of the system modules manager and the project module manager are coherent (we must have more modules in the system
 	 * than in the project).
+	 *
+	 * @throws MisconfigurationException If the project's interpreter or modules manager is misconfigured.
 	 */
 	protected static void checkSize() throws MisconfigurationException {
 		IInterpreterManager interpreterManager = getInterpreterManager();
@@ -353,6 +356,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @param path The {@link Path} containing the requirements.txt file.
 	 * @return The exit code.
+	 * @throws IOException If launching the {@code pip} subprocess or reading its output fails.
+	 * @throws InterruptedException If the current thread is interrupted while waiting for {@code pip} to complete.
 	 */
 	private static int installRequirements(Path path) throws IOException, InterruptedException {
 		Path requirements = path.resolve("requirements.txt");
@@ -389,7 +394,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Runs python on the file presented by the given {@link Path}.
 	 *
 	 * @param path The {@link Path} of the file to interpret.
-	 * @return The exist code.
+	 * @return The exit code.
+	 * @throws IOException If launching the python subprocess or reading its output fails.
+	 * @throws InterruptedException If the current thread is interrupted while waiting for python to complete.
 	 */
 	private static int runPython(Path path) throws IOException, InterruptedException {
 		// run the code.
@@ -524,14 +531,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * True iff the input test Python file should be executed.
+	 * @return True iff the input test Python file should be executed.
 	 */
 	public boolean getRunInputTestFile() {
 		return this.runInputTestFile;
 	}
 
 	/**
-	 * True iff the output test Python file should be compared.
+	 * @return True iff the output test Python file should be compared.
 	 */
 	public boolean getCompareOutputTestFile() {
 		return this.compareOutputTestFile;

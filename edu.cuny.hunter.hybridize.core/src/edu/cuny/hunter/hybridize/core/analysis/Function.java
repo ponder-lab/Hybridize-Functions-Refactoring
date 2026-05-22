@@ -250,6 +250,8 @@ public class Function {
 		 * Set the appropriate {@code *Param} field for the given {@code tf.function} parameter name. Recognizes both current names and the
 		 * deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
 		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
+		 *
+		 * @param paramName The parameter name passed to {@code @tf.function(...)}, exactly as it appears in the call.
 		 */
 		private void markParam(String paramName) {
 			switch (paramName) {
@@ -820,7 +822,9 @@ public class Function {
 	}
 
 	/**
-	 * Discovers if this {@link Function} is hybrid. If so, populated this {@link Function}'s {@link HybridizationParameters}.
+	 * Discovers if this {@link Function} is hybrid. If so, populates this {@link Function}'s {@link HybridizationParameters}.
+	 *
+	 * @param monitor Progress monitor signaled while computing hybridization.
 	 */
 	public void computeHybridization(IProgressMonitor monitor) {
 		// TODO: Consider mechanisms other than decorators (e.g., higher order functions; #3).
@@ -1095,9 +1099,13 @@ public class Function {
 	/**
 	 * Converts the given {@link decoratorsType} to its corresponding qualified name as a {@link String}.
 	 *
-	 * @param decorator The decorator in question
+	 * @param decorator The decorator in question.
 	 * @param monitor For progress monitoring.
 	 * @return The corresponding decorator FQN.
+	 * @throws NoTextSelectionException If a text selection over the decorator cannot be obtained.
+	 * @throws BadLocationException If the decorator's location in the containing document is invalid.
+	 * @throws AmbiguousDeclaringModuleException If the declaring module of the decorator cannot be resolved unambiguously.
+	 * @throws NoDeclaringModuleException If the decorator has no resolvable declaring module.
 	 */
 	private String getFQN(decoratorsType decorator, IProgressMonitor monitor)
 			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
@@ -1219,6 +1227,7 @@ public class Function {
 	 *
 	 * @param callGraph The {@link CallGraph} to search.
 	 * @return The nodes in the {@link CallGraph} corresponding to this {@link Function}.
+	 * @throws CoreException If resolving this function's {@link MethodReference} fails.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
 	Set<CGNode> getNodes(CallGraph callGraph) throws CoreException {
@@ -1357,6 +1366,7 @@ public class Function {
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @throws UndeterminablePythonSideEffectsException If this {@link Function}'s representation isn't found in the given
 	 *         {@link CallGraph}.
+	 * @throws CoreException If resolving this function's {@link MethodReference} fails while looking up its call-graph nodes.
 	 */
 	public void inferPythonSideEffects(Map<CGNode, OrdinalSet<PointerKey>> mod, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) throws UndeterminablePythonSideEffectsException, CoreException {
@@ -1398,6 +1408,12 @@ public class Function {
 
 	/**
 	 * Infer which parameters are likely tensor parameters.
+	 *
+	 * @param tensorAnalysis The tensor-type analysis result feeding the per-parameter classification.
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param builder The call-graph builder, used to resolve definitions referenced by the analysis.
+	 * @param monitor Progress monitor signaled while inferring tensor parameters.
+	 * @throws Exception If the underlying call-graph, points-to, or AST lookup fails.
 	 */
 	public void inferTensorParameters(TensorTypeAnalysis tensorAnalysis, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
