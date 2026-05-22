@@ -7,12 +7,21 @@
 # record of silently no-op'ing in this repo (broken `if:` guards, missing
 # `pull_request_target` triggers) and reviewing dependabot PRs takes
 # seconds when grouping reduces the volume.
+#
+# Patch-version churn (e.g. `3.5.0 → 3.5.1`) is suppressed via per-block
+# `ignore` rules on `version-update:semver-patch` for ecosystems where
+# the patch cadence outpaces real review value. CVE-driven patches still
+# arrive: dependabot's security-update path bypasses `version-update:*`
+# ignore rules, so a vulnerability disclosed against a pinned patch level
+# still opens a PR under the security-update workflow even though routine
+# version-update patches do not.
 
 version: 2
 updates:
   # Maven build-plugin and library bumps. Grouped so a typical week opens
   # ONE plugin PR instead of one per plugin. Major bumps are excluded from
-  # the group (they need individual review for breaking changes).
+  # the group (they need individual review for breaking changes); patches
+  # are excluded from version-updates entirely (see top-of-file note).
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
@@ -29,16 +38,17 @@ updates:
           - "org.jacoco:*"
         update-types:
           - "minor"
-          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
-  # Python tooling for the test/format requirements. Grouped patch+minor;
-  # majors land as their own PRs. `patterns:` lists the tooling deps
-  # actually present in `/requirements.txt` today; extend it when adding
-  # new tooling. Keeping the list tight (instead of anticipatory globs
-  # like `pytest*`) prevents accidental capture of test-fixture runtime
-  # deps if a future `directories:` expansion ever broadens what the pip
-  # updater sees — `pytest*` would match the `pytest` line in a fixture's
-  # `requirements.txt`, for instance.
+  # Python tooling for the test/format requirements. `patterns:` lists the
+  # tooling deps actually present in `/requirements.txt` today; extend it
+  # when adding new tooling. Keeping the list tight (instead of
+  # anticipatory globs like `pytest*`) prevents accidental capture of
+  # test-fixture runtime deps if a future `directories:` expansion ever
+  # broadens what the pip updater sees — `pytest*` would match the
+  # `pytest` line in a fixture's `requirements.txt`, for instance.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -51,8 +61,9 @@ updates:
           - "black"
         update-types:
           - "minor"
-          - "patch"
     ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
       # TensorFlow is pinned to 2.9.3 by the test fixtures and would force
       # a much larger refactor across the analyzer than dependabot can
       # safely propose. Drop the ignore once the test corpus migrates.
