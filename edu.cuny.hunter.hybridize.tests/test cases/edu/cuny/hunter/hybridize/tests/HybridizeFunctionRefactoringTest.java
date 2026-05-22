@@ -4120,7 +4120,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `random.gamma`.
+	 * Test for #2 for TF API `random.normal`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter88() throws Exception {
@@ -4128,7 +4128,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `random.gamma`.
+	 * Test for #2 for TF API `random.normal`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter89() throws Exception {
