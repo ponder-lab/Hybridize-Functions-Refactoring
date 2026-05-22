@@ -4333,7 +4333,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter112() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4341,7 +4342,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter113() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4349,7 +4351,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter114() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4357,7 +4360,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter115() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4365,7 +4369,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter116() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4373,7 +4378,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter117() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
