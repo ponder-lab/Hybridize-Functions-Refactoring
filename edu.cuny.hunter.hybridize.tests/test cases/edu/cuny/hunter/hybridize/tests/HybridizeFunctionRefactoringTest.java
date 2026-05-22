@@ -3823,8 +3823,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for the canonical case where Layer 1 and Layer 2 agree (dense tensors with concrete shape and dtype).
-	 * Delegates to {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers.
+	 * Precision-audit overload for fixtures where Layer 1 and Layer 2 agree numerically. Delegates to
+	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers. Suitable for dense tensors
+	 * with concrete shape and dtype, and also for sparse-tensor fixtures whose numerical assertions match the dense form even though their
+	 * runtime spec emission is semantically distinct (see #533).
 	 *
 	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
 	 * @throws Exception If the underlying analysis fails.
@@ -4170,7 +4172,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4178,7 +4182,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4186,7 +4192,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
+		// runtime—see #533 for the `SparseTensorSpec` emission flip target.
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4194,7 +4202,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter97() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
@@ -4202,7 +4210,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter98() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
@@ -4210,7 +4218,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter99() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
 	}
 
 	/**
