@@ -3742,6 +3742,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * so callers performing additional assertions (e.g., the precision-audit overload at
 	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)}) can reuse the same instance instead of triggering a second
 	 * {@link #getFunctions()} pass.
+	 *
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
+	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
+	 * @return The validated {@link Function}.
+	 * @throws Exception If the underlying analysis fails.
 	 */
 	private Function testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter)
 			throws Exception {
@@ -3789,6 +3794,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * strictly distinct from Layer 1 (e.g., ragged tensors—see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored canonical
 	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524). Signature-drop cases must still inline their own
 	 * {@link Optional#empty} assertion.
+	 *
+	 * @param layer1 The expected per-parameter {@link TensorType} reported by Ariadne via {@link Parameter#getTensorTypes()}.
+	 * @param layer2 The expected per-parameter {@link TensorType} produced by Hybridize via {@link Function#inferInputSignature()}.
+	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(TensorType layer1, TensorType layer2) throws Exception {
 		Function function = testHasLikelyTensorParameterHelper(false, true);
