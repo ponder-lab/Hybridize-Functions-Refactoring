@@ -3794,10 +3794,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		testHasLikelyTensorParameterHelper(false, true);
 	}
 
-	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction) throws Exception {
-		testHasLikelyTensorParameterHelper(expectingHybridFunction, true);
-	}
-
 	/**
 	 * Precision-audit overload: in addition to the structural checks of {@link #testHasLikelyTensorParameterHelper()}, asserts that both
 	 * parameters carry exactly {@code layer1} as their inferred tensor type (Layer 1) and that the inferred input signature is
@@ -3833,6 +3829,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private void testHasLikelyTensorParameterHelper(TensorType expected) throws Exception {
 		testHasLikelyTensorParameterHelper(expected, expected);
+	}
+
+	/**
+	 * Precision-audit overload that also accepts the expected hybrid-function status. Equivalent to
+	 * {@link #testHasLikelyTensorParameterHelper(TensorType)} but parameterized on {@code expectingHybridFunction}; needed for fixtures
+	 * exercising {@code @tf.function}-decorated functions where the structural check expects {@code isHybrid() == true}.
+	 *
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
+	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, TensorType expected) throws Exception {
+		Function function = testHasLikelyTensorParameterHelper(expectingHybridFunction, true);
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		assertEquals(Set.of(expected), a.getTensorTypes());
+		assertEquals(Set.of(expected), b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
 	}
 
 	/**
@@ -4450,31 +4466,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter123() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertTrue(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		// two params.
-		assertEquals(2, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4659,7 +4651,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter134() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4667,8 +4659,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter135() throws Exception {
-		// Same test as testHasLikelyTensorParameter123 but the tf.function has a parenthesis.
-		testHasLikelyTensorParameterHelper(true);
+		// Same test as testHasLikelyTensorParameter123 but with a tf.function has a parenthesis.
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4677,7 +4669,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter136() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4686,7 +4678,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter137() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4695,7 +4687,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter138() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4704,7 +4696,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter139() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4713,7 +4705,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter140() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4722,7 +4714,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter141() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4731,7 +4723,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter142() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -4740,7 +4732,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter143() throws Exception {
 		// Same test as testHasLikelyTensorParameter123 but with a tf.function parameter.
-		testHasLikelyTensorParameterHelper(true);
+		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
