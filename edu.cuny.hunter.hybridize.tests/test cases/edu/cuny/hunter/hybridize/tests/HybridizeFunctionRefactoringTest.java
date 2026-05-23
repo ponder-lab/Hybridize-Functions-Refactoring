@@ -4405,7 +4405,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter118() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(STRING, Arrays.asList(new NumericDim(4), null, null, null)),
+				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4413,7 +4414,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter119() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(STRING, Arrays.asList(new NumericDim(4), null, null, null)),
+				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4421,7 +4423,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter120() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(STRING, Arrays.asList(new NumericDim(4), null, null, null)),
+				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4429,7 +4432,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter121() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(STRING, Arrays.asList(new NumericDim(4), null, null, null)),
+				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4437,7 +4441,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter122() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(STRING, Arrays.asList(new NumericDim(4), null, null, null)),
+				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
 	}
 
 	/**
