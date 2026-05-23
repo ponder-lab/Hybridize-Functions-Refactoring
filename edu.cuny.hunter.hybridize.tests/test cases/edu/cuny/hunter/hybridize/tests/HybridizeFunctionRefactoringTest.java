@@ -4474,7 +4474,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter124() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
@@ -4482,7 +4483,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter125() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, Arrays.asList(null, new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(32))));
 	}
 
 	/**
