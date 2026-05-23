@@ -4492,15 +4492,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter126() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
-	 * Test for #2 for TF API `tf.keras.layers.Input`.
+	 * Test for #2 for TF API `tf.experimental.numpy.ndarray`.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter127() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
@@ -4508,7 +4508,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter128() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
@@ -4516,7 +4516,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter129() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
