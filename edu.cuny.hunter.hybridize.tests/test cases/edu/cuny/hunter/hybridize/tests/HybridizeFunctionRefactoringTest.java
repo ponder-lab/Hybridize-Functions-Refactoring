@@ -4169,34 +4169,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #2 for TF API `sparse.eye`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
 	 * Test for #2 for TF API `sparse.eye`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
 	 * Test for #2 for TF API `sparse.eye`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
@@ -4303,34 +4309,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #2 for TF API `sparse.SparseTensor`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
 	 * Test for #2 for TF API `sparse.SparseTensor`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
 	 * Test for #2 for TF API `sparse.SparseTensor`.
+	 * <p>
+	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		// The shape/dtype assertion is numerically correct but the inferred `TensorSpec` rejects `SparseTensor` arguments at
-		// runtime—see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533 for the `SparseTensorSpec` emission flip
-		// target.
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
@@ -4339,7 +4351,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter112() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4347,7 +4360,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter113() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4355,7 +4369,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter114() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4363,7 +4378,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter115() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4371,7 +4387,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter116() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4379,7 +4396,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter117() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, Arrays.asList(new NumericDim(1), null)),
+				new TensorType(INT32, List.of(new NumericDim(1), new SymbolicDim("?"))));
 	}
 
 	/**
