@@ -4171,8 +4171,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.eye`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
@@ -4183,8 +4184,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.eye`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
@@ -4195,8 +4197,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.eye`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
@@ -4308,8 +4311,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.SparseTensor`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
@@ -4320,8 +4324,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.SparseTensor`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
@@ -4332,8 +4337,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for #2 for TF API `sparse.SparseTensor`.
 	 * <p>
 	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">#533</a> for the
-	 * {@code SparseTensorSpec} emission flip target.
+	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
