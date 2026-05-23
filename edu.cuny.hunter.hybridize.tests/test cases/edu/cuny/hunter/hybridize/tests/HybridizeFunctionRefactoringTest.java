@@ -4659,7 +4659,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter135() throws Exception {
-		// Same test as testHasLikelyTensorParameter123 but with a tf.function has a parenthesis.
+		// Same test as testHasLikelyTensorParameter123 but the tf.function has parentheses.
 		testHasLikelyTensorParameterHelper(true, new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
