@@ -2132,44 +2132,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2. From https://tensorflow.org/guide/function#usage.
+	 * Test for #2. From https://tensorflow.org/guide/function#usage. The .py calls {@code add(tf.ones([1, 2]), tf.ones([2, 2]))} once, so
+	 * {@code a} binds to FLOAT32 shape {@code (1, 2)} and {@code b} to FLOAT32 shape {@code (2, 2)}—asymmetric per-parameter expectations.
+	 * The inferred input signature combines the per-parameter ground truths into a two-parameter signature pinning each to its concrete
+	 * shape and dtype.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter11() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		// two params.
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertNotNull(a);
-		assertEquals("a", a.getName());
-
-		Parameter b = params.get(1);
-		assertNotNull(b);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
-		// Layer 1 (per-parameter ground truth): the .py calls `add(tf.ones([1, 2]), tf.ones([2, 2]))` once. Reading the semantics, `a`
-		// should bind to a tensor of shape (1, 2) dtype float32 and `b` to a tensor of shape (2, 2) dtype float32.
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-
-		// Layer 2 (algorithm): the per-parameter ground truths combine into a two-parameter signature with each parameter pinned to its
-		// concrete (shape, dtype).
-		Optional<InputSignature> signature = function.inferInputSignature();
-		assertTrue(signature.isPresent());
-		assertEquals(List.of(expectedA, expectedB), signature.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), Optional.of(List.of(expectedA, expectedB)));
 	}
 
 	/**
@@ -2674,34 +2646,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #2 for TF API `tf.Tensor`. Direct `tf.Tensor(op, value_index, dtype)` construction in a `tf.Graph()` context — TF1-style
-	 * code that exercises the low-level constructor. Runtime asserts confirm FLOAT32 scalar.
+	 * code that exercises the low-level constructor. Verified at runtime via {@code python3.10}: FLOAT32, shape {@code ()} (rank-0 scalar).
 	 */
 	@Test
 	public void testHasLikelyTensorParameter25() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
-		// Precision audit. `value_index(tf.Tensor(op, 0, tf.float32), ...)` — verified at runtime: FLOAT32, shape () (rank-0 scalar).
-		TensorType expected = new TensorType(FLOAT32, List.of());
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
@@ -3750,19 +3699,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Runs the structural assertions for the canonical two-parameter fixture shape: the file under test must contain exactly one function,
-	 * that function must have exactly two parameters named {@code a} and {@code b}, and its {@link Function#isHybrid()} and
-	 * {@link Function#getHasTensorParameter()} must match the supplied expectations. Returns the validated {@link Function} so callers
-	 * performing additional assertions (e.g., the precision-audit overloads) can reuse the same instance instead of triggering a second
-	 * {@link #getFunctions()} pass.
+	 * General precision-audit and structural helper for the canonical two-parameter fixture shape. Verifies that the file under test
+	 * contains exactly one function, that function has exactly two parameters named {@code a} and {@code b}, its
+	 * {@link Function#isHybrid()} matches {@code expectingHybridFunction}, and its {@link Function#getHasTensorParameter()} matches
+	 * {@code expectingTensorParameter}. Then, when the per-parameter expectation arguments are non-null, asserts the
+	 * {@link Parameter#getTensorTypes()} set for each parameter and asserts the {@link Function#inferInputSignature()} value matches
+	 * {@code expectedSignature} (with {@link Optional#empty} representing a dropped signature).
+	 * <p>
+	 * The convenience overloads below cover the common audit shapes and delegate here; the {@link Function} loaded by this method never
+	 * escapes—fixtures should not reach for it directly.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
 	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
-	 * @return The validated {@link Function}.
+	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}, or {@code null} to skip the audit
+	 *        (structural-only check).
+	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}, or {@code null} to skip the audit.
+	 *        Must be {@code null} iff {@code aTensorTypes} is {@code null}.
+	 * @param expectedSignature The expected {@link Function#inferInputSignature()}: {@link Optional#empty} when the inferred signature is
+	 *        expected to be dropped, or a present {@link Optional} carrying the expected per-parameter {@link TensorType} list in
+	 *        {@code (a, b)} order. Ignored when the audit is skipped via {@code null} {@code aTensorTypes}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
-	private Function testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter)
-			throws Exception {
+	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter,
+			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes, Optional<List<TensorType>> expectedSignature) throws Exception {
+		assertNotNull("Helper contract: expectedSignature must be non-null (pass Optional.empty() to assert a dropped signature).",
+				expectedSignature);
+
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -3771,66 +3733,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectingHybridFunction, function.isHybrid());
 
 		List<Parameter> params = function.getParameters();
-
-		// two params.
 		assertEquals(2, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("a", paramName);
-
-		actualParameter = params.get(1);
-		assertNotNull(actualParameter);
-
-		paramName = actualParameter.getName();
-		assertEquals("b", paramName);
-
+		Parameter a = params.get(0);
+		Parameter b = params.get(1);
+		assertNotNull(a);
+		assertNotNull(b);
+		assertEquals("a", a.getName());
+		assertEquals("b", b.getName());
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
-		return function;
+
+		if (aTensorTypes == null) {
+			assertNull("Helper contract: bTensorTypes must be null when aTensorTypes is null (structural-only path).", bTensorTypes);
+			assertEquals("Helper contract: expectedSignature must be Optional.empty() on the structural-only path.", Optional.empty(),
+					expectedSignature);
+			return;
+		}
+		assertNotNull("Helper contract: bTensorTypes must be non-null when aTensorTypes is non-null.", bTensorTypes);
+		assertEquals(aTensorTypes, a.getTensorTypes());
+		assertEquals(bTensorTypes, b.getTensorTypes());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertEquals(expectedSignature.isPresent(), sig.isPresent());
+		if (expectedSignature.isPresent())
+			assertEquals(expectedSignature.get(), sig.get().parameterTypes());
 	}
 
 	/**
-	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
-	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where both parameters {@code a} and {@code b} are expected to share
-	 * the same per-parameter type at each of Layer 1 (Ariadne) and Layer 2 (Hybridize). On top of the structural checks, this overload
-	 * asserts {@code a.getTensorTypes().equals(Set.of(layer1))} and the symmetric assertion for {@code b}, then asserts that
-	 * {@link Function#inferInputSignature()} returns {@code [layer2, layer2]}. The same-type-for-both-parameters assumption matches every
-	 * fixture in the audit corpus today—call sites pass the same kind of tensor for both arguments. For asymmetric per-parameter
-	 * expectations (e.g., {@link #testHasLikelyTensorParameter11()} where {@code a} is shape {@code (1, 2)} and {@code b} is shape
-	 * {@code (2, 2)}), fixtures inline their own assertions instead of using this helper. The two-layer form is needed when Ariadne's
+	 * Structural-only helper parameterized on the boolean expectations. No precision-audit assertions.
+	 *
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
+	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter) throws Exception {
+		testHasLikelyTensorParameterHelper(expectingHybridFunction, expectingTensorParameter, null, null, Optional.empty());
+	}
+
+	/**
+	 * Precision-audit overload for the canonical two-parameter fixture shape where both parameters {@code a} and {@code b} are expected to
+	 * share the same per-parameter type at each of Layer 1 (Ariadne) and Layer 2 (Hybridize). The two-layer form is needed when Ariadne's
 	 * emitted {@link TensorType} differs from the {@link TensorType} the inference algorithm produces—an upstream representation gap or an
 	 * algorithm-side collapse. The canonical case is ragged tensors; see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored
-	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524. Signature-drop cases (where
-	 * {@link Function#inferInputSignature()} returns {@link Optional#empty}) must still inline their own {@link Optional#empty} assertion.
+	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524.
 	 *
-	 * @param layer1 The per-parameter {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()}; applied identically
-	 *        to {@code a} and {@code b}.
-	 * @param layer2 The per-parameter {@link TensorType} expected in the inferred input signature via
-	 *        {@link Function#inferInputSignature()}; applied identically to {@code a} and {@code b}.
+	 * @param layer1 The {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()}; applied identically to {@code a}
+	 *        and {@code b}.
+	 * @param layer2 The {@link TensorType} expected in the inferred input signature via {@link Function#inferInputSignature()}; applied
+	 *        identically to {@code a} and {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(TensorType layer1, TensorType layer2) throws Exception {
-		Function function = testHasLikelyTensorParameterHelper(false, true);
-		Parameter a = function.getParameters().get(0);
-		Parameter b = function.getParameters().get(1);
-		assertEquals(Set.of(layer1), a.getTensorTypes());
-		assertEquals(Set.of(layer1), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(layer2, layer2), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(layer1), Set.of(layer1), Optional.of(List.of(layer2, layer2)));
 	}
 
 	/**
-	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
-	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree: both parameters
-	 * {@code a} and {@code b} carry {@code expected} from Ariadne and the inferred input signature is {@code [expected, expected]}.
-	 * Delegates to {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} passed for both layer
-	 * arguments. Suitable for IDEAL fixtures (dense tensors with concrete shape and dtype) and for sparse-tensor fixtures whose numerical
-	 * assertion matches the dense form even though their runtime spec emission is semantically distinct (see #533). For asymmetric layer
-	 * expectations or asymmetric per-parameter expectations, see the helpers/inline patterns referenced in
-	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)}.
+	 * Precision-audit overload for the canonical two-parameter fixture shape where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree: both
+	 * parameters {@code a} and {@code b} carry {@code expected} from Ariadne and the inferred input signature is
+	 * {@code [expected, expected]}. Suitable for IDEAL fixtures (dense tensors with concrete shape and dtype) and for sparse-tensor
+	 * fixtures whose numerical assertion matches the dense form even though their runtime spec emission is semantically distinct (see
+	 * #533).
 	 *
 	 * @param expected The {@link TensorType} expected at Layer 1 (Ariadne's {@link Parameter#getTensorTypes()}) and at Layer 2 (Hybridize's
 	 *        {@link Function#inferInputSignature()}), applied identically to both parameters {@code a} and {@code b}.
@@ -3841,85 +3801,63 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
-	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree and the expected
-	 * hybrid-function status must be supplied. Equivalent to {@link #testHasLikelyTensorParameterHelper(TensorType)} but parameterized on
-	 * {@code expectingHybridFunction}; needed for fixtures exercising {@code @tf.function}-decorated functions where the structural check
-	 * expects {@code isHybrid() == true}. On top of the structural check, asserts {@code a.getTensorTypes().equals(Set.of(expected))} (and
-	 * the symmetric assertion for {@code b}) and that {@link Function#inferInputSignature()} returns {@code [expected, expected]}.
+	 * Precision-audit overload for the canonical two-parameter fixture shape where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree and the
+	 * expected hybrid-function status must be supplied. Equivalent to {@link #testHasLikelyTensorParameterHelper(TensorType)} but
+	 * parameterized on {@code expectingHybridFunction}; needed for fixtures exercising {@code @tf.function}-decorated functions where the
+	 * structural check expects {@code isHybrid() == true}.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @param expected The {@link TensorType} expected at Layer 1 (Ariadne's {@link Parameter#getTensorTypes()}) and at Layer 2 (Hybridize's
-	 *        {@link Function#inferInputSignature()}), applied identically to both parameters {@code a} and {@code b}.
+	 * @param expected The {@link TensorType} expected at Layer 1 and Layer 2, applied identically to both parameters {@code a} and
+	 *        {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, TensorType expected) throws Exception {
-		Function function = testHasLikelyTensorParameterHelper(expectingHybridFunction, true);
-		Parameter a = function.getParameters().get(0);
-		Parameter b = function.getParameters().get(1);
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(expectingHybridFunction, true, Set.of(expected), Set.of(expected),
+				Optional.of(List.of(expected, expected)));
 	}
 
 	/**
-	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
-	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)} with {@code expectingTensorParameter = false}) where neither parameter
-	 * is classified as a tensor. On top of the structural check, asserts that both {@code a.getTensorTypes()} and
-	 * {@code b.getTensorTypes()} are empty and that {@link Function#inferInputSignature()} returns {@link Optional#empty}—the signature
-	 * drops at the per-parameter classification step before reaching {@code inferSpec}, distinct from in-{@code inferSpec} drops (e.g.,
-	 * dtype disagreement) where the per-parameter classification succeeded.
+	 * Precision-audit overload for the no-tensor-parameter case: neither parameter is classified as a tensor. Asserts both
+	 * {@link Parameter#getTensorTypes()} are empty and the inferred signature is {@link Optional#empty}—the signature drops at the
+	 * per-parameter classification step before reaching {@code inferSpec}, distinct from in-{@code inferSpec} drops (e.g., dtype
+	 * disagreement) where the per-parameter classification succeeded.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelperNoTensor(boolean expectingHybridFunction) throws Exception {
-		Function function = testHasLikelyTensorParameterHelper(expectingHybridFunction, false);
-		Parameter a = function.getParameters().get(0);
-		Parameter b = function.getParameters().get(1);
-		assertTrue(a.getTensorTypes().isEmpty());
-		assertTrue(b.getTensorTypes().isEmpty());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertFalse("No tensor parameter ⇒ signature drops.", sig.isPresent());
+		testHasLikelyTensorParameterHelper(expectingHybridFunction, false, Set.of(), Set.of(), Optional.empty());
 	}
 
 	/**
-	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`.
+	 * Precision-audit overload for multi-context fixtures where each parameter is observed with multiple distinct {@link TensorType}s
+	 * across call sites and the inference algorithm narrows to a single inferred type via per-dim consensus. Applies the same
+	 * {@code contexts} Set to both {@code a} and {@code b} and asserts the signature is {@code [inferred, inferred]}.
+	 *
+	 * @param contexts The {@link TensorType} multi-context Set expected from Ariadne via {@link Parameter#getTensorTypes()} for each
+	 *        parameter.
+	 * @param inferred The single {@link TensorType} expected in the inferred input signature after per-dim consensus narrowing.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelperMultiContext(Set<TensorType> contexts, TensorType inferred) throws Exception {
+		testHasLikelyTensorParameterHelper(false, true, contexts, contexts, Optional.of(List.of(inferred, inferred)));
+	}
+
+	/**
+	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`. Canonical TODO-anchored fixture for the ragged-tensor precision gap.
+	 * Runtime: {@code tf.RaggedTensor.from_nested_row_splits(values, splits)} dtype=int32, shape=(3, None, None). Ariadne emits an INT32
+	 * {@link TensorType} with three dims: a known constant 3 followed by two raggedness markers (raw {@code null}).
+	 * TODO(<a href="https://github.com/wala/ML/issues/544">wala/ML#544</a>): flip the {@code null} entries to {@code new RaggedDim()} once
+	 * Ariadne ships the typed sentinel. The inference algorithm collapses ragged markers to {@code SymbolicDim("?")} wildcards in the
+	 * inferred signature, producing a {@code TensorSpec}-shaped signature that admits the runtime call but loses the raggedness signal.
+	 * TODO(<a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">#524</a>): flip from a {@code TensorSpec}
+	 * with wildcards to a {@code RaggedTensorSpec} once the consumer-side emission lands.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter59() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue(function.getHasTensorParameter());
-
-		// Precision audit. `tf.RaggedTensor.from_nested_row_splits(values, splits)` — runtime dtype=int32, shape=(3, None, None).
-		// Ariadne emits an INT32 TensorType with three dims: a known constant 3 followed by two raggedness markers (raw null).
-		// TODO(wala/ML#544): flip the `null` entries to `new RaggedDim()` once Ariadne ships the typed sentinel.
 		TensorType ariadne = new TensorType(INT32, Arrays.asList(new NumericDim(3), null, null));
-		assertEquals(Set.of(ariadne), a.getTensorTypes());
-		assertEquals(Set.of(ariadne), b.getTensorTypes());
-
-		// Algorithm collapses ragged markers to `SymbolicDim("?")` wildcards in the inferred signature, producing a `TensorSpec`-shaped
-		// signature that admits the runtime call but loses the raggedness signal.
-		// TODO(#524): flip from a `TensorSpec` with wildcards to a `RaggedTensorSpec` once the consumer-side emission lands.
 		TensorType inferred = new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(inferred, inferred), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(ariadne, inferred);
 	}
 
 	/**
@@ -4768,23 +4706,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265. {@code add(element, element)} inside
+	 * {@code for element in [tf.ones([1, 2]), tf.ones([2, 2])]}—multi-context across loop iterations; FLOAT32 dtype agrees, rank-2 agrees,
+	 * but position-0 dim disagrees (1 vs 2) and position-1 agrees (2 vs 2). The inference algorithm narrows position-0 to a wildcard and
+	 * keeps position-1.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter145() throws Exception {
-		Function function = testHasLikelyTensorParameterHelper(false, true);
-		Parameter a = function.getParameters().get(0);
-		Parameter b = function.getParameters().get(1);
-		// `add(element, element)` inside `for element in [tf.ones([1, 2]), tf.ones([2, 2])]`—multi-context across loop iterations;
-		// FLOAT32 dtype agrees, rank-2 agrees, but position-0 dim disagrees (1 vs 2) and position-1 agrees (2 vs 2).
 		TensorType context1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType context2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(context1, context2), a.getTensorTypes());
-		assertEquals(Set.of(context1, context2), b.getTensorTypes());
 		TensorType inferred = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(inferred, inferred), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelperMultiContext(Set.of(context1, context2), inferred);
 	}
 
 	/**
