@@ -4742,7 +4742,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter144() throws Exception {
-		testHasLikelyTensorParameterHelper(false, true);
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of()));
 	}
 
 	/**
