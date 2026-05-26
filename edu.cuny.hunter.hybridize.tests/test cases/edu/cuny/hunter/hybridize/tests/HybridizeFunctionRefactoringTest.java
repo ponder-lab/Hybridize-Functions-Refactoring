@@ -4765,11 +4765,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test lists.
+	 * Test lists. {@code add(list, list)} where {@code list = [tf.ones([1, 2]), tf.ones([2, 2])]}—both parameters bind to a Python list
+	 * literal containing tensors. Phase-3 container detection classifies each parameter as tensor-bearing (so
+	 * {@link Function#getHasTensorParameter()} is {@code true}), but the parameter binds to the list itself, not to a tensor; per-parameter
+	 * {@link Parameter#getTensorTypes()} is empty. Without a concrete per-parameter tensor type, {@code inferSpec} cannot produce a
+	 * {@code TensorSpec}, so the inferred signature drops.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter146() throws Exception {
-		testHasLikelyTensorParameterHelper(false, true);
+		testHasLikelyTensorParameterHelperExpectingDrop(false, true, Set.of(), Set.of());
 	}
 
 	/**
