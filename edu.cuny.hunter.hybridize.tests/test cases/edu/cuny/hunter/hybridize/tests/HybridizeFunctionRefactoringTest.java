@@ -3773,16 +3773,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * share the same per-parameter type at each of Layer 1 (Ariadne) and Layer 2 (Hybridize). The two-layer form is needed when Ariadne's
 	 * emitted {@link TensorType} differs from the {@link TensorType} the inference algorithm produces—an upstream representation gap or an
 	 * algorithm-side collapse. The canonical case is ragged tensors; see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored
-	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524.
+	 * fixture and the upstream/downstream flip targets https://github.com/wala/ML/issues/544 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524.
 	 *
-	 * @param layer1 The {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()}; applied identically to {@code a}
-	 *        and {@code b}.
-	 * @param layer2 The {@link TensorType} expected in the inferred input signature via {@link Function#inferInputSignature()}; applied
+	 * @param expectedParameterTensorType The {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()}; applied
 	 *        identically to {@code a} and {@code b}.
+	 * @param expectedSignatureTensorType The {@link TensorType} expected in the inferred input signature via
+	 *        {@link Function#inferInputSignature()}; applied identically to {@code a} and {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
-	private void testHasLikelyTensorParameterHelper(TensorType layer1, TensorType layer2) throws Exception {
-		testHasLikelyTensorParameterHelper(false, true, Set.of(layer1), Set.of(layer1), Optional.of(List.of(layer2, layer2)));
+	private void testHasLikelyTensorParameterHelper(TensorType expectedParameterTensorType, TensorType expectedSignatureTensorType)
+			throws Exception {
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedParameterTensorType), Set.of(expectedParameterTensorType),
+				Optional.of(List.of(expectedSignatureTensorType, expectedSignatureTensorType)));
 	}
 
 	/**
@@ -3831,33 +3834,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Precision-audit overload for multi-context fixtures where each parameter is observed with multiple distinct {@link TensorType}s
-	 * across call sites and the inference algorithm narrows to a single inferred type via per-dim consensus. Applies the same
-	 * {@code contexts} Set to both {@code a} and {@code b} and asserts the signature is {@code [inferred, inferred]}.
+	 * across call sites and the inference algorithm narrows to a single inferred type via per-dim consensus. Applies
+	 * {@code expectedParameterTensorTypes} identically to both {@code a} and {@code b} and asserts the signature is
+	 * {@code [expectedSignatureTensorType, expectedSignatureTensorType]}.
 	 *
-	 * @param contexts The {@link TensorType} multi-context Set expected from Ariadne via {@link Parameter#getTensorTypes()} for each
-	 *        parameter.
-	 * @param inferred The single {@link TensorType} expected in the inferred input signature after per-dim consensus narrowing.
+	 * @param expectedParameterTensorTypes The {@link TensorType} multi-context Set expected from Ariadne via
+	 *        {@link Parameter#getTensorTypes()} for each parameter.
+	 * @param expectedSignatureTensorType The single {@link TensorType} expected in the inferred input signature after per-dim consensus
+	 *        narrowing.
 	 * @throws Exception If the underlying analysis fails.
 	 */
-	private void testHasLikelyTensorParameterHelperMultiContext(Set<TensorType> contexts, TensorType inferred) throws Exception {
-		testHasLikelyTensorParameterHelper(false, true, contexts, contexts, Optional.of(List.of(inferred, inferred)));
+	private void testHasLikelyTensorParameterHelperMultiContext(Set<TensorType> expectedParameterTensorTypes,
+			TensorType expectedSignatureTensorType) throws Exception {
+		testHasLikelyTensorParameterHelper(false, true, expectedParameterTensorTypes, expectedParameterTensorTypes,
+				Optional.of(List.of(expectedSignatureTensorType, expectedSignatureTensorType)));
 	}
 
 	/**
 	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`. Canonical TODO-anchored fixture for the ragged-tensor precision gap.
 	 * Runtime: {@code tf.RaggedTensor.from_nested_row_splits(values, splits)} dtype=int32, shape=(3, None, None). Ariadne emits an INT32
 	 * {@link TensorType} with three dims: a known constant 3 followed by two raggedness markers (raw {@code null}).
-	 * TODO(<a href="https://github.com/wala/ML/issues/544">wala/ML#544</a>): flip the {@code null} entries to {@code new RaggedDim()} once
-	 * Ariadne ships the typed sentinel. The inference algorithm collapses ragged markers to {@code SymbolicDim("?")} wildcards in the
-	 * inferred signature, producing a {@code TensorSpec}-shaped signature that admits the runtime call but loses the raggedness signal.
-	 * TODO(<a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">#524</a>): flip from a {@code TensorSpec}
-	 * with wildcards to a {@code RaggedTensorSpec} once the consumer-side emission lands.
+	 * TODO(https://github.com/wala/ML/issues/544): flip the {@code null} entries to {@code new RaggedDim()} once Ariadne ships the typed
+	 * sentinel. The inference algorithm collapses ragged markers to {@code SymbolicDim("?")} wildcards in the inferred signature, producing
+	 * a {@code TensorSpec}-shaped signature that admits the runtime call but loses the raggedness signal.
+	 * TODO(https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524): flip from a {@code TensorSpec} with wildcards to a
+	 * {@code RaggedTensorSpec} once the consumer-side emission lands.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter59() throws Exception {
-		TensorType ariadne = new TensorType(INT32, Arrays.asList(new NumericDim(3), null, null));
-		TensorType inferred = new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
-		testHasLikelyTensorParameterHelper(ariadne, inferred);
+		TensorType expectedParameterTensorType = new TensorType(INT32, Arrays.asList(new NumericDim(3), null, null));
+		TensorType expectedSignatureTensorType = new TensorType(INT32,
+				List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
+		testHasLikelyTensorParameterHelper(expectedParameterTensorType, expectedSignatureTensorType);
 	}
 
 	/**
@@ -4713,10 +4721,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter145() throws Exception {
-		TensorType context1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
-		TensorType context2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		TensorType inferred = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
-		testHasLikelyTensorParameterHelperMultiContext(Set.of(context1, context2), inferred);
+		TensorType expectedParameterTensorTypeContext1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType expectedParameterTensorTypeContext2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		TensorType expectedSignatureTensorType = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiContext(Set.of(expectedParameterTensorTypeContext1, expectedParameterTensorTypeContext2),
+				expectedSignatureTensorType);
 	}
 
 	/**
