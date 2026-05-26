@@ -3791,10 +3791,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return function;
 	}
 
-	private void testHasLikelyTensorParameterHelper() throws Exception {
-		testHasLikelyTensorParameterHelper(false, true);
-	}
-
 	/**
 	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
 	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where both parameters {@code a} and {@code b} are expected to share
@@ -4776,7 +4772,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter145() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		Function function = testHasLikelyTensorParameterHelper(false, true);
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		// `add(element, element)` inside `for element in [tf.ones([1, 2]), tf.ones([2, 2])]`—multi-context across loop iterations;
+		// FLOAT32 dtype agrees, rank-2 agrees, but position-0 dim disagrees (1 vs 2) and position-1 agrees (2 vs 2).
+		TensorType context1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType context2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		assertEquals(Set.of(context1, context2), a.getTensorTypes());
+		assertEquals(Set.of(context1, context2), b.getTensorTypes());
+		TensorType inferred = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(inferred, inferred), sig.get().parameterTypes());
 	}
 
 	/**
