@@ -3722,6 +3722,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter,
 			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes, Optional<List<TensorType>> expectedSignature) throws Exception {
+		assertNotNull("Helper contract: expectedSignature must be non-null (pass Optional.empty() to assert a dropped signature).",
+				expectedSignature);
+
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
 		assertEquals(1, functions.size());
@@ -3740,10 +3743,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
 
 		if (aTensorTypes == null) {
-			assertNull(bTensorTypes);
+			assertNull("Helper contract: bTensorTypes must be null when aTensorTypes is null (structural-only path).", bTensorTypes);
+			assertEquals("Helper contract: expectedSignature must be Optional.empty() on the structural-only path.", Optional.empty(),
+					expectedSignature);
 			return;
 		}
-		assertNotNull(bTensorTypes);
+		assertNotNull("Helper contract: bTensorTypes must be non-null when aTensorTypes is non-null.", bTensorTypes);
 		assertEquals(aTensorTypes, a.getTensorTypes());
 		assertEquals(bTensorTypes, b.getTensorTypes());
 		Optional<InputSignature> sig = function.inferInputSignature();
