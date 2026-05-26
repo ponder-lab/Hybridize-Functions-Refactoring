@@ -265,7 +265,7 @@ public class Function {
 			case EXPERIMENTAL_IMPLEMENTS -> this.experimentalImplementsParam = true;
 			case EXPERIMENTAL_AUTOGRAPH_OPTIONS -> this.experimentalAutographOptionsParam = true;
 			case EXPERIMENTAL_FOLLOW_TYPE_HINTS -> this.experimentalFollowTypeHintsParam = true;
-			default -> LOG.warn("Unknown @tf.function argument: " + paramName + " on " + Function.this);
+			default -> LOG.warn("Unknown @tf.function argument: " + paramName + " on " + Function.this + ".");
 			}
 		}
 
