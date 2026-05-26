@@ -3750,9 +3750,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Runs the structural assertions for the canonical two-parameter {@code (a, b)} fixture shape. Returns the validated {@link Function}
-	 * so callers performing additional assertions (e.g., the precision-audit overload at
-	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)}) can reuse the same instance instead of triggering a second
+	 * Runs the structural assertions for the canonical two-parameter fixture shape: the file under test must contain exactly one function,
+	 * that function must have exactly two parameters named {@code a} and {@code b}, and its {@link Function#isHybrid()} and
+	 * {@link Function#getHasTensorParameter()} must match the supplied expectations. Returns the validated {@link Function} so callers
+	 * performing additional assertions (e.g., the precision-audit overloads) can reuse the same instance instead of triggering a second
 	 * {@link #getFunctions()} pass.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
@@ -3795,16 +3796,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload: in addition to the structural checks of {@link #testHasLikelyTensorParameterHelper()}, asserts that both
-	 * parameters carry exactly {@code layer1} as their inferred tensor type (Layer 1) and that the inferred input signature is
-	 * {@code [layer2, layer2]} (Layer 2). When Layer 1 and Layer 2 agree (the common case), pass the same {@link TensorType} for both
-	 * arguments. The two-layer form is needed when an upstream representation gap or an algorithm-side collapse produces a Layer-2 type
-	 * strictly distinct from Layer 1 (e.g., ragged tensors—see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored canonical
-	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524). Signature-drop cases must still inline their own
-	 * {@link Optional#empty} assertion.
+	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
+	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where both parameters {@code a} and {@code b} are expected to share
+	 * the same per-parameter type at each of Layer 1 (Ariadne) and Layer 2 (Hybridize). On top of the structural checks, this overload
+	 * asserts {@code a.getTensorTypes().equals(Set.of(layer1))} and the symmetric assertion for {@code b}, then asserts that
+	 * {@link Function#inferInputSignature()} returns {@code [layer2, layer2]}. The same-type-for-both-parameters assumption matches every
+	 * fixture in the audit corpus today—call sites pass the same kind of tensor for both arguments. For asymmetric per-parameter
+	 * expectations (e.g., {@link #testHasLikelyTensorParameter11()} where {@code a} is shape {@code (1, 2)} and {@code b} is shape
+	 * {@code (2, 2)}), fixtures inline their own assertions instead of using this helper. The two-layer form is needed when Ariadne's
+	 * emitted {@link TensorType} differs from the {@link TensorType} the inference algorithm produces—an upstream representation gap or an
+	 * algorithm-side collapse. The canonical case is ragged tensors; see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored
+	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524. Signature-drop cases (where
+	 * {@link Function#inferInputSignature()} returns {@link Optional#empty}) must still inline their own {@link Optional#empty} assertion.
 	 *
-	 * @param layer1 The expected per-parameter {@link TensorType} reported by Ariadne via {@link Parameter#getTensorTypes()}.
-	 * @param layer2 The expected per-parameter {@link TensorType} produced by Hybridize via {@link Function#inferInputSignature()}.
+	 * @param layer1 The per-parameter {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()}; applied identically
+	 *        to {@code a} and {@code b}.
+	 * @param layer2 The per-parameter {@link TensorType} expected in the inferred input signature via
+	 *        {@link Function#inferInputSignature()}; applied identically to {@code a} and {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(TensorType layer1, TensorType layer2) throws Exception {
@@ -3819,12 +3827,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for fixtures where Layer 1 and Layer 2 agree numerically. Delegates to
-	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} for both layers. Suitable for dense tensors
-	 * with concrete shape and dtype, and also for sparse-tensor fixtures whose numerical assertions match the dense form even though their
-	 * runtime spec emission is semantically distinct (see #533).
+	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
+	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree: both parameters
+	 * {@code a} and {@code b} carry {@code expected} from Ariadne and the inferred input signature is {@code [expected, expected]}.
+	 * Delegates to {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)} with {@code expected} passed for both layer
+	 * arguments. Suitable for IDEAL fixtures (dense tensors with concrete shape and dtype) and for sparse-tensor fixtures whose numerical
+	 * assertion matches the dense form even though their runtime spec emission is semantically distinct (see #533). For asymmetric layer
+	 * expectations or asymmetric per-parameter expectations, see the helpers/inline patterns referenced in
+	 * {@link #testHasLikelyTensorParameterHelper(TensorType, TensorType)}.
 	 *
-	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
+	 * @param expected The {@link TensorType} expected at Layer 1 (Ariadne's {@link Parameter#getTensorTypes()}) and at Layer 2 (Hybridize's
+	 *        {@link Function#inferInputSignature()}), applied identically to both parameters {@code a} and {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(TensorType expected) throws Exception {
@@ -3832,12 +3845,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload that also accepts the expected hybrid-function status. Equivalent to
-	 * {@link #testHasLikelyTensorParameterHelper(TensorType)} but parameterized on {@code expectingHybridFunction}; needed for fixtures
-	 * exercising {@code @tf.function}-decorated functions where the structural check expects {@code isHybrid() == true}.
+	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
+	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)}) where Layer 1 (Ariadne) and Layer 2 (Hybridize) agree and the expected
+	 * hybrid-function status must be supplied. Equivalent to {@link #testHasLikelyTensorParameterHelper(TensorType)} but parameterized on
+	 * {@code expectingHybridFunction}; needed for fixtures exercising {@code @tf.function}-decorated functions where the structural check
+	 * expects {@code isHybrid() == true}. On top of the structural check, asserts {@code a.getTensorTypes().equals(Set.of(expected))} (and
+	 * the symmetric assertion for {@code b}) and that {@link Function#inferInputSignature()} returns {@code [expected, expected]}.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @param expected The expected {@link TensorType} reported by Ariadne and produced unchanged by the inference algorithm.
+	 * @param expected The {@link TensorType} expected at Layer 1 (Ariadne's {@link Parameter#getTensorTypes()}) and at Layer 2 (Hybridize's
+	 *        {@link Function#inferInputSignature()}), applied identically to both parameters {@code a} and {@code b}.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, TensorType expected) throws Exception {
@@ -4184,10 +4201,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
+	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4197,10 +4212,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
+	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4210,10 +4223,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
+	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4324,10 +4335,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
+	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4337,10 +4346,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
+	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4350,10 +4357,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`.
-	 * <p>
-	 * The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects {@code SparseTensor} arguments at
-	 * runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
+	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
