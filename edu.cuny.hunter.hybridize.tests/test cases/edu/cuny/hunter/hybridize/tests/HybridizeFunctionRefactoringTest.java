@@ -2490,31 +2490,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter20() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `add(tf.zeros([1, 2]), tf.zeros([2, 2]))` — FLOAT32 with concrete shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2522,31 +2501,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter21() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `add(tf.constant([1, 2]), tf.constant([2, 2]))` — Python int literal lists give INT32 dtype; shape (2,) for
 		// both.
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -2554,31 +2511,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter22() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `add(tf.Variable([1.0, 2.0]), tf.Variable([2.0, 2.0]))` — verified at runtime: FLOAT32, shape (2,) for both.
 		// `tf.Variable` is treated as tensor-equivalent for hybridization purposes (per testHasLikelyTensorParameter12 docstring).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -2586,31 +2521,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter23() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `add(tf.random.uniform([1, 2]), tf.random.uniform([2, 2]))` — FLOAT32 default; shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2618,30 +2532,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter24() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `add(tf.SparseTensor([[0,0],[1,2]], [1,2], [3,4]), ...)` — verified at runtime: INT32 dtype, dense shape (3, 4).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -2658,31 +2550,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter26() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.fill([1, 2], 2)` and `tf.fill([2, 2], 1)` — fill-value is int, so INT32 dtype; shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(INT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(INT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2690,30 +2561,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter27() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.eye(2, 3)` × 2 — identity matrix; FLOAT32 default dtype; shape (2, 3).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -2721,30 +2570,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter28() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.zeros_like([1, 2])` × 2 — input is a Python int list of length 2; output is INT32 shape (2,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -2752,30 +2579,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter29() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.one_hot([0, 1, 2], 3)` × 2 — input length 3 + depth 3; default FLOAT32 dtype; output shape (3, 3).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3))));
 	}
 
 	/**
@@ -2783,30 +2588,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter30() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.convert_to_tensor(1)` / `tf.convert_to_tensor(2)` — Python ints → INT32 scalar (rank-0).
-		TensorType expected = new TensorType(INT32, List.of());
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of()));
 	}
 
 	/**
@@ -2814,30 +2597,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter31() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.range(3, 18, 3)` / `tf.range(5)` — INT32 (range with int args); both produce shape (5,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(5)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -2845,31 +2606,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter32() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tensorflow.ones(...)` (fully-qualified) — FLOAT32 shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2877,31 +2617,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter33() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.ones(...)` + `ones(...)` from `tensorflow.python.ops.array_ops` — same FLOAT32 shapes.
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2909,31 +2628,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter34() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.random.uniform(...)` + `random.uniform(...)` from `tensorflow` — same FLOAT32 shapes.
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2941,31 +2639,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter35() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `uniform(...)` directly + `random.uniform(...)` — same FLOAT32 shapes.
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -2973,31 +2650,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter36() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `uniform(...)` + `random_uniform(...)` from `tensorflow.python.ops.random_ops` — same FLOAT32 shapes.
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -3005,30 +2661,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter37() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tf.Variable([1.0, 2.0])` + `Variable([2.0, 2.0])` from `tensorflow.python.ops.variables` — FLOAT32 shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3036,30 +2670,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter38() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tensorflow.Variable(...)` (fully-qualified) — FLOAT32 shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3067,30 +2679,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter39() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tensors.Variable(...)` (aliased import) + `Variable(...)` directly — FLOAT32 shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3098,30 +2688,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter40() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `variables.Variable(...)` from `tensorflow.python.ops` — FLOAT32 shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3129,31 +2697,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter41() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two FLOAT32 tensors with shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3161,31 +2706,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter42() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two FLOAT32 tensors with shape (2,).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3193,31 +2715,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter43() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 tensors with shape (2,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3225,31 +2724,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter44() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 tensors with shape (2,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3257,32 +2733,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter45() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two FLOAT32 tensors with shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -3290,31 +2744,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter46() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 SparseTensors with dense shape (3, 4).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -3322,32 +2753,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter47() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 tensors with shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(INT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(INT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -3355,31 +2764,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter48() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 tensors with shape (2,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(2)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(2))));
 	}
 
 	/**
@@ -3387,31 +2773,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter49() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two FLOAT32 one-hot tensors with shape (3, 3).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3))));
 	}
 
 	/**
@@ -3419,31 +2782,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter50() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Two INT32 scalar tensors (rank-0).
-		TensorType expected = new TensorType(INT32, List.of());
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of()));
 	}
 
 	/**
@@ -3451,30 +2791,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter51() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tensorflow.range(3, 18, 3)` + `range(5)` from `tensorflow.python.ops.math_ops` — INT32 shape (5,).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(5)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5))));
 	}
 
 	/**
@@ -3578,30 +2896,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter55() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `tensorflow.eye(2, 3)` + `eye(2, 3)` from `tensorflow.python.ops.linalg_ops` — FLOAT32 shape (2, 3).
-		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -3609,30 +2905,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter56() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. Raw `Tensor(op, value_index, dtype)` from `tensorflow.python.framework.ops` — FLOAT32 scalar (rank-0).
-		TensorType expected = new TensorType(FLOAT32, List.of());
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of()));
 	}
 
 	/**
@@ -3640,30 +2914,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter57() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `SparseTensor(...)` from `tensorflow` — INT32 dense shape (3, 4).
-		TensorType expected = new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4)));
-		assertEquals(Set.of(expected), a.getTensorTypes());
-		assertEquals(Set.of(expected), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected, expected), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -3671,31 +2923,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter58() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertFalse(function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-
-		Parameter a = params.get(0);
-		assertEquals("a", a.getName());
-		Parameter b = params.get(1);
-		assertEquals("b", b.getName());
-
-		assertTrue("Expecting function with likely tensor parameter.", function.getHasTensorParameter());
-
 		// Precision audit. `ones(...)` direct import — FLOAT32 shapes (1, 2) and (2, 2).
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		assertEquals(Set.of(expectedA), a.getTensorTypes());
-		assertEquals(Set.of(expectedB), b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertTrue(sig.isPresent());
-		assertEquals(List.of(expectedA, expectedB), sig.get().parameterTypes());
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
