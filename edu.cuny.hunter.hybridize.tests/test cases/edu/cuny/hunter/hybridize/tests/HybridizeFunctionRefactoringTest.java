@@ -3869,6 +3869,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Precision-audit overload for the canonical two-parameter fixture shape (verified by
+	 * {@link #testHasLikelyTensorParameterHelper(boolean, boolean)} with {@code expectingTensorParameter = false}) where neither parameter
+	 * is classified as a tensor. On top of the structural check, asserts that both {@code a.getTensorTypes()} and
+	 * {@code b.getTensorTypes()} are empty and that {@link Function#inferInputSignature()} returns {@link Optional#empty}—the signature
+	 * drops at the per-parameter classification step before reaching {@code inferSpec}, distinct from in-{@code inferSpec} drops (e.g.,
+	 * dtype disagreement) where the per-parameter classification succeeded.
+	 *
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelperNoTensor(boolean expectingHybridFunction) throws Exception {
+		Function function = testHasLikelyTensorParameterHelper(expectingHybridFunction, false);
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		assertTrue(a.getTensorTypes().isEmpty());
+		assertTrue(b.getTensorTypes().isEmpty());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertFalse("No tensor parameter ⇒ signature drops.", sig.isPresent());
+	}
+
+	/**
 	 * Test for #2 for TF API `RaggedTensor.from_nested_row_splits`.
 	 */
 	@Test
@@ -4767,20 +4788,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265. {@code add(element, element)} inside
+	 * {@code for element in list} where {@code list = list()} then {@code .append(tf.ones(...))}—the dynamic-list construction prevents
+	 * Ariadne from tracking the appended tensors into {@code element}, so neither parameter is classified as a tensor and the inferred
+	 * signature drops at the per-parameter classification step.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter147() throws Exception {
-		Function function = testHasLikelyTensorParameterHelper(false, false);
-		Parameter a = function.getParameters().get(0);
-		Parameter b = function.getParameters().get(1);
-		// `add(element, element)` inside `for element in list` where `list = list()` then `.append(tf.ones(...))`—the dynamic-list
-		// construction prevents Ariadne from tracking the appended tensors into `element`, so neither parameter is classified as a
-		// tensor (`getHasTensorParameter() == false` from the structural helper above).
-		assertTrue(a.getTensorTypes().isEmpty());
-		assertTrue(b.getTensorTypes().isEmpty());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertFalse("No tensor parameter ⇒ signature drops.", sig.isPresent());
+		testHasLikelyTensorParameterHelperNoTensor(false);
 	}
 
 	/**
