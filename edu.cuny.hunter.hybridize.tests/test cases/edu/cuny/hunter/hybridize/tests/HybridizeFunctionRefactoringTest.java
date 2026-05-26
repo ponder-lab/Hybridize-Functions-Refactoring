@@ -2800,31 +2800,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter52() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = tf.Tensor(c.op, 0, tf.float32)` where `c = tf.matmul(a, b)` and `a`, `b` are FLOAT32 (2, 2) constants.
+		// Runtime: `t` is a FLOAT32 tensor wrapping the matmul output of shape (2, 2).
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -2832,31 +2811,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter53() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = Tensor(c.op, 0, tensorflow.float32)` (raw import) wrapping `c = tensorflow.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -2864,31 +2821,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter54() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = Tensor(c.op, 0, tf.float32)` from `tensorflow.python.framework.ops` wrapping `c = tf.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -3115,6 +3050,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			TensorType expectedSignatureTensorType) throws Exception {
 		testHasLikelyTensorParameterHelper(false, true, expectedParameterTensorTypes, expectedParameterTensorTypes,
 				List.of(expectedSignatureTensorType, expectedSignatureTensorType));
+	}
+
+	/**
+	 * Precision-audit helper for multi-function fixtures with a single-parameter target function named {@code t}. Loads exactly two
+	 * functions in the test fixture, picks the one with {@code targetFunctionSimpleName} (asserting exactly one match), and asserts the
+	 * structural shape (single parameter named {@code t}), {@link Function#isHybrid()}, that the target has a tensor parameter, the
+	 * per-parameter {@link Parameter#getTensorTypes()}, and {@link Function#inferInputSignature()}. This helper covers the
+	 * tensor-parameter-present case only; if a future fixture needs to assert a signature drop or absent tensor parameter, add a sibling
+	 * helper (analogous to {@link #testHasLikelyTensorParameterHelperExpectingDrop(boolean, boolean, Set, Set)}).
+	 *
+	 * @param targetFunctionSimpleName The simple name of the function under test (one of the two functions in the fixture).
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the target function.
+	 * @param expectedParameterTensorType The {@link TensorType} expected from Ariadne via {@link Parameter#getTensorTypes()} for the single
+	 *        parameter {@code t}.
+	 * @param expectedSignatureTensorType The {@link TensorType} expected in the inferred input signature.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelperMultiFunction(String targetFunctionSimpleName, boolean expectingHybridFunction,
+			TensorType expectedParameterTensorType, TensorType expectedSignatureTensorType) throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(2, functions.size());
+
+		List<Function> matches = functions.stream().filter(f -> Objects.equals(f.getSimpleName(), targetFunctionSimpleName)).toList();
+		assertEquals("Expected exactly one function named " + targetFunctionSimpleName + " in fixture.", 1, matches.size());
+		Function target = matches.get(0);
+		assertEquals(expectingHybridFunction, target.isHybrid());
+
+		List<Parameter> params = target.getParameters();
+		assertEquals(1, params.size());
+		Parameter t = params.get(0);
+		assertNotNull(t);
+		assertEquals("t", t.getName());
+		assertTrue(target.getHasTensorParameter());
+		assertEquals(Set.of(expectedParameterTensorType), t.getTensorTypes());
+		assertEquals(Optional.of(List.of(expectedSignatureTensorType)), target.inferInputSignature().map(InputSignature::parameterTypes));
 	}
 
 	/**
@@ -3759,31 +3730,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter130() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = tf.experimental.numpy.ndarray(c.op, 0, tf.float32)` (fully-qualified) wrapping `c = tf.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -3791,31 +3740,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter131() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = experimental.numpy.ndarray(c.op, 0, tf.float32)` (`from tensorflow import experimental`) wrapping
+		// `c = tf.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -3823,31 +3751,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter132() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = numpy.ndarray(c.op, 0, tf.float32)` (`from tensorflow.experimental import numpy`) wrapping
+		// `c = tf.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
@@ -3855,31 +3762,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter133() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(2, functions.size());
-
-		Function functionToBeEvaluated = null;
-
-		for (Function func : functions) {
-			if (Objects.equals(func.getSimpleName(), "func2"))
-				functionToBeEvaluated = func;
-		}
-
-		assertNotNull(functionToBeEvaluated);
-
-		List<Parameter> params = functionToBeEvaluated.getParameters();
-
-		// one param.
-		assertEquals(1, params.size());
-
-		Parameter actualParameter = params.get(0);
-		assertNotNull(actualParameter);
-
-		String paramName = actualParameter.getName();
-		assertEquals("t", paramName);
-
-		assertTrue("Expecting function with unlikely tensor parameter.", functionToBeEvaluated.getHasTensorParameter());
+		// Precision audit. `t = ndarray(c.op, 0, tf.float32)` (`from tensorflow.experimental.numpy import ndarray`) wrapping
+		// `c = tf.matmul(a, b)`.
+		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiFunction("func2", false, expected, expected);
 	}
 
 	/**
