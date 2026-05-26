@@ -2946,32 +2946,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Structural-only helper parameterized on the boolean expectations. No precision-audit assertions.
-	 *
-	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
-	 * @throws Exception If the underlying analysis fails.
-	 */
-	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter) throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertEquals(expectingHybridFunction, function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-		Parameter a = params.get(0);
-		Parameter b = params.get(1);
-		assertNotNull(a);
-		assertNotNull(b);
-		assertEquals("a", a.getName());
-		assertEquals("b", b.getName());
-		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
-	}
-
-	/**
 	 * Precision-audit overload for the canonical two-parameter fixture shape where both parameters {@code a} and {@code b} are expected to
 	 * share the same per-parameter type at each of Layer 1 (Ariadne) and Layer 2 (Hybridize). The two-layer form is needed when Ariadne's
 	 * emitted {@link TensorType} differs from the {@link TensorType} the inference algorithm produces—an upstream representation gap or an
@@ -4061,11 +4035,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265.
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265. Dataset iteration with {@code .batch(2)}: source
+	 * is {@code [1, 2, 3]} (length 3), so batching by 2 produces one full batch of shape (2,) and a residual batch of shape (1,). Both
+	 * batches are INT32. Ariadne tracks both shapes as a multi-context per-parameter Set; the inference algorithm narrows the disagreeing
+	 * dim-0 to a wildcard via per-dim consensus, yielding INT32 (?,) in the signature.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter157() throws Exception {
-		testHasLikelyTensorParameterHelper(false, true);
+		TensorType expectedParameterTensorTypeBatch2 = new TensorType(INT32, List.of(new NumericDim(2)));
+		TensorType expectedParameterTensorTypeBatch1 = new TensorType(INT32, List.of(new NumericDim(1)));
+		TensorType expectedSignatureTensorType = new TensorType(INT32, List.of(new SymbolicDim("?")));
+		testHasLikelyTensorParameterHelperMultiContext(Set.of(expectedParameterTensorTypeBatch2, expectedParameterTensorTypeBatch1),
+				expectedSignatureTensorType);
 	}
 
 	/**
