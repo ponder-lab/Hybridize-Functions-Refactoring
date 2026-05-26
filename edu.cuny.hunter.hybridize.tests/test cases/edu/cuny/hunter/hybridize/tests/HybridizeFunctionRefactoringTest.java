@@ -4771,7 +4771,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter147() throws Exception {
-		testHasLikelyTensorParameterHelper(false, false);
+		Function function = testHasLikelyTensorParameterHelper(false, false);
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		// `add(element, element)` inside `for element in list` where `list = list()` then `.append(tf.ones(...))`—the dynamic-list
+		// construction prevents Ariadne from tracking the appended tensors into `element`, so neither parameter is classified as a
+		// tensor (`getHasTensorParameter() == false` from the structural helper above).
+		assertTrue(a.getTensorTypes().isEmpty());
+		assertTrue(b.getTensorTypes().isEmpty());
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertFalse("No tensor parameter ⇒ signature drops.", sig.isPresent());
 	}
 
 	/**
