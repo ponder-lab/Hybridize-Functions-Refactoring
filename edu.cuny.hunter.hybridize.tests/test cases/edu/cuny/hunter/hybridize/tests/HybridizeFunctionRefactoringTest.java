@@ -3790,17 +3790,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return function;
 	}
 
-	private void testHasLikelyTensorParameterHelper() throws Exception {
-		testHasLikelyTensorParameterHelper(false, true);
-	}
-
 	/**
-	 * Precision-audit overload: in addition to the structural checks of {@link #testHasLikelyTensorParameterHelper()}, asserts that both
-	 * parameters carry exactly {@code layer1} as their inferred tensor type (Layer 1) and that the inferred input signature is
-	 * {@code [layer2, layer2]} (Layer 2). When Layer 1 and Layer 2 agree (the common case), pass the same {@link TensorType} for both
-	 * arguments. The two-layer form is needed when an upstream representation gap or an algorithm-side collapse produces a Layer-2 type
-	 * strictly distinct from Layer 1 (e.g., ragged tensors—see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored canonical
-	 * fixture and the upstream/downstream flip targets wala/ML#544 and #524). Signature-drop cases must still inline their own
+	 * Precision-audit overload: in addition to the structural checks of {@link #testHasLikelyTensorParameterHelper(boolean, boolean)},
+	 * asserts that both parameters carry exactly {@code layer1} as their inferred tensor type (Layer 1) and that the inferred input
+	 * signature is {@code [layer2, layer2]} (Layer 2). When Layer 1 and Layer 2 agree (the common case), pass the same {@link TensorType}
+	 * for both arguments. The two-layer form is needed when an upstream representation gap or an algorithm-side collapse produces a Layer-2
+	 * type strictly distinct from Layer 1 (e.g., ragged tensors—see {@link #testHasLikelyTensorParameter59()} for the TODO-anchored
+	 * canonical fixture and the upstream/downstream flip targets wala/ML#544 and #524). Signature-drop cases must still inline their own
 	 * {@link Optional#empty} assertion.
 	 *
 	 * @param layer1 The expected per-parameter {@link TensorType} reported by Ariadne via {@link Parameter#getTensorTypes()}.
@@ -4750,7 +4746,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter145() throws Exception {
-		testHasLikelyTensorParameterHelper();
+		Function function = testHasLikelyTensorParameterHelper(false, true);
+		Parameter a = function.getParameters().get(0);
+		Parameter b = function.getParameters().get(1);
+		// `add(element, element)` inside `for element in [tf.ones([1, 2]), tf.ones([2, 2])]`—multi-context across loop iterations;
+		// FLOAT32 dtype agrees, rank-2 agrees, but position-0 dim disagrees (1 vs 2) and position-1 agrees (2 vs 2).
+		TensorType context1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType context2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		assertEquals(Set.of(context1, context2), a.getTensorTypes());
+		assertEquals(Set.of(context1, context2), b.getTensorTypes());
+		TensorType inferred = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
+		Optional<InputSignature> sig = function.inferInputSignature();
+		assertTrue(sig.isPresent());
+		assertEquals(List.of(inferred, inferred), sig.get().parameterTypes());
 	}
 
 	/**
