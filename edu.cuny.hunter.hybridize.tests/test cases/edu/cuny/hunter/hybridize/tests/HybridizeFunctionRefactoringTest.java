@@ -2141,7 +2141,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter11() throws Exception {
 		TensorType expectedA = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
 		TensorType expectedB = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
-		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), Optional.of(List.of(expectedA, expectedB)));
+		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedA), Set.of(expectedB), List.of(expectedA, expectedB));
 	}
 
 	/**
@@ -3699,31 +3699,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * General precision-audit and structural helper for the canonical two-parameter fixture shape. Verifies that the file under test
-	 * contains exactly one function, that function has exactly two parameters named {@code a} and {@code b}, its
-	 * {@link Function#isHybrid()} matches {@code expectingHybridFunction}, and its {@link Function#getHasTensorParameter()} matches
-	 * {@code expectingTensorParameter}. Then, when the per-parameter expectation arguments are non-null, asserts the
-	 * {@link Parameter#getTensorTypes()} set for each parameter and asserts the {@link Function#inferInputSignature()} value matches
-	 * {@code expectedSignature} (with {@link Optional#empty} representing a dropped signature).
-	 * <p>
-	 * The convenience overloads below cover the common audit shapes and delegate here; the {@link Function} loaded by this method never
-	 * escapes—fixtures should not reach for it directly.
+	 * General precision-audit helper for the canonical two-parameter fixture shape with an expected non-empty input signature. Verifies
+	 * that the file under test contains exactly one function with exactly two parameters named {@code a} and {@code b}, asserts
+	 * {@link Function#isHybrid()} and {@link Function#getHasTensorParameter()}, asserts each parameter's {@link Parameter#getTensorTypes()}
+	 * set, and asserts the {@link Function#inferInputSignature()} value equals {@code expectedSignature}.
 	 *
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
 	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
-	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}, or {@code null} to skip the audit
-	 *        (structural-only check).
-	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}, or {@code null} to skip the audit.
-	 *        Must be {@code null} iff {@code aTensorTypes} is {@code null}.
-	 * @param expectedSignature The expected {@link Function#inferInputSignature()}: {@link Optional#empty} when the inferred signature is
-	 *        expected to be dropped, or a present {@link Optional} carrying the expected per-parameter {@link TensorType} list in
-	 *        {@code (a, b)} order. Ignored when the audit is skipped via {@code null} {@code aTensorTypes}.
+	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}.
+	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}.
+	 * @param expectedSignature The expected per-parameter {@link TensorType} list in {@code (a, b)} order; must be non-{@code null}. For
+	 *        fixtures expecting the inferred signature to be dropped, use
+	 *        {@link #testHasLikelyTensorParameterHelperExpectingDrop(boolean, boolean, Set, Set)} instead.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter,
-			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes, Optional<List<TensorType>> expectedSignature) throws Exception {
-		assertNotNull("Helper contract: expectedSignature must be non-null (pass Optional.empty() to assert a dropped signature).",
-				expectedSignature);
+			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes, List<TensorType> expectedSignature) throws Exception {
+		assertNotNull("Helper contract: expectedSignature must be non-null;"
+				+ " for an expected dropped signature, call testHasLikelyTensorParameterHelperExpectingDrop.", expectedSignature);
+		assertNotNull("Helper contract: aTensorTypes must be non-null.", aTensorTypes);
+		assertNotNull("Helper contract: bTensorTypes must be non-null.", bTensorTypes);
 
 		Set<Function> functions = this.getFunctions();
 		assertNotNull(functions);
@@ -3741,20 +3736,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("a", a.getName());
 		assertEquals("b", b.getName());
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
-
-		if (aTensorTypes == null) {
-			assertNull("Helper contract: bTensorTypes must be null when aTensorTypes is null (structural-only path).", bTensorTypes);
-			assertEquals("Helper contract: expectedSignature must be Optional.empty() on the structural-only path.", Optional.empty(),
-					expectedSignature);
-			return;
-		}
-		assertNotNull("Helper contract: bTensorTypes must be non-null when aTensorTypes is non-null.", bTensorTypes);
 		assertEquals(aTensorTypes, a.getTensorTypes());
 		assertEquals(bTensorTypes, b.getTensorTypes());
-		Optional<InputSignature> sig = function.inferInputSignature();
-		assertEquals(expectedSignature.isPresent(), sig.isPresent());
-		if (expectedSignature.isPresent())
-			assertEquals(expectedSignature.get(), sig.get().parameterTypes());
+		assertEquals(Optional.of(expectedSignature), function.inferInputSignature().map(InputSignature::parameterTypes));
+	}
+
+	/**
+	 * Precision-audit helper for the canonical two-parameter fixture shape where the inferred input signature is expected to be dropped.
+	 * The signature drop typically reflects a {@code inferSpec} short-circuit (e.g., no tensor parameter, dtype disagreement) where the
+	 * per-parameter Ariadne data is still asserted but the overall signature cannot be inferred. Structural and per-parameter assertions
+	 * match {@link #testHasLikelyTensorParameterHelper(boolean, boolean, Set, Set, List)}; only the final signature comparison differs.
+	 *
+	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
+	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
+	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}.
+	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}.
+	 * @throws Exception If the underlying analysis fails.
+	 */
+	private void testHasLikelyTensorParameterHelperExpectingDrop(boolean expectingHybridFunction, boolean expectingTensorParameter,
+			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes) throws Exception {
+		assertNotNull("Helper contract: aTensorTypes must be non-null.", aTensorTypes);
+		assertNotNull("Helper contract: bTensorTypes must be non-null.", bTensorTypes);
+
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertEquals(expectingHybridFunction, function.isHybrid());
+
+		List<Parameter> params = function.getParameters();
+		assertEquals(2, params.size());
+		Parameter a = params.get(0);
+		Parameter b = params.get(1);
+		assertNotNull(a);
+		assertNotNull(b);
+		assertEquals("a", a.getName());
+		assertEquals("b", b.getName());
+		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
+		assertEquals(aTensorTypes, a.getTensorTypes());
+		assertEquals(bTensorTypes, b.getTensorTypes());
+		assertEquals(Optional.empty(), function.inferInputSignature().map(InputSignature::parameterTypes));
 	}
 
 	/**
@@ -3765,7 +3787,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter) throws Exception {
-		testHasLikelyTensorParameterHelper(expectingHybridFunction, expectingTensorParameter, null, null, Optional.empty());
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertEquals(expectingHybridFunction, function.isHybrid());
+
+		List<Parameter> params = function.getParameters();
+		assertEquals(2, params.size());
+		Parameter a = params.get(0);
+		Parameter b = params.get(1);
+		assertNotNull(a);
+		assertNotNull(b);
+		assertEquals("a", a.getName());
+		assertEquals("b", b.getName());
+		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
 	}
 
 	/**
@@ -3785,7 +3822,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private void testHasLikelyTensorParameterHelper(TensorType expectedParameterTensorType, TensorType expectedSignatureTensorType)
 			throws Exception {
 		testHasLikelyTensorParameterHelper(false, true, Set.of(expectedParameterTensorType), Set.of(expectedParameterTensorType),
-				Optional.of(List.of(expectedSignatureTensorType, expectedSignatureTensorType)));
+				List.of(expectedSignatureTensorType, expectedSignatureTensorType));
 	}
 
 	/**
@@ -3815,8 +3852,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, TensorType expected) throws Exception {
-		testHasLikelyTensorParameterHelper(expectingHybridFunction, true, Set.of(expected), Set.of(expected),
-				Optional.of(List.of(expected, expected)));
+		testHasLikelyTensorParameterHelper(expectingHybridFunction, true, Set.of(expected), Set.of(expected), List.of(expected, expected));
 	}
 
 	/**
@@ -3829,7 +3865,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelperNoTensor(boolean expectingHybridFunction) throws Exception {
-		testHasLikelyTensorParameterHelper(expectingHybridFunction, false, Set.of(), Set.of(), Optional.empty());
+		testHasLikelyTensorParameterHelperExpectingDrop(expectingHybridFunction, false, Set.of(), Set.of());
 	}
 
 	/**
@@ -3847,7 +3883,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private void testHasLikelyTensorParameterHelperMultiContext(Set<TensorType> expectedParameterTensorTypes,
 			TensorType expectedSignatureTensorType) throws Exception {
 		testHasLikelyTensorParameterHelper(false, true, expectedParameterTensorTypes, expectedParameterTensorTypes,
-				Optional.of(List.of(expectedSignatureTensorType, expectedSignatureTensorType)));
+				List.of(expectedSignatureTensorType, expectedSignatureTensorType));
 	}
 
 	/**
