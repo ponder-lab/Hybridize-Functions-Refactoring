@@ -123,7 +123,7 @@ public class InputSignatureTest {
 	@Test
 	public void testDtypeLowerCaseIsLocaleIndependent() {
 		Locale prior = Locale.getDefault();
-		Locale.setDefault(new Locale("tr", "TR"));
+		Locale.setDefault(Locale.of("tr", "TR"));
 		try {
 			InputSignature sig = new InputSignature(
 					List.of(new TensorType(INT32, List.of(new NumericDim(2))), new TensorType(STRING, List.of(new NumericDim(2)))));
