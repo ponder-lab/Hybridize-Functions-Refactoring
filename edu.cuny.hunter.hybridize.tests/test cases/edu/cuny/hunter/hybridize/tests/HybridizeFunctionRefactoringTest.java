@@ -1218,10 +1218,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		f.setInferInputSignatures(true);
 
-		List<TextEdit> edits = f.transform();
-		String emitted = edits.stream().map(TextEdit::toString).reduce("", (a, b) -> a + b);
-		assertTrue("Expected `@tf.function(input_signature=[tf.TensorSpec(...)])` emission; got: " + emitted,
-				emitted.contains("@tf.function(input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)])"));
+		IDocument doc = f.getContainingDocument();
+		for (TextEdit edit : f.transform())
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
 	}
 
 	/**

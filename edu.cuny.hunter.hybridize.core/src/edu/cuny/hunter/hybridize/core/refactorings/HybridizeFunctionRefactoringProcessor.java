@@ -120,10 +120,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private boolean useSpeculativeAnalysis;
 
 	/**
-	 * True iff {@code Function.convertToHybrid} should emit an {@code input_signature=...} keyword into the generated
-	 * {@code @tf.function(...)} decorator when {@link Function#inferInputSignature()} produces a signature. Default {@code false}; the
-	 * user-facing/eval-facing gating that flips this flag is tracked at
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481.
+	 * True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
@@ -610,10 +607,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	/**
-	 * True iff {@code Function.convertToHybrid} should emit an {@code input_signature=...} keyword into the generated
-	 * {@code @tf.function(...)} decorator.
+	 * Returns true iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 *
-	 * @return True iff the source-write transformation should emit an inferred {@code input_signature=...} keyword.
+	 * @return True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	public boolean getInferInputSignatures() {
@@ -621,12 +617,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	/**
-	 * Sets whether the refactoring should emit an inferred {@code input_signature=...} keyword. Propagates to every already-constructed
-	 * {@link Function} owned by this processor so subsequent calls to {@code transform()} observe the new value. The user-facing (UI
-	 * checkbox + system property) and eval-facing wiring at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481 calls
-	 * this method.
+	 * Sets whether the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator. Propagates to
+	 * every already-constructed {@link Function} owned by this processor so subsequent {@code transform()} calls observe the value.
 	 *
-	 * @param inferInputSignatures True iff the inferred input signature should be emitted into the generated decorator.
+	 * @param inferInputSignatures True iff the inferred {@code input_signature} keyword should be emitted into the generated decorator.
 	 */
 	public void setInferInputSignatures(boolean inferInputSignatures) {
 		this.inferInputSignatures = inferInputSignatures;

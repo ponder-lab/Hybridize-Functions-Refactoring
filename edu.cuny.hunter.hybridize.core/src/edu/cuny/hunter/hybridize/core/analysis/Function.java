@@ -605,10 +605,7 @@ public class Function {
 	private boolean useSpeculativeAnalysis;
 
 	/**
-	 * True iff {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
-	 * decorator when {@link #inferInputSignature()} produces a signature. Defaults to {@code false} (existing behavior—bare
-	 * {@code @tf.function}). Wired by {@code HybridizeFunctionRefactoringProcessor}; user/eval-facing gating is tracked at
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481.
+	 * True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
@@ -1029,10 +1026,9 @@ public class Function {
 	}
 
 	/**
-	 * True iff {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
-	 * decorator when {@link #inferInputSignature()} produces a signature.
+	 * Returns true iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 *
-	 * @return True iff the source-write transformation should emit an inferred {@code input_signature=...} keyword.
+	 * @return True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	public boolean getInferInputSignatures() {
@@ -1040,12 +1036,9 @@ public class Function {
 	}
 
 	/**
-	 * Sets whether {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
-	 * decorator. Primarily used by {@code edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor} when wiring
-	 * the opt-in flag (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481) and by tests exercising the source-write
-	 * path.
+	 * Sets whether the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
 	 *
-	 * @param inferInputSignatures True iff the inferred input signature should be emitted into the generated decorator.
+	 * @param inferInputSignatures True iff the inferred {@code input_signature} keyword should be emitted into the generated decorator.
 	 */
 	public void setInferInputSignatures(boolean inferInputSignatures) {
 		this.inferInputSignatures = inferInputSignatures;
