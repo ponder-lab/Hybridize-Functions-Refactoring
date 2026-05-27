@@ -1156,8 +1156,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Test that an unrecognized {@code @tf.function} keyword argument is parsed without error and that none of the recognized
 	 * {@code *Param} flags are set. Exercises the {@code default} branch of {@code markParam}, which logs a {@code WARNING} and otherwise
-	 * leaves state untouched. The fixture is intentionally not Python-runnable—TF rejects unknown kwargs at decoration time—so the standard
-	 * three-check protocol's runtime step does not apply; the analyzer-robustness guarantee is the whole point of this test.
+	 * leaves state untouched. The fixture uses {@code experimental_attributes}, a real TF kwarg added in TF 2.13 that Hybridize does not
+	 * yet model; the per-fixture {@code requirements.txt} pins {@code tensorflow==2.13.1} so the fixture is Python-runnable.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/204">Issue 204</a>
 	 */
