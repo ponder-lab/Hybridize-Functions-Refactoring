@@ -387,8 +387,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		if (exitCode != 0) { // there's a problem.
 			// retrieve the error output.
-			BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-			errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+			try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+				errorOutput = errorReader.lines().collect(Collectors.joining("\n"));
+			}
 		}
 
 		assertEquals("Error code should be 0. Error was:\n" + errorOutput + ".", 0, exitCode);
