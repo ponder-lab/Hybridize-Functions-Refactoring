@@ -251,7 +251,9 @@ public class Function {
 		/**
 		 * Set the appropriate {@code *Param} field for the given {@code tf.function} parameter name. Recognizes both current names and the
 		 * deprecated aliases ({@code experimental_compile} → {@code jit_compile}, {@code experimental_relax_shapes} →
-		 * {@code reduce_retracing}). Unknown names are silently ignored; they may belong to a future TF version we don't model yet.
+		 * {@code reduce_retracing}). Unknown names are logged at {@code WARNING} level but otherwise ignored; they may belong to a future
+		 * TF version we don't model yet. Intermediate step toward the original ask in #204 (custom exception + test); the log surfaces the
+		 * signal without sacrificing forward-compatibility.
 		 *
 		 * @param paramName The parameter name passed to {@code @tf.function(...)}, exactly as it appears in the call.
 		 */
@@ -265,6 +267,7 @@ public class Function {
 			case EXPERIMENTAL_IMPLEMENTS -> this.experimentalImplementsParam = true;
 			case EXPERIMENTAL_AUTOGRAPH_OPTIONS -> this.experimentalAutographOptionsParam = true;
 			case EXPERIMENTAL_FOLLOW_TYPE_HINTS -> this.experimentalFollowTypeHintsParam = true;
+			default -> LOG.warn("Unknown @tf.function argument: " + paramName + " on " + Function.this + ".");
 			}
 		}
 
