@@ -119,6 +119,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	private boolean useSpeculativeAnalysis;
 
+	/**
+	 * True iff {@code Function.convertToHybrid} should emit an {@code input_signature=...} keyword into the generated
+	 * {@code @tf.function(...)} decorator when {@link Function#inferInputSignature()} produces a signature. Default {@code false}; the
+	 * user-facing/eval-facing gating that flips this flag is tracked at
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	private boolean inferInputSignatures;
+
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
 		InterpreterGeneralPreferences.FORCE_USE_TYPESHED = TRUE;
@@ -166,8 +176,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
 			boolean useSpeculativeAnalysis) {
 		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion, ignoreBooleansInLiteralCheck,
+				useTestEntryPoints, alwaysFollowTypeHints, useSpeculativeAnalysis, false);
+	}
+
+	public HybridizeFunctionRefactoringProcessor(boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel,
+			boolean alwaysCheckRecusion, boolean ignoreBooleansInLiteralCheck, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
+			boolean useSpeculativeAnalysis, boolean inferInputSignatures) {
+		this(alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion, ignoreBooleansInLiteralCheck,
 				useTestEntryPoints, alwaysFollowTypeHints);
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+		this.inferInputSignatures = inferInputSignatures;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
@@ -180,7 +198,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
 				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
-						this.useSpeculativeAnalysis);
+						this.useSpeculativeAnalysis, this.inferInputSignatures);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -224,6 +242,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
 			boolean useSpeculativeAnalysis) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints,
+				alwaysFollowTypeHints, useSpeculativeAnalysis, false);
+	}
+
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
+			boolean useSpeculativeAnalysis, boolean inferInputSignatures) throws TooManyMatchesException /* FIXME: low-level. */ {
 		this();
 
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
@@ -232,6 +257,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.useTestEntryPoints = useTestEntryPoints;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+		this.inferInputSignatures = inferInputSignatures;
 
 		// Convert the FunctionDefs to Functions.
 		if (functions != null) {
@@ -239,7 +265,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			for (FunctionDefinition fd : functionDefinitionSet) {
 				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
-						this.useSpeculativeAnalysis);
+						this.useSpeculativeAnalysis, this.inferInputSignatures);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);

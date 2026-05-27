@@ -78,6 +78,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
+import org.eclipse.text.edits.TextEdit;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -1196,6 +1197,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		boolean warnFired = captured.stream().anyMatch(s -> s.getSeverity() == IStatus.WARNING
 				&& "Unknown @tf.function argument: experimental_attributes on func().".equals(s.getMessage()));
 		assertTrue("Expected WARN log for unknown kwarg `experimental_attributes`.", warnFired);
+	}
+
+	/**
+	 * Test that {@code convertToHybrid} emits an inferred {@code input_signature=[tf.TensorSpec(...)]} keyword into the generated
+	 * {@code @tf.function(...)} decorator when {@link Function#setInferInputSignatures(boolean)} flips the flag on. Phase 2 of #563: the
+	 * formatter from #564 plus the wired-through flag on {@link Function} and {@code HybridizeFunctionRefactoringProcessor}. The
+	 * user-facing/eval-facing gating that flips the flag in production wiring is tracked at #481.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmission() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		f.setInferInputSignatures(true);
+
+		List<TextEdit> edits = f.transform();
+		String emitted = edits.stream().map(TextEdit::toString).reduce("", (a, b) -> a + b);
+		assertTrue("Expected `@tf.function(input_signature=[tf.TensorSpec(...)])` emission; got: " + emitted,
+				emitted.contains("@tf.function(input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)])"));
 	}
 
 	/**

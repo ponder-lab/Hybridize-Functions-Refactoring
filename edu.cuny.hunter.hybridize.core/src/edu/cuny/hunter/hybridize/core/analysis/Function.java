@@ -605,6 +605,16 @@ public class Function {
 	private boolean useSpeculativeAnalysis;
 
 	/**
+	 * True iff {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
+	 * decorator when {@link #inferInputSignature()} produces a signature. Defaults to {@code false} (existing behavior—bare
+	 * {@code @tf.function}). Wired by {@code HybridizeFunctionRefactoringProcessor}; user/eval-facing gating is tracked at
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	private boolean inferInputSignatures;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -666,10 +676,16 @@ public class Function {
 	private final List<Parameter> parameters;
 
 	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis) {
+		this(fd, ignoreBooleans, alwaysFollowTypeHints, useSpeculativeAnalysis, false);
+	}
+
+	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis,
+			boolean inferInputSignatures) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+		this.inferInputSignatures = inferInputSignatures;
 
 		// Jython's `argumentsType` is the whole parameter-list node; its `.args` field is the positional/positional-or-keyword name array.
 		// `vararg`, `kwarg`, and `kwonlyargs` are sibling fields on the same node that we don't currently wrap.
@@ -1010,6 +1026,29 @@ public class Function {
 	 */
 	public boolean getUseSpeculativeAnalysis() {
 		return useSpeculativeAnalysis;
+	}
+
+	/**
+	 * True iff {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
+	 * decorator when {@link #inferInputSignature()} produces a signature.
+	 *
+	 * @return True iff the source-write transformation should emit an inferred {@code input_signature=...} keyword.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	public boolean getInferInputSignatures() {
+		return this.inferInputSignatures;
+	}
+
+	/**
+	 * Sets whether {@code convertToHybrid} should emit an {@code input_signature=...} keyword into the generated {@code @tf.function(...)}
+	 * decorator. Primarily used by {@code edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor} when wiring
+	 * the opt-in flag (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481) and by tests exercising the source-write
+	 * path.
+	 *
+	 * @param inferInputSignatures True iff the inferred input signature should be emitted into the generated decorator.
+	 */
+	public void setInferInputSignatures(boolean inferInputSignatures) {
+		this.inferInputSignatures = inferInputSignatures;
 	}
 
 	public IDocument getContainingDocument() {
@@ -1829,7 +1868,15 @@ public class Function {
 			prefix = ""; // no prefix needed.
 		}
 
-		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
+		// Emit `input_signature=[tf.TensorSpec(...)]` when the flag is set, the inference produced a signature, and the prefix is
+		// non-empty (so `TensorSpec` and the dtype constants are reachable). The empty-prefix case (from `from tensorflow import
+		// function`) skips emission: `TensorSpec` isn't imported in that form, and adding the import is non-trivial.
+		final String tfPrefix = prefix;
+		String decoratorSuffix = this.getInferInputSignatures() && !tfPrefix.isEmpty()
+				? this.inferInputSignature().map(sig -> "(input_signature=" + sig.toTensorSpecList(tfPrefix) + ")").orElse("")
+				: "";
+
+		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function" + decoratorSuffix + "\n" + precedingText);
 		MultiTextEdit mte = new MultiTextEdit();
 		mte.addChild(edit);
 		ret.add(mte);
