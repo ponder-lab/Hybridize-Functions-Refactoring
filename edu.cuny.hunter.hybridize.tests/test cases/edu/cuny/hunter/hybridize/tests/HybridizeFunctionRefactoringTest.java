@@ -1154,6 +1154,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test that an unrecognized {@code @tf.function} keyword argument is parsed without error and that none of the recognized
+	 * {@code *Param} flags are set. Exercises the {@code default} branch of {@code markParam}, which logs a {@code WARNING} and otherwise
+	 * leaves state untouched. The fixture is intentionally not Python-runnable—TF rejects unknown kwargs at decoration time—so the standard
+	 * three-check protocol's runtime step does not apply; the analyzer-robustness guarantee is the whole point of this test.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/204">Issue 204</a>
+	 */
+	@Test
+	public void testComputeParameters13() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+
+		assertTrue(function.isHybrid());
+
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+
+		assertTrue(!args.hasFuncParam() && !args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptionsParam()
+				&& !args.hasExperimentalFollowTypeHintsParam());
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
