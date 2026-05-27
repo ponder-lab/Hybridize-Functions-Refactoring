@@ -1157,12 +1157,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test that an unrecognized {@code @tf.function} keyword argument is parsed without error and that none of the recognized
 	 * {@code *Param} flags are set. Exercises the {@code default} branch of {@code markParam}, which logs a {@code WARNING} and otherwise
 	 * leaves state untouched. The fixture uses {@code experimental_attributes}, a real TF kwarg added in TF 2.13 that Hybridize does not
-	 * yet model; the per-fixture {@code requirements.txt} pins {@code tensorflow==2.13.1} so the fixture is Python-runnable.
-	 * <p>
-	 * NOTE: If Hybridize promotes {@code experimental_attributes} to a first-class recognized parameter (its own case in
-	 * {@code markParam}'s switch and a {@code hasExperimentalAttributesParam} accessor), this test will fail—the new flag would be set by
-	 * the fixture, and the conjunction below would also need to assert {@code !args.hasExperimentalAttributesParam()}. Re-pin the fixture
-	 * to a different real-but-unrecognized kwarg at that point to keep exercising the {@code default} WARN branch.
+	 * yet model; the per-fixture {@code requirements.txt} pins {@code tensorflow==2.13.1} so the fixture is Python-runnable. NOTE: If
+	 * Hybridize promotes {@code experimental_attributes} to a first-class recognized parameter (its own case in {@code markParam}'s switch
+	 * and a {@code hasExperimentalAttributesParam} accessor), this test will fail—the new flag would be set by the fixture, and the
+	 * conjunction below would also need to assert {@code !args.hasExperimentalAttributesParam()}. Re-pin the fixture to a different
+	 * real-but-unrecognized kwarg at that point to keep exercising the {@code default} WARN branch.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/204">Issue 204</a>
 	 */
