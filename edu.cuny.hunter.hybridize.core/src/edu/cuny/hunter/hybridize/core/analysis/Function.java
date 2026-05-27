@@ -88,7 +88,9 @@ import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
+import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
@@ -1592,9 +1594,9 @@ public class Function {
 		}
 
 		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
-		// `SymbolicDim("?")` wildcard.
-		// TODO(wala/ML#544, #524): once Ariadne ships a typed `RaggedDim` and this side emits `RaggedTensorSpec`, branch on
-		// raggedness here rather than collapsing every non-`NumericDim` to a wildcard.
+		// `SymbolicDim("?")` wildcard. `DynamicDim` and `RaggedDim` (typed sentinels shipped in Ariadne 0.45.0 per wala/ML#545 and
+		// ponder-lab/ML#320) get explicit branches so future precision improvements can refine each case independently—#524 routes the
+		// `RaggedDim` branch to `RaggedTensorSpec` emission.
 		List<Dimension<?>> shape = new ArrayList<>(rank);
 		for (int j = 0; j < rank; j++) {
 			Dimension<?> consensus = null;
@@ -1608,8 +1610,15 @@ public class Function {
 					break;
 				}
 			}
-			if (!disagreement && consensus instanceof NumericDim)
+			if (disagreement)
+				shape.add(new SymbolicDim("?"));
+			else if (consensus instanceof NumericDim)
 				shape.add(consensus);
+			else if (consensus instanceof DynamicDim)
+				shape.add(new SymbolicDim("?"));
+			else if (consensus instanceof RaggedDim)
+				// TODO(#524): once `RaggedTensorSpec` emission lands, route ragged dims there instead of collapsing.
+				shape.add(new SymbolicDim("?"));
 			else
 				shape.add(new SymbolicDim("?"));
 		}
