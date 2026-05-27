@@ -67,7 +67,9 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourceAttributes;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.ILogListener;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
@@ -1159,28 +1161,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * leaves state untouched. The fixture uses {@code experimental_attributes}, a real TF kwarg added in TF 2.13 that Hybridize does not
 	 * yet model; the per-fixture {@code requirements.txt} pins {@code tensorflow==2.13.1} so the fixture is Python-runnable. NOTE: If
 	 * Hybridize promotes {@code experimental_attributes} to a first-class recognized parameter (its own case in {@code markParam}'s switch
-	 * and a {@code hasExperimentalAttributesParam} accessor), this test will fail—the new flag would be set by the fixture, and the
-	 * conjunction below would also need to assert {@code !args.hasExperimentalAttributesParam()}. Re-pin the fixture to a different
+	 * and a {@code hasExperimentalAttributesParam} accessor), this test will fail twice over—the new flag would be set by the fixture
+	 * (failing the conjunction below), and the WARN log assertion would no longer fire. Re-pin the fixture to a different
 	 * real-but-unrecognized kwarg at that point to keep exercising the {@code default} WARN branch.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/204">Issue 204</a>
 	 */
 	@Test
 	public void testComputeParameters13() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
+		ILog functionLog = getLog(Function.class);
+		List<IStatus> captured = new ArrayList<>();
+		ILogListener listener = (status, plugin) -> captured.add(status);
+		functionLog.addLogListener(listener);
+		try {
+			Set<Function> functions = this.getFunctions();
+			assertNotNull(functions);
+			assertEquals(1, functions.size());
+			Function function = functions.iterator().next();
+			assertNotNull(function);
 
-		assertTrue(function.isHybrid());
+			assertTrue(function.isHybrid());
 
-		Function.HybridizationParameters args = function.getHybridizationParameters();
-		assertNotNull(args);
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
 
-		assertTrue(!args.hasFuncParam() && !args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
-				&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam() && !args.hasExperimentalAutographOptionsParam()
-				&& !args.hasExperimentalFollowTypeHintsParam());
+			assertTrue(!args.hasFuncParam() && !args.hasInputSignatureParam() && !args.hasAutoGraphParam() && !args.hasJitCompileParam()
+					&& !args.hasReduceRetracingParam() && !args.hasExperimentalImplementsParam()
+					&& !args.hasExperimentalAutographOptionsParam() && !args.hasExperimentalFollowTypeHintsParam());
+		} finally {
+			functionLog.removeLogListener(listener);
+		}
+
+		boolean warnFired = captured.stream().anyMatch(s -> s.getSeverity() == IStatus.WARNING
+				&& "Unknown @tf.function argument: experimental_attributes on func().".equals(s.getMessage()));
+		assertTrue("Expected WARN log for unknown kwarg `experimental_attributes`.", warnFired);
 	}
 
 	/**
