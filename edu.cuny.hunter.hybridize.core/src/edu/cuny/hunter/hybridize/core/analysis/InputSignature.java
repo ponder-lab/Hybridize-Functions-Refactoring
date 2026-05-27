@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.StringJoiner;
 
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -43,12 +44,23 @@ public record InputSignature(List<TensorType> parameterTypes) {
 		StringJoiner specs = new StringJoiner(", ", "[", "]");
 
 		for (TensorType t : parameterTypes) {
-			StringJoiner shapeDims = new StringJoiner(", ", "(", t.getDims().size() == 1 ? ",)" : ")");
-			for (Dimension<?> d : t.getDims())
-				shapeDims.add(d instanceof NumericDim ? d.value().toString() : "None");
+			List<Dimension<?>> dims = t.getDims();
+			String shape;
+			if (dims == null) {
+				// Shape-⊤ from `Function.inferSpec` Step 2 (rank disagrees across contexts, or any context has null dims). TF's
+				// `tf.TensorSpec(shape=None, ...)` accepts any shape at runtime—the appropriate encoding when rank itself is unknown.
+				shape = "None";
+			} else {
+				StringJoiner shapeDims = new StringJoiner(", ", "(", dims.size() == 1 ? ",)" : ")");
+				for (Dimension<?> d : dims)
+					shapeDims.add(d instanceof NumericDim ? d.value().toString() : "None");
+				shape = shapeDims.toString();
+			}
 
-			String dtype = tfPrefix + t.getDType().name().toLowerCase();
-			specs.add(tfPrefix + "TensorSpec(shape=" + shapeDims + ", dtype=" + dtype + ")");
+			// `Locale.ROOT` so dtype identifiers stay ASCII regardless of the JVM default (Turkish locale lower-cases `I` to a
+			// non-ASCII dotless-i, which would corrupt `INT32` → `ınt32`, `STRING` → `strıng`).
+			String dtype = tfPrefix + t.getDType().name().toLowerCase(Locale.ROOT);
+			specs.add(tfPrefix + "TensorSpec(shape=" + shape + ", dtype=" + dtype + ")");
 		}
 
 		return specs.toString();

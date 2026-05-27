@@ -7,10 +7,12 @@ import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.STRING;
 import static org.junit.Assert.assertEquals;
 
 import java.util.List;
+import java.util.Locale;
 
 import org.junit.Test;
 
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
@@ -102,5 +104,34 @@ public class InputSignatureTest {
 	public void testEmptyPrefix() {
 		InputSignature sig = new InputSignature(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))));
 		assertEquals("[TensorSpec(shape=(2,), dtype=float32)]", sig.toTensorSpecList(""));
+	}
+
+	/**
+	 * Shape-⊤ tensors (rank disagrees across contexts, or any context has unknown rank): {@code Function.inferSpec} returns
+	 * {@code TensorType(dtype, null)}. The formatter must encode this as {@code shape=None}—TF's {@code tf.TensorSpec(shape=None, ...)}
+	 * accepts any shape at runtime.
+	 */
+	@Test
+	public void testShapeTopRendersAsNone() {
+		InputSignature sig = new InputSignature(List.of(new TensorType(FLOAT32, (List<Dimension<?>>) null)));
+		assertEquals("[tf.TensorSpec(shape=None, dtype=tf.float32)]", sig.toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Locale-independence: dtype identifiers must lower-case under {@link Locale#ROOT}, not the JVM default. Under Turkish locale,
+	 * {@code "INT32".toLowerCase()} produces {@code "ınt32"} (dotless-i, non-ASCII), which would corrupt the emitted Python.
+	 */
+	@Test
+	public void testDtypeLowerCaseIsLocaleIndependent() {
+		Locale prior = Locale.getDefault();
+		Locale.setDefault(new Locale("tr", "TR"));
+		try {
+			InputSignature sig = new InputSignature(
+					List.of(new TensorType(INT32, List.of(new NumericDim(2))), new TensorType(STRING, List.of(new NumericDim(2)))));
+			assertEquals("[tf.TensorSpec(shape=(2,), dtype=tf.int32), tf.TensorSpec(shape=(2,), dtype=tf.string)]",
+					sig.toTensorSpecList("tf."));
+		} finally {
+			Locale.setDefault(prior);
+		}
 	}
 }
