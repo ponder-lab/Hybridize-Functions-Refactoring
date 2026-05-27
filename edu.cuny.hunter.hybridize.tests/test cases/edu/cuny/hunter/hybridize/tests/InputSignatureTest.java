@@ -12,7 +12,6 @@ import java.util.Locale;
 import org.junit.Test;
 
 import com.ibm.wala.cast.python.ml.types.TensorType;
-import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
@@ -113,7 +112,7 @@ public class InputSignatureTest {
 	 */
 	@Test
 	public void testShapeTopRendersAsNone() {
-		InputSignature sig = new InputSignature(List.of(new TensorType(FLOAT32, (List<Dimension<?>>) null)));
+		InputSignature sig = new InputSignature(List.of(new TensorType(FLOAT32, null)));
 		assertEquals("[tf.TensorSpec(shape=None, dtype=tf.float32)]", sig.toTensorSpecList("tf."));
 	}
 
