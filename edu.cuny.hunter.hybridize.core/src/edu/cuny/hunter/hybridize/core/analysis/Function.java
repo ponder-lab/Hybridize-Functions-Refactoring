@@ -1594,9 +1594,10 @@ public class Function {
 		}
 
 		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
-		// `SymbolicDim("?")` wildcard. `DynamicDim` and `RaggedDim` (typed sentinels shipped in Ariadne 0.45.0 per wala/ML#545 and
-		// ponder-lab/ML#320) get explicit branches so future precision improvements can refine each case independently—#524 routes the
-		// `RaggedDim` branch to `RaggedTensorSpec` emission.
+		// `SymbolicDim("?")` wildcard. `DynamicDim` and `RaggedDim` (typed sentinels shipped in Ariadne 0.45.0 per
+		// https://github.com/wala/ML/issues/545 and https://github.com/ponder-lab/ML/issues/320) get explicit branches so future precision
+		// improvements can refine each case independently—https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524 routes
+		// the `RaggedDim` branch to `RaggedTensorSpec` emission.
 		List<Dimension<?>> shape = new ArrayList<>(rank);
 		for (int j = 0; j < rank; j++) {
 			Dimension<?> consensus = null;
@@ -1617,7 +1618,8 @@ public class Function {
 			else if (consensus instanceof DynamicDim)
 				shape.add(new SymbolicDim("?"));
 			else if (consensus instanceof RaggedDim)
-				// TODO(#524): once `RaggedTensorSpec` emission lands, route ragged dims there instead of collapsing.
+				// TODO(https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524): once `RaggedTensorSpec` emission lands,
+				// route ragged dims there instead of collapsing.
 				shape.add(new SymbolicDim("?"));
 			else
 				shape.add(new SymbolicDim("?"));
