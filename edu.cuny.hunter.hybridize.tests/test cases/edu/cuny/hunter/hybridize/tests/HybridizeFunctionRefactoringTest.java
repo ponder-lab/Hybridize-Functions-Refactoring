@@ -613,7 +613,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 				// Run the Python test file.
 				rc = runPython(path);
-				LOG.info("Running the test file was " + (rc == 0 ? "successful." : "unsuccesful."));
+				LOG.info("Running the test file was " + (rc == 0 ? "successful." : "unsuccessful."));
 				++filesRun;
 			}
 
@@ -769,7 +769,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					assertTrue("Source file must be valid.", validSourceFile);
 
 					rc = runPython(path);
-					LOG.info("Running the output test file was " + (rc == 0 ? "successful." : "unsuccesful."));
+					LOG.info("Running the output test file was " + (rc == 0 ? "successful." : "unsuccessful."));
 					++filesRun;
 				}
 
