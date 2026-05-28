@@ -27,10 +27,10 @@
         <configuration>
           <failIfNoTests>true</failIfNoTests>
           <providerHint>junit4</providerHint>
-          <systemPropertyVariables>
+          <systemProperties>
             <!-- Set JUL Formatting -->
             <java.util.logging.config.file>${logging.config.file}</java.util.logging.config.file>
-          </systemPropertyVariables>
+          </systemProperties>
           <explodedBundles>
             <bundle>org.junit</bundle>
           </explodedBundles>
