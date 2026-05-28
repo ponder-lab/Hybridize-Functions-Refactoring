@@ -1861,20 +1861,29 @@ public class Function {
 			prefix = ""; // no prefix needed.
 		}
 
-		// Emit `input_signature=[tf.TensorSpec(...)]` when the flag is set, the inference produced a signature, and the prefix is
-		// non-empty (so `TensorSpec` and the dtype constants are reachable). The empty-prefix case (from `from tensorflow import
-		// function`) skips emission: `TensorSpec` isn't imported in that form, and adding the import is non-trivial.
-		final String tfPrefix = prefix;
-		String decoratorSuffix = this.getInferInputSignatures() && !tfPrefix.isEmpty()
-				? this.inferInputSignature().map(sig -> "(input_signature=" + sig.toTensorSpecList(tfPrefix) + ")").orElse("")
-				: "";
-
+		String decoratorSuffix = this.computeInputSignatureKeyword(prefix).map(kw -> "(" + kw + ")").orElse("");
 		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function" + decoratorSuffix + "\n" + precedingText);
 		MultiTextEdit mte = new MultiTextEdit();
 		mte.addChild(edit);
 		ret.add(mte);
 
 		return ret;
+	}
+
+	/**
+	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument to inject into the {@code @tf.function(...)}
+	 * decorator call when the flag is on and the inference produces a signature. Returns {@link Optional#empty} otherwise (flag off, no
+	 * signature, or the empty-prefix case where {@code TensorSpec} isn't reachable). Shared by {@link #convertToHybrid()} (which wraps the
+	 * keyword in parentheses to form the bare decorator's argument list) and the {@code RECONFIGURE} case (which injects the keyword into
+	 * an existing decorator's argument list).
+	 *
+	 * @param tfPrefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
+	 * @return The {@code input_signature=...} keyword argument, or empty.
+	 */
+	private Optional<String> computeInputSignatureKeyword(String tfPrefix) {
+		if (!this.getInferInputSignatures() || tfPrefix.isEmpty())
+			return Optional.empty();
+		return this.inferInputSignature().map(sig -> "input_signature=" + sig.toTensorSpecList(tfPrefix));
 	}
 
 	private static int getLineToInsertImport(IDocument doc) {
