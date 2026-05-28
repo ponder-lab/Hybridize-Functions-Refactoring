@@ -1861,21 +1861,20 @@ public class Function {
 			prefix = ""; // no prefix needed.
 		}
 
-		String decoratorSuffix = this.computeInputSignatureKeyword(prefix).map(kw -> "(" + kw + ")").orElse("");
-		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function" + decoratorSuffix + "\n" + precedingText);
 		MultiTextEdit mte = new MultiTextEdit();
-		mte.addChild(edit);
+		mte.addChild(new InsertEdit(offset, "@" + prefix + "function"));
+		this.addInputSignature(offset, prefix).ifPresent(mte::addChild);
+		mte.addChild(new InsertEdit(offset, "\n" + precedingText));
 		ret.add(mte);
 
 		return ret;
 	}
 
 	/**
-	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument to inject into the {@code @tf.function(...)}
-	 * decorator call when the flag is on and the inference produces a signature. Returns {@link Optional#empty} otherwise (flag off, no
-	 * signature, or the empty-prefix case where {@code TensorSpec} isn't reachable). Shared by {@link #convertToHybrid()} (which wraps the
-	 * keyword in parentheses to form the bare decorator's argument list) and the {@code RECONFIGURE} case (which injects the keyword into
-	 * an existing decorator's argument list).
+	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
+	 * produces a signature. Returns {@link Optional#empty} otherwise (flag off, no signature, or the empty-prefix case where
+	 * {@code TensorSpec} isn't reachable). The keyword text only; callers handle the surrounding syntax (parenthesization via
+	 * {@link #addInputSignature(int, String)}, or a leading {@code ", "} when injecting into an existing arg list).
 	 *
 	 * @param tfPrefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
 	 * @return The {@code input_signature=...} keyword argument, or empty.
@@ -1884,6 +1883,22 @@ public class Function {
 		if (!this.getInferInputSignatures() || tfPrefix.isEmpty())
 			return Optional.empty();
 		return this.inferInputSignature().map(sig -> "input_signature=" + sig.toTensorSpecList(tfPrefix));
+	}
+
+	/**
+	 * Returns an {@code InsertEdit} placing the parenthesized {@code (input_signature=[tf.TensorSpec(...)])} argument list at the given
+	 * offset, or empty if {@link #computeInputSignatureKeyword(String)}'s gate fails. Used for the fresh-decorator and argless-existing-
+	 * decorator cases (the latter is a Phase 3 {@code RECONFIGURE} sub-case). For injecting into an existing non-empty argument list, use
+	 * {@link #computeInputSignatureKeyword(String)} directly with a leading {@code ", "}.
+	 *
+	 * @param offset The original-document offset where the edit should land. {@link #convertToHybrid()} passes the same offset it uses for
+	 *        the surrounding {@code @function} insertion (multiple {@code InsertEdit}s at the same offset are sequenced by their order of
+	 *        addition to the parent {@link MultiTextEdit}). The {@code RECONFIGURE} caller will pass an AST-derived offset.
+	 * @param tfPrefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}).
+	 * @return The {@code InsertEdit}, or empty if the gate fails.
+	 */
+	private Optional<TextEdit> addInputSignature(int offset, String tfPrefix) {
+		return this.computeInputSignatureKeyword(tfPrefix).map(kw -> new InsertEdit(offset, "(" + kw + ")"));
 	}
 
 	private static int getLineToInsertImport(IDocument doc) {
