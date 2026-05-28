@@ -1218,6 +1218,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		f.setInferInputSignatures(true);
 
+		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path
+		// (which runs `refactoring.createChange(...)` + `performChange(...)` and `assertEqualLines` against `out/A.py`)
+		// would do the same comparison via the existing infrastructure, but it currently throws
+		// `TextFileChange has not been initialialized`—tracked at #359. When that lands, this test can collapse to
+		// setting the existing flag instead of applying edits inline.
 		IDocument doc = f.getContainingDocument();
 		for (TextEdit edit : f.transform())
 			edit.apply(doc);
