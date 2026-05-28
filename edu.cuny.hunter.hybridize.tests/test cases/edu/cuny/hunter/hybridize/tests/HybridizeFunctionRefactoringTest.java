@@ -699,13 +699,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		else
 			assertFalse(status.isOK());
 
-		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
+		// NOTE: `compareOutputTestFile` is the existing infra for asserting refactored output against `out/A.py`. The first layer of
+		// #359 (missing `initializeValidationData(...)` before `performChange(...)`) is fixed here; the URI-resolution layer
+		// (`ResourceStub`-backed `IFile`s) remains open at
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
 		if (this.getCompareOutputTestFile()) {
 			// check if there's an expected output.
 			File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
 
 			if (outputTestFile.exists()) {
 				Change change = refactoring.createChange(new NullProgressMonitor());
+				change.initializeValidationData(new NullProgressMonitor());
 				this.performChange(change);
 
 				String expected = this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
