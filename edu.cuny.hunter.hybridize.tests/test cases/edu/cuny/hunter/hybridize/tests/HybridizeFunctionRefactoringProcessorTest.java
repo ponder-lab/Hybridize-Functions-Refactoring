@@ -9,9 +9,8 @@ import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringP
 
 /**
  * Tests for the {@code inferInputSignatures} flag API on {@link HybridizeFunctionRefactoringProcessor}: the 8-arg no-{@code Set}
- * constructor, the {@link HybridizeFunctionRefactoringProcessor#getInferInputSignatures()} accessor, and the propagating
- * {@link HybridizeFunctionRefactoringProcessor#setInferInputSignatures(boolean)} mutator (the API surface that issue 481's UI checkbox /
- * eval wiring will call).
+ * constructor and the {@link HybridizeFunctionRefactoringProcessor#getInferInputSignatures()} accessor (the API surface that issue 481's UI
+ * checkbox / eval wiring will call).
  *
  * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481">Issue 481</a>
  * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
@@ -36,21 +35,6 @@ public class HybridizeFunctionRefactoringProcessorTest {
 	public void testSevenArgOverloadDefaultsToFalse() {
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(false, false, false, true, false, false,
 				false);
-		assertFalse(processor.getInferInputSignatures());
-	}
-
-	/**
-	 * Setter flips the value and the accessor reflects it. The propagation loop runs over an empty function set without throwing—exercises
-	 * the loop's no-iteration branch.
-	 */
-	@Test
-	public void testSetterFlipsValue() {
-		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(false, false, false, true, false, false,
-				false);
-		assertFalse(processor.getInferInputSignatures());
-		processor.setInferInputSignatures(true);
-		assertTrue(processor.getInferInputSignatures());
-		processor.setInferInputSignatures(false);
 		assertFalse(processor.getInferInputSignatures());
 	}
 }

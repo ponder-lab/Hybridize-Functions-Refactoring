@@ -1035,15 +1035,6 @@ public class Function {
 		return this.inferInputSignatures;
 	}
 
-	/**
-	 * Sets whether the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
-	 *
-	 * @param inferInputSignatures True iff the inferred {@code input_signature} keyword should be emitted into the generated decorator.
-	 */
-	public void setInferInputSignatures(boolean inferInputSignatures) {
-		this.inferInputSignatures = inferInputSignatures;
-	}
-
 	public IDocument getContainingDocument() {
 		return this.getFunctionDefinition().containingDocument;
 	}

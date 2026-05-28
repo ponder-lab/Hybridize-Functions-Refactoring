@@ -616,18 +616,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return this.inferInputSignatures;
 	}
 
-	/**
-	 * Sets whether the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator. Propagates to
-	 * every already-constructed {@link Function} owned by this processor so subsequent {@code transform()} calls observe the value.
-	 *
-	 * @param inferInputSignatures True iff the inferred {@code input_signature} keyword should be emitted into the generated decorator.
-	 */
-	public void setInferInputSignatures(boolean inferInputSignatures) {
-		this.inferInputSignatures = inferInputSignatures;
-		for (Function function : this.functions)
-			function.setInferInputSignatures(inferInputSignatures);
-	}
-
 	public Set<Function> getOptimizableFunctions() {
 		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).collect(Collectors.toSet());
 	}

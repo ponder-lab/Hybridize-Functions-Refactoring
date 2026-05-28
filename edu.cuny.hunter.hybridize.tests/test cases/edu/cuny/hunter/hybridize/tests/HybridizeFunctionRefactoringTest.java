@@ -162,14 +162,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
 
 	/**
-	 * The {@link HybridizeFunctionRefactoringProcessor} most recently constructed by {@link #getFunctions(String)}. Test methods that need
-	 * to invoke the processor's API (e.g., to exercise the propagating
-	 * {@link HybridizeFunctionRefactoringProcessor#setInferInputSignatures(boolean)} setter through the analyzed function set) read this
-	 * after calling {@code getFunctions}.
-	 */
-	private HybridizeFunctionRefactoringProcessor lastProcessor;
-
-	/**
 	 * The {@link PythonNature} to be used for the tests.
 	 */
 	private static PythonNature nature = new PythonNature() {
@@ -207,6 +199,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean ALWAYS_FOLLOW_TYPE_HINTS = true;
 
 	private static final boolean USE_SPECULATIVE_ANALYSIS = true;
+
+	private static final boolean INFER_INPUT_SIGNATURES = true;
 
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
@@ -698,8 +692,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
-				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS);
-		this.lastProcessor = processor;
+				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, INFER_INPUT_SIGNATURES);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1210,9 +1203,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test that {@code convertToHybrid} emits an inferred {@code input_signature=[tf.TensorSpec(...)]} keyword into the generated
-	 * {@code @tf.function(...)} decorator when {@link Function#setInferInputSignatures(boolean)} flips the flag on. Phase 2 of #563: the
-	 * formatter from #564 plus the wired-through flag on {@link Function} and {@code HybridizeFunctionRefactoringProcessor}. The
-	 * user-facing/eval-facing gating that flips the flag in production wiring is tracked at #481.
+	 * {@code @tf.function(...)} decorator. Phase 2 of #563: the formatter from #564 plus the wired-through flag on {@link Function} and
+	 * {@code HybridizeFunctionRefactoringProcessor}. The user-facing/eval-facing gating that flips the flag in production wiring is tracked
+	 * at #481.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
@@ -1224,16 +1217,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
 		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
 				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-
-		// Route through the processor's propagating setter rather than the per-`Function` setter so the propagation loop body in
-		// `HybridizeFunctionRefactoringProcessor.setInferInputSignatures` is exercised.
-		this.lastProcessor.setInferInputSignatures(true);
-		assertTrue("Processor's propagating setter should flip the analyzed function's flag.", f.getInferInputSignatures());
+		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
+				f.getInferInputSignatures());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
-		// `TextFileBufferManager`. Tracked at #359. When that lands, this test can collapse to setting `compareOutputTestFile` and
-		// an `inferInputSignatures` test-class field instead of applying edits inline.
+		// `TextFileBufferManager`. Tracked at #359. When that lands, this test can collapse to setting `compareOutputTestFile`.
 		IDocument doc = f.getContainingDocument();
 		for (TextEdit edit : f.transform())
 			edit.apply(doc);
@@ -1258,9 +1247,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
 		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
 				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-
-		this.lastProcessor.setInferInputSignatures(true);
-		assertTrue("Processor's propagating setter should flip the analyzed function's flag.", f.getInferInputSignatures());
+		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
+				f.getInferInputSignatures());
 
 		IDocument doc = f.getContainingDocument();
 		for (TextEdit edit : f.transform())
