@@ -162,6 +162,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringTest.class);
 
 	/**
+	 * The {@link HybridizeFunctionRefactoringProcessor} most recently constructed by {@link #getFunctions(String)}. Test methods that need
+	 * to invoke the processor's API (e.g., to exercise the propagating
+	 * {@link HybridizeFunctionRefactoringProcessor#setInferInputSignatures(boolean)} setter through the analyzed function set) read this
+	 * after calling {@code getFunctions}.
+	 */
+	private HybridizeFunctionRefactoringProcessor lastProcessor;
+
+	/**
 	 * The {@link PythonNature} to be used for the tests.
 	 */
 	private static PythonNature nature = new PythonNature() {
@@ -691,6 +699,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS);
+		this.lastProcessor = processor;
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1216,12 +1225,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
 				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 
-		f.setInferInputSignatures(true);
+		// Route through the processor's propagating setter rather than the per-`Function` setter so the propagation loop body in
+		// `HybridizeFunctionRefactoringProcessor.setInferInputSignatures` is exercised.
+		this.lastProcessor.setInferInputSignatures(true);
+		assertTrue("Processor's propagating setter should flip the analyzed function's flag.", f.getInferInputSignatures());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
 		// `TextFileBufferManager`. Tracked at #359. When that lands, this test can collapse to setting `compareOutputTestFile` and
 		// an `inferInputSignatures` test-class field instead of applying edits inline.
+		IDocument doc = f.getContainingDocument();
+		for (TextEdit edit : f.transform())
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
+	}
+
+	/**
+	 * Wildcard-import variant of {@link #testInferInputSignatureEmission()}. With {@code from tensorflow import *}, both {@code function}
+	 * and {@code TensorSpec} (plus the dtype constants) are reachable unqualified. The source-write should distinguish this empty-prefix
+	 * shape from the {@code from tensorflow import function} shape and emit an unqualified
+	 * {@code @function(input_signature=[TensorSpec(shape=(), dtype=float32)])} rather than skipping emission.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionWildcardImport() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		this.lastProcessor.setInferInputSignatures(true);
+		assertTrue("Processor's propagating setter should flip the analyzed function's flag.", f.getInferInputSignatures());
+
 		IDocument doc = f.getContainingDocument();
 		for (TextEdit edit : f.transform())
 			edit.apply(doc);
