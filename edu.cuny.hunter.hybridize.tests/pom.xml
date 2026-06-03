@@ -27,10 +27,14 @@
         <configuration>
           <failIfNoTests>true</failIfNoTests>
           <providerHint>junit4</providerHint>
-          <systemPropertyVariables>
+          <systemProperties>
             <!-- Set JUL Formatting -->
             <java.util.logging.config.file>${logging.config.file}</java.util.logging.config.file>
-          </systemPropertyVariables>
+            <!-- Forward the test-harness flags from CLI -D properties to the forked test JVM so they're observable via Boolean.getBoolean(...). -->
+            <edu.cuny.hunter.hybridize.tests.runInput>${edu.cuny.hunter.hybridize.tests.runInput}</edu.cuny.hunter.hybridize.tests.runInput>
+            <edu.cuny.hunter.hybridize.tests.runOutput>${edu.cuny.hunter.hybridize.tests.runOutput}</edu.cuny.hunter.hybridize.tests.runOutput>
+            <edu.cuny.hunter.hybridize.tests.compareOutput>${edu.cuny.hunter.hybridize.tests.compareOutput}</edu.cuny.hunter.hybridize.tests.compareOutput>
+          </systemProperties>
           <explodedBundles>
             <bundle>org.junit</bundle>
           </explodedBundles>

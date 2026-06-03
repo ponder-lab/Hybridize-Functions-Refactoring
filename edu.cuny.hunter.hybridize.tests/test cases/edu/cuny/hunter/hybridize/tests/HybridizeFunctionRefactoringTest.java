@@ -210,6 +210,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final String RUN_INPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runInput";
 
+	private static final String RUN_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.runOutput";
+
 	private static final String COMPARE_OUTPUT_TEST_FILE_KEY = "edu.cuny.hunter.hybridize.tests.compareOutput";
 
 	/**
@@ -517,6 +519,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected boolean runInputTestFile = Boolean.getBoolean(RUN_INPUT_TEST_FILE_KEY);
 
 	/**
+	 * True iff the output test Python file should be executed. Verifies the refactoring tool's "valid Python in, valid Python out" contract
+	 * by running the expected {@code out/A.py} fixture.
+	 */
+	protected boolean runOutputTestFile = Boolean.getBoolean(RUN_OUTPUT_TEST_FILE_KEY);
+
+	/**
 	 * True iff the output test Python file should be compared.
 	 */
 	protected boolean compareOutputTestFile = Boolean.getBoolean(COMPARE_OUTPUT_TEST_FILE_KEY);
@@ -546,6 +554,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public boolean getRunInputTestFile() {
 		return this.runInputTestFile;
+	}
+
+	/**
+	 * Returns whether the output test Python file should be executed under {@code python3.10} after analysis. Verifies the refactoring
+	 * tool's "valid Python in, valid Python out" contract on the expected {@code out/A.py} fixture.
+	 *
+	 * @return True iff the output test Python file should be executed.
+	 */
+	public boolean getRunOutputTestFile() {
+		return this.runOutputTestFile;
 	}
 
 	/**
@@ -598,7 +616,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 				// Run the Python test file.
 				rc = runPython(path);
-				LOG.info("Running the test file was " + (rc == 0 ? "successful." : "unsuccesful."));
+				LOG.info("Running the test file was " + (rc == 0 ? "successful." : "unsuccessful."));
 				++filesRun;
 			}
 
@@ -703,18 +721,62 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		else
 			assertFalse(status.isOK());
 
-		// NOTE: Fix https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359 first.
+		// NOTE: `compareOutputTestFile` is the existing infra for asserting refactored output against `out/A.py`. The first layer of
+		// #359 (missing `initializeValidationData(...)` before `performChange(...)`) is fixed here; the URI-resolution layer
+		// (`ResourceStub`-backed `IFile`s) remains open at
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/359.
 		if (this.getCompareOutputTestFile()) {
 			// check if there's an expected output.
 			File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
 
 			if (outputTestFile.exists()) {
 				Change change = refactoring.createChange(new NullProgressMonitor());
+				change.initializeValidationData(new NullProgressMonitor());
 				this.performChange(change);
 
 				String expected = this.getFileContents(this.getOutputTestFileName(fileNameWithoutExtension));
 				String actual = document.get();
 				assertEqualLines(expected, actual);
+			}
+		}
+
+		// Symmetric to the `runInputTestFile` block in `genericbefore`: when on, execute the expected `out/A.py` under `python3.10` to
+		// verify the fixture represents a valid Python program. Catches a class of regressions where the expected output diverges from
+		// runnable syntax (e.g., a hand-authored decorator with a typo). The stronger "run the actually-produced source" property
+		// requires the `compareOutputTestFile` path's URI-resolution layer (#359); see
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/576.
+		if (this.getRunOutputTestFile()) {
+			File outputTestFile = this.getOutputTestFile(fileNameWithoutExtension);
+
+			if (outputTestFile.exists()) {
+				LOG.info("Running output test file(s).");
+
+				Path outputTestFileAbsolutePath = getAbsolutePath(this.getOutputTestFileName(fileNameWithoutExtension));
+				Path outputTestFileDirectoryAbsolutePath = outputTestFileAbsolutePath.getParent();
+				// Requirements live alongside the input fixture (`in/requirements.txt`); the output directory shares the same Python
+				// environment.
+				Path inputTestFileDirectoryAbsolutePath = getAbsolutePath(this.getInputTestFileName(fileNameWithoutExtension)).getParent();
+
+				int rc = installRequirements(inputTestFileDirectoryAbsolutePath);
+				LOG.info("Installing requirements was " + (rc == 0 ? "successful." : "unsuccessful."));
+
+				int filesRun = 0;
+				Set<Path> pythonFilesInOutputDirectory;
+				try (var stream = Files.find(outputTestFileDirectoryAbsolutePath, MAX_VALUE,
+						(path, attr) -> path.toFile().getName().endsWith(".py"), FOLLOW_LINKS)) {
+					pythonFilesInOutputDirectory = stream.collect(toSet());
+				}
+
+				for (Path path : pythonFilesInOutputDirectory) {
+					boolean validSourceFile = PythonPathHelper.isValidSourceFile(path.toString());
+					assertTrue("Source file must be valid.", validSourceFile);
+
+					rc = runPython(path);
+					LOG.info("Running the output test file was " + (rc == 0 ? "successful." : "unsuccessful."));
+					++filesRun;
+				}
+
+				assertTrue("Must have executed at least A.py.", filesRun > 0);
 			}
 		}
 
