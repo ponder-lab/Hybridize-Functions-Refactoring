@@ -605,6 +605,13 @@ public class Function {
 	private boolean useSpeculativeAnalysis;
 
 	/**
+	 * True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	private boolean inferInputSignatures;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -666,10 +673,16 @@ public class Function {
 	private final List<Parameter> parameters;
 
 	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis) {
+		this(fd, ignoreBooleans, alwaysFollowTypeHints, useSpeculativeAnalysis, false);
+	}
+
+	public Function(FunctionDefinition fd, boolean ignoreBooleans, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis,
+			boolean inferInputSignatures) {
 		this.functionDefinition = fd;
 		this.ignoreBooleans = ignoreBooleans;
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 		this.useSpeculativeAnalysis = useSpeculativeAnalysis;
+		this.inferInputSignatures = inferInputSignatures;
 
 		// Jython's `argumentsType` is the whole parameter-list node; its `.args` field is the positional/positional-or-keyword name array.
 		// `vararg`, `kwarg`, and `kwonlyargs` are sibling fields on the same node that we don't currently wrap.
@@ -1010,6 +1023,16 @@ public class Function {
 	 */
 	public boolean getUseSpeculativeAnalysis() {
 		return useSpeculativeAnalysis;
+	}
+
+	/**
+	 * Returns true iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
+	 *
+	 * @return True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	public boolean getInferInputSignatures() {
+		return this.inferInputSignatures;
 	}
 
 	public IDocument getContainingDocument() {
@@ -1809,9 +1832,9 @@ public class Function {
 
 		String precedingText = doc.get(lineBeginOffset, functionDef.beginColumn - 1);
 
-		String prefix = getImportPrefix(doc);
+		ImportContext ctx = getImportContext(doc);
 
-		if (prefix == null) {
+		if (ctx == null) {
 			// need to add an import if it doesn't already exist.
 			File file = this.getContainingFile();
 
@@ -1826,15 +1849,62 @@ public class Function {
 				filesWithAddedImport.add(file);
 			}
 
-			prefix = ""; // no prefix needed.
+			// The auto-injected `from tensorflow import function` makes only `function` reachable; `TensorSpec` is not. Extending
+			// the auto-inject to cover the signature's required symbols is tracked separately.
+			ctx = new ImportContext("", false);
 		}
 
-		TextEdit edit = new InsertEdit(offset, "@" + prefix + "function\n" + precedingText);
 		MultiTextEdit mte = new MultiTextEdit();
-		mte.addChild(edit);
+		mte.addChild(new InsertEdit(offset, "@" + ctx.prefix() + "function"));
+		this.addInputSignature(offset, ctx).ifPresent(mte::addChild);
+		mte.addChild(new InsertEdit(offset, "\n" + precedingText));
 		ret.add(mte);
 
 		return ret;
+	}
+
+	/**
+	 * The TensorFlow import shape observed in a Python source file, carrying both the prefix to use when referring to TensorFlow names and
+	 * whether {@code TensorSpec} is reachable in the file's namespace. The two empty-prefix shapes ({@code from tensorflow import *} and
+	 * {@code from tensorflow import function}) differ on the latter: the wildcard form pulls all public names into scope (including
+	 * {@code TensorSpec}), while the named-import form does not.
+	 *
+	 * @param prefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
+	 * @param tensorSpecReachable True iff {@code TensorSpec} (and the dtype constants like {@code float32}) can be referenced from the file
+	 *        using the {@code prefix}, without an additional import.
+	 */
+	private record ImportContext(String prefix, boolean tensorSpecReachable) {
+	}
+
+	/**
+	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
+	 * produces a signature. Returns {@link Optional#empty} otherwise (flag off, no signature, or {@code TensorSpec} not reachable in the
+	 * import context). The keyword text only; callers handle the surrounding syntax (parenthesization via
+	 * {@link #addInputSignature(int, ImportContext)}, or a leading {@code ", "} when injecting into an existing arg list).
+	 *
+	 * @param ctx The import context for the containing file.
+	 * @return The {@code input_signature=...} keyword argument, or empty.
+	 */
+	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
+		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
+			return Optional.empty();
+		return this.inferInputSignature().map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
+	}
+
+	/**
+	 * Returns an {@code InsertEdit} placing the parenthesized {@code (input_signature=[tf.TensorSpec(...)])} argument list at the given
+	 * offset, or empty if {@link #computeInputSignatureKeyword(ImportContext)}'s gate fails. Used for the fresh-decorator and
+	 * argless-existing-decorator cases (the latter is a Phase 3 {@code RECONFIGURE} sub-case). For injecting into an existing non-empty
+	 * argument list, use {@link #computeInputSignatureKeyword(ImportContext)} directly with a leading {@code ", "}.
+	 *
+	 * @param offset The original-document offset where the edit should land. {@link #convertToHybrid()} passes the same offset it uses for
+	 *        the surrounding {@code @function} insertion (multiple {@code InsertEdit}s at the same offset are sequenced by their order of
+	 *        addition to the parent {@link MultiTextEdit}). The {@code RECONFIGURE} caller will pass an AST-derived offset.
+	 * @param ctx The import context for the containing file.
+	 * @return The {@code InsertEdit}, or empty if the gate fails.
+	 */
+	private Optional<TextEdit> addInputSignature(int offset, ImportContext ctx) {
+		return this.computeInputSignatureKeyword(ctx).map(kw -> new InsertEdit(offset, "(" + kw + ")"));
 	}
 
 	private static int getLineToInsertImport(IDocument doc) {
@@ -1849,23 +1919,24 @@ public class Function {
 		return lastFoundImportLine + 1;
 	}
 
-	private static String getImportPrefix(IDocument doc) {
+	private static ImportContext getImportContext(IDocument doc) {
 		PyImportsHandling handling = new PyImportsHandling(doc);
 
 		for (ImportHandle importHandle : handling)
 			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo())
 				for (String importStr : importHandleInfo.getImportedStr())
 					if (importStr.equals("tensorflow"))
-						return "tensorflow.";
+						return new ImportContext("tensorflow.", true);
 					else if (importStr.startsWith("tensorflow as"))
-						return importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
+						return new ImportContext(importStr.substring("tensorflow as ".length(), importStr.length()) + ".", true);
 					else {
 						String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
 						if (fromImportStr != null && fromImportStr.equals("tensorflow"))
 							switch (importStr) {
-							case "*": // wild card import.
-							case "function": // direct import.
-								return ""; // no prefix needed.
+							case "*": // wildcard: TensorSpec and dtype constants are reachable unqualified.
+								return new ImportContext("", true);
+							case "function": // direct named import of `function` only; TensorSpec is not in scope.
+								return new ImportContext("", false);
 							}
 					}
 

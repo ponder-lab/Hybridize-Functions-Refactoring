@@ -1,0 +1,12 @@
+# Fully-qualified-import variant of `testInferInputSignatureEmission`. Bare `import tensorflow` (no `as` alias) means the
+# source-write must qualify every emitted name with the `tensorflow.` prefix, producing
+# `@tensorflow.function(input_signature=[tensorflow.TensorSpec(shape=(), dtype=tensorflow.float32)])`.
+import tensorflow
+
+
+def f(x):
+    return x + 1
+
+
+if __name__ == "__main__":
+    f(tensorflow.constant(2.0))

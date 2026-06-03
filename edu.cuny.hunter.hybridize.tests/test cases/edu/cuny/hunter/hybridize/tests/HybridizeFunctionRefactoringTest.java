@@ -78,6 +78,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringCore;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
+import org.eclipse.text.edits.TextEdit;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -198,6 +199,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static final boolean ALWAYS_FOLLOW_TYPE_HINTS = true;
 
 	private static final boolean USE_SPECULATIVE_ANALYSIS = true;
+
+	private static final boolean INFER_INPUT_SIGNATURES = true;
 
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
@@ -707,7 +710,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
-				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS);
+				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, INFER_INPUT_SIGNATURES);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1258,6 +1261,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		boolean warnFired = captured.stream().anyMatch(s -> s.getSeverity() == IStatus.WARNING
 				&& "Unknown @tf.function argument: experimental_attributes on func().".equals(s.getMessage()));
 		assertTrue("Expected WARN log for unknown kwarg `experimental_attributes`.", warnFired);
+	}
+
+	/**
+	 * Test that {@code convertToHybrid} emits an inferred {@code input_signature=[tf.TensorSpec(...)]} keyword into the generated
+	 * {@code @tf.function(...)} decorator. Phase 2 of #563: the formatter from #564 plus the wired-through flag on {@link Function} and
+	 * {@code HybridizeFunctionRefactoringProcessor}. The harness enables the flag via the {@code INFER_INPUT_SIGNATURES} constant; the
+	 * user-facing/eval-facing gating in production wiring is tracked at #481.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmission() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Wildcard-import variant of {@link #testInferInputSignatureEmission()}. With {@code from tensorflow import *}, both {@code function}
+	 * and {@code TensorSpec} (plus the dtype constants) are reachable unqualified. The source-write should distinguish this empty-prefix
+	 * shape from the {@code from tensorflow import function} shape and emit an unqualified
+	 * {@code @function(input_signature=[TensorSpec(shape=(), dtype=float32)])} rather than skipping emission.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionWildcardImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Named-import variant of {@link #testInferInputSignatureEmission()}. With {@code from tensorflow import function, constant},
+	 * {@code function} is reachable but {@code TensorSpec} is not. Even though analysis classifies {@code x} as a tensor and
+	 * {@code inferInputSignature} would produce a signature, the source-write must skip the {@code input_signature=...} argument because
+	 * {@code TensorSpec} is not in scope under this import shape, emitting a bare {@code @function}. Exercises the
+	 * {@code tensorSpecReachable == false} gate that distinguishes the named-import shape from the wildcard shape.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionNamedImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Fully-qualified-import variant of {@link #testInferInputSignatureEmission()}. With bare {@code import tensorflow} (no {@code as}
+	 * alias), the source-write must qualify every emitted name with the {@code tensorflow.} prefix, producing
+	 * {@code @tensorflow.function(input_signature=[tensorflow.TensorSpec(shape=(), dtype=tensorflow.float32)])}. Exercises the
+	 * {@code import tensorflow} branch of the import-context detection and the non-empty-prefix path of
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InputSignature#toTensorSpecList(String)}. The emitted decorator line exceeds black's
+	 * 88-column limit, so the expected {@code out/A.py} is intentionally a single unwrapped line matching the tool's output; the pre-commit
+	 * black hook is configured to skip {@code out/} fixtures.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionFullyQualifiedImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
+	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
+	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
+	 */
+	private void helperAssertInputSignatureEmission() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
+				f.getInferInputSignatures());
+
+		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
+		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
+		// `TextFileBufferManager`. Tracked at #359. When that lands, these tests can collapse to setting `compareOutputTestFile`.
+		IDocument doc = f.getContainingDocument();
+
+		for (TextEdit edit : f.transform())
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
 	}
 
 	/**
