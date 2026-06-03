@@ -1259,6 +1259,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Named-import variant of {@link #testInferInputSignatureEmission()}. With {@code from tensorflow import function, constant},
+	 * {@code function} is reachable but {@code TensorSpec} is not. Even though analysis classifies {@code x} as a tensor and
+	 * {@code inferInputSignature} would produce a signature, the source-write must skip the {@code input_signature=...} argument because
+	 * {@code TensorSpec} is not in scope under this import shape, emitting a bare {@code @function}. Exercises the
+	 * {@code tensorSpecReachable == false} gate that distinguishes the named-import shape from the wildcard shape.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionNamedImport() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
+				f.getInferInputSignatures());
+
+		IDocument doc = f.getContainingDocument();
+		for (TextEdit edit : f.transform())
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
