@@ -3,14 +3,14 @@ repos:
     rev: 26.3.1
     hooks:
       - id: black
-        args: ["--fast", "--extend-exclude", "/out"]
-        # `--extend-exclude` only applies during black's own directory walk
-        # (as CI's `black ... .` does). pre-commit passes staged filenames
-        # explicitly, which black formats regardless of `--extend-exclude`,
-        # so `out/` refactoring-output fixtures would get reformatted (and
-        # long emitted decorator lines rewrapped) only locally, diverging
-        # from the tool's single-line output. Filter at the pre-commit level
-        # so the hook never receives them.
+        args: ["--fast"]
+        # pre-commit passes staged filenames explicitly, and black applies its
+        # exclude patterns only during its own directory walk -- not to files
+        # passed explicitly. So black's `--extend-exclude` would not skip `out/`
+        # refactoring-output fixtures here (it does in CI's `black ... .`, which
+        # is a directory walk). Filter at the pre-commit level instead, so the
+        # hook never receives them and long emitted decorator lines (which the
+        # tool emits unwrapped) aren't rewrapped locally.
         exclude: '/out/'
   - repo: local
     hooks:
