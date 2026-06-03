@@ -1560,11 +1560,11 @@ public class Function {
 				// (a single agreed `UNKNOWN`). Shape-⊤ and symbolic-dim no longer drop here—the per-context reduction emits a coarse
 				// `TensorType(dtype, null)` or `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the reason (#510).
 				if (contexts.stream().map(TensorType::getDType).distinct().count() > 1)
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this + "` has tensor types "
-							+ "with disagreeing dtypes across call sites (|D| ≠ 1); input-signature inference is dropped.");
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
 				else
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` has dtype-⊤ (`tf.UNKNOWN`); input-signature inference is dropped pending dtype-⊤ handling (#494).");
+							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
 				blocked = true;
 				continue;
 			}
