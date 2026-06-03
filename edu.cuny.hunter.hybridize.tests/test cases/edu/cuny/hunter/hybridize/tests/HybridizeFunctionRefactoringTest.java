@@ -2548,6 +2548,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				a.getTensorTypes());
 		Optional<InputSignature> dblSig = dbl.inferInputSignature();
 		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
+
+		// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510: the `inferSpec`-side drop must surface a
+		// per-parameter INFO naming the reason, not collapse silently.
+		RefactoringStatusEntry dblEntry = dbl.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO for the `inferSpec` heterogeneous-dtype drop (#510).", dblEntry);
+		assertEquals("Status entry must be INFO severity.", INFO, dblEntry.getSeverity());
+		assertTrue("Status message must cite parameter `a`.", dblEntry.getMessage().contains("`a`"));
+		assertTrue("Status message must name the dtype-disagreement reason.", dblEntry.getMessage().contains("conflicting dtypes"));
 	}
 
 	/**
@@ -7705,6 +7713,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("Spec dims must be non-null (rank consensus).", spec.getDims());
 		assertEquals("Spec must be rank 1.", 1, spec.getDims().size());
 		assertTrue("Position 0 must be a wildcard SymbolicDim.", spec.getDims().get(0) instanceof SymbolicDim);
+	}
+
+	/**
+	 * Pinning regression for the dtype-⊤ drop and its INFO (#510), which also covers #494's dtype-⊤ singleton and #491's full-⊤ marker via
+	 * the wala/ML#539 trigger. {@code tf.constant(np.ones(..., dtype=...))} currently loses the numpy dtype (wala/ML#539), so Ariadne
+	 * infers a single full-⊤ {@code TensorType(UNKNOWN, null)} for {@code consume}'s parameter. {@code inferSpec} drops on dtype-⊤ and
+	 * {@code inferInputSignature} surfaces an INFO naming the reason. When wala/ML#539 lands and the dtype becomes concrete, this test
+	 * inverts (signature present, no drop INFO).
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/539">wala/ML#539</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/494">Issue 494</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
+	 */
+	@Test
+	public void testInputSignatureDtypeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter x = parameters.get(0);
+		assertEquals("x", x.getName());
+
+		// Pinning wala/ML#539: the numpy dtype is lost, so the only TensorType is full-⊤ (UNKNOWN dtype, null dims).
+		Set<TensorType> inferred = x.getTensorTypes();
+		assertEquals("Expected exactly one TensorType for `x`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertEquals("dtype-⊤ pending wala/ML#539.", DType.UNKNOWN, only.getDType());
+		assertNull("shape-⊤ pending wala/ML#539.", only.getDims());
+
+		Optional<InputSignature> signature = function.inferInputSignature();
+		assertFalse("dtype-⊤ must collapse the signature.", signature.isPresent());
+
+		// #510: the dtype-⊤ drop surfaces a per-parameter INFO instead of collapsing silently.
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO for the dtype-⊤ drop.", entry);
+		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
+		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
+		assertTrue("Status message must name the unknown-dtype reason.", entry.getMessage().contains("dtype cannot be determined"));
 	}
 
 	/**
