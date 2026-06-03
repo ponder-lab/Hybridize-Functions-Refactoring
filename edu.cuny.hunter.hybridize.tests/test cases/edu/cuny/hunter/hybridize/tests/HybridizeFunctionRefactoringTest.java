@@ -2548,6 +2548,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				a.getTensorTypes());
 		Optional<InputSignature> dblSig = dbl.inferInputSignature();
 		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
+
+		// #510: the `inferSpec`-side drop must surface a per-parameter INFO naming the reason, not collapse silently.
+		RefactoringStatusEntry dblEntry = dbl.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO for the `inferSpec` heterogeneous-dtype drop (#510).", dblEntry);
+		assertEquals("Status entry must be INFO severity.", INFO, dblEntry.getSeverity());
+		assertTrue("Status message must cite parameter `a`.", dblEntry.getMessage().contains("`a`"));
+		assertTrue("Status message must name the dtype-disagreement reason.", dblEntry.getMessage().contains("disagreeing dtypes"));
 	}
 
 	/**

@@ -1556,8 +1556,15 @@ public class Function {
 
 			Optional<TensorType> spec = inferSpec(contexts);
 			if (spec.isEmpty()) {
-				// Reduction returned bottom for this parameter; the whole signature collapses. Per-parameter INFO emission for the
-				// `inferSpec`-side drops (multi-context, dtype-⊤, symbolic dim) is tracked at #510.
+				// `inferSpec` reduced to bottom. Post-#480 it only drops for two reasons: heterogeneous dtype (|D| ≠ 1) or dtype-⊤
+				// (a single agreed `UNKNOWN`). Shape-⊤ and symbolic-dim no longer drop here—the per-context reduction emits a coarse
+				// `TensorType(dtype, null)` or `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the reason (#510).
+				if (contexts.stream().map(TensorType::getDType).distinct().count() > 1)
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this + "` has tensor types "
+							+ "with disagreeing dtypes across call sites (|D| ≠ 1); input-signature inference is dropped.");
+				else
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+							+ "` has dtype-⊤ (`tf.UNKNOWN`); input-signature inference is dropped pending dtype-⊤ handling (#494).");
 				blocked = true;
 				continue;
 			}
