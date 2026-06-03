@@ -4,6 +4,14 @@ repos:
     hooks:
       - id: black
         args: ["--fast", "--extend-exclude", "/out"]
+        # `--extend-exclude` only applies during black's own directory walk
+        # (as CI's `black ... .` does). pre-commit passes staged filenames
+        # explicitly, which black formats regardless of `--extend-exclude`,
+        # so `out/` refactoring-output fixtures would get reformatted (and
+        # long emitted decorator lines rewrapped) only locally, diverging
+        # from the tool's single-line output. Filter at the pre-commit level
+        # so the hook never receives them.
+        exclude: '/out/'
   - repo: local
     hooks:
       - id: spotless-apply
