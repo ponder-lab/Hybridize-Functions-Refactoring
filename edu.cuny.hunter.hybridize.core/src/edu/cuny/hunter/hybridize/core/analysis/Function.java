@@ -1556,9 +1556,13 @@ public class Function {
 
 			Optional<TensorType> spec = inferSpec(contexts);
 			if (spec.isEmpty()) {
-				// `inferSpec` reduced to bottom. Post-#480 it only drops for two reasons: heterogeneous dtype (|D| ≠ 1) or dtype-⊤
-				// (a single agreed `UNKNOWN`). Shape-⊤ and symbolic-dim no longer drop here—the per-context reduction emits a coarse
-				// `TensorType(dtype, null)` or `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the reason (#510).
+				/*
+				 * `inferSpec` reduced to bottom. With the per-context reduction
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it now drops for only two reasons:
+				 * heterogeneous dtype (|D| ≠ 1) or dtype-⊤ (a single agreed `UNKNOWN`). Shape-⊤ and symbolic-dim no longer drop here—it
+				 * emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the
+				 * reason; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
+				 */
 				if (contexts.stream().map(TensorType::getDType).distinct().count() > 1)
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");

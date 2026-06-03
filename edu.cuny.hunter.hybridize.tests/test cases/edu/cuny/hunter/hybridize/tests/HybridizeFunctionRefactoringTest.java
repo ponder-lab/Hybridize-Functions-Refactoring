@@ -2549,7 +2549,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Optional<InputSignature> dblSig = dbl.inferInputSignature();
 		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
 
-		// #510: the `inferSpec`-side drop must surface a per-parameter INFO naming the reason, not collapse silently.
+		// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510: the `inferSpec`-side drop must surface a
+		// per-parameter INFO naming the reason, not collapse silently.
 		RefactoringStatusEntry dblEntry = dbl.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO for the `inferSpec` heterogeneous-dtype drop (#510).", dblEntry);
 		assertEquals("Status entry must be INFO severity.", INFO, dblEntry.getSeverity());
