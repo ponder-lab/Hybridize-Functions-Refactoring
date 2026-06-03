@@ -1287,6 +1287,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Fully-qualified-import variant of {@link #testInferInputSignatureEmission()}. With bare {@code import tensorflow} (no {@code as}
+	 * alias), the source-write must qualify every emitted name with the {@code tensorflow.} prefix, producing
+	 * {@code @tensorflow.function(input_signature=[tensorflow.TensorSpec(shape=(), dtype=tensorflow.float32)])}. Exercises the
+	 * {@code import tensorflow} branch of the import-context detection and the non-empty-prefix path of
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InputSignature#toTensorSpecList(String)}. The emitted decorator line exceeds black's
+	 * 88-column limit, so the expected {@code out/A.py} is intentionally a single unwrapped line matching the tool's output; the pre-commit
+	 * black hook is configured to skip {@code out/} fixtures.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/565">PR 565</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionFullyQualifiedImport() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
+				f.getInferInputSignatures());
+
+		IDocument doc = f.getContainingDocument();
+		for (TextEdit edit : f.transform())
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
+	}
+
+	/**
 	 * This simply tests whether we have the correct qualified name.
 	 */
 	@Test
