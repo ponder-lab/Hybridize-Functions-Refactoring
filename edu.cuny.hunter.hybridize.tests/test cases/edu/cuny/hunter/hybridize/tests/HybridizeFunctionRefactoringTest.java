@@ -1273,24 +1273,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testInferInputSignatureEmission() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertEquals(1, functions.size());
-		Function f = functions.iterator().next();
-		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
-		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
-				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
-				f.getInferInputSignatures());
-
-		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
-		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
-		// `TextFileBufferManager`. Tracked at #359. When that lands, this test can collapse to setting `compareOutputTestFile`.
-		IDocument doc = f.getContainingDocument();
-		for (TextEdit edit : f.transform())
-			edit.apply(doc);
-
-		String expected = this.getFileContents(this.getOutputTestFileName("A"));
-		assertEqualLines(expected, doc.get());
+		helperAssertInputSignatureEmission();
 	}
 
 	/**
@@ -1303,21 +1286,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testInferInputSignatureEmissionWildcardImport() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertEquals(1, functions.size());
-		Function f = functions.iterator().next();
-		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
-		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
-				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
-				f.getInferInputSignatures());
-
-		IDocument doc = f.getContainingDocument();
-		for (TextEdit edit : f.transform())
-			edit.apply(doc);
-
-		String expected = this.getFileContents(this.getOutputTestFileName("A"));
-		assertEqualLines(expected, doc.get());
+		helperAssertInputSignatureEmission();
 	}
 
 	/**
@@ -1331,21 +1300,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testInferInputSignatureEmissionNamedImport() throws Exception {
-		Set<Function> functions = this.getFunctions();
-		assertEquals(1, functions.size());
-		Function f = functions.iterator().next();
-		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
-		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
-				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
-				f.getInferInputSignatures());
-
-		IDocument doc = f.getContainingDocument();
-		for (TextEdit edit : f.transform())
-			edit.apply(doc);
-
-		String expected = this.getFileContents(this.getOutputTestFileName("A"));
-		assertEqualLines(expected, doc.get());
+		helperAssertInputSignatureEmission();
 	}
 
 	/**
@@ -1361,6 +1316,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testInferInputSignatureEmissionFullyQualifiedImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
+	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
+	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
+	 */
+	private void helperAssertInputSignatureEmission() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
@@ -1370,7 +1334,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
 				f.getInferInputSignatures());
 
+		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
+		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
+		// `TextFileBufferManager`. Tracked at #359. When that lands, these tests can collapse to setting `compareOutputTestFile`.
 		IDocument doc = f.getContainingDocument();
+
 		for (TextEdit edit : f.transform())
 			edit.apply(doc);
 
