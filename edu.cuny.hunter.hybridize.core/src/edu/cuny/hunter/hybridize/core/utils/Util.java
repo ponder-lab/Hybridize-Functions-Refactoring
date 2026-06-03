@@ -56,9 +56,17 @@ public class Util {
 			boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel, boolean alwaysCheckRecusion,
 			boolean useTestEntryPoints, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis)
 			throws ExecutionException, CoreException, IOException {
+		return createHybridizeFunctionRefactoring(projects, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecusion,
+				useTestEntryPoints, alwaysFollowTypeHints, useSpeculativeAnalysis, false);
+	}
+
+	public static HybridizeFunctionRefactoringProcessor createHybridizeFunctionRefactoring(IProject[] projects,
+			boolean alwaysCheckPythonSideEffects, boolean processFunctionsInParallel, boolean alwaysCheckRecusion,
+			boolean useTestEntryPoints, boolean alwaysFollowTypeHints, boolean useSpeculativeAnalysis, boolean inferInputSignatures)
+			throws ExecutionException, CoreException, IOException {
 		Set<FunctionDefinition> functionDefinitions = getFunctionDefinitions(Arrays.asList(projects));
 		return new HybridizeFunctionRefactoringProcessor(functionDefinitions, alwaysCheckPythonSideEffects, processFunctionsInParallel,
-				alwaysCheckRecusion, useTestEntryPoints, alwaysFollowTypeHints, useSpeculativeAnalysis);
+				alwaysCheckRecusion, useTestEntryPoints, alwaysFollowTypeHints, useSpeculativeAnalysis, inferInputSignatures);
 	}
 
 	public static Set<FunctionDefinition> getFunctionDefinitions(Iterable<?> iterable)

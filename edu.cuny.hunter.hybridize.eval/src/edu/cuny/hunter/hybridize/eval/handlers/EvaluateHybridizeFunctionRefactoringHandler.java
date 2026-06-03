@@ -122,6 +122,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String USE_SPECULATIVE_ANALYSIS_KEY = "edu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis";
 
+	private static final String INFER_INPUT_SIGNATURES_KEY = "edu.cuny.hunter.hybridize.eval.inferInputSignatures";
+
 	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -153,6 +155,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean useSpeculativeAnalysis = Boolean.getBoolean(USE_SPECULATIVE_ANALYSIS_KEY);
 
+	/**
+	 * True iff the refactoring should emit an inferred {@code input_signature=...} keyword into the generated {@code @tf.function}
+	 * decorator. Off by default; set via the {@code edu.cuny.hunter.hybridize.eval.inferInputSignatures} system property.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481">Issue 481</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_KEY);
+
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
@@ -169,7 +180,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				resultsHeader.add(transformation.toString());
 
 			String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "type hints", "parallel", "speculative",
-					"test entrypoints" };
+					"test entrypoints", "infer input signatures" };
 			resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 			resultsHeader.add("time (s)");
@@ -217,7 +228,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsTimeCollector.start();
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
 							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
-							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis());
+							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -316,6 +327,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// test entrypoints.
 					resultsPrinter.print(this.getUseTestEntrypoints());
+
+					// infer input signatures.
+					resultsPrinter.print(this.getInferInputSignatures());
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -583,5 +597,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getUseSpeculativeAnalysis() {
 		return this.useSpeculativeAnalysis;
+	}
+
+	public boolean getInferInputSignatures() {
+		return this.inferInputSignatures;
 	}
 }
