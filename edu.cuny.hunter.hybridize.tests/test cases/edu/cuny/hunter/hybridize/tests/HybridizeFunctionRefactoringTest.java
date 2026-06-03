@@ -1266,8 +1266,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Test that {@code convertToHybrid} emits an inferred {@code input_signature=[tf.TensorSpec(...)]} keyword into the generated
 	 * {@code @tf.function(...)} decorator. Phase 2 of #563: the formatter from #564 plus the wired-through flag on {@link Function} and
-	 * {@code HybridizeFunctionRefactoringProcessor}. The user-facing/eval-facing gating that flips the flag in production wiring is tracked
-	 * at #481.
+	 * {@code HybridizeFunctionRefactoringProcessor}. The harness enables the flag via the {@code INFER_INPUT_SIGNATURES} constant; the
+	 * user-facing/eval-facing gating in production wiring is tracked at #481.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
