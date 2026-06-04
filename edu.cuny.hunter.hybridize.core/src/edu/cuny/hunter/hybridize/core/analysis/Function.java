@@ -28,8 +28,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -351,9 +353,13 @@ public class Function {
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
 
 	/**
-	 * Containing {@link File}s that have had import statements added to them during transformation.
+	 * Containing {@link File}s that have had an import statement auto-injected during transformation, mapped to the bare TensorFlow names
+	 * that injection brought into scope (always {@code function}, plus {@code TensorSpec} and the inferred signature's dtype constants when
+	 * input-signature emission applies). The first hybridizable function in a file to need an injected import fixes the injected line;
+	 * later functions in the same file reuse the recorded name set, so their emission gate ({@link #computeInputSignatureKeyword}) sees
+	 * exactly what is in scope.
 	 */
-	private static Set<File> filesWithAddedImport = new HashSet<>();
+	private static Map<File, Set<String>> autoInjectedImportNames = new HashMap<>();
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
@@ -463,7 +469,7 @@ public class Function {
 	public static void clearCaches() {
 		creationsCache.clear();
 		Parameter.clearCaches();
-		filesWithAddedImport.clear();
+		autoInjectedImportNames.clear();
 	}
 
 	/**
@@ -1846,23 +1852,39 @@ public class Function {
 		ImportContext ctx = getImportContext(doc);
 
 		if (ctx == null) {
-			// need to add an import if it doesn't already exist.
+			// No TensorFlow import in scope: auto-inject one. The first hybridizable function in the file fixes the injected line and
+			// records which names it brings into scope; later functions in the same file reuse that record (#574).
 			File file = this.getContainingFile();
+			Set<String> injectedNames = autoInjectedImportNames.get(file);
 
-			if (!filesWithAddedImport.contains(file)) {
+			if (injectedNames == null) {
+				// `function` is always needed for the decorator. When input-signature emission applies, also bring `TensorSpec` and the
+				// signature's dtype constants into scope so the emission proceeds unqualified rather than being skipped. The dtype
+				// constants are sorted for deterministic emission; `function` and `TensorSpec` lead to match the conventional spelling.
+				Set<String> names = new LinkedHashSet<>();
+				names.add("function");
+
+				if (this.getInferInputSignatures())
+					this.inferInputSignature().ifPresent(sig -> {
+						names.add("TensorSpec");
+						sig.requiredDTypeNames().stream().sorted().forEach(names::add);
+					});
+
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
 
-				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import function\n");
+				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import " + String.join(", ", names) + "\n");
 				MultiTextEdit mte = new MultiTextEdit();
 				mte.addChild(edit);
 				ret.add(mte);
-				filesWithAddedImport.add(file);
+				autoInjectedImportNames.put(file, names);
+				injectedNames = names;
 			}
 
-			// The auto-injected `from tensorflow import function` makes only `function` reachable; `TensorSpec` is not. Extending
-			// the auto-inject to cover the signature's required symbols is tracked separately.
-			ctx = new ImportContext("", false, false, Collections.emptySet());
+			// Emission is reachable iff this function's required names are among those the injected line brought into scope; the
+			// `computeInputSignatureKeyword` gate enforces that, so a later function needing a dtype the first did not inject is
+			// safely skipped rather than emitting a `NameError`-raising decorator.
+			ctx = new ImportContext("", injectedNames.contains("TensorSpec"), false, injectedNames);
 		}
 
 		MultiTextEdit mte = new MultiTextEdit();
