@@ -1346,6 +1346,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Named-import variant where {@code TensorSpec} is in scope but the dtype constant is not (#585). With
+	 * {@code from tensorflow import function, TensorSpec, constant}, both {@code function} and {@code TensorSpec} are reachable, so the
+	 * {@code tensorSpecReachable} gate passes—but {@code inferInputSignature} produces {@code [TensorSpec(shape=(), dtype=float32)]} and
+	 * {@code float32} is not in scope. The source-write must skip emission rather than emit an unqualified {@code dtype=float32} that would
+	 * raise {@code NameError} at runtime, producing a bare {@code @function}. Exercises the dtype-reachability gate in
+	 * {@code computeInputSignatureKeyword}, distinct from the {@code TensorSpec}-not-reachable gate of
+	 * {@link #testInferInputSignatureEmissionNamedImport()}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionNamedImportMissingDType() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
 	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
 	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
 	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
