@@ -1320,8 +1320,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Bundled-import variant (#578, shape A). {@code from tensorflow import function, TensorSpec, float32} brings the decorator, the spec
-	 * type, and the dtype constant all into scope unqualified. The first imported name ({@code function}) must not short-circuit
+	 * Bundled-import variant (#578, shape A). {@code from tensorflow import function, TensorSpec, float32, constant} brings the decorator,
+	 * the spec type, and the dtype constant all into scope unqualified. The first imported name ({@code function}) must not short-circuit
 	 * {@code getImportContext} and skip emission; the source-write emits an unqualified
 	 * {@code @function(input_signature=[TensorSpec(shape=(), dtype=float32)])}.
 	 *
