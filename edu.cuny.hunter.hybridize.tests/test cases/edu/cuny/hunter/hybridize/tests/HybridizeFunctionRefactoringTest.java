@@ -591,6 +591,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return this.inferInputSignatures;
 	}
 
+	/**
+	 * Sets whether inferred input signatures should be emitted into the refactored source. The input-signature emission tests call this to
+	 * opt in (the flag is off by default suite-wide, #580).
+	 *
+	 * @param inferInputSignatures Whether inferred input signatures should be emitted.
+	 */
+	public void setInferInputSignatures(boolean inferInputSignatures) {
+		this.inferInputSignatures = inferInputSignatures;
+	}
+
 	@Override
 	public void genericafter() throws Exception {
 		// Do nothing.
@@ -1398,7 +1408,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private void helperAssertInputSignatureEmission() throws Exception {
 		// Emission is opt-in per test (off by default suite-wide; see #580). The input-signature emission tests enable it here.
-		this.inferInputSignatures = true;
+		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
