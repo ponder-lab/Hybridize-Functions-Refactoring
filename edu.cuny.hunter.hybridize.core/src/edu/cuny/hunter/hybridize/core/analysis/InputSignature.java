@@ -2,7 +2,9 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
@@ -57,12 +59,37 @@ public record InputSignature(List<TensorType> parameterTypes) {
 				shape = shapeDims.toString();
 			}
 
-			// `Locale.ROOT` so dtype identifiers stay ASCII regardless of the JVM default (Turkish locale lower-cases `I` to a
-			// non-ASCII dotless-i, which would corrupt `INT32` → `ınt32`, `STRING` → `strıng`).
-			String dtype = tfPrefix + t.getDType().name().toLowerCase(Locale.ROOT);
+			String dtype = tfPrefix + dtypeName(t);
 			specs.add(tfPrefix + "TensorSpec(shape=" + shape + ", dtype=" + dtype + ")");
 		}
 
 		return specs.toString();
+	}
+
+	/**
+	 * The set of dtype constant names this signature references (e.g., {@code "float32"}, {@code "int32"}), as the bare Python identifiers
+	 * emitted by {@link #toTensorSpecList(String)} (without any module prefix). The source-write uses this to verify each required dtype
+	 * constant is reachable under the chosen import prefix before emitting an unqualified signature: on the
+	 * {@code from tensorflow import ...} named-import path, {@code TensorSpec} being in scope does not imply the dtype constants are too,
+	 * so an unguarded emission would produce a {@code NameError}-raising decorator.
+	 *
+	 * @return The referenced dtype constant names.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
+	 */
+	public Set<String> requiredDTypeNames() {
+		return parameterTypes.stream().map(InputSignature::dtypeName).collect(Collectors.toUnmodifiableSet());
+	}
+
+	/**
+	 * The bare Python dtype constant identifier for a {@link TensorType} (e.g., {@code "float32"}), without any module prefix.
+	 * <p>
+	 * {@code Locale.ROOT} so dtype identifiers stay ASCII regardless of the JVM default (Turkish locale lower-cases {@code I} to a
+	 * non-ASCII dotless-i, which would corrupt {@code INT32} → {@code ınt32}, {@code STRING} → {@code strıng}).
+	 *
+	 * @param t The tensor type whose dtype constant name to render.
+	 * @return The lower-cased dtype constant identifier.
+	 */
+	private static String dtypeName(TensorType t) {
+		return t.getDType().name().toLowerCase(Locale.ROOT);
 	}
 }

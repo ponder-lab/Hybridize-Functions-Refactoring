@@ -1862,7 +1862,7 @@ public class Function {
 
 			// The auto-injected `from tensorflow import function` makes only `function` reachable; `TensorSpec` is not. Extending
 			// the auto-inject to cover the signature's required symbols is tracked separately.
-			ctx = new ImportContext("", false);
+			ctx = new ImportContext("", false, false, Collections.emptySet());
 		}
 
 		MultiTextEdit mte = new MultiTextEdit();
@@ -1875,31 +1875,57 @@ public class Function {
 	}
 
 	/**
-	 * The TensorFlow import shape observed in a Python source file, carrying both the prefix to use when referring to TensorFlow names and
-	 * whether {@code TensorSpec} is reachable in the file's namespace. The two empty-prefix shapes ({@code from tensorflow import *} and
-	 * {@code from tensorflow import function}) differ on the latter: the wildcard form pulls all public names into scope (including
-	 * {@code TensorSpec}), while the named-import form does not.
+	 * The TensorFlow import shape observed in a Python source file, carrying the prefix to use when referring to TensorFlow names, whether
+	 * {@code TensorSpec} is reachable in the file's namespace, and which other names are reachable under the prefix. The two empty-prefix
+	 * shapes ({@code from tensorflow import *} and {@code from tensorflow import function}) differ on the latter two: the wildcard form
+	 * pulls all public names into scope (including {@code TensorSpec} and every dtype constant), while the named-import form brings only
+	 * the explicitly listed names.
 	 *
 	 * @param prefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
-	 * @param tensorSpecReachable True iff {@code TensorSpec} (and the dtype constants like {@code float32}) can be referenced from the file
-	 *        using the {@code prefix}, without an additional import.
+	 * @param tensorSpecReachable True iff {@code TensorSpec} can be referenced from the file using the {@code prefix}, without an
+	 *        additional import.
+	 * @param allNamesReachable True iff every TensorFlow name (including all dtype constants) is reachable under the {@code prefix} without
+	 *        an additional import—the case for qualified ({@code import tensorflow [as X]}) and wildcard ({@code from tensorflow import *})
+	 *        shapes. False for the named-import shape, where only {@code namedImports} are in scope.
+	 * @param namedImports The bare names brought into scope by a {@code from tensorflow import ...} statement; consulted only when
+	 *        {@code allNamesReachable} is false.
 	 */
-	private record ImportContext(String prefix, boolean tensorSpecReachable) {
+	private record ImportContext(String prefix, boolean tensorSpecReachable, boolean allNamesReachable, Set<String> namedImports) {
+
+		/**
+		 * Whether the bare TensorFlow name {@code name} (e.g., a dtype constant like {@code "float32"}) can be referenced as
+		 * {@code prefix + name} without an additional import. Qualified and wildcard shapes ({@code allNamesReachable}) bring every name
+		 * into scope; a named {@code from tensorflow import ...} brings only the explicitly listed {@link #namedImports}.
+		 *
+		 * @param name The bare TensorFlow name to test.
+		 * @return True iff {@code name} is reachable under this import shape.
+		 */
+		boolean nameReachable(String name) {
+			return this.allNamesReachable() || this.namedImports().contains(name);
+		}
 	}
 
 	/**
 	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
-	 * produces a signature. Returns {@link Optional#empty} otherwise (flag off, no signature, or {@code TensorSpec} not reachable in the
-	 * import context). The keyword text only; callers handle the surrounding syntax (parenthesization via
-	 * {@link #addInputSignature(int, ImportContext)}, or a leading {@code ", "} when injecting into an existing arg list).
+	 * produces a signature whose names are all reachable under the import context. Returns {@link Optional#empty} otherwise (flag off, no
+	 * signature, {@code TensorSpec} not reachable, or a required dtype constant not reachable). The keyword text only; callers handle the
+	 * surrounding syntax (parenthesization via {@link #addInputSignature(int, ImportContext)}, or a leading {@code ", "} when injecting
+	 * into an existing arg list).
+	 * <p>
+	 * The dtype-reachability check guards the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does
+	 * not imply the signature's dtype constants (e.g. {@code float32}) are too, so emitting unconditionally would produce a
+	 * {@code NameError}-raising decorator. When any required dtype constant is out of scope, emission is skipped rather than qualified—the
+	 * named-import shape has no module prefix to qualify with.
 	 *
 	 * @param ctx The import context for the containing file.
 	 * @return The {@code input_signature=...} keyword argument, or empty.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
 		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
 			return Optional.empty();
-		return this.inferInputSignature().map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
+		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
+				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
 
 	/**
@@ -1937,8 +1963,7 @@ public class Function {
 		// miss a later `import tensorflow as tf` (or a `TensorSpec` in the same statement) that does make the signature emittable (#578).
 		String qualifiedPrefix = null;
 		boolean wildcard = false;
-		boolean functionImported = false;
-		boolean tensorSpecImported = false;
+		Set<String> namedImports = new HashSet<>();
 
 		for (ImportHandle importHandle : handling)
 			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo()) {
@@ -1951,29 +1976,23 @@ public class Function {
 					else if (importStr.startsWith("tensorflow as"))
 						qualifiedPrefix = importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
 					else if (fromTensorflow)
-						switch (importStr) {
-						case "*": // wildcard: TensorSpec and the dtype constants are reachable unqualified.
+						if (importStr.equals("*")) // wildcard: TensorSpec and the dtype constants are reachable unqualified.
 							wildcard = true;
-							break;
-						case "function":
-							functionImported = true;
-							break;
-						case "TensorSpec":
-							tensorSpecImported = true;
-							break;
-						}
+						else
+							// Every explicitly named symbol, so the gate can check `TensorSpec` and the signature's dtype constants.
+							namedImports.add(importStr);
 			}
 
 		// Precedence: a qualified `import tensorflow [as X]` qualifies `function`, `TensorSpec`, and the dtype constants under one
 		// prefix, so it wins over a named `from`-import that may bring only a subset into scope. A wildcard brings everything
-		// unqualified. Otherwise a named `from tensorflow import ...` makes `function` reachable unqualified, and `TensorSpec` only if
-		// it too was named.
+		// unqualified. Otherwise a named `from tensorflow import ...` makes `function` reachable unqualified, and `TensorSpec` and the
+		// dtype constants only if they too were named.
 		if (qualifiedPrefix != null)
-			return new ImportContext(qualifiedPrefix, true);
+			return new ImportContext(qualifiedPrefix, true, true, Collections.emptySet());
 		if (wildcard)
-			return new ImportContext("", true);
-		if (functionImported)
-			return new ImportContext("", tensorSpecImported);
+			return new ImportContext("", true, true, Collections.emptySet());
+		if (namedImports.contains("function"))
+			return new ImportContext("", namedImports.contains("TensorSpec"), false, namedImports);
 
 		// not found.
 		return null;
