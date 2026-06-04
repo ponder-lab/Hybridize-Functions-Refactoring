@@ -201,8 +201,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	private static final boolean USE_SPECULATIVE_ANALYSIS = true;
 
-	private static final boolean INFER_INPUT_SIGNATURES = true;
-
 	/**
 	 * Whether we should run the function processing in parallel. Running in parallel makes the logs difficult to read and doesn't offer
 	 * much in way of speedup since each test has only a few {@link Function}s.
@@ -530,6 +528,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	protected boolean compareOutputTestFile = Boolean.getBoolean(COMPARE_OUTPUT_TEST_FILE_KEY);
 
+	/**
+	 * True iff inferred input signatures should be emitted into the refactored source during {@code transform()}. Off by default so the
+	 * suite's compare-output fixtures are unaffected by emission; the input-signature emission tests opt in through
+	 * {@link #helperAssertInputSignatureEmission()}. Production gating is tracked at #481.
+	 */
+	protected boolean inferInputSignatures = false;
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -574,6 +579,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public boolean getCompareOutputTestFile() {
 		return this.compareOutputTestFile;
+	}
+
+	/**
+	 * Returns whether inferred input signatures should be emitted into the refactored source. Scoped per test (off by default) rather than
+	 * enabled suite-wide, so only the input-signature emission tests exercise emission.
+	 *
+	 * @return True iff inferred input signatures should be emitted.
+	 */
+	public boolean getInferInputSignatures() {
+		return this.inferInputSignatures;
 	}
 
 	@Override
@@ -711,7 +726,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
-				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, INFER_INPUT_SIGNATURES);
+				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1267,8 +1282,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Test that {@code convertToHybrid} emits an inferred {@code input_signature=[tf.TensorSpec(...)]} keyword into the generated
 	 * {@code @tf.function(...)} decorator. Phase 2 of #563: the formatter from #564 plus the wired-through flag on {@link Function} and
-	 * {@code HybridizeFunctionRefactoringProcessor}. The harness enables the flag via the {@code INFER_INPUT_SIGNATURES} constant; the
-	 * user-facing/eval-facing gating in production wiring is tracked at #481.
+	 * {@code HybridizeFunctionRefactoringProcessor}. The emission tests opt into the flag through
+	 * {@link #helperAssertInputSignatureEmission()} (off by default suite-wide, #580); the user-facing/eval-facing gating in production
+	 * wiring is tracked at #481.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
@@ -1381,14 +1397,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
 	 */
 	private void helperAssertInputSignatureEmission() throws Exception {
+		// Emission is opt-in per test (off by default suite-wide; see #580). The input-signature emission tests enable it here.
+		this.inferInputSignatures = true;
+
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertFalse("Fixture function `f` should be eager pre-refactoring.", f.isHybrid());
 		assertTrue("Fixture function `f` should select `CONVERT_TO_HYBRID` after analysis.",
 				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertTrue("Test-class `INFER_INPUT_SIGNATURES` constant should propagate to the analyzed function's flag.",
-				f.getInferInputSignatures());
+		assertTrue("Harness `inferInputSignatures` flag should propagate to the analyzed function's flag.", f.getInferInputSignatures());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
