@@ -7716,18 +7716,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pinning regression for the dtype-⊤ drop and its INFO (#510), which also covers #494's dtype-⊤ singleton and #491's full-⊤ marker via
-	 * the wala/ML#539 trigger. {@code tf.constant(np.ones(..., dtype=...))} currently loses the numpy dtype (wala/ML#539), so Ariadne
-	 * infers a single full-⊤ {@code TensorType(UNKNOWN, null)} for {@code consume}'s parameter. {@code inferSpec} drops on dtype-⊤ and
-	 * {@code inferInputSignature} surfaces an INFO naming the reason. When wala/ML#539 lands and the dtype becomes concrete, this test
-	 * inverts (signature present, no drop INFO).
+	 * Pins the concrete typing that wala/ML#539's fix (Ariadne 0.47.0) provides: {@code tf.constant(np.ones(..., dtype=...))} now
+	 * propagates the numpy array's shape and dtype, so {@code consume}'s parameter is inferred as a concrete
+	 * {@code TensorType(FLOAT32, (2, 3))} rather than full-⊤, and {@code inferInputSignature} produces a signature with no inferSpec-side
+	 * drop. Replaces the earlier dtype-⊤ pinning test, which the bump to 0.47.0 inverted (the fix removed the only fixture trigger for the
+	 * dtype-⊤ branch).
 	 *
 	 * @see <a href="https://github.com/wala/ML/issues/539">wala/ML#539</a>
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/494">Issue 494</a>
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
 	 */
 	@Test
-	public void testInputSignatureDtypeTop() throws Exception {
+	public void testInputSignatureNumpyConstant() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function function = functions.iterator().next();
@@ -7737,22 +7735,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter x = parameters.get(0);
 		assertEquals("x", x.getName());
 
-		// Pinning wala/ML#539: the numpy dtype is lost, so the only TensorType is full-⊤ (UNKNOWN dtype, null dims).
+		// Post wala/ML#539 (Ariadne 0.47.0): the numpy shape/dtype propagate, so `x` types as a concrete FLOAT32 (2, 3) tensor.
 		Set<TensorType> inferred = x.getTensorTypes();
 		assertEquals("Expected exactly one TensorType for `x`.", 1, inferred.size());
 		TensorType only = inferred.iterator().next();
-		assertEquals("dtype-⊤ pending wala/ML#539.", DType.UNKNOWN, only.getDType());
-		assertNull("shape-⊤ pending wala/ML#539.", only.getDims());
+		assertEquals("dtype must be concrete FLOAT32.", FLOAT32, only.getDType());
+		assertNotNull("shape must be concrete, not ⊤.", only.getDims());
+		assertEquals("Expected a rank-2 shape.", 2, only.getDims().size());
 
 		Optional<InputSignature> signature = function.inferInputSignature();
-		assertFalse("dtype-⊤ must collapse the signature.", signature.isPresent());
+		assertTrue("A concrete tensor type yields an input signature.", signature.isPresent());
+		assertEquals("[tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]", signature.get().toTensorSpecList("tf."));
 
-		// #510: the dtype-⊤ drop surfaces a per-parameter INFO instead of collapsing silently.
-		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
-		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO for the dtype-⊤ drop.", entry);
-		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
-		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
-		assertTrue("Status message must name the unknown-dtype reason.", entry.getMessage().contains("dtype cannot be determined"));
+		// No inferSpec-side drop, so no INPUT_SIGNATURE_INFERENCE drop INFO.
+		assertNull("No drop INFO when the signature is inferred.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode()));
 	}
 
 	/**
