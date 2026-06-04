@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -1362,6 +1363,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Auto-inject variant (#574). The fixture has no TensorFlow import at all, but {@code x} is tensor-typed via {@code np.ones}. The
+	 * source-write must inject a {@code from tensorflow import ...} line carrying {@code function}, {@code TensorSpec}, and the inferred
+	 * signature's dtype constant, then emit the unqualified {@code input_signature}—rather than injecting a bare
+	 * {@code from tensorflow import function} and skipping emission for lack of {@code TensorSpec}/dtype scope.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/574">Issue 574</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionAutoInjectImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
 	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
 	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
 	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
@@ -1381,7 +1395,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// `TextFileBufferManager`. Tracked at #359. When that lands, these tests can collapse to setting `compareOutputTestFile`.
 		IDocument doc = f.getContainingDocument();
 
-		for (TextEdit edit : f.transform())
+		// Apply highest-offset edits first so an inserted import (low offset) does not shift the unapplied decorator edit's anchor. In
+		// production the edits compose in one LTK change tree, which coordinates offsets; this loop applies them as independent trees.
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
 			edit.apply(doc);
 
 		String expected = this.getFileContents(this.getOutputTestFileName("A"));
