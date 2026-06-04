@@ -1933,23 +1933,47 @@ public class Function {
 	private static ImportContext getImportContext(IDocument doc) {
 		PyImportsHandling handling = new PyImportsHandling(doc);
 
+		// Full pass over every import, then decide — a single `from tensorflow import function` must not short-circuit the scan and
+		// miss a later `import tensorflow as tf` (or a `TensorSpec` in the same statement) that does make the signature emittable (#578).
+		String qualifiedPrefix = null;
+		boolean wildcard = false;
+		boolean functionImported = false;
+		boolean tensorSpecImported = false;
+
 		for (ImportHandle importHandle : handling)
-			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo())
+			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo()) {
+				String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
+				boolean fromTensorflow = fromImportStr != null && fromImportStr.equals("tensorflow");
+
 				for (String importStr : importHandleInfo.getImportedStr())
 					if (importStr.equals("tensorflow"))
-						return new ImportContext("tensorflow.", true);
+						qualifiedPrefix = "tensorflow.";
 					else if (importStr.startsWith("tensorflow as"))
-						return new ImportContext(importStr.substring("tensorflow as ".length(), importStr.length()) + ".", true);
-					else {
-						String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
-						if (fromImportStr != null && fromImportStr.equals("tensorflow"))
-							switch (importStr) {
-							case "*": // wildcard: TensorSpec and dtype constants are reachable unqualified.
-								return new ImportContext("", true);
-							case "function": // direct named import of `function` only; TensorSpec is not in scope.
-								return new ImportContext("", false);
-							}
-					}
+						qualifiedPrefix = importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
+					else if (fromTensorflow)
+						switch (importStr) {
+						case "*": // wildcard: TensorSpec and the dtype constants are reachable unqualified.
+							wildcard = true;
+							break;
+						case "function":
+							functionImported = true;
+							break;
+						case "TensorSpec":
+							tensorSpecImported = true;
+							break;
+						}
+			}
+
+		// Precedence: a qualified `import tensorflow [as X]` qualifies `function`, `TensorSpec`, and the dtype constants under one
+		// prefix, so it wins over a named `from`-import that may bring only a subset into scope. A wildcard brings everything
+		// unqualified. Otherwise a named `from tensorflow import ...` makes `function` reachable unqualified, and `TensorSpec` only if
+		// it too was named.
+		if (qualifiedPrefix != null)
+			return new ImportContext(qualifiedPrefix, true);
+		if (wildcard)
+			return new ImportContext("", true);
+		if (functionImported)
+			return new ImportContext("", tensorSpecImported);
 
 		// not found.
 		return null;

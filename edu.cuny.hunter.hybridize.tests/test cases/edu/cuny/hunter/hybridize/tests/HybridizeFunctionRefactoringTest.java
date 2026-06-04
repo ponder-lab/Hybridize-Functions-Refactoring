@@ -1320,6 +1320,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Bundled-import variant (#578, shape A). {@code from tensorflow import function, TensorSpec, float32, constant} brings the decorator,
+	 * the spec type, and the dtype constant all into scope unqualified. The first imported name ({@code function}) must not short-circuit
+	 * {@code getImportContext} and skip emission; the source-write emits an unqualified
+	 * {@code @function(input_signature=[TensorSpec(shape=(), dtype=float32)])}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/578">Issue 578</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionBundledImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Mixed-import variant (#578, shape B). {@code from tensorflow import function} plus a later {@code import tensorflow as tf}: the
+	 * qualified {@code tf.} import makes the whole signature reachable, so {@code getImportContext} must scan past the bare
+	 * {@code from}-import rather than returning early, and emit a {@code tf.}-qualified
+	 * {@code @tf.function(input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)])}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/578">Issue 578</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionMixedImport() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
 	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
 	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
 	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
