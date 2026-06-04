@@ -533,7 +533,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * suite's compare-output fixtures are unaffected by emission; the input-signature emission tests opt in through
 	 * {@link #helperAssertInputSignatureEmission()}. Production gating is tracked at #481.
 	 */
-	protected boolean inferInputSignatures = false;
+	protected boolean inferInputSignatures;
 
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
@@ -589,6 +589,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	/**
+	 * Sets whether inferred input signatures should be emitted into the refactored source. The input-signature emission tests call this to
+	 * opt in (the flag is off by default suite-wide, #580).
+	 *
+	 * @param inferInputSignatures Whether inferred input signatures should be emitted.
+	 */
+	public void setInferInputSignatures(boolean inferInputSignatures) {
+		this.inferInputSignatures = inferInputSignatures;
 	}
 
 	@Override
@@ -1398,7 +1408,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private void helperAssertInputSignatureEmission() throws Exception {
 		// Emission is opt-in per test (off by default suite-wide; see #580). The input-signature emission tests enable it here.
-		this.inferInputSignatures = true;
+		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
