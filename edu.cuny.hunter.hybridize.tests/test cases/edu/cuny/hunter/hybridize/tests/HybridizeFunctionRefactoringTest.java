@@ -533,7 +533,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * suite's compare-output fixtures are unaffected by emission; the input-signature emission tests opt in through
 	 * {@link #helperAssertInputSignatureEmission()}. Production gating is tracked at #481.
 	 */
-	protected boolean inferInputSignatures = false;
+	protected boolean inferInputSignatures;
 
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
