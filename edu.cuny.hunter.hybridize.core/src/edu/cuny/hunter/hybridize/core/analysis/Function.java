@@ -402,7 +402,7 @@ public class Function {
 		 * producing a partial signature that downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple
 		 * ({@code input_signature=[]}, a no-arg function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
 		 *
-		 * @param value The expression bound to the {@code input_signature} keyword.
+		 * @param value The expression bound to {@code input_signature}, whether by keyword or by position.
 		 * @return The parsed signature, or {@link Optional#empty} if the value is not a list/tuple of fully modeled {@code TensorSpec}s.
 		 */
 		private static Optional<InputSignature> parseSuppliedInputSignature(exprType value) {
