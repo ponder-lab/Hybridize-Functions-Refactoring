@@ -927,6 +927,157 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Returns the {@code Function.HybridizationParameters} of the single hybrid {@link Function} in the test file A.py.
+	 *
+	 * @return The hybridization parameters of the sole analyzed {@link Function}.
+	 */
+	private Function.HybridizationParameters getSingleHybridizationParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertTrue(function.isHybrid());
+		Function.HybridizationParameters args = function.getHybridizationParameters();
+		assertNotNull(args);
+		return args;
+	}
+
+	/**
+	 * Test for #557. A concrete, fully modeled keyword-form {@code input_signature=[tf.TensorSpec([2, 2], tf.float32)]} parses into a
+	 * single rank-2 {@code float32} {@link TensorType}. The shape and dtype are supplied positionally <em>within</em> the
+	 * {@code TensorSpec} call.
+	 */
+	@Test
+	public void testSuppliedInputSignatureConcrete() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Test for #557. The keyword form {@code tf.TensorSpec(shape=(5,), dtype=tf.int32)} binds shape and dtype by name rather than by
+	 * position; both forms must resolve to the same {@link TensorType}.
+	 */
+	@Test
+	public void testSuppliedInputSignatureKeywordForm() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Test for #557. A two-element {@code input_signature} list with differing dtypes parses into two {@link TensorType}s in declaration
+	 * order.
+	 */
+	@Test
+	public void testSuppliedInputSignatureMultipleParameters() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))),
+				new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Test for #557. A {@code None} entry in a {@code TensorSpec} shape parses to {@link DynamicDim#INSTANCE}, mixed with a concrete
+	 * {@link NumericDim}.
+	 */
+	@Test
+	public void testSuppliedInputSignatureDynamicDim() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(32)))), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Test for #557. A scalar (rank-0) {@code TensorSpec} with an empty shape tuple parses to a {@link TensorType} with an empty dimension
+	 * list.
+	 */
+	@Test
+	public void testSuppliedInputSignatureScalar() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(INT32, List.of())), signature.get().parameterTypes());
+	}
+
+	/**
+	 * Test for #557. A bare {@code shape=None} (unknown rank) parses to a {@link TensorType} with {@code null} dimensions, the shape-⊤
+	 * encoding used elsewhere in the tool.
+	 */
+	@Test
+	public void testSuppliedInputSignatureShapeNone() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(1, signature.get().parameterTypes().size());
+		TensorType tensorType = signature.get().parameterTypes().get(0);
+		assertEquals(FLOAT32, tensorType.getDType());
+		assertNull(tensorType.getDims());
+	}
+
+	/**
+	 * Test for #557. A {@code RaggedTensorSpec} element is supplied (so {@code hasInputSignatureParam()} is true), but the current
+	 * {@link InputSignature} model cannot represent raggedness, so the parse drops to {@link Optional#empty}. This pins the
+	 * presence-true/parse-empty state of the contract: a supplied-but-unmodelable signature must be left as-is, not overwritten. Ragged
+	 * emission is tracked separately at #524.
+	 */
+	@Test
+	public void testSuppliedInputSignatureRaggedSpec() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+		assertFalse(args.getSuppliedInputSignature().isPresent());
+	}
+
+	/**
+	 * Test for #557. A valid TensorFlow dtype the tool does not model ({@code tf.complex64}) is supplied; the parse drops the whole
+	 * signature to {@link Optional#empty} while {@code hasInputSignatureParam()} stays true (the presence-true/parse-empty contract state).
+	 */
+	@Test
+	public void testSuppliedInputSignatureUnmodeledDType() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+		assertFalse(args.getSuppliedInputSignature().isPresent());
+	}
+
+	/**
+	 * Test for #557. A bare {@code @tf.function} with no {@code input_signature} argument: presence is false and the parsed signature is
+	 * {@link Optional#empty}. This pins the presence-false state of the contract, distinguishing "no signature supplied" (safe to infer and
+	 * write) from "supplied but unmodelable" (leave as-is).
+	 */
+	@Test
+	public void testSuppliedInputSignatureAbsent() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertFalse(args.hasInputSignatureParam());
+		assertFalse(args.getSuppliedInputSignature().isPresent());
+	}
+
+	/**
 	 * Test for #108. Positional `input_signature` argument: `@tf.function(None, (tf.TensorSpec(...),))` passes `func=None` and
 	 * `input_signature=(...)` positionally. We expect both `hasFuncParam` and `hasInputSignatureParam` to be true (the position-0 `func`
 	 * slot is occupied even though its value is `None`; presence of the positional slot is what's detected, not its value).
