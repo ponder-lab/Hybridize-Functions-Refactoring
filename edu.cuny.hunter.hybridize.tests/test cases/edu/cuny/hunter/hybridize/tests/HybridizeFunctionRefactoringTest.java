@@ -1693,6 +1693,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A hybrid function under a named import ({@code from tensorflow import function}) that brings the decorator into scope but not
+	 * {@code TensorSpec}: the inferred signature cannot be emitted unqualified, so {@code RECONFIGURE} must not be selected (it would be a
+	 * no-op). The function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS} status. Pins the emittability gate on {@code RECONFIGURE}
+	 * selection, ensuring a passing precondition is never reported for a transformation that would produce no edit.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureNamedImportMissingTensorSpec() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("Emission is impossible under this import shape, so RECONFIGURE must not be selected.",
+				f.getTransformations().contains(RECONFIGURE));
+		assertNull("No passing precondition when the signature is not emittable.", f.getPassingPrecondition());
+		assertNotNull("The function keeps its HAS_NO_PRIMITIVE_PARAMETERS failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
 	 * With input-signature inference disabled (the suite default), the precondition matrix must be unchanged: a good-hybrid function still
 	 * hits the {@code HAS_NO_PRIMITIVE_PARAMETERS} failure and selects no transformation. Proves {@code RECONFIGURE} is gated behind the
 	 * flag and existing behavior is preserved for the whole suite.

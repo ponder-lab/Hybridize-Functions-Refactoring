@@ -1034,7 +1034,7 @@ public class Function {
 					// the default precondition matrix unchanged.
 					if (this.getInferInputSignatures() && !this.getHybridizationParameters().hasInputSignatureParam()
 							&& this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects() && this.isRecursive() != null
-							&& !this.isRecursive() && this.inferInputSignature().isPresent()) {
+							&& !this.isRecursive() && this.canEmitInferredInputSignature()) {
 						this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
 						this.addTransformation(RECONFIGURE);
 						this.setPassingPrecondition(P4);
@@ -2223,6 +2223,21 @@ public class Function {
 	 * @return The {@code input_signature=...} keyword argument, or empty.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
+	/**
+	 * Whether an inferred input signature can actually be emitted into this function's decorator under the containing file's import shape.
+	 * Gates {@code RECONFIGURE} selection in {@link #check()} so a passing precondition is never reported for a no-op transformation: a
+	 * hybrid function always imports TensorFlow (its decorator references it), but the named-import shape ({@code from tensorflow import
+	 * function}) can leave {@code TensorSpec} or a dtype constant out of scope, in which case
+	 * {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit. True implies
+	 * both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites the decorator.
+	 *
+	 * @return True iff the inferred input signature is emittable under this file's import shape.
+	 */
+	private boolean canEmitInferredInputSignature() {
+		ImportContext ctx = getImportContext(this.getContainingDocument());
+		return ctx != null && this.computeInputSignatureKeyword(ctx).isPresent();
+	}
+
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
 		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
 			return Optional.empty();
