@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -73,7 +74,10 @@ import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
+import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -204,6 +208,13 @@ public class Function {
 		private boolean inputSignatureParam;
 
 		/**
+		 * The {@link InputSignature} parsed from a keyword-form {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
+		 * {@link Function}'s {@code @tf.function} decorator, or {@link Optional#empty} when none was supplied or its content could not be
+		 * fully modeled. See {@link #getSuppliedInputSignature()} for the presence/parse contract.
+		 */
+		private Optional<InputSignature> suppliedInputSignature = Optional.empty();
+
+		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 */
 		private boolean jitCompileParam;
@@ -246,6 +257,11 @@ public class Function {
 					if (keyword.arg instanceof NameTok) {
 						NameTok name = (NameTok) keyword.arg;
 						this.markParam(name.id);
+
+						// Parse the content of a keyword-form `input_signature=[tf.TensorSpec(...)]`. Positional binding (#573) is not
+						// handled here; only the keyword form contributes a parsed signature in this pass.
+						if (INPUT_SIGNATURE.equals(name.id))
+							this.suppliedInputSignature = parseSuppliedInputSignature(keyword.value);
 					}
 			} // else, tf.function is used without parameters.
 		}
@@ -328,6 +344,32 @@ public class Function {
 		}
 
 		/**
+		 * The {@link InputSignature} parsed from a keyword-form {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
+		 * {@link Function}'s {@code @tf.function} decorator.
+		 * <p>
+		 * This getter and {@link #hasInputSignatureParam()} together carry a three-state contract that downstream reconfiguration must
+		 * honor to avoid clobbering a user's signature:
+		 * <ul>
+		 * <li>{@code hasInputSignatureParam() == false}: no {@code input_signature} was supplied. Inference may synthesize one and write
+		 * it.
+		 * <li>{@code hasInputSignatureParam() == true} and the result is <em>present</em>: a signature was supplied <em>and</em> fully
+		 * modeled. A validate-then-overwrite decision can compare it against the inferred signature.
+		 * <li>{@code hasInputSignatureParam() == true} and the result is <em>empty</em>: a signature was supplied but could not be fully
+		 * modeled (an unsupported {@code TensorSpec} subtype such as {@code RaggedTensorSpec}/{@code SparseTensorSpec}—tracked by #524 and
+		 * #533—or malformed content). It must be left as-is, never overwritten.
+		 * </ul>
+		 * An empty result therefore does <em>not</em> mean "no signature supplied"; callers must consult {@link #hasInputSignatureParam()}
+		 * for that distinction. Only the keyword form is parsed; positional binding is tracked by #573.
+		 *
+		 * @return The parsed supplied input signature, or {@link Optional#empty} when none was supplied or its content could not be fully
+		 *         modeled.
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/557">Issue 557</a>
+		 */
+		public Optional<InputSignature> getSuppliedInputSignature() {
+			return this.suppliedInputSignature;
+		}
+
+		/**
 		 * True iff this {@link Function}'s {@link decoratorsType} has parameter jit_compile.
 		 *
 		 * @return True iff this {@link decoratorsType} has parameter jit_compile.
@@ -343,6 +385,156 @@ public class Function {
 		 */
 		public boolean hasReduceRetracingParam() {
 			return this.reduceRetracingParam;
+		}
+
+		/**
+		 * Parse the value of a keyword-form {@code input_signature=...} argument into an {@link InputSignature}. The value must be a list
+		 * or tuple of {@code tf.TensorSpec(...)} calls; each element is reduced to a {@link TensorType} via {@link #parseTensorSpec}. The
+		 * parse is all-or-nothing: if any element cannot be fully modeled (an unsupported subtype, a non-{@code TensorSpec} call, or
+		 * malformed content), the whole signature is dropped to {@link Optional#empty} rather than producing a partial signature that
+		 * downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple ({@code input_signature=[]}, a no-arg
+		 * function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
+		 *
+		 * @param value The expression bound to the {@code input_signature} keyword.
+		 * @return The parsed signature, or {@link Optional#empty} if the value is not a list/tuple of fully modeled {@code TensorSpec}s.
+		 */
+		private static Optional<InputSignature> parseSuppliedInputSignature(exprType value) {
+			exprType[] elements;
+			if (value instanceof org.python.pydev.parser.jython.ast.List)
+				elements = ((org.python.pydev.parser.jython.ast.List) value).elts;
+			else if (value instanceof Tuple)
+				elements = ((Tuple) value).elts;
+			else
+				return Optional.empty();
+
+			// A well-formed empty list/tuple is `input_signature=[]` (a no-arg function); it parses to an empty—but present—signature
+			// rather than dropping to empty, which the contract reserves for a supplied signature that cannot be modeled.
+			List<TensorType> parameterTypes = new ArrayList<>(elements == null ? 0 : elements.length);
+			if (elements != null)
+				for (exprType element : elements) {
+					Optional<TensorType> tensorType = parseTensorSpec(element);
+					if (tensorType.isEmpty())
+						return Optional.empty();
+					parameterTypes.add(tensorType.get());
+				}
+
+			return Optional.of(new InputSignature(parameterTypes));
+		}
+
+		/**
+		 * Parse a single {@code tf.TensorSpec(shape, dtype)} call into a {@link TensorType}. The call's callee must name {@code TensorSpec}
+		 * exactly; {@code RaggedTensorSpec}/{@code SparseTensorSpec} and any other callee return {@link Optional#empty} because the current
+		 * {@link InputSignature} model cannot represent them (tracked by #524 and #533). Both the positional form
+		 * {@code TensorSpec(shape, dtype)} and the keyword form {@code TensorSpec(shape=..., dtype=...)} are accepted.
+		 *
+		 * @param element A candidate {@code TensorSpec} expression from the supplied list/tuple.
+		 * @return The reduced {@link TensorType}, or {@link Optional#empty} if {@code element} is not a fully modeled {@code TensorSpec}
+		 *         call.
+		 */
+		private static Optional<TensorType> parseTensorSpec(exprType element) {
+			if (!(element instanceof Call))
+				return Optional.empty();
+
+			Call call = (Call) element;
+			// `getRepresentationString` returns the trailing attribute, so `tf.TensorSpec` and a bare `TensorSpec` both yield
+			// "TensorSpec"; `RaggedTensorSpec`/`SparseTensorSpec` yield their own names and are rejected below.
+			if (!"TensorSpec".equals(NodeUtils.getRepresentationString(call.func)))
+				return Optional.empty();
+
+			exprType shapeExpr = argumentValue(call, 0, "shape");
+			exprType dtypeExpr = argumentValue(call, 1, "dtype");
+			if (shapeExpr == null || dtypeExpr == null)
+				return Optional.empty();
+
+			Optional<DType> dtype = parseDType(dtypeExpr);
+			if (dtype.isEmpty())
+				return Optional.empty();
+
+			return parseShape(shapeExpr).map(shape -> new TensorType(dtype.get(), shape.orElse(null)));
+		}
+
+		/**
+		 * Resolve a {@code TensorSpec} argument by either positional index or keyword name. Positional arguments take precedence, matching
+		 * Python's binding rules; if no positional argument occupies {@code position}, the keyword arguments are searched for {@code name}.
+		 *
+		 * @param call The {@code TensorSpec} call.
+		 * @param position The positional index of the argument.
+		 * @param name The keyword name of the argument.
+		 * @return The bound expression, or {@code null} when neither form supplies the argument.
+		 */
+		private static exprType argumentValue(Call call, int position, String name) {
+			if (call.args != null && position < call.args.length)
+				return call.args[position];
+
+			if (call.keywords != null)
+				for (keywordType keyword : call.keywords)
+					if (keyword.arg instanceof NameTok && name.equals(((NameTok) keyword.arg).id))
+						return keyword.value;
+
+			return null;
+		}
+
+		/**
+		 * Parse a {@code TensorSpec} shape expression into a dimension list. A list/tuple yields one {@link Dimension} per element:
+		 * {@code None} becomes {@link DynamicDim#INSTANCE} and an integer literal becomes a {@link NumericDim}; any other element fails the
+		 * parse. A bare {@code None} (i.e., {@code shape=None}) yields {@link Optional#empty} dims, the shape-&#8868; encoding
+		 * {@link Function#inferSpec} and {@link InputSignature#toTensorSpecList} already use for unknown rank.
+		 *
+		 * @param shapeExpr The expression bound to the {@code shape} argument.
+		 * @return An {@link Optional} holding the dimension list (empty inner {@link Optional} for {@code shape=None}), or
+		 *         {@link Optional#empty} (outer) when the shape cannot be modeled.
+		 */
+		private static Optional<Optional<List<Dimension<?>>>> parseShape(exprType shapeExpr) {
+			if (shapeExpr instanceof Name && "None".equals(((Name) shapeExpr).id))
+				// Shape-⊤: unknown rank. Represented as null dims downstream.
+				return Optional.of(Optional.empty());
+
+			exprType[] elements;
+			if (shapeExpr instanceof org.python.pydev.parser.jython.ast.List)
+				elements = ((org.python.pydev.parser.jython.ast.List) shapeExpr).elts;
+			else if (shapeExpr instanceof Tuple)
+				elements = ((Tuple) shapeExpr).elts;
+			else
+				return Optional.empty();
+
+			List<Dimension<?>> dimensions = new ArrayList<>(elements == null ? 0 : elements.length);
+			if (elements != null)
+				for (exprType element : elements) {
+					if (element instanceof Name && "None".equals(((Name) element).id)) {
+						dimensions.add(DynamicDim.INSTANCE);
+						continue;
+					}
+					if (element instanceof Num) {
+						try {
+							dimensions.add(new NumericDim(Integer.valueOf(((Num) element).num.trim())));
+							continue;
+						} catch (NumberFormatException _) {
+							return Optional.empty();
+						}
+					}
+					return Optional.empty();
+				}
+
+			return Optional.of(Optional.of(dimensions));
+		}
+
+		/**
+		 * Parse a {@code TensorSpec} dtype expression (e.g., {@code tf.float32} or a bare {@code float32}) into a {@link DType}. The
+		 * trailing attribute name is upper-cased and resolved against {@link DType#valueOf}; this inverts {@link InputSignature}'s
+		 * lower-casing of {@link DType#name()}. An unrecognized name yields {@link Optional#empty}.
+		 *
+		 * @param dtypeExpr The expression bound to the {@code dtype} argument.
+		 * @return The resolved {@link DType}, or {@link Optional#empty} when the name is not a modeled dtype.
+		 */
+		private static Optional<DType> parseDType(exprType dtypeExpr) {
+			String name = NodeUtils.getRepresentationString(dtypeExpr);
+			if (name == null)
+				return Optional.empty();
+			try {
+				return Optional.of(DType.valueOf(name.toUpperCase(Locale.ROOT)));
+			} catch (IllegalArgumentException _) {
+				return Optional.empty();
+			}
 		}
 	}
 
