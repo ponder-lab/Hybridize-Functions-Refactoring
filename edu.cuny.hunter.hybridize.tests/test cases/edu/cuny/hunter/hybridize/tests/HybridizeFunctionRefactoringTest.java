@@ -991,6 +991,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #557. A well-formed empty {@code input_signature=[]} (a no-arg function) is itself fully modeled: it parses to a present,
+	 * empty {@link InputSignature}, distinct from the presence-true/parse-empty "unmodelable" state.
+	 */
+	@Test
+	public void testSuppliedInputSignatureEmptyList() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(), signature.get().parameterTypes());
+	}
+
+	/**
 	 * Test for #557. A {@code None} entry in a {@code TensorSpec} shape parses to {@link DynamicDim#INSTANCE}, mixed with a concrete
 	 * {@link NumericDim}.
 	 */

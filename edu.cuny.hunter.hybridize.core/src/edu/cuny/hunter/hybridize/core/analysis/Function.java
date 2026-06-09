@@ -392,11 +392,11 @@ public class Function {
 		 * or tuple of {@code tf.TensorSpec(...)} calls; each element is reduced to a {@link TensorType} via {@link #parseTensorSpec}. The
 		 * parse is all-or-nothing: if any element cannot be fully modeled (an unsupported subtype, a non-{@code TensorSpec} call, or
 		 * malformed content), the whole signature is dropped to {@link Optional#empty} rather than producing a partial signature that
-		 * downstream validate-then-overwrite logic could not trust.
+		 * downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple ({@code input_signature=[]}, a no-arg
+		 * function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
 		 *
 		 * @param value The expression bound to the {@code input_signature} keyword.
-		 * @return The parsed signature, or {@link Optional#empty} if the value is not a non-empty list/tuple of fully modeled
-		 *         {@code TensorSpec}s.
+		 * @return The parsed signature, or {@link Optional#empty} if the value is not a list/tuple of fully modeled {@code TensorSpec}s.
 		 */
 		private static Optional<InputSignature> parseSuppliedInputSignature(exprType value) {
 			exprType[] elements;
@@ -407,16 +407,16 @@ public class Function {
 			else
 				return Optional.empty();
 
-			if (elements == null || elements.length == 0)
-				return Optional.empty();
-
-			List<TensorType> parameterTypes = new ArrayList<>(elements.length);
-			for (exprType element : elements) {
-				Optional<TensorType> tensorType = parseTensorSpec(element);
-				if (tensorType.isEmpty())
-					return Optional.empty();
-				parameterTypes.add(tensorType.get());
-			}
+			// A well-formed empty list/tuple is `input_signature=[]` (a no-arg function); it parses to an empty—but present—signature
+			// rather than dropping to empty, which the contract reserves for a supplied signature that cannot be modeled.
+			List<TensorType> parameterTypes = new ArrayList<>(elements == null ? 0 : elements.length);
+			if (elements != null)
+				for (exprType element : elements) {
+					Optional<TensorType> tensorType = parseTensorSpec(element);
+					if (tensorType.isEmpty())
+						return Optional.empty();
+					parameterTypes.add(tensorType.get());
+				}
 
 			return Optional.of(new InputSignature(parameterTypes));
 		}
