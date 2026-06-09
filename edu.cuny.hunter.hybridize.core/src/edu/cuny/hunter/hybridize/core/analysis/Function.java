@@ -208,9 +208,9 @@ public class Function {
 		private boolean inputSignatureParam;
 
 		/**
-		 * The {@link InputSignature} parsed from a keyword-form {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
-		 * {@link Function}'s {@code @tf.function} decorator, or {@link Optional#empty} when none was supplied or its content could not be
-		 * fully modeled. See {@link #getSuppliedInputSignature()} for the presence/parse contract.
+		 * The {@link InputSignature} parsed from an {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
+		 * {@link Function}'s {@code @tf.function} decorator (in either keyword or positional form), or {@link Optional#empty} when none was
+		 * supplied or its content could not be fully modeled. See {@link #getSuppliedInputSignature()} for the presence/parse contract.
 		 */
 		private Optional<InputSignature> suppliedInputSignature = Optional.empty();
 
@@ -245,8 +245,15 @@ public class Function {
 				exprType[] positionalArgs = callFunction.args;
 				if (positionalArgs != null) {
 					int limit = Math.min(positionalArgs.length, TF_FUNCTION_POSITIONAL_PARAMS.length);
-					for (int i = 0; i < limit; i++)
+					for (int i = 0; i < limit; i++) {
 						this.markParam(TF_FUNCTION_POSITIONAL_PARAMS[i]);
+
+						// Parse the content of a positionally supplied `input_signature` (e.g. `@tf.function(None, [tf.TensorSpec(...)])`,
+						// where index 1 binds to `input_signature`). Python forbids passing the same parameter both positionally and by
+						// keyword, so this and the keyword branch below cannot both set the field for a well-formed decorator.
+						if (INPUT_SIGNATURE.equals(TF_FUNCTION_POSITIONAL_PARAMS[i]))
+							this.suppliedInputSignature = parseSuppliedInputSignature(positionalArgs[i]);
+					}
 				}
 
 				// Process keyword arguments. Keyword args are unordered; each carries its parameter name
@@ -258,8 +265,7 @@ public class Function {
 						NameTok name = (NameTok) keyword.arg;
 						this.markParam(name.id);
 
-						// Parse the content of a keyword-form `input_signature=[tf.TensorSpec(...)]`. Positional binding (#573) is not
-						// handled here; only the keyword form contributes a parsed signature in this pass.
+						// Parse the content of a keyword-form `input_signature=[tf.TensorSpec(...)]`.
 						if (INPUT_SIGNATURE.equals(name.id))
 							this.suppliedInputSignature = parseSuppliedInputSignature(keyword.value);
 					}
@@ -344,8 +350,8 @@ public class Function {
 		}
 
 		/**
-		 * The {@link InputSignature} parsed from a keyword-form {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
-		 * {@link Function}'s {@code @tf.function} decorator.
+		 * The {@link InputSignature} parsed from an {@code input_signature=[tf.TensorSpec(...)]} argument supplied to this
+		 * {@link Function}'s {@code @tf.function} decorator, in either keyword or positional form.
 		 * <p>
 		 * This getter and {@link #hasInputSignatureParam()} together carry a three-state contract that downstream reconfiguration must
 		 * honor to avoid clobbering a user's signature:
@@ -359,7 +365,8 @@ public class Function {
 		 * #533—or malformed content). It must be left as-is, never overwritten.
 		 * </ul>
 		 * An empty result therefore does <em>not</em> mean "no signature supplied"; callers must consult {@link #hasInputSignatureParam()}
-		 * for that distinction. Only the keyword form is parsed; positional binding is tracked by #573.
+		 * for that distinction. Both the keyword form {@code @tf.function(input_signature=[...])} and the positional form
+		 * {@code @tf.function(None, [...])} are parsed.
 		 *
 		 * @return The parsed supplied input signature, or {@link Optional#empty} when none was supplied or its content could not be fully
 		 *         modeled.
@@ -388,12 +395,12 @@ public class Function {
 		}
 
 		/**
-		 * Parse the value of a keyword-form {@code input_signature=...} argument into an {@link InputSignature}. The value must be a list
-		 * or tuple of {@code tf.TensorSpec(...)} calls; each element is reduced to a {@link TensorType} via {@link #parseTensorSpec}. The
-		 * parse is all-or-nothing: if any element cannot be fully modeled (an unsupported subtype, a non-{@code TensorSpec} call, or
-		 * malformed content), the whole signature is dropped to {@link Optional#empty} rather than producing a partial signature that
-		 * downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple ({@code input_signature=[]}, a no-arg
-		 * function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
+		 * Parse the value of an {@code input_signature=...} argument (keyword or positional) into an {@link InputSignature}. The value must
+		 * be a list or tuple of {@code tf.TensorSpec(...)} calls; each element is reduced to a {@link TensorType} via
+		 * {@link #parseTensorSpec}. The parse is all-or-nothing: if any element cannot be fully modeled (an unsupported subtype, a
+		 * non-{@code TensorSpec} call, or malformed content), the whole signature is dropped to {@link Optional#empty} rather than
+		 * producing a partial signature that downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple
+		 * ({@code input_signature=[]}, a no-arg function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
 		 *
 		 * @param value The expression bound to the {@code input_signature} keyword.
 		 * @return The parsed signature, or {@link Optional#empty} if the value is not a list/tuple of fully modeled {@code TensorSpec}s.

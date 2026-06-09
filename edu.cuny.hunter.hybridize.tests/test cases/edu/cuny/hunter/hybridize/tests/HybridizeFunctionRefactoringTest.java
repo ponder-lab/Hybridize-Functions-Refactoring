@@ -960,6 +960,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #573. The positional form {@code @tf.function(None, [tf.TensorSpec(...)])} binds the signature to position 1; its content is
+	 * parsed the same as the keyword form. {@code hasFuncParam} is true (position 0 is occupied by {@code None}) alongside
+	 * {@code hasInputSignatureParam}.
+	 */
+	@Test
+	public void testSuppliedInputSignaturePositional() throws Exception {
+		Function.HybridizationParameters args = this.getSingleHybridizationParameters();
+
+		assertTrue(args.hasFuncParam());
+		assertTrue(args.hasInputSignatureParam());
+
+		Optional<InputSignature> signature = args.getSuppliedInputSignature();
+		assertTrue(signature.isPresent());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().parameterTypes());
+	}
+
+	/**
 	 * Test for #557. The keyword form {@code tf.TensorSpec(shape=(5,), dtype=tf.int32)} binds shape and dtype by name rather than by
 	 * position; both forms must resolve to the same {@link TensorType}.
 	 */
