@@ -1026,12 +1026,14 @@ public class Function {
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					// This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature
-					// inference is enabled, the decorator carries no `input_signature` yet, the function is side-effect-free and
-					// non-recursive, and a signature can be inferred, reconfigure the decorator to add the inferred signature instead
-					// of leaving the function untouched. A function that already supplies an `input_signature` is deferred (the
-					// supplied signature must not be clobbered; that is the validate-then-overwrite case). Gating on the flag keeps
-					// the default precondition matrix unchanged.
+					/*
+					 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature inference
+					 * is enabled, the decorator carries no `input_signature` yet, the function is side-effect-free and non-recursive, and a
+					 * signature can be inferred, reconfigure the decorator to add the inferred signature instead of leaving the function
+					 * untouched. A function that already supplies an `input_signature` is deferred (the supplied signature must not be
+					 * clobbered; that is the validate-then-overwrite case). Gating on the flag keeps the default precondition matrix
+					 * unchanged.
+					 */
 					if (this.getInferInputSignatures() && !this.getHybridizationParameters().hasInputSignatureParam()
 							&& this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects() && this.isRecursive() != null
 							&& !this.isRecursive() && this.canEmitInferredInputSignature()) {
@@ -2147,9 +2149,10 @@ public class Function {
 		MultiTextEdit mte = new MultiTextEdit();
 
 		if (decorator.func instanceof Call) {
-			// `@tf.function(...)`: inject at the front of the existing argument list, just past the open parenthesis. Front-insertion
-			// handles both the empty-parentheses (`@tf.function()`) and non-empty (`@tf.function(reduce_retracing=True)`) forms without
-			// locating the closing parenthesis or the last argument.
+			// `@tf.function(...)`: append `input_signature=...` at the END of the existing argument list, just before the matching close
+			// parenthesis. A trailing keyword argument is always valid Python, whereas front-insertion would place the keyword before any
+			// existing positional argument (e.g. `@tf.function(None)`), producing a syntax error. Handles the empty-parentheses
+			// (`@tf.function()`) and non-empty (`@tf.function(reduce_retracing=True)`) forms uniformly.
 			Call call = (Call) decorator.func;
 
 			// Find the open parenthesis, tolerating any whitespace between the callee and `(`.
@@ -2157,14 +2160,29 @@ public class Function {
 			while (parenOffset < doc.getLength() && doc.getChar(parenOffset) != '(')
 				++parenOffset;
 
+			// Find the matching close parenthesis by tracking bracket nesting from the open parenthesis (assumes no `)` inside a string
+			// argument, which `@tf.function` decorators do not use in practice).
+			int depth = 0;
+			int closeOffset = parenOffset;
+			for (; closeOffset < doc.getLength(); closeOffset++) {
+				char c = doc.getChar(closeOffset);
+				if (c == '(' || c == '[' || c == '{')
+					++depth;
+				else if (c == ')' || c == ']' || c == '}') {
+					--depth;
+					if (depth == 0)
+						break;
+				}
+			}
+
 			boolean hasArguments = (call.args != null && call.args.length > 0) || (call.keywords != null && call.keywords.length > 0)
 					|| call.starargs != null || call.kwargs != null;
 
-			// Insertion point is just inside the parenthesis; captured as effectively final for the lambda below.
-			final int insertOffset = parenOffset + 1;
+			// Insertion point is just before the matching close parenthesis; captured as effectively final for the lambda below.
+			final int insertOffset = closeOffset;
 
 			this.computeInputSignatureKeyword(ctx)
-					.ifPresent(kw -> mte.addChild(new InsertEdit(insertOffset, hasArguments ? kw + ", " : kw)));
+					.ifPresent(kw -> mte.addChild(new InsertEdit(insertOffset, hasArguments ? ", " + kw : kw)));
 		} else
 			// Bare `@tf.function` (no parentheses): append a parenthesized argument list right after the decorator name. This is the
 			// argless-existing-decorator sub-case `addInputSignature` is documented to serve.
@@ -2223,6 +2241,13 @@ public class Function {
 	 * @return The {@code input_signature=...} keyword argument, or empty.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
+	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
+		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
+			return Optional.empty();
+		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
+				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
+	}
+
 	/**
 	 * Whether an inferred input signature can actually be emitted into this function's decorator under the containing file's import shape.
 	 * Gates {@code RECONFIGURE} selection in {@link #check()} so a passing precondition is never reported for a no-op transformation: a
@@ -2236,13 +2261,6 @@ public class Function {
 	private boolean canEmitInferredInputSignature() {
 		ImportContext ctx = getImportContext(this.getContainingDocument());
 		return ctx != null && this.computeInputSignatureKeyword(ctx).isPresent();
-	}
-
-	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
-		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
-			return Optional.empty();
-		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
-				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
 
 	/**

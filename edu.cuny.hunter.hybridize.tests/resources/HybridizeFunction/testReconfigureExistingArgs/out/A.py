@@ -1,10 +1,10 @@
 # Already-hybrid function whose `@tf.function(reduce_retracing=True)` decorator already carries a non-`input_signature` keyword
-# argument. Analysis selects `RECONFIGURE`; the source-write inserts `input_signature=[tf.TensorSpec(...)], ` at the front of the
-# existing argument list, preserving the trailing `reduce_retracing=True`.
+# argument. Analysis selects `RECONFIGURE`; the source-write appends `, input_signature=[tf.TensorSpec(...)]` at the end of the
+# existing argument list, after the `reduce_retracing=True` keyword.
 import tensorflow as tf
 
 
-@tf.function(input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)], reduce_retracing=True)
+@tf.function(reduce_retracing=True, input_signature=[tf.TensorSpec(shape=(), dtype=tf.float32)])
 def f(x):
     return x + 1
 

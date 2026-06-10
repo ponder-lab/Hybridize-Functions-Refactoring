@@ -1646,13 +1646,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Non-empty argument-list variant of {@link #testReconfigureBareDecorator()}. The existing decorator already carries a
-	 * non-{@code input_signature} keyword ({@code @tf.function(reduce_retracing=True)}); the source-write inserts
-	 * {@code input_signature=[...], } at the front of the argument list, preserving the trailing keyword.
+	 * non-{@code input_signature} keyword ({@code @tf.function(reduce_retracing=True)}); the source-write appends
+	 * {@code , input_signature=[...]} at the end of the argument list, after the existing keyword.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	@Test
 	public void testReconfigureExistingArgs() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Positional-argument variant of {@link #testReconfigureBareDecorator()}. The existing decorator passes {@code func} positionally
+	 * ({@code @tf.function(None)}); the source-write appends {@code , input_signature=[...]} at the end of the argument list. Front
+	 * insertion would place the keyword argument before the {@code None} positional argument, producing a Python syntax error; appending at
+	 * the end keeps the result valid (#595 review).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigurePositionalFunc() throws Exception {
 		helperAssertReconfigure();
 	}
 
