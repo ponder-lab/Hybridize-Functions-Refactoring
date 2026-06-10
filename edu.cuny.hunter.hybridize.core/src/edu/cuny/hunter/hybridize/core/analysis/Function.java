@@ -2111,10 +2111,13 @@ public class Function {
 			ctx = new ImportContext("", injectedNames.contains("TensorSpec"), false, injectedNames);
 		}
 
+		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
+		// sequencing zero-length same-offset edits by add-order (#575). Wrap it in a MultiTextEdit (a container) so every element of
+		// `ret` is a container: the processor builds the per-file TextChange by making the first edit the root and adding the rest as
+		// children, which requires the root to accept children.
+		String decorator = "@" + ctx.prefix() + "function" + this.addInputSignature(ctx).orElse("") + "\n" + precedingText;
 		MultiTextEdit mte = new MultiTextEdit();
-		mte.addChild(new InsertEdit(offset, "@" + ctx.prefix() + "function"));
-		this.addInputSignature(offset, ctx).ifPresent(mte::addChild);
-		mte.addChild(new InsertEdit(offset, "\n" + precedingText));
+		mte.addChild(new InsertEdit(offset, decorator));
 		ret.add(mte);
 
 		return ret;
@@ -2125,7 +2128,7 @@ public class Function {
 	 * {@code RECONFIGURE} transformation). Selection (in {@link #check()}) guarantees the decorator carries no {@code input_signature}
 	 * yet—the supplied-signature case is deferred to validate-then-overwrite and never reaches here. Reuses the existing import-shape
 	 * resolution ({@link #getImportContext(IDocument)}) and emission gate ({@link #computeInputSignatureKeyword(ImportContext)} /
-	 * {@link #addInputSignature(int, ImportContext)}); a hybrid function necessarily imports TensorFlow (the decorator references it), so
+	 * {@link #addInputSignature(ImportContext)}); a hybrid function necessarily imports TensorFlow (the decorator references it), so
 	 * {@code getImportContext} is non-null. When the signature's names are not reachable under the file's import shape (e.g.
 	 * {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching
 	 * {@link #convertToHybrid()}'s silent skip.
@@ -2192,7 +2195,7 @@ public class Function {
 		} else
 			// Bare `@tf.function` (no parentheses): append a parenthesized argument list right after the decorator name. This is the
 			// argless-existing-decorator sub-case `addInputSignature` is documented to serve.
-			this.addInputSignature(afterName, ctx).ifPresent(mte::addChild);
+			this.addInputSignature(ctx).ifPresent(s -> mte.addChild(new InsertEdit(afterName, s)));
 
 		if (mte.hasChildren())
 			ret.add(mte);
@@ -2235,8 +2238,8 @@ public class Function {
 	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
 	 * produces a signature whose names are all reachable under the import context. Returns {@link Optional#empty} otherwise (flag off, no
 	 * signature, {@code TensorSpec} not reachable, or a required dtype constant not reachable). The keyword text only; callers handle the
-	 * surrounding syntax (parenthesization via {@link #addInputSignature(int, ImportContext)}, or a leading {@code ", "} when injecting
-	 * into an existing arg list).
+	 * surrounding syntax (parenthesization via {@link #addInputSignature(ImportContext)}, or a leading {@code ", "} when injecting into an
+	 * existing arg list).
 	 * <p>
 	 * The dtype-reachability check guards the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does
 	 * not imply the signature's dtype constants (e.g. {@code float32}) are too, so emitting unconditionally would produce a
@@ -2270,19 +2273,18 @@ public class Function {
 	}
 
 	/**
-	 * Returns an {@code InsertEdit} placing the parenthesized {@code (input_signature=[tf.TensorSpec(...)])} argument list at the given
-	 * offset, or empty if {@link #computeInputSignatureKeyword(ImportContext)}'s gate fails. Used for the fresh-decorator and
-	 * argless-existing-decorator cases (the latter is a Phase 3 {@code RECONFIGURE} sub-case). For injecting into an existing non-empty
-	 * argument list, use {@link #computeInputSignatureKeyword(ImportContext)} directly with a leading {@code ", "}.
+	 * Returns the parenthesized {@code (input_signature=[tf.TensorSpec(...)])} argument-list text, or empty if
+	 * {@link #computeInputSignatureKeyword(ImportContext)}'s gate fails. Used for the fresh-decorator and argless-existing-decorator cases
+	 * (the latter is a Phase 3 {@code RECONFIGURE} sub-case). Callers compose this into their surrounding text (a single {@code InsertEdit}
+	 * in {@link #convertToHybrid()}) or wrap it in an {@code InsertEdit} at an AST-derived offset ({@link #reconfigure()}). For injecting
+	 * into an existing non-empty argument list, use {@link #computeInputSignatureKeyword(ImportContext)} directly with a leading
+	 * {@code ", "}.
 	 *
-	 * @param offset The original-document offset where the edit should land. {@link #convertToHybrid()} passes the same offset it uses for
-	 *        the surrounding {@code @function} insertion (multiple {@code InsertEdit}s at the same offset are sequenced by their order of
-	 *        addition to the parent {@link MultiTextEdit}). The {@code RECONFIGURE} caller will pass an AST-derived offset.
 	 * @param ctx The import context for the containing file.
-	 * @return The {@code InsertEdit}, or empty if the gate fails.
+	 * @return The parenthesized {@code (input_signature=...)} text, or empty if the gate fails.
 	 */
-	private Optional<TextEdit> addInputSignature(int offset, ImportContext ctx) {
-		return this.computeInputSignatureKeyword(ctx).map(kw -> new InsertEdit(offset, "(" + kw + ")"));
+	private Optional<String> addInputSignature(ImportContext ctx) {
+		return this.computeInputSignatureKeyword(ctx).map(kw -> "(" + kw + ")");
 	}
 
 	private static int getLineToInsertImport(IDocument doc) {
