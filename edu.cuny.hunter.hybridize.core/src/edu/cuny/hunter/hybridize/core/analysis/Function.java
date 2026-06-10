@@ -563,6 +563,12 @@ public class Function {
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
+	 * The TensorFlow module name as it appears in Python {@code import} statements, used by {@link #getImportContext(IDocument)} to detect
+	 * the import shape (e.g. {@code import tensorflow}, {@code import tensorflow as tf}, {@code from tensorflow import ...}).
+	 */
+	private static final String TENSORFLOW_MODULE = "tensorflow";
+
+	/**
 	 * True iff verbose output is desired.
 	 */
 	private static final boolean VERBOSE = false;
@@ -2189,13 +2195,13 @@ public class Function {
 		for (ImportHandle importHandle : handling)
 			for (ImportHandleInfo importHandleInfo : importHandle.getImportInfo()) {
 				String fromImportStr = importHandleInfo.getFromImportStrWithoutUnwantedChars();
-				boolean fromTensorflow = fromImportStr != null && fromImportStr.equals("tensorflow");
+				boolean fromTensorflow = fromImportStr != null && fromImportStr.equals(TENSORFLOW_MODULE);
 
 				for (String importStr : importHandleInfo.getImportedStr())
-					if (importStr.equals("tensorflow"))
-						qualifiedPrefix = "tensorflow.";
-					else if (importStr.startsWith("tensorflow as"))
-						qualifiedPrefix = importStr.substring("tensorflow as ".length(), importStr.length()) + ".";
+					if (importStr.equals(TENSORFLOW_MODULE))
+						qualifiedPrefix = TENSORFLOW_MODULE + ".";
+					else if (importStr.startsWith(TENSORFLOW_MODULE + " as"))
+						qualifiedPrefix = importStr.substring((TENSORFLOW_MODULE + " as ").length(), importStr.length()) + ".";
 					else if (fromTensorflow)
 						if (importStr.equals("*")) // wildcard: TensorSpec and the dtype constants are reachable unqualified.
 							wildcard = true;
