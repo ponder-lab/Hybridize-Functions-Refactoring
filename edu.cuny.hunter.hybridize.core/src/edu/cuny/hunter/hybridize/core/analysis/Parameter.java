@@ -80,6 +80,19 @@ public final class Parameter {
 	private static final String TF_TENSOR_FQN = "tensorflow.python.framework.ops.Tensor";
 
 	/**
+	 * Fully-qualified names of the TensorFlow types recognized as tensor-typed in a type hint: {@link #TF_TENSOR_FQN} and its
+	 * tensor-equivalent subtypes ({@code RaggedTensor}, {@code SparseTensor}, {@code Variable}, {@code IndexedSlices}). The {@code *Spec}
+	 * descriptors ({@code TensorSpec}, {@code RaggedTensorSpec}, …) are deliberately excluded: they describe tensors but are not tensors
+	 * themselves. See <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/434">#434</a>.
+	 */
+	private static final Set<String> TF_TENSOR_TYPE_HINT_FQNS = Set.of( //
+			TF_TENSOR_FQN, //
+			"tensorflow.python.ops.ragged.ragged_tensor.RaggedTensor", //
+			"tensorflow.python.framework.sparse_tensor.SparseTensor", //
+			"tensorflow.python.ops.variables.Variable", //
+			"tensorflow.python.framework.indexed_slices.IndexedSlices");
+
+	/**
 	 * Parent Jython AST node carrying every positional name expression (in {@link argumentsType#args}) and per-position annotation (in
 	 * {@link argumentsType#annotation}) of the owning function. Shared across all {@link Parameter}s of the same function.
 	 */
@@ -269,7 +282,7 @@ public final class Parameter {
 
 			LOG.info("Found FQN: " + fqn + ".");
 
-			if (fqn.equals(TF_TENSOR_FQN)) { // TODO: Also check for subtypes (RaggedTensor, SparseTensor, Variable, IndexedSlices) (#434).
+			if (TF_TENSOR_TYPE_HINT_FQNS.contains(fqn)) {
 				subMonitor.done();
 				return true;
 			}
