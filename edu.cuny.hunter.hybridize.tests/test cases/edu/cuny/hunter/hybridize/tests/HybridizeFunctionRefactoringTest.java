@@ -8348,6 +8348,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the cross-method invariant from #501: a tensor-container parameter keeps the {@link Parameter#isTensorContainer} and
+	 * {@link Parameter#isTensor} caches in sync, so {@code isTensorContainer() == TRUE} implies {@code isTensor() == TRUE}. Reuses
+	 * {@link #testTensorContainerParameterCache}'s fixture shape ({@code f([tf.constant([1.0, 2.0])])}): Phase 3 container detection sets
+	 * both caches, while {@link Parameter#getTensorTypes} stays empty (Ariadne emits no single {@link TensorType} for the container
+	 * itself). This invariant could only be tested once both #499 ({@code isTensorContainer} cache) and #500 ({@code isTensor} cache) had
+	 * landed.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/501">Issue 501</a>
+	 */
+	@Test
+	public void testTensorContainerImpliesTensorClassification() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter a = parameters.get(0);
+		assertEquals("a", a.getName());
+
+		assertTrue("Phase 3 container detection must set `isTensorContainer()` to TRUE.", a.isTensorContainer());
+		assertTrue("`isTensorContainer() == TRUE` must imply `isTensor() == TRUE` (the cross-method invariant).", a.isTensor());
+
+		Set<TensorType> tensorTypes = a.getTensorTypes();
+		assertTrue("The container parameter must not surface a direct TensorType through `getTensorTypes()`.",
+				tensorTypes == null || tensorTypes.isEmpty());
+
+		assertTrue("Function-level reflection: a tensor-container parameter implies `getHasTensorParameter() == TRUE`.",
+				function.getHasTensorParameter());
+	}
+
+	/**
 	 * Regression test for #498: pins the classifier→query contract on `Parameter`. After {@link Parameter#classifyAsTensor} runs
 	 * (transitively via {@link Function#inferTensorParameters}), {@link Parameter#isTensor} returns the cached classification: {@code TRUE}
 	 * for a tensor parameter, {@code FALSE} for a non-tensor parameter. Also pins the function-level reflection:
