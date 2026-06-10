@@ -8,10 +8,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PY
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getAllParentNames;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
@@ -1030,12 +1032,28 @@ public class Function {
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-							"Functions with no Python literal arguments may benefit from hybridization.");
+					/*
+					 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature inference
+					 * is enabled, the decorator carries no `input_signature` yet, the function is side-effect-free and non-recursive, and a
+					 * signature can be inferred, reconfigure the decorator to add the inferred signature instead of leaving the function
+					 * untouched. A function that already supplies an `input_signature` is deferred (the supplied signature must not be
+					 * clobbered; that is the validate-then-overwrite case). Gating on the flag keeps the default precondition matrix
+					 * unchanged.
+					 */
+					if (this.getInferInputSignatures() && !this.getHybridizationParameters().hasInputSignatureParam()
+							&& this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects() && this.isRecursive() != null
+							&& !this.isRecursive() && this.canEmitInferredInputSignature()) {
+						this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
+						this.addTransformation(RECONFIGURE);
+						this.setPassingPrecondition(P4);
+					} else {
+						this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+								"Functions with no Python literal arguments may benefit from hybridization.");
 
-					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
-						this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
-								"De-hybridizing a function with Python side-effects may alter semantics.");
+						if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+							this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+									"De-hybridizing a function with Python side-effects may alter semantics.");
+					}
 				}
 
 				// Here, we have a hybrid function with a tensor parameter.
@@ -1989,7 +2007,8 @@ public class Function {
 				ret.addAll(this.convertToEager());
 				break;
 			case RECONFIGURE:
-				throw new UnsupportedOperationException();
+				ret.addAll(this.reconfigure());
+				break;
 			default:
 				throw new IllegalStateException();
 			}
@@ -2102,6 +2121,86 @@ public class Function {
 	}
 
 	/**
+	 * Adds the inferred {@code input_signature} to this already-hybrid function's existing {@code @tf.function} decorator (the
+	 * {@code RECONFIGURE} transformation). Selection (in {@link #check()}) guarantees the decorator carries no {@code input_signature}
+	 * yet—the supplied-signature case is deferred to validate-then-overwrite and never reaches here. Reuses the existing import-shape
+	 * resolution ({@link #getImportContext(IDocument)}) and emission gate ({@link #computeInputSignatureKeyword(ImportContext)} /
+	 * {@link #addInputSignature(int, ImportContext)}); a hybrid function necessarily imports TensorFlow (the decorator references it), so
+	 * {@code getImportContext} is non-null. When the signature's names are not reachable under the file's import shape (e.g.
+	 * {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching
+	 * {@link #convertToHybrid()}'s silent skip.
+	 *
+	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
+	 * @throws BadLocationException If a document offset cannot be resolved.
+	 */
+	private List<TextEdit> reconfigure() throws BadLocationException {
+		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
+
+		List<TextEdit> ret = new ArrayList<>();
+
+		IDocument doc = this.getContainingDocument();
+		ImportContext ctx = getImportContext(doc);
+
+		if (ctx == null)
+			return ret;
+
+		decoratorsType decorator = this.hybridDecorator;
+
+		// Offset just past the decorator name (e.g. just past `function` in `@tf.function`). Mirrors `convertToEager`'s proven offset
+		// computation: the `decoratorsType` node begins at `@`, and `getFullRepresentationString(decorator.func)` yields the dotted name
+		// without arguments for both the bare and called forms (the trailing `+ 1` accounts for the leading `@`). The inner `func` expr's
+		// own position is unreliable for decorators, so it is not used directly.
+		int afterName = getOffset(doc, decorator) + getFullRepresentationString(decorator.func).length() + 1;
+
+		MultiTextEdit mte = new MultiTextEdit();
+
+		if (decorator.func instanceof Call) {
+			// `@tf.function(...)`: append `input_signature=...` at the END of the existing argument list, just before the matching close
+			// parenthesis. A trailing keyword argument is always valid Python, whereas front-insertion would place the keyword before any
+			// existing positional argument (e.g. `@tf.function(None)`), producing a syntax error. Handles the empty-parentheses
+			// (`@tf.function()`) and non-empty (`@tf.function(reduce_retracing=True)`) forms uniformly.
+			Call call = (Call) decorator.func;
+
+			// Find the open parenthesis, tolerating any whitespace between the callee and `(`.
+			int parenOffset = afterName;
+			while (parenOffset < doc.getLength() && doc.getChar(parenOffset) != '(')
+				++parenOffset;
+
+			// Find the matching close parenthesis by tracking bracket nesting from the open parenthesis (assumes no `)` inside a string
+			// argument, which `@tf.function` decorators do not use in practice).
+			int depth = 0;
+			int closeOffset = parenOffset;
+			for (; closeOffset < doc.getLength(); closeOffset++) {
+				char c = doc.getChar(closeOffset);
+				if (c == '(' || c == '[' || c == '{')
+					++depth;
+				else if (c == ')' || c == ']' || c == '}') {
+					--depth;
+					if (depth == 0)
+						break;
+				}
+			}
+
+			boolean hasArguments = (call.args != null && call.args.length > 0) || (call.keywords != null && call.keywords.length > 0)
+					|| call.starargs != null || call.kwargs != null;
+
+			// Insertion point is just before the matching close parenthesis; captured as effectively final for the lambda below.
+			final int insertOffset = closeOffset;
+
+			this.computeInputSignatureKeyword(ctx)
+					.ifPresent(kw -> mte.addChild(new InsertEdit(insertOffset, hasArguments ? ", " + kw : kw)));
+		} else
+			// Bare `@tf.function` (no parentheses): append a parenthesized argument list right after the decorator name. This is the
+			// argless-existing-decorator sub-case `addInputSignature` is documented to serve.
+			this.addInputSignature(afterName, ctx).ifPresent(mte::addChild);
+
+		if (mte.hasChildren())
+			ret.add(mte);
+
+		return ret;
+	}
+
+	/**
 	 * The TensorFlow import shape observed in a Python source file, carrying the prefix to use when referring to TensorFlow names, whether
 	 * {@code TensorSpec} is reachable in the file's namespace, and which other names are reachable under the prefix. The two empty-prefix
 	 * shapes ({@code from tensorflow import *} and {@code from tensorflow import function}) differ on the latter two: the wildcard form
@@ -2153,6 +2252,21 @@ public class Function {
 			return Optional.empty();
 		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
+	}
+
+	/**
+	 * Whether an inferred input signature can actually be emitted into this function's decorator under the containing file's import shape.
+	 * Gates {@code RECONFIGURE} selection in {@link #check()} so a passing precondition is never reported for a no-op transformation: a
+	 * hybrid function always imports TensorFlow (its decorator references it), but the named-import shape ({@code from tensorflow import
+	 * function}) can leave {@code TensorSpec} or a dtype constant out of scope, in which case
+	 * {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit. True implies
+	 * both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites the decorator.
+	 *
+	 * @return True iff the inferred input signature is emittable under this file's import shape.
+	 */
+	private boolean canEmitInferredInputSignature() {
+		ImportContext ctx = getImportContext(this.getContainingDocument());
+		return ctx != null && this.computeInputSignatureKeyword(ctx).isPresent();
 	}
 
 	/**

@@ -17,10 +17,12 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETE
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
+import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
 import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
 import static java.lang.System.getProperty;
@@ -1608,6 +1610,166 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Apply highest-offset edits first so an inserted import (low offset) does not shift the unapplied decorator edit's anchor. In
 		// production the edits compose in one LTK change tree, which coordinates offsets; this loop applies them as independent trees.
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
+	}
+
+	/**
+	 * Test that {@code RECONFIGURE} adds an inferred {@code input_signature=[tf.TensorSpec(...)]} to an already-hybrid function whose bare
+	 * {@code @tf.function} decorator (no parentheses) carries no signature. The remaining half of #563: the eager case is
+	 * {@code CONVERT_TO_HYBRID} (#565); this is the already-hybrid case. The source-write appends a parenthesized argument list right after
+	 * the decorator name.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureBareDecorator() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Empty-parentheses variant of {@link #testReconfigureBareDecorator()}. The existing decorator is {@code @tf.function()}; the
+	 * source-write inserts {@code input_signature=[...]} between the parentheses (front-of-arg-list insertion with no trailing arguments).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureEmptyParens() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Non-empty argument-list variant of {@link #testReconfigureBareDecorator()}. The existing decorator already carries a
+	 * non-{@code input_signature} keyword ({@code @tf.function(reduce_retracing=True)}); the source-write appends
+	 * {@code , input_signature=[...]} at the end of the argument list, after the existing keyword.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureExistingArgs() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Positional-argument variant of {@link #testReconfigureBareDecorator()}. The existing decorator passes {@code func} positionally
+	 * ({@code @tf.function(None)}); the source-write appends {@code , input_signature=[...]} at the end of the argument list. Front
+	 * insertion would place the keyword argument before the {@code None} positional argument, producing a Python syntax error; appending at
+	 * the end keeps the result valid (#595 review).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigurePositionalFunc() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Fully-qualified-import variant of {@link #testReconfigureBareDecorator()}. With bare {@code import tensorflow} (no {@code as} alias),
+	 * the source-write must qualify every emitted name with the {@code tensorflow.} prefix when reconfiguring the existing
+	 * {@code @tensorflow.function} decorator.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureFullyQualifiedImport() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * A function that already supplies an {@code input_signature} must not be reconfigured. Per the presence/parse three-state contract
+	 * (#557), a supplied signature must not be clobbered; validate-then-overwrite is future work. Even with inference enabled,
+	 * {@code RECONFIGURE} is not selected, no passing precondition is set, and the function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS}
+	 * failure. Pins the deferral of the supplied-signature case.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureExistingSignatureDeferred() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A supplied `input_signature` must be detected.", f.getHybridizationParameters().hasInputSignatureParam());
+		assertFalse("A function that already supplies an `input_signature` must not be reconfigured.",
+				f.getTransformations().contains(RECONFIGURE));
+		assertNull("The supplied-signature case is deferred, so no passing precondition is set.", f.getPassingPrecondition());
+		assertNotNull("The deferred function keeps its HAS_NO_PRIMITIVE_PARAMETERS failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * A hybrid function under a named import ({@code from tensorflow import function}) that brings the decorator into scope but not
+	 * {@code TensorSpec}: the inferred signature cannot be emitted unqualified, so {@code RECONFIGURE} must not be selected (it would be a
+	 * no-op). The function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS} status. Pins the emittability gate on {@code RECONFIGURE}
+	 * selection, ensuring a passing precondition is never reported for a transformation that would produce no edit.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureNamedImportMissingTensorSpec() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("Emission is impossible under this import shape, so RECONFIGURE must not be selected.",
+				f.getTransformations().contains(RECONFIGURE));
+		assertNull("No passing precondition when the signature is not emittable.", f.getPassingPrecondition());
+		assertNotNull("The function keeps its HAS_NO_PRIMITIVE_PARAMETERS failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * With input-signature inference disabled (the suite default), the precondition matrix must be unchanged: a good-hybrid function still
+	 * hits the {@code HAS_NO_PRIMITIVE_PARAMETERS} failure and selects no transformation. Proves {@code RECONFIGURE} is gated behind the
+	 * flag and existing behavior is preserved for the whole suite.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 */
+	@Test
+	public void testReconfigureFlagOff() throws Exception {
+		// The `inferInputSignatures` flag defaults off; intentionally do not enable it.
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("With inference disabled, RECONFIGURE must not be selected.", f.getTransformations().contains(RECONFIGURE));
+		assertTrue("The default precondition matrix must be unchanged: no transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition with the flag off.", f.getPassingPrecondition());
+		assertNotNull("The good-hybrid function must still hit the HAS_NO_PRIMITIVE_PARAMETERS failure when the flag is off.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
+	 * fixture function must be hybrid pre-refactoring, carry no {@code input_signature}, select {@link Transformation#RECONFIGURE} with
+	 * passing precondition {@link PreconditionSuccess#P4}, and carry the harness-enabled {@code inferInputSignatures} flag. Shared by the
+	 * reconfigure tests, which differ only in their decorator/import-shape fixture.
+	 */
+	private void helperAssertReconfigure() throws Exception {
+		// Emission is opt-in per test (off by default suite-wide; see #580). The reconfigure tests enable it here.
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid pre-refactoring.", f.isHybrid());
+		assertEquals("Fixture function `f` should select `RECONFIGURE` after analysis.", singleton(RECONFIGURE), f.getTransformations());
+		assertEquals("`RECONFIGURE` selection should set the P4 passing precondition.", P4, f.getPassingPrecondition());
+
+		// Apply the `TextEdit`s directly to the function's in-memory document, mirroring `helperAssertInputSignatureEmission` (the
+		// `ResourceStub`-backed `IFile` can't be resolved to a URI by `TextFileBufferManager`; tracked at #359).
+		IDocument doc = f.getContainingDocument();
+
 		List<TextEdit> edits = new ArrayList<>(f.transform());
 		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
 
