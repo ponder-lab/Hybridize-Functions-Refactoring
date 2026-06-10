@@ -2112,9 +2112,13 @@ public class Function {
 		}
 
 		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
-		// sequencing zero-length same-offset edits by add-order (#575).
+		// sequencing zero-length same-offset edits by add-order (#575). Wrap it in a MultiTextEdit (a container) so every element of
+		// `ret` is a container: the processor builds the per-file TextChange by making the first edit the root and adding the rest as
+		// children, which requires the root to accept children.
 		String decorator = "@" + ctx.prefix() + "function" + this.addInputSignature(ctx).orElse("") + "\n" + precedingText;
-		ret.add(new InsertEdit(offset, decorator));
+		MultiTextEdit mte = new MultiTextEdit();
+		mte.addChild(new InsertEdit(offset, decorator));
+		ret.add(mte);
 
 		return ret;
 	}
