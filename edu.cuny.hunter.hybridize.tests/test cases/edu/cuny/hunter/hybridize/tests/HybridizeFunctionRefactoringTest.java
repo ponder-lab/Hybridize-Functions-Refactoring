@@ -8414,6 +8414,82 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #434. A {@code tf.RaggedTensor} type hint classifies the parameter as tensor-typed via the Phase 1 type-hint path: a
+	 * {@code RaggedTensor} is a tensor for refactoring purposes, so its FQN is among those recognized by {@code hasTensorTypeHint}. The
+	 * argument is a non-tensor, isolating the type-hint signal.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/434">Issue 434</a>
+	 */
+	@Test
+	public void testHasLikelyTensorParameterRagged() throws Exception {
+		assertTensorTypeHintClassifies();
+	}
+
+	/**
+	 * Test for #434. A {@code tf.SparseTensor} type hint classifies the parameter as tensor-typed via the Phase 1 type-hint path.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/434">Issue 434</a>
+	 */
+	@Test
+	public void testHasLikelyTensorParameterSparse() throws Exception {
+		assertTensorTypeHintClassifies();
+	}
+
+	/**
+	 * Test for #434. A {@code tf.Variable} type hint classifies the parameter as tensor-typed via the Phase 1 type-hint path; a
+	 * {@code Variable} is treated as tensor-equivalent for hybridization purposes.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/434">Issue 434</a>
+	 */
+	@Test
+	public void testHasLikelyTensorParameterVariable() throws Exception {
+		assertTensorTypeHintClassifies();
+	}
+
+	/**
+	 * Negative test for #434. A {@code tf.RaggedTensorSpec} type hint must NOT classify the parameter as tensor-typed: a {@code *Spec}
+	 * descriptor describes a tensor but is not itself one, so its FQN is excluded from the recognized set. With the type hint rejected and
+	 * a non-tensor argument, the parameter has no classifying signal.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/434">Issue 434</a>
+	 */
+	@Test
+	public void testHasLikelyTensorParameterRaggedSpec() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue("Fixture function is decorated with `@tf.function`.", function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		assertNotEquals("A `*Spec` type hint must NOT classify the parameter as tensor-typed.", TRUE, t.isTensor());
+		assertFalse("With no tensor classification, `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * Shared assertion for the positive #434 type-hint tests: the current fixture's single {@code @tf.function} parameter {@code t} is
+	 * classified as tensor-typed via the Phase 1 type-hint path (honored by the harness's global {@code ALWAYS_FOLLOW_TYPE_HINTS}), and the
+	 * function reflects that at {@link Function#getHasTensorParameter()}.
+	 */
+	private void assertTensorTypeHintClassifies() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue("Fixture function is decorated with `@tf.function`.", function.isHybrid());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		assertTrue("A TF tensor subtype type hint must classify the parameter as tensor-typed (#434).", t.isTensor());
+		assertTrue("A type-hint-classified parameter implies `getHasTensorParameter() == TRUE`.", function.getHasTensorParameter());
+	}
+
+	/**
 	 * Regression test for #486 (shape-⊤). A tensor-typed parameter whose shape Ariadne cannot resolve must surface the shape-⊤ marker (a
 	 * {@link TensorType} with {@code null} {@linkplain TensorType#getDims() dims}) so downstream code can distinguish it from a concrete
 	 * shape. The marker is visible at the {@link Parameter#getTensorTypes()} level because the {@code TensorTypeAnalysis} iterator emits
