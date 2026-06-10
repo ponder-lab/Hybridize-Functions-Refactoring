@@ -73,4 +73,8 @@ jobs:
     - name: Test with Maven
       run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report
     - name: Coveralls GitHub Action
-      uses: coverallsapp/github-action@v2.3.6
+      uses: coverallsapp/github-action@v2.3.7
+      with:
+        # Don't fail the build when the Coveralls reporter binary download/checksum or upload flakes (#601); coverage reporting is
+        # best-effort. v2.3.7 honors `fail-on-error` for binary download/verification failures, which v2.3.6 did not.
+        fail-on-error: false
