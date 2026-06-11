@@ -848,6 +848,13 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
+	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the (possibly empty) result so
+	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
+	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
+	 */
+	private Optional<InputSignature> inferredInputSignature;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -996,6 +1003,13 @@ public class Function {
 							this.addInfo("This eager function is not recursive.");
 							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 							this.setPassingPrecondition(P1);
+
+							// The eager→hybrid conversion emits the inferred signature into the new decorator during the change
+							// (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
+							// evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
+							// memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
+							if (this.getInferInputSignatures())
+								this.inferInputSignature();
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
@@ -1794,11 +1808,40 @@ public class Function {
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 * <p>
+	 * The result is memoized: the per-parameter INFOs emitted as a side effect are added at most once even though several call sites
+	 * (precondition checking, import injection, and the transform paths) request the signature within a single pass.
 	 *
 	 * @return The inferred signature, or {@link Optional#empty} if any non-{@code self} parameter blocks inference or if {@link #inferSpec}
 	 *         cannot reduce one of the per-parameter sets.
 	 */
 	public Optional<InputSignature> inferInputSignature() {
+		if (this.inferredInputSignature == null)
+			this.inferredInputSignature = this.computeInputSignature();
+
+		return this.inferredInputSignature;
+	}
+
+	/**
+	 * Returns the memoized inferred input signature without triggering its computation. Unlike {@link #inferInputSignature()}, this never
+	 * runs inference (and so never emits the per-parameter INFOs): it reports only what a prior call already computed during analysis or
+	 * transformation. Returns {@link Optional#empty} both when inference was never requested for this function and when it was requested
+	 * but blocked. Intended for read-only reporting (e.g. the evaluator) that must not perturb the function's status.
+	 *
+	 * @return The memoized inferred signature, or {@link Optional#empty} if it was not computed or did not reduce to one.
+	 */
+	public Optional<InputSignature> getInferredInputSignature() {
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature;
+	}
+
+	/**
+	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
+	 * recovery INFOs as a side effect.
+	 *
+	 * @return The inferred signature, or {@link Optional#empty} if inference is blocked. See {@link #inferInputSignature()} for the
+	 *         per-case contract.
+	 */
+	private Optional<InputSignature> computeInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
 		boolean blocked = false;
 
