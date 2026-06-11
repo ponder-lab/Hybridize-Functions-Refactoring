@@ -492,7 +492,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
-				"refactoring", "passing precondition", "status");
+				"inferred input_signature", "input_signature relation", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
@@ -513,6 +513,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasInputSignatureParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasJitCompileParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasReduceRetracingParam());
+
+		// The inferred signature the refactoring computed for this function, and how it relates to an explicitly supplied one. Both read
+		// the memoized inference result without recomputing, so they leave the status untouched: they are blank for functions where the
+		// refactoring never ran inference.
+		printer.print(function.getInferredInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
+		printer.print(hybridizationParameters == null ? null
+				: hybridizationParameters.getSuppliedInputSignature()
+						.flatMap(supplied -> function.getInferredInputSignature().map(supplied::relate)).orElse(null));
 
 		printer.print(function.getRefactoring());
 		printer.print(function.getPassingPrecondition());
