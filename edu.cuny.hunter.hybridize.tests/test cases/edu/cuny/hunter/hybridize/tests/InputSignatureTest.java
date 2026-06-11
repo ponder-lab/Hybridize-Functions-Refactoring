@@ -4,6 +4,7 @@ import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.BOOL;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.FLOAT32;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.INT32;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.STRING;
+import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.UNKNOWN;
 import static org.junit.Assert.assertEquals;
 
 import java.util.List;
@@ -18,6 +19,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature.Relation;
 
 /**
  * Tests for {@link InputSignature#toTensorSpecList(String)}.
@@ -132,5 +134,135 @@ public class InputSignatureTest {
 		} finally {
 			Locale.setDefault(prior);
 		}
+	}
+
+	private static InputSignature sig(TensorType... types) {
+		return new InputSignature(List.of(types));
+	}
+
+	/**
+	 * Identical signatures agree.
+	 */
+	@Test
+	public void testRelateAgreement() {
+		InputSignature a = sig(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		InputSignature b = sig(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		assertEquals(Relation.AGREEMENT, a.relate(b));
+	}
+
+	/**
+	 * A concrete supplied dimension where the inferred one is a wildcard makes the supplied signature strictly tighter.
+	 */
+	@Test
+	public void testRelateSuppliedTighterByDim() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(32), new NumericDim(784))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(784))));
+		assertEquals(Relation.SUPPLIED_TIGHTER, supplied.relate(inferred));
+	}
+
+	/**
+	 * A known-rank supplied shape against an unknown-rank ({@code null} dims) inferred shape is strictly tighter.
+	 */
+	@Test
+	public void testRelateSuppliedTighterByShapeTop() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, null));
+		assertEquals(Relation.SUPPLIED_TIGHTER, supplied.relate(inferred));
+	}
+
+	/**
+	 * A concrete supplied dtype against an {@code UNKNOWN} inferred dtype is strictly tighter (defensive: inference drops {@code UNKNOWN}
+	 * upstream, but the lattice still orders it as the top).
+	 */
+	@Test
+	public void testRelateSuppliedTighterByDtype() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		InputSignature inferred = sig(new TensorType(UNKNOWN, List.of(new NumericDim(2))));
+		assertEquals(Relation.SUPPLIED_TIGHTER, supplied.relate(inferred));
+	}
+
+	/**
+	 * A wildcard supplied dimension where the inferred one is concrete makes the supplied signature strictly broader.
+	 */
+	@Test
+	public void testRelateSuppliedBroaderByDim() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(784))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new NumericDim(32), new NumericDim(784))));
+		assertEquals(Relation.SUPPLIED_BROADER, supplied.relate(inferred));
+	}
+
+	/**
+	 * An unknown-rank ({@code null} dims) supplied shape against a known-rank inferred shape is strictly broader.
+	 */
+	@Test
+	public void testRelateSuppliedBroaderByShapeTop() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, null));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		assertEquals(Relation.SUPPLIED_BROADER, supplied.relate(inferred));
+	}
+
+	/**
+	 * Two distinct concrete dimensions at the same position are incomparable.
+	 */
+	@Test
+	public void testRelateIncomparableByDim() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(32), new NumericDim(784))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(784))));
+		assertEquals(Relation.INCOMPARABLE, supplied.relate(inferred));
+	}
+
+	/**
+	 * Two distinct concrete dtypes are incomparable.
+	 */
+	@Test
+	public void testRelateIncomparableByDtype() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		InputSignature inferred = sig(new TensorType(INT32, List.of(new NumericDim(2))));
+		assertEquals(Relation.INCOMPARABLE, supplied.relate(inferred));
+	}
+
+	/**
+	 * Two shapes of different rank are incomparable.
+	 */
+	@Test
+	public void testRelateIncomparableByRank() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))));
+		assertEquals(Relation.INCOMPARABLE, supplied.relate(inferred));
+	}
+
+	/**
+	 * A signature that is tighter on one parameter and broader on another is incomparable overall (neither is uniformly at least as
+	 * specific).
+	 */
+	@Test
+	public void testRelateIncomparableMixedParameters() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(32))),
+				new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE)));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE)),
+				new TensorType(FLOAT32, List.of(new NumericDim(32))));
+		assertEquals(Relation.INCOMPARABLE, supplied.relate(inferred));
+	}
+
+	/**
+	 * Different parameter counts are incomparable.
+	 */
+	@Test
+	public void testRelateIncomparableParameterCount() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new NumericDim(2))),
+				new TensorType(FLOAT32, List.of(new NumericDim(2))));
+		assertEquals(Relation.INCOMPARABLE, supplied.relate(inferred));
+	}
+
+	/**
+	 * All wildcard kinds ({@link DynamicDim}, {@link SymbolicDim}) are the lattice top and relate as equal, so a supplied {@code None}
+	 * agrees with an inferred symbolic wildcard.
+	 */
+	@Test
+	public void testRelateWildcardKindsAgree() {
+		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(784))));
+		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(784))));
+		assertEquals(Relation.AGREEMENT, supplied.relate(inferred));
 	}
 }
