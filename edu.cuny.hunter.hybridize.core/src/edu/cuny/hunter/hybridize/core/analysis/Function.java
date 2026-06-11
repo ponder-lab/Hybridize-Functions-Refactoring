@@ -1816,6 +1816,18 @@ public class Function {
 	}
 
 	/**
+	 * Returns the memoized inferred input signature without triggering its computation. Unlike {@link #inferInputSignature()}, this never
+	 * runs inference (and so never emits the per-parameter INFOs): it reports only what a prior call already computed during analysis or
+	 * transformation. Returns {@link Optional#empty} both when inference was never requested for this function and when it was requested
+	 * but blocked. Intended for read-only reporting (e.g. the evaluator) that must not perturb the function's status.
+	 *
+	 * @return The memoized inferred signature, or {@link Optional#empty} if it was not computed or did not reduce to one.
+	 */
+	public Optional<InputSignature> getInferredInputSignature() {
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature;
+	}
+
+	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
 	 * recovery INFOs as a side effect.
 	 *
