@@ -1003,6 +1003,13 @@ public class Function {
 							this.addInfo("This eager function is not recursive.");
 							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 							this.setPassingPrecondition(P1);
+
+							// The eager→hybrid conversion emits the inferred signature into the new decorator during the change
+							// (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
+							// evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
+							// memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
+							if (this.getInferInputSignatures())
+								this.inferInputSignature();
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
