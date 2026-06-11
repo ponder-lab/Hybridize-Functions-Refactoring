@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.StringJoiner;
 import java.util.stream.Collectors;
 
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -78,6 +79,157 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	 */
 	public Set<String> requiredDTypeNames() {
 		return parameterTypes.stream().map(InputSignature::dtypeName).collect(Collectors.toUnmodifiableSet());
+	}
+
+	/**
+	 * How a supplied (developer-written) signature relates to an inferred one under the per-parameter, per-axis partial order on the
+	 * tensor-type lattice. On each axis, a wildcard ({@code None}/dynamic/symbolic dimension, an unknown-rank shape, or an {@code UNKNOWN}
+	 * dtype) is the most general value; a concrete value (a fixed dimension, a known-rank shape, or a concrete dtype) is more specific; two
+	 * distinct concrete values (and two shapes of different rank) are incomparable. A signature is at least as specific as another iff it
+	 * is at least as specific on every parameter and axis.
+	 */
+	public enum Relation {
+		/** The supplied and inferred signatures are identical. */
+		AGREEMENT,
+
+		/**
+		 * The supplied signature is strictly more specific than the inferred one (it would reject inputs the call-site evidence shows the
+		 * function receives). The inferred signature should replace it.
+		 */
+		SUPPLIED_TIGHTER,
+
+		/**
+		 * The supplied signature is strictly more general than the inferred one (it admits more inputs than the evidence requires). The
+		 * supplied signature should be preserved, as the broader contract may be intentional and invisible to the static analysis.
+		 */
+		SUPPLIED_BROADER,
+
+		/**
+		 * The supplied and inferred signatures are incomparable—each is more specific than the other on some axis (or they differ in shape
+		 * rank, parameter count, or concrete dtype). The inferred signature should replace it.
+		 */
+		INCOMPARABLE
+	}
+
+	/**
+	 * Relates this signature, taken as the developer-supplied one, to {@code inferred}, the signature derived from call-site evidence by
+	 * {@link Function#inferInputSignature}. See {@link Relation} for the partial order. Used by {@link Function#check()} to decide whether
+	 * an existing {@code input_signature} should be overwritten ({@link Relation#SUPPLIED_TIGHTER}, {@link Relation#INCOMPARABLE}),
+	 * preserved ({@link Relation#SUPPLIED_BROADER}), or left untouched ({@link Relation#AGREEMENT}).
+	 *
+	 * @param inferred The signature inferred from call-site evidence.
+	 * @return How this (supplied) signature relates to {@code inferred}.
+	 */
+	public Relation relate(InputSignature inferred) {
+		List<TensorType> supplied = this.parameterTypes();
+		List<TensorType> evidence = inferred.parameterTypes();
+
+		// A parameter-count mismatch has no meaningful per-parameter order; treat it as incomparable so the inferred signature wins.
+		if (supplied.size() != evidence.size())
+			return Relation.INCOMPARABLE;
+
+		Relation result = Relation.AGREEMENT;
+		for (int i = 0; i < supplied.size(); i++)
+			result = combine(result, relate(supplied.get(i), evidence.get(i)));
+
+		return result;
+	}
+
+	/**
+	 * Combines two axis/parameter relations into the relation of the whole. {@link Relation#AGREEMENT} is the identity (a fully-agreeing
+	 * part imposes nothing); {@link Relation#INCOMPARABLE} is absorbing; and a part where the supplied side is tighter combined with one
+	 * where it is broader is itself incomparable (neither side is uniformly at least as specific).
+	 *
+	 * @param a One relation.
+	 * @param b The other relation.
+	 * @return Their combination.
+	 */
+	private static Relation combine(Relation a, Relation b) {
+		if (a == b)
+			return a;
+		if (a == Relation.AGREEMENT)
+			return b;
+		if (b == Relation.AGREEMENT)
+			return a;
+		// a and b are two different non-AGREEMENT relations: any pairing of {TIGHTER, BROADER, INCOMPARABLE} that isn't equal is
+		// incomparable overall.
+		return Relation.INCOMPARABLE;
+	}
+
+	/**
+	 * Relates a supplied {@link TensorType} to an inferred one by combining the dtype-axis and shape-axis relations.
+	 *
+	 * @param supplied The developer-supplied tensor type.
+	 * @param inferred The inferred tensor type.
+	 * @return How the supplied tensor type relates to the inferred one.
+	 */
+	private static Relation relate(TensorType supplied, TensorType inferred) {
+		return combine(relateDType(supplied.getDType(), inferred.getDType()), relateShape(supplied.getDims(), inferred.getDims()));
+	}
+
+	/**
+	 * Relates a supplied dtype to an inferred one. {@code UNKNOWN} is the lattice top (most general); two distinct concrete dtypes are
+	 * incomparable.
+	 *
+	 * @param supplied The supplied dtype.
+	 * @param inferred The inferred dtype.
+	 * @return How the supplied dtype relates to the inferred one.
+	 */
+	private static Relation relateDType(DType supplied, DType inferred) {
+		if (supplied == inferred)
+			return Relation.AGREEMENT;
+		if (supplied == DType.UNKNOWN)
+			return Relation.SUPPLIED_BROADER;
+		if (inferred == DType.UNKNOWN)
+			return Relation.SUPPLIED_TIGHTER;
+		return Relation.INCOMPARABLE; // two distinct concrete dtypes.
+	}
+
+	/**
+	 * Relates a supplied shape to an inferred one. A {@code null} dimension list is unknown rank, the lattice top (most general). Two
+	 * shapes of different rank are incomparable; otherwise the relation is the combination of the per-dimension relations.
+	 *
+	 * @param supplied The supplied dimension list, or {@code null} for unknown rank.
+	 * @param inferred The inferred dimension list, or {@code null} for unknown rank.
+	 * @return How the supplied shape relates to the inferred one.
+	 */
+	private static Relation relateShape(List<Dimension<?>> supplied, List<Dimension<?>> inferred) {
+		if (supplied == null && inferred == null)
+			return Relation.AGREEMENT;
+		if (supplied == null)
+			return Relation.SUPPLIED_BROADER; // unknown rank is more general than any known rank.
+		if (inferred == null)
+			return Relation.SUPPLIED_TIGHTER;
+		if (supplied.size() != inferred.size())
+			return Relation.INCOMPARABLE; // different ranks.
+
+		Relation result = Relation.AGREEMENT;
+		for (int i = 0; i < supplied.size(); i++)
+			result = combine(result, relateDim(supplied.get(i), inferred.get(i)));
+
+		return result;
+	}
+
+	/**
+	 * Relates a supplied dimension to an inferred one. Any non-{@link NumericDim} (dynamic {@code None}, symbolic {@code ?}, ragged) is a
+	 * wildcard—the most general dimension—so all wildcards relate as equal; a concrete {@link NumericDim} is more specific than a wildcard;
+	 * two distinct concrete dimensions are incomparable.
+	 *
+	 * @param supplied The supplied dimension.
+	 * @param inferred The inferred dimension.
+	 * @return How the supplied dimension relates to the inferred one.
+	 */
+	private static Relation relateDim(Dimension<?> supplied, Dimension<?> inferred) {
+		boolean suppliedConcrete = supplied instanceof NumericDim;
+		boolean inferredConcrete = inferred instanceof NumericDim;
+
+		if (!suppliedConcrete && !inferredConcrete)
+			return Relation.AGREEMENT; // both wildcards.
+		if (suppliedConcrete && !inferredConcrete)
+			return Relation.SUPPLIED_TIGHTER;
+		if (!suppliedConcrete && inferredConcrete)
+			return Relation.SUPPLIED_BROADER;
+		return supplied.value().equals(inferred.value()) ? Relation.AGREEMENT : Relation.INCOMPARABLE;
 	}
 
 	/**
