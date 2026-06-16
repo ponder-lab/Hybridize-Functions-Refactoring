@@ -41,6 +41,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -125,6 +127,7 @@ import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 import com.python.pydev.analysis.refactoring.refactorer.Refactorer;
 
+import edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 /**
@@ -585,6 +588,14 @@ public class Function {
 	 */
 	private static Map<File, Set<String>> autoInjectedImportNames = new HashMap<>();
 
+	/**
+	 * Per containing {@link File}, the union of dtype constant names (e.g. {@code float32}, {@code int32}) required by the inferred input
+	 * signatures of every function in the file that will be converted to hybrid. Computed by {@link #planAutoInjectedImports} before
+	 * transformation so that {@link #convertToHybrid}'s auto-injected import line brings every such function's dtypes into scope, not just
+	 * those of the first function processed in the file (#588).
+	 */
+	private static Map<File, Set<String>> fileInferredDTypeNames = new HashMap<>();
+
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
@@ -700,6 +711,27 @@ public class Function {
 		creationsCache.clear();
 		Parameter.clearCaches();
 		autoInjectedImportNames.clear();
+		fileInferredDTypeNames.clear();
+	}
+
+	/**
+	 * Pre-computes, per file, the union of dtype constants required by the inferred input signatures of the functions about to be converted
+	 * to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...} line covering all of them. Without
+	 * it, the first hybridizable function processed in an import-less file fixes the injected line to its own dtypes, and a later function
+	 * needing a different dtype is gated off emission and left with a bare {@code @function} (#588, follow-up to #574). Reads the memoized
+	 * inferred signatures via {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it
+	 * once before transforming a batch of functions.
+	 *
+	 * @param functions The functions about to be transformed.
+	 */
+	public static void planAutoInjectedImports(Collection<Function> functions) {
+		for (Function function : functions) {
+			if (!function.getTransformations().contains(CONVERT_TO_HYBRID) || !function.getInferInputSignatures())
+				continue;
+
+			function.getInferredInputSignature().ifPresent(sig -> fileInferredDTypeNames
+					.computeIfAbsent(function.getContainingFile(), k -> new TreeSet<>()).addAll(sig.requiredDTypeNames()));
+		}
 	}
 
 	/**
@@ -848,11 +880,11 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
-	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the (possibly empty) result so
+	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
 	 */
-	private Optional<InputSignature> inferredInputSignature;
+	private InferenceResult inferredInputSignature;
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -1087,10 +1119,12 @@ public class Function {
 						this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
 						this.addTransformation(RECONFIGURE);
 						this.setPassingPrecondition(P4);
-					} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()) {
+					} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
+							&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
 						// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
+						// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern always
+						// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
 						InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
-						InputSignature inferred = this.inferInputSignature().get();
 
 						switch (supplied.relate(inferred)) {
 						case SUPPLIED_TIGHTER -> {
@@ -1807,15 +1841,18 @@ public class Function {
 	 * reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
-	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
+	 * future PRs that extend {@link #inferSpec}.
 	 * <p>
 	 * The result is memoized: the per-parameter INFOs emitted as a side effect are added at most once even though several call sites
 	 * (precondition checking, import injection, and the transform paths) request the signature within a single pass.
 	 *
-	 * @return The inferred signature, or {@link Optional#empty} if any non-{@code self} parameter blocks inference or if {@link #inferSpec}
-	 *         cannot reduce one of the per-parameter sets.
+	 * @return An {@link InferenceResult.Inferred} carrying the signature, or an {@link InferenceResult.Absent} carrying the first blocking
+	 *         {@link InferenceResult.AbsenceReason} when a parameter cannot be reduced to a concrete spec.
+	 * @throws IllegalStateException If this function has no tensor parameter. Every refactoring call site is gated on
+	 *         {@link #getHasTensorParameter}, so this signals a direct, unguarded misuse rather than a normal "nothing to infer" outcome.
 	 */
-	public Optional<InputSignature> inferInputSignature() {
+	public InferenceResult inferInputSignature() {
 		if (this.inferredInputSignature == null)
 			this.inferredInputSignature = this.computeInputSignature();
 
@@ -1831,19 +1868,32 @@ public class Function {
 	 * @return The memoized inferred signature, or {@link Optional#empty} if it was not computed or did not reduce to one.
 	 */
 	public Optional<InputSignature> getInferredInputSignature() {
-		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature;
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature.signature();
+	}
+
+	/**
+	 * Returns the reason a signature was not inferred, from the memoized result, without triggering inference. The side-effect-free
+	 * counterpart of {@link #getInferredInputSignature()}: {@link Optional#empty} both when inference was never requested and when it
+	 * succeeded; present only when a prior call computed an {@link InferenceResult.Absent}. Intended for read-only reporting (e.g. the
+	 * evaluator) that must not perturb the function's status.
+	 *
+	 * @return The memoized absence reason, or {@link Optional#empty} if inference was not computed or did produce a signature.
+	 */
+	public Optional<AbsenceReason> getInferredInputSignatureAbsenceReason() {
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature.absenceReason();
 	}
 
 	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
-	 * recovery INFOs as a side effect.
+	 * recovery INFOs as a side effect. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking
+	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
+	 * INFO in one pass.
 	 *
-	 * @return The inferred signature, or {@link Optional#empty} if inference is blocked. See {@link #inferInputSignature()} for the
-	 *         per-case contract.
+	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-tensor-parameter throw.
 	 */
-	private Optional<InputSignature> computeInputSignature() {
+	private InferenceResult computeInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
-		boolean blocked = false;
+		AbsenceReason firstReason = null;
 
 		for (Parameter param : this.getParameters()) {
 			// `self` is excluded from the signature.
@@ -1863,7 +1913,8 @@ public class Function {
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = AbsenceReason.NON_TENSOR_PARAMETER;
 				continue;
 			}
 
@@ -1876,7 +1927,8 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
 								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
 								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE;
 				continue;
 			}
 
@@ -1889,23 +1941,34 @@ public class Function {
 				 * emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the
 				 * reason; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				if (contexts.stream().map(TensorType::getDType).distinct().count() > 1)
+				boolean heterogeneous = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
+				if (heterogeneous)
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
 				else
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = heterogeneous ? AbsenceReason.HETEROGENEOUS_DTYPE : AbsenceReason.UNKNOWN_DTYPE;
 				continue;
 			}
 
 			specs.add(spec.get());
 		}
 
-		if (blocked || specs.isEmpty())
-			return Optional.empty();
+		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
+		// reduced.
+		if (firstReason != null)
+			return new InferenceResult.Absent(firstReason);
 
-		return Optional.of(new InputSignature(specs));
+		// Degenerate case: no non-`self` parameter contributed a spec and none blocked, i.e. there are no non-`self` parameters at all.
+		// Every refactoring call site is gated on `getHasTensorParameter()`, so this cannot arise there; it signals a direct, unguarded
+		// call on a parameterless (or `self`-only) function, which is a programmer error.
+		if (specs.isEmpty())
+			throw new IllegalStateException("Cannot infer an input signature for `" + this
+					+ "`: it has no non-self parameters. Refactoring call sites are gated on `getHasTensorParameter()`.");
+
+		return new InferenceResult.Inferred(new InputSignature(specs));
 	}
 
 	/**
@@ -2185,11 +2248,23 @@ public class Function {
 				Set<String> names = new LinkedHashSet<>();
 				names.add("function");
 
-				if (this.getInferInputSignatures())
-					this.inferInputSignature().ifPresent(sig -> {
+				if (this.getInferInputSignatures()) {
+					// Union this function's dtype constants with those of every other to-be-hybridized function in the file (pre-computed
+					// by `planAutoInjectedImports`), so the single injected import line brings every function's dtypes into scope rather
+					// than only the first-processed function's (#588). Falls back to this function's own dtypes when no plan was computed
+					// (e.g. a direct `transform()` without the processor's pre-pass).
+					SortedSet<String> dtypeNames = new TreeSet<>();
+					this.inferInputSignature().signature().ifPresent(sig -> dtypeNames.addAll(sig.requiredDTypeNames()));
+
+					Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
+					if (plannedDTypeNames != null)
+						dtypeNames.addAll(plannedDTypeNames);
+
+					if (!dtypeNames.isEmpty()) {
 						names.add("TensorSpec");
-						sig.requiredDTypeNames().stream().sorted().forEach(names::add);
-					});
+						names.addAll(dtypeNames);
+					}
+				}
 
 				int line = getLineToInsertImport(doc);
 				int lineOffset = doc.getLineOffset(line);
@@ -2274,7 +2349,7 @@ public class Function {
 			final int valueOffset = bracket;
 			final int valueLength = end - bracket + 1;
 			MultiTextEdit replacement = new MultiTextEdit();
-			this.inferInputSignature()
+			this.inferInputSignature().signature()
 					.ifPresent(sig -> replacement.addChild(new ReplaceEdit(valueOffset, valueLength, sig.toTensorSpecList(ctx.prefix()))));
 
 			if (replacement.hasChildren())
@@ -2387,7 +2462,7 @@ public class Function {
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
 		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
 			return Optional.empty();
-		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
+		return this.inferInputSignature().signature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
 
