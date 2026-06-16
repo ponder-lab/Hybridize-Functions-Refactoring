@@ -1872,6 +1872,18 @@ public class Function {
 	}
 
 	/**
+	 * Returns the reason a signature was not inferred, from the memoized result, without triggering inference. The side-effect-free
+	 * counterpart of {@link #getInferredInputSignature()}: {@link Optional#empty} both when inference was never requested and when it
+	 * succeeded; present only when a prior call computed an {@link InferenceResult.Absent}. Intended for read-only reporting (e.g. the
+	 * evaluator) that must not perturb the function's status.
+	 *
+	 * @return The memoized absence reason, or {@link Optional#empty} if inference was not computed or did produce a signature.
+	 */
+	public Optional<AbsenceReason> getInferredInputSignatureAbsenceReason() {
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature.absenceReason();
+	}
+
+	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
 	 * recovery INFOs as a side effect. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking
 	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
