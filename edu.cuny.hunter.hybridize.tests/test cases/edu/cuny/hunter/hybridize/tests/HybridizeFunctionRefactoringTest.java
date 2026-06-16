@@ -18,6 +18,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -1778,6 +1779,114 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		String expected = this.getFileContents(this.getOutputTestFileName("A"));
 		assertEqualLines(expected, doc.get());
+	}
+
+	/**
+	 * Modify path (#596), supplied-tighter: the existing {@code input_signature} is more specific than the call-site evidence (a concrete
+	 * rank-1 shape against call sites of differing rank, which infer an unknown-rank shape), so it is overwritten with the inferred one and
+	 * reported informationally.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 */
+	@Test
+	public void testReconfigureOverwriteTighter() throws Exception {
+		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
+	}
+
+	/**
+	 * Modify path (#596), incomparable: the existing {@code input_signature} is incomparable with the inferred one (a float32 dtype against
+	 * an int32 call site), so it is overwritten with a warning.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 */
+	@Test
+	public void testReconfigureOverwriteIncomparable() throws Exception {
+		helperAssertReconfigureOverwrite(true, "disagrees with its call sites");
+	}
+
+	/**
+	 * Shared assertion for the modify-path overwrite tests: the single hybrid fixture function selects {@link Transformation#RECONFIGURE}
+	 * with passing precondition {@link PreconditionSuccess#P5}, emits a status of the expected severity (warning for an incomparable
+	 * signature, informational otherwise) containing {@code messageFragment}, and rewrites the decorator to match {@code out/A.py}.
+	 *
+	 * @param expectWarning True iff the per-category status should be a warning (the incomparable case).
+	 * @param messageFragment A fragment the per-category status message must contain.
+	 */
+	private void helperAssertReconfigureOverwrite(boolean expectWarning, String messageFragment) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertEquals("A modify-path overwrite should select `RECONFIGURE`.", singleton(RECONFIGURE), f.getTransformations());
+		assertEquals("A modify-path overwrite should set the P5 passing precondition.", P5, f.getPassingPrecondition());
+
+		boolean found = Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> (expectWarning ? e.isWarning() : e.isInfo()) && e.getMessage().contains(messageFragment));
+		assertTrue("Expected a " + (expectWarning ? "warning" : "informational") + " status containing: " + messageFragment, found);
+
+		IDocument doc = f.getContainingDocument();
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
+	 * Modify path (#596), supplied-broader: the existing {@code input_signature} (an unknown-rank shape) is broader than the call sites
+	 * require, so it is preserved (not overwritten) and the divergence is reported informationally.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 */
+	@Test
+	public void testReconfigurePreserveBroader() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("A broader supplied signature must not be overwritten.", f.getTransformations().contains(RECONFIGURE));
+		assertTrue("Expected an informational status about preserving the broader signature.", Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> e.isInfo() && e.getMessage().contains("broader than its call sites require")));
+	}
+
+	/**
+	 * Modify path (#596), agreement: the supplied {@code input_signature} matches the inferred one, so the refactoring is a no-op (no
+	 * transformation selected).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 */
+	@Test
+	public void testReconfigureAgreement() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("An agreeing signature must not be reconfigured.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * Modify path (#596), flag-off guard: with input-signature inference disabled (the suite default), an existing signature is never
+	 * compared or overwritten, so the default precondition matrix is unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 */
+	@Test
+	public void testReconfigureModifyFlagOff() throws Exception {
+		// The `inferInputSignatures` flag defaults off; intentionally do not enable it.
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertFalse("With inference disabled, an existing signature must not be overwritten.",
+				f.getTransformations().contains(RECONFIGURE));
 	}
 
 	/**
