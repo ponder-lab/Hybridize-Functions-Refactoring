@@ -144,6 +144,7 @@ import edu.cuny.citytech.refactoring.common.tests.RefactoringTest;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
+import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -2716,7 +2717,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Multi-context input with rank disagreement (rank 2 vs rank 1): dtype consensus passes (both float32), shape axis degrades
 		// to ⊥ (null dims). `inferInputSignature` emits a coarse `TensorType(FLOAT32, null)` signature rather than dropping the
 		// parameter.
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Multi-context rank-disagreement emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
@@ -3016,7 +3017,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2)))), dlParams.get(0).getTensorTypes());
 		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), dlParams.get(1).getTensorTypes());
 		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))), dlParams.get(2).getTensorTypes());
-		Optional<InputSignature> dlSig = denseLayerFunc.inferInputSignature();
+		Optional<InputSignature> dlSig = denseLayerFunc.inferInputSignature().signature();
 		assertTrue(dlSig.isPresent());
 		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
 				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))),
@@ -3026,7 +3027,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> addParams = addFunc.getParameters();
 		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2)))), addParams.get(0).getTensorTypes());
 		assertEquals(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))), addParams.get(1).getTensorTypes());
-		Optional<InputSignature> addSig = addFunc.inferInputSignature();
+		Optional<InputSignature> addSig = addFunc.inferInputSignature().signature();
 		assertTrue(addSig.isPresent());
 		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
 				new TensorType(FLOAT32, List.of(new NumericDim(2)))), addSig.get().parameterTypes());
@@ -3081,7 +3082,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		TensorType expectedImage = new TensorType(FLOAT32,
 				List.of(new NumericDim(1), new NumericDim(200), new NumericDim(200), new NumericDim(100)));
 		assertEquals(Set.of(expectedImage), image.getTensorTypes());
-		Optional<InputSignature> convFnSig = convFn.inferInputSignature();
+		Optional<InputSignature> convFnSig = convFn.inferInputSignature().signature();
 		assertTrue(convFnSig.isPresent());
 		assertEquals(List.of(expectedImage), convFnSig.get().parameterTypes());
 	}
@@ -3135,7 +3136,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter a = dbl.getParameters().get(0);
 		assertEquals(Set.of(new TensorType(INT32, List.of()), new TensorType(FLOAT32, List.of()), new TensorType(STRING, List.of())),
 				a.getTensorTypes());
-		Optional<InputSignature> dblSig = dbl.inferInputSignature();
+		Optional<InputSignature> dblSig = dbl.inferInputSignature().signature();
 		assertFalse("Expected signature drop due to dtype disagreement across call sites.", dblSig.isPresent());
 
 		// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510: the `inferSpec`-side drop must surface a
@@ -3179,7 +3180,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter x = f.getParameters().get(0);
 		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(5)));
 		assertEquals(Set.of(expected), x.getTensorTypes());
-		Optional<InputSignature> sig = f.inferInputSignature();
+		Optional<InputSignature> sig = f.inferInputSignature().signature();
 		assertTrue(sig.isPresent());
 		assertEquals(List.of(expected), sig.get().parameterTypes());
 	}
@@ -3696,7 +3697,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
 		assertEquals(aTensorTypes, a.getTensorTypes());
 		assertEquals(bTensorTypes, b.getTensorTypes());
-		assertEquals(Optional.of(expectedSignature), function.inferInputSignature().map(InputSignature::parameterTypes));
+		assertEquals(Optional.of(expectedSignature), function.inferInputSignature().signature().map(InputSignature::parameterTypes));
 	}
 
 	/**
@@ -3734,7 +3735,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
 		assertEquals(aTensorTypes, a.getTensorTypes());
 		assertEquals(bTensorTypes, b.getTensorTypes());
-		assertEquals(Optional.empty(), function.inferInputSignature().map(InputSignature::parameterTypes));
+		assertEquals(Optional.empty(), function.inferInputSignature().signature().map(InputSignature::parameterTypes));
 	}
 
 	/**
@@ -3851,7 +3852,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("t", t.getName());
 		assertTrue(target.getHasTensorParameter());
 		assertEquals(Set.of(expectedParameterTensorType), t.getTensorTypes());
-		assertEquals(Optional.of(List.of(expectedSignatureTensorType)), target.inferInputSignature().map(InputSignature::parameterTypes));
+		assertEquals(Optional.of(List.of(expectedSignatureTensorType)),
+				target.inferInputSignature().signature().map(InputSignature::parameterTypes));
 	}
 
 	/**
@@ -8217,7 +8219,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> ariadne = t.getTensorTypes();
 		assertEquals(Set.of(expected), ariadne);
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue(signature.isPresent());
 		assertEquals(List.of(expected), signature.get().parameterTypes());
 	}
@@ -8239,7 +8241,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue(signature.isPresent());
 		assertEquals(List.of(expected), signature.get().parameterTypes());
 	}
@@ -8265,7 +8267,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		TensorType single = ariadne.iterator().next();
 		assertNull("Expected a shape-⊤ marker (TensorType with null dims).", single.getDims());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Singleton with null dims emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
@@ -8294,7 +8296,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				new TensorType(FLOAT32, List.of(new NumericDim(3))));
 		assertEquals("Expected two TensorTypes of disagreeing size at position 0.", expectedAriadne, ariadne);
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Per-dim disagreement emits a wildcard-shape signature.", signature.isPresent());
 		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
 		TensorType spec = signature.get().parameterTypes().get(0);
@@ -8332,7 +8334,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("shape must be concrete, not ⊤.", only.getDims());
 		assertEquals("Expected a rank-2 shape.", 2, only.getDims().size());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("A concrete tensor type yields an input signature.", signature.isPresent());
 		assertEquals("[tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]", signature.get().toTensorSpecList("tf."));
 
@@ -8363,7 +8365,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
 				xs.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -8394,7 +8396,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `x` must have an empty `getTensorTypes()` cache (call site supplies a non-tensor).",
 				x.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -8426,7 +8428,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `t` should be classified as tensor-typed (Phase 2 hit).", t.isTensor());
 		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
+		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertFalse("Mixed (tensor + non-tensor) parameter list must yield Optional.empty.", signature.isPresent());
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -8459,8 +8461,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Parameter `m` should not be classified as tensor-typed.", m.isTensor());
 		assertFalse("Parameter `n` should not be classified as tensor-typed.", n.isTensor());
 
-		Optional<InputSignature> signature = function.inferInputSignature();
-		assertFalse("All-non-tensor parameter list must yield Optional.empty.", signature.isPresent());
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("All-non-tensor parameter list must not yield a signature.", result.signature().isPresent());
+		assertEquals("All-non-tensor parameter list must report the non-tensor-parameter absence reason.",
+				Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), result.absenceReason());
 
 		List<RefactoringStatusEntry> infoEntries = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
 				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).collect(Collectors.toList());
