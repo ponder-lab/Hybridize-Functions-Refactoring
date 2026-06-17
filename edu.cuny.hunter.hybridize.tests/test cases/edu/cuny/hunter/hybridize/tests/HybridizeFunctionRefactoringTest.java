@@ -8835,9 +8835,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = functions.iterator().next();
 		assertTrue("Parameter receiving a `tf.RaggedTensor` should be classified as tensor-typed.", function.getHasTensorParameter());
 
-		// Regression pin for the raw Ariadne type (the probe finding underpinning #524): Ariadne types the `tf.RaggedTensor` parameter
-		// with a `RaggedDim` at the ragged axis. If a future Ariadne version stops emitting `RaggedDim` here, `RaggedTensorSpec` emission
-		// would silently regress to a dense `TensorSpec`.
+		/*
+		 * Regression pin for the raw Ariadne type (the probe finding underpinning #524): Ariadne types the `tf.RaggedTensor` parameter with
+		 * a `RaggedDim` at the ragged axis. If a future Ariadne version stops emitting `RaggedDim` here, `RaggedTensorSpec` emission would
+		 * silently regress to a dense `TensorSpec`.
+		 */
 		Parameter t = function.getParameters().get(0);
 		assertEquals("Ariadne should type the `tf.RaggedTensor` parameter as `(INT32, [NumericDim(2), RaggedDim])`.",
 				Set.of(new TensorType(INT32, List.of(new NumericDim(2), RaggedDim.INSTANCE))), t.getTensorTypes());

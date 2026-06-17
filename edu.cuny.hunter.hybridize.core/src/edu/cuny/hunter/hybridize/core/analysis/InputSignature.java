@@ -22,6 +22,12 @@ import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
  */
 public record InputSignature(List<TensorType> parameterTypes) {
 
+	/** The {@code tf.TensorSpec} constructor name, emitted for a dense tensor parameter. */
+	private static final String TENSOR_SPEC = "TensorSpec";
+
+	/** The {@code tf.RaggedTensorSpec} constructor name, emitted for a ragged tensor parameter (#524). */
+	private static final String RAGGED_TENSOR_SPEC = "RaggedTensorSpec";
+
 	/**
 	 * Format this signature as a Python source-code expression suitable for the {@code input_signature=} keyword argument of
 	 * {@code @tf.function(...)}. Each parameter's {@link TensorType} renders as {@code tfPrefix + "<SpecType>(shape=(...), dtype=" +
@@ -80,7 +86,7 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	private static String specTypeName(TensorType t) {
 		List<Dimension<?>> dims = t.getDims();
 		boolean ragged = dims != null && dims.stream().anyMatch(RaggedDim.class::isInstance);
-		return ragged ? "RaggedTensorSpec" : "TensorSpec";
+		return ragged ? RAGGED_TENSOR_SPEC : TENSOR_SPEC;
 	}
 
 	/**

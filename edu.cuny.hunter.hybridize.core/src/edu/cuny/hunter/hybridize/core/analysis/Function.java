@@ -2045,9 +2045,11 @@ public class Function {
 			else if (consensus instanceof DynamicDim)
 				shape.add(new SymbolicDim("?"));
 			else if (consensus instanceof RaggedDim)
-				// Preserve the ragged marker so the emission can produce a `RaggedTensorSpec` rather than a dense `TensorSpec` (#524). The
-				// position renders as `None` on the spec surface either way; the marker drives the spec-type choice in
-				// `InputSignature.toTensorSpecList`.
+				/*
+				 * Preserve the ragged marker so the emission can produce a `RaggedTensorSpec` rather than a dense `TensorSpec` (#524). The
+				 * position renders as `None` on the spec surface either way; the marker drives the spec-type choice in
+				 * `InputSignature.toTensorSpecList`.
+				 */
 				shape.add(consensus);
 			else
 				shape.add(new SymbolicDim("?"));
@@ -2463,9 +2465,11 @@ public class Function {
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
 		if (!this.getInferInputSignatures())
 			return Optional.empty();
-		// The signature's own spec-type names (`TensorSpec` and/or `RaggedTensorSpec`) are authoritative for reachability. A separate
-		// upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature
-		// when `RaggedTensorSpec` is imported but `TensorSpec` is not.
+		/*
+		 * The signature's own spec-type names (`TensorSpec` and/or `RaggedTensorSpec`) are authoritative for reachability. A separate
+		 * upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature when
+		 * `RaggedTensorSpec` is imported but `TensorSpec` is not.
+		 */
 		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
 				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
