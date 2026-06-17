@@ -1604,6 +1604,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		assertTrue("Harness `inferInputSignatures` flag should propagate to the analyzed function's flag.", f.getInferInputSignatures());
 
+		// The inferred signature is computed during analysis (not deferred to the change), so it is observable before `transform()` runs.
+		// This pins the analysis-time computation the evaluator's inferred-signature column reads via `getInferredInputSignature()`.
+		assertTrue("Inferred signature should be available after analysis for an eager->hybrid candidate.",
+				f.getInferredInputSignature().isPresent());
+
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
 		// `TextFileBufferManager`. Tracked at #359. When that lands, these tests can collapse to setting `compareOutputTestFile`.
