@@ -78,3 +78,9 @@ jobs:
         # Don't fail the build when the Coveralls reporter binary download/checksum or upload flakes (#601); coverage reporting is
         # best-effort. v2.3.7 honors `fail-on-error` for binary download/verification failures, which v2.3.6 did not.
         fail-on-error: false
+        # Supply explicit PR/git context so Coveralls can associate the upload with the PR and post the status/comment back to GitHub.
+        # Reporting stopped after the v2.3.7 bump with these left empty; #622.
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        git-branch: ${{ github.head_ref || github.ref_name }}
+        git-commit: ${{ github.event.pull_request.head.sha || github.sha }}
+        compare-ref: ${{ github.base_ref }}
