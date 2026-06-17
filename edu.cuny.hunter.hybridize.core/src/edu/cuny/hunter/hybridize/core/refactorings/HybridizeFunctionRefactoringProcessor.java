@@ -45,6 +45,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
 import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -125,6 +126,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	private boolean inferInputSignatures;
+
+	/**
+	 * The targeted k-CFA depth forwarded to the analysis engine (#600). Defaults to
+	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH}, the depth at which the model-forward archetype (chained-layer calls)
+	 * recovers precise per-context tensor shapes.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
+	 */
+	private int targetedCfaDepth = PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
@@ -304,7 +314,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
 
 			// create the analysis engine for the project.
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath);
+			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath,
+					this.getTargetedCfaDepth());
 
 			// build the call graph for the project.
 			PythonSSAPropagationCallGraphBuilder builder;
@@ -618,6 +629,24 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	/**
+	 * The targeted k-CFA depth forwarded to the analysis engine (#600).
+	 *
+	 * @return The targeted k-CFA depth.
+	 */
+	public int getTargetedCfaDepth() {
+		return this.targetedCfaDepth;
+	}
+
+	/**
+	 * Sets the targeted k-CFA depth forwarded to the analysis engine (#600).
+	 *
+	 * @param targetedCfaDepth The targeted k-CFA depth.
+	 */
+	public void setTargetedCfaDepth(int targetedCfaDepth) {
+		this.targetedCfaDepth = targetedCfaDepth;
 	}
 
 	public Set<Function> getOptimizableFunctions() {
