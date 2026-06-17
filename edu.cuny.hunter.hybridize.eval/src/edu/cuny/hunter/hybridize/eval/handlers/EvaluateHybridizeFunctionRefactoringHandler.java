@@ -491,8 +491,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "autograph", "experimental_autograph_options",
-				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "jit_compile", "reduce_retracing",
-				"refactoring", "passing precondition", "status");
+				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
+				"jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
@@ -511,6 +511,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasExperimentalImplementsParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasFuncParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasInputSignatureParam());
+		printer.print(hybridizationParameters == null ? null
+				: hybridizationParameters.getSuppliedInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasJitCompileParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasReduceRetracingParam());
 
