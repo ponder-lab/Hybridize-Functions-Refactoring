@@ -596,6 +596,16 @@ public class Function {
 	 */
 	private static Map<File, Set<String>> fileInferredDTypeNames = new HashMap<>();
 
+	/**
+	 * Per containing {@link File}, the union of spec-type constructor names (e.g. {@code TensorSpec}, {@code RaggedTensorSpec}) required by
+	 * the inferred input signatures of every function in the file that will be converted to hybrid. Computed by
+	 * {@link #planAutoInjectedImports} alongside {@link #fileInferredDTypeNames} so that {@link #convertToHybrid}'s auto-injected import
+	 * line brings every such function's spec types into scope: a ragged parameter needs {@code RaggedTensorSpec}, which {@code TensorSpec}
+	 * being injected does not imply, so without this a ragged signature would be gated off emission and left with a bare {@code @function}
+	 * (#524).
+	 */
+	private static Map<File, Set<String>> fileInferredSpecTypeNames = new HashMap<>();
+
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
@@ -712,15 +722,17 @@ public class Function {
 		Parameter.clearCaches();
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
+		fileInferredSpecTypeNames.clear();
 	}
 
 	/**
-	 * Pre-computes, per file, the union of dtype constants required by the inferred input signatures of the functions about to be converted
-	 * to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...} line covering all of them. Without
-	 * it, the first hybridizable function processed in an import-less file fixes the injected line to its own dtypes, and a later function
-	 * needing a different dtype is gated off emission and left with a bare {@code @function} (#588, follow-up to #574). Reads the memoized
-	 * inferred signatures via {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it
-	 * once before transforming a batch of functions.
+	 * Pre-computes, per file, the union of spec-type constructor names and dtype constants required by the inferred input signatures of the
+	 * functions about to be converted to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...}
+	 * line covering all of them. Without it, the first hybridizable function processed in an import-less file fixes the injected line to
+	 * its own spec types and dtypes, and a later function needing a different dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated
+	 * off emission and left with a bare {@code @function} (follow-up to #574). Reads the memoized inferred signatures via
+	 * {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it once before transforming
+	 * a batch of functions.
 	 *
 	 * @param functions The functions about to be transformed.
 	 */
@@ -729,8 +741,11 @@ public class Function {
 			if (!function.getTransformations().contains(CONVERT_TO_HYBRID) || !function.getInferInputSignatures())
 				continue;
 
-			function.getInferredInputSignature().ifPresent(sig -> fileInferredDTypeNames
-					.computeIfAbsent(function.getContainingFile(), k -> new TreeSet<>()).addAll(sig.requiredDTypeNames()));
+			function.getInferredInputSignature().ifPresent(sig -> {
+				File file = function.getContainingFile();
+				fileInferredDTypeNames.computeIfAbsent(file, k -> new TreeSet<>()).addAll(sig.requiredDTypeNames());
+				fileInferredSpecTypeNames.computeIfAbsent(file, k -> new TreeSet<>()).addAll(sig.requiredSpecTypeNames());
+			});
 		}
 	}
 
@@ -2250,28 +2265,39 @@ public class Function {
 			Set<String> injectedNames = autoInjectedImportNames.get(file);
 
 			if (injectedNames == null) {
-				// `function` is always needed for the decorator. When input-signature emission applies, also bring `TensorSpec` and the
-				// signature's dtype constants into scope so the emission proceeds unqualified rather than being skipped. The dtype
-				// constants are sorted for deterministic emission; `function` and `TensorSpec` lead to match the conventional spelling.
+				// `function` is always needed for the decorator. When input-signature emission applies, also bring the signature's
+				// spec-type
+				// constructors (`TensorSpec`, and `RaggedTensorSpec` for a ragged parameter) and dtype constants into scope so the emission
+				// proceeds unqualified rather than being skipped. The names are sorted for deterministic emission; `function` leads.
 				Set<String> names = new LinkedHashSet<>();
 				names.add("function");
 
 				if (this.getInferInputSignatures()) {
 					/*
-					 * Union this function's dtype constants with those of every other to-be-hybridized function in the file (pre-computed
-					 * by `planAutoInjectedImports`), so the single injected import line brings every function's dtypes into scope rather
-					 * than only the first-processed function's (#588). Falls back to this function's own dtypes when no plan was computed
-					 * (e.g. a direct `transform()` without the processor's pre-pass).
+					 * Union this function's spec-type and dtype names with those of every other to-be-hybridized function in the file
+					 * (pre-computed by `planAutoInjectedImports`), so the single injected import line brings every function's names into
+					 * scope rather than only the first-processed function's (#588). The spec-type names are the signature's own
+					 * `requiredSpecTypeNames` rather than a hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into
+					 * scope and its signature emits unqualified rather than being gated off (#524). Falls back to this function's own names
+					 * when no plan was computed (e.g. a direct `transform()` without the processor's pre-pass).
 					 */
+					SortedSet<String> specTypeNames = new TreeSet<>();
 					SortedSet<String> dtypeNames = new TreeSet<>();
-					this.inferInputSignature().signature().ifPresent(sig -> dtypeNames.addAll(sig.requiredDTypeNames()));
+					this.inferInputSignature().signature().ifPresent(sig -> {
+						specTypeNames.addAll(sig.requiredSpecTypeNames());
+						dtypeNames.addAll(sig.requiredDTypeNames());
+					});
+
+					Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
+					if (plannedSpecTypeNames != null)
+						specTypeNames.addAll(plannedSpecTypeNames);
 
 					Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
 					if (plannedDTypeNames != null)
 						dtypeNames.addAll(plannedDTypeNames);
 
 					if (!dtypeNames.isEmpty()) {
-						names.add("TensorSpec");
+						names.addAll(specTypeNames);
 						names.addAll(dtypeNames);
 					}
 				}
