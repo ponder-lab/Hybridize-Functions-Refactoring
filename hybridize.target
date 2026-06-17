@@ -57,7 +57,7 @@
 				<dependency>
 					<groupId>com.ibm.wala</groupId>
 					<artifactId>com.ibm.wala.cast.python.ml</artifactId>
-					<version>0.49.0</version>
+					<version>0.49.1</version>
 					<classifier>fat</classifier>
 					<type>jar</type>
 				</dependency>
