@@ -9,8 +9,9 @@ import java.util.Optional;
  * <p>
  * The result is total over the function's parameters: a signature is produced only when every non-{@code self} parameter contributes a
  * {@link com.ibm.wala.cast.python.ml.types.TensorType}; if any parameter blocks, the whole result is {@link Absent}. The degenerate case of
- * a function with no tensor parameter is a contract violation of {@link Function#inferInputSignature} (every refactoring call site is
- * already gated on {@link Function#getHasTensorParameter}), so it throws rather than producing a result.
+ * a function with no non-{@code self} parameter (parameterless or {@code self}-only) is a contract violation of
+ * {@link Function#inferInputSignature} (every refactoring call site is already gated on {@link Function#getHasTensorParameter}), so it
+ * throws rather than producing a result. A non-tensor parameter is not degenerate: it yields an {@link Absent}.
  *
  * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/483">Issue 483</a>
  */
