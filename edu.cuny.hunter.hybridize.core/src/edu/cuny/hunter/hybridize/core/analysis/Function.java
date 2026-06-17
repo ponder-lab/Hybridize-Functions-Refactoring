@@ -1980,8 +1980,9 @@ public class Function {
 	 * <li><b>Rank consensus or shape-⊤.</b> If any context has {@code dims == null} (unknown rank) or the ranks disagree across contexts,
 	 * emit a coarse {@code TensorType(dtype, null)} (shape-⊤). This is a valid, runtime-accepted signature.
 	 * <li><b>Per-position consensus or wildcard.</b> For each dimension position, if all contexts agree on a concrete value, keep it;
-	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. Any non-{@link NumericDim} context dim also yields a wildcard at that
-	 * position.
+	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. A consensus {@link RaggedDim} is preserved (it drives
+	 * {@link InputSignature#toTensorSpecList} to emit a {@code RaggedTensorSpec}); any other non-{@link NumericDim} context dim yields a
+	 * wildcard at that position.
 	 * </ol>
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
@@ -2044,9 +2045,10 @@ public class Function {
 			else if (consensus instanceof DynamicDim)
 				shape.add(new SymbolicDim("?"));
 			else if (consensus instanceof RaggedDim)
-				// TODO(https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524): once `RaggedTensorSpec` emission lands,
-				// route ragged dims there instead of collapsing.
-				shape.add(new SymbolicDim("?"));
+				// Preserve the ragged marker so the emission can produce a `RaggedTensorSpec` rather than a dense `TensorSpec` (#524). The
+				// position renders as `None` on the spec surface either way; the marker drives the spec-type choice in
+				// `InputSignature.toTensorSpecList`.
+				shape.add(consensus);
 			else
 				shape.add(new SymbolicDim("?"));
 		}
@@ -2446,14 +2448,15 @@ public class Function {
 	/**
 	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
 	 * produces a signature whose names are all reachable under the import context. Returns {@link Optional#empty} otherwise (flag off, no
-	 * signature, {@code TensorSpec} not reachable, or a required dtype constant not reachable). The keyword text only; callers handle the
-	 * surrounding syntax (parenthesization via {@link #addInputSignature(ImportContext)}, or a leading {@code ", "} when injecting into an
-	 * existing arg list).
+	 * signature, a required spec-type constructor not reachable, or a required dtype constant not reachable). The keyword text only;
+	 * callers handle the surrounding syntax (parenthesization via {@link #addInputSignature(ImportContext)}, or a leading {@code ", "} when
+	 * injecting into an existing arg list).
 	 * <p>
-	 * The dtype-reachability check guards the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does
-	 * not imply the signature's dtype constants (e.g. {@code float32}) are too, so emitting unconditionally would produce a
-	 * {@code NameError}-raising decorator. When any required dtype constant is out of scope, emission is skipped rather than qualified—the
-	 * named-import shape has no module prefix to qualify with.
+	 * The reachability checks guard the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does not
+	 * imply the signature's dtype constants (e.g. {@code float32}) are too, nor that {@code RaggedTensorSpec} is in scope for a ragged
+	 * parameter ({@link InputSignature#requiredSpecTypeNames}), so emitting unconditionally would produce a {@code NameError}-raising
+	 * decorator. When any required name is out of scope, emission is skipped rather than qualified—the named-import shape has no module
+	 * prefix to qualify with.
 	 *
 	 * @param ctx The import context for the containing file.
 	 * @return The {@code input_signature=...} keyword argument, or empty.
@@ -2462,7 +2465,8 @@ public class Function {
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
 		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
 			return Optional.empty();
-		return this.inferInputSignature().signature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
+		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
+				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
 
