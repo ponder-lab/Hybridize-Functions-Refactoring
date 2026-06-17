@@ -515,11 +515,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasJitCompileParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasReduceRetracingParam());
 
-		// The inferred signature the refactoring computed for this function, how it relates to an explicitly supplied one, and—when no
-		// signature was inferred—why. All read the memoized inference result without recomputing, so they leave the status untouched. When
-		// the refactoring did not run inference on a function, all three are blank. When it did, exactly one of the inferred-content and
-		// absence-reason columns is populated: the content when a signature was inferred, the reason when inference was blocked. (The
-		// inferred-content column is thus blank both when inference never ran and when it ran but was blocked.)
+		/*
+		 * The inferred signature the refactoring computed for this function, how it relates to an explicitly supplied one, and—when no
+		 * signature was inferred—why. All read the memoized inference result without recomputing, so they leave the status untouched. When
+		 * the refactoring did not run inference on a function, all three are blank. When it did, exactly one of the inferred-content and
+		 * absence-reason columns is populated: the content when a signature was inferred, the reason when inference was blocked. (The
+		 * inferred-content column is thus blank both when inference never ran and when it ran but was blocked.)
+		 */
 		printer.print(function.getInferredInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
 		printer.print(hybridizationParameters == null ? null
 				: hybridizationParameters.getSuppliedInputSignature()
