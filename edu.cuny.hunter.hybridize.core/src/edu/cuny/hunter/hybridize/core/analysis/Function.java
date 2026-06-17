@@ -1849,8 +1849,10 @@ public class Function {
 	 *
 	 * @return An {@link InferenceResult.Inferred} carrying the signature, or an {@link InferenceResult.Absent} carrying the first blocking
 	 *         {@link InferenceResult.AbsenceReason} when a parameter cannot be reduced to a concrete spec.
-	 * @throws IllegalStateException If this function has no tensor parameter. Every refactoring call site is gated on
-	 *         {@link #getHasTensorParameter}, so this signals a direct, unguarded misuse rather than a normal "nothing to infer" outcome.
+	 * @throws IllegalStateException If this function has no non-{@code self} parameter (it is parameterless or {@code self}-only). A
+	 *         non-tensor parameter does not trigger this—it yields an {@link InferenceResult.Absent}. Every refactoring call site is gated
+	 *         on {@link #getHasTensorParameter}, so the throw signals a direct, unguarded misuse rather than a normal "nothing to infer"
+	 *         outcome.
 	 */
 	public InferenceResult inferInputSignature() {
 		if (this.inferredInputSignature == null)
@@ -1889,7 +1891,7 @@ public class Function {
 	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
 	 * INFO in one pass.
 	 *
-	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-tensor-parameter throw.
+	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-non-self-parameter throw.
 	 */
 	private InferenceResult computeInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
