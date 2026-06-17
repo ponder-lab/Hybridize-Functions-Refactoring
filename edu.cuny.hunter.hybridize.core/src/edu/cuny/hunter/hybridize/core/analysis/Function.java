@@ -127,6 +127,7 @@ import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 import com.python.pydev.analysis.refactoring.refactorer.Refactorer;
 
+import edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
 
 /**
@@ -595,6 +596,16 @@ public class Function {
 	 */
 	private static Map<File, Set<String>> fileInferredDTypeNames = new HashMap<>();
 
+	/**
+	 * Per containing {@link File}, the union of spec-type constructor names (e.g. {@code TensorSpec}, {@code RaggedTensorSpec}) required by
+	 * the inferred input signatures of every function in the file that will be converted to hybrid. Computed by
+	 * {@link #planAutoInjectedImports} alongside {@link #fileInferredDTypeNames} so that {@link #convertToHybrid}'s auto-injected import
+	 * line brings every such function's spec types into scope: a ragged parameter needs {@code RaggedTensorSpec}, which {@code TensorSpec}
+	 * being injected does not imply, so without this a ragged signature would be gated off emission and left with a bare {@code @function}
+	 * (#524).
+	 */
+	private static Map<File, Set<String>> fileInferredSpecTypeNames = new HashMap<>();
+
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
@@ -711,15 +722,17 @@ public class Function {
 		Parameter.clearCaches();
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
+		fileInferredSpecTypeNames.clear();
 	}
 
 	/**
-	 * Pre-computes, per file, the union of dtype constants required by the inferred input signatures of the functions about to be converted
-	 * to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...} line covering all of them. Without
-	 * it, the first hybridizable function processed in an import-less file fixes the injected line to its own dtypes, and a later function
-	 * needing a different dtype is gated off emission and left with a bare {@code @function} (#588, follow-up to #574). Reads the memoized
-	 * inferred signatures via {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it
-	 * once before transforming a batch of functions.
+	 * Pre-computes, per file, the union of spec-type constructor names and dtype constants required by the inferred input signatures of the
+	 * functions about to be converted to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...}
+	 * line covering all of them. Without it, the first hybridizable function processed in an import-less file fixes the injected line to
+	 * its own spec types and dtypes, and a later function needing a different dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated
+	 * off emission and left with a bare {@code @function} (follow-up to #574). Reads the memoized inferred signatures via
+	 * {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it once before transforming
+	 * a batch of functions.
 	 *
 	 * @param functions The functions about to be transformed.
 	 */
@@ -728,8 +741,11 @@ public class Function {
 			if (!function.getTransformations().contains(CONVERT_TO_HYBRID) || !function.getInferInputSignatures())
 				continue;
 
-			function.getInferredInputSignature().ifPresent(sig -> fileInferredDTypeNames
-					.computeIfAbsent(function.getContainingFile(), k -> new TreeSet<>()).addAll(sig.requiredDTypeNames()));
+			function.getInferredInputSignature().ifPresent(sig -> {
+				File file = function.getContainingFile();
+				fileInferredDTypeNames.computeIfAbsent(file, k -> new TreeSet<>()).addAll(sig.requiredDTypeNames());
+				fileInferredSpecTypeNames.computeIfAbsent(file, k -> new TreeSet<>()).addAll(sig.requiredSpecTypeNames());
+			});
 		}
 	}
 
@@ -879,11 +895,11 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
-	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the (possibly empty) result so
+	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
 	 */
-	private Optional<InputSignature> inferredInputSignature;
+	private InferenceResult inferredInputSignature;
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -1120,10 +1136,12 @@ public class Function {
 						this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
 						this.addTransformation(RECONFIGURE);
 						this.setPassingPrecondition(P4);
-					} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()) {
+					} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
+							&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
 						// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
+						// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern always
+						// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
 						InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
-						InputSignature inferred = this.inferInputSignature().get();
 
 						switch (supplied.relate(inferred)) {
 						case SUPPLIED_TIGHTER -> {
@@ -1840,15 +1858,20 @@ public class Function {
 	 * reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
-	 * non-concrete cases (#494) return {@link Optional#empty} pending future PRs that extend {@link #inferSpec}.
+	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
+	 * future PRs that extend {@link #inferSpec}.
 	 * <p>
 	 * The result is memoized: the per-parameter INFOs emitted as a side effect are added at most once even though several call sites
 	 * (precondition checking, import injection, and the transform paths) request the signature within a single pass.
 	 *
-	 * @return The inferred signature, or {@link Optional#empty} if any non-{@code self} parameter blocks inference or if {@link #inferSpec}
-	 *         cannot reduce one of the per-parameter sets.
+	 * @return An {@link InferenceResult.Inferred} carrying the signature, or an {@link InferenceResult.Absent} carrying the first blocking
+	 *         {@link InferenceResult.AbsenceReason} when a parameter cannot be reduced to a concrete spec.
+	 * @throws IllegalStateException If this function has no non-{@code self} parameter (it is parameterless or {@code self}-only). A
+	 *         non-tensor parameter does not trigger this—it yields an {@link InferenceResult.Absent}. Every refactoring call site is gated
+	 *         on {@link #getHasTensorParameter}, so the throw signals a direct, unguarded misuse rather than a normal "nothing to infer"
+	 *         outcome.
 	 */
-	public Optional<InputSignature> inferInputSignature() {
+	public InferenceResult inferInputSignature() {
 		if (this.inferredInputSignature == null)
 			this.inferredInputSignature = this.computeInputSignature();
 
@@ -1864,19 +1887,32 @@ public class Function {
 	 * @return The memoized inferred signature, or {@link Optional#empty} if it was not computed or did not reduce to one.
 	 */
 	public Optional<InputSignature> getInferredInputSignature() {
-		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature;
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature.signature();
+	}
+
+	/**
+	 * Returns the reason a signature was not inferred, from the memoized result, without triggering inference. The side-effect-free
+	 * counterpart of {@link #getInferredInputSignature()}: {@link Optional#empty} both when inference was never requested and when it
+	 * succeeded; present only when a prior call computed an {@link InferenceResult.Absent}. Intended for read-only reporting (e.g. the
+	 * evaluator) that must not perturb the function's status.
+	 *
+	 * @return The memoized absence reason, or {@link Optional#empty} if inference was not computed or did produce a signature.
+	 */
+	public Optional<AbsenceReason> getInferredInputSignatureAbsenceReason() {
+		return this.inferredInputSignature == null ? Optional.empty() : this.inferredInputSignature.absenceReason();
 	}
 
 	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
-	 * recovery INFOs as a side effect.
+	 * recovery INFOs as a side effect. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking
+	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
+	 * INFO in one pass.
 	 *
-	 * @return The inferred signature, or {@link Optional#empty} if inference is blocked. See {@link #inferInputSignature()} for the
-	 *         per-case contract.
+	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-non-self-parameter throw.
 	 */
-	private Optional<InputSignature> computeInputSignature() {
+	private InferenceResult computeInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
-		boolean blocked = false;
+		AbsenceReason firstReason = null;
 
 		for (Parameter param : this.getParameters()) {
 			// `self` is excluded from the signature.
@@ -1896,7 +1932,8 @@ public class Function {
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = AbsenceReason.NON_TENSOR_PARAMETER;
 				continue;
 			}
 
@@ -1909,7 +1946,8 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
 								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
 								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE;
 				continue;
 			}
 
@@ -1922,23 +1960,34 @@ public class Function {
 				 * emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the
 				 * reason; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				if (contexts.stream().map(TensorType::getDType).distinct().count() > 1)
+				boolean heterogeneous = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
+				if (heterogeneous)
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
 				else
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-				blocked = true;
+				if (firstReason == null)
+					firstReason = heterogeneous ? AbsenceReason.HETEROGENEOUS_DTYPE : AbsenceReason.UNKNOWN_DTYPE;
 				continue;
 			}
 
 			specs.add(spec.get());
 		}
 
-		if (blocked || specs.isEmpty())
-			return Optional.empty();
+		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
+		// reduced.
+		if (firstReason != null)
+			return new InferenceResult.Absent(firstReason);
 
-		return Optional.of(new InputSignature(specs));
+		// Degenerate case: no non-`self` parameter contributed a spec and none blocked, i.e. there are no non-`self` parameters at all.
+		// Every refactoring call site is gated on `getHasTensorParameter()`, so this cannot arise there; it signals a direct, unguarded
+		// call on a parameterless (or `self`-only) function, which is a programmer error.
+		if (specs.isEmpty())
+			throw new IllegalStateException("Cannot infer an input signature for `" + this
+					+ "`: it has no non-self parameters. Refactoring call sites are gated on `getHasTensorParameter()`.");
+
+		return new InferenceResult.Inferred(new InputSignature(specs));
 	}
 
 	/**
@@ -1950,8 +1999,9 @@ public class Function {
 	 * <li><b>Rank consensus or shape-⊤.</b> If any context has {@code dims == null} (unknown rank) or the ranks disagree across contexts,
 	 * emit a coarse {@code TensorType(dtype, null)} (shape-⊤). This is a valid, runtime-accepted signature.
 	 * <li><b>Per-position consensus or wildcard.</b> For each dimension position, if all contexts agree on a concrete value, keep it;
-	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. Any non-{@link NumericDim} context dim also yields a wildcard at that
-	 * position.
+	 * otherwise emit a {@link SymbolicDim}({@code "?"}) wildcard. A consensus {@link RaggedDim} is preserved (it drives
+	 * {@link InputSignature#toTensorSpecList} to emit a {@code RaggedTensorSpec}); any other non-{@link NumericDim} context dim yields a
+	 * wildcard at that position.
 	 * </ol>
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
@@ -2014,9 +2064,12 @@ public class Function {
 			else if (consensus instanceof DynamicDim)
 				shape.add(new SymbolicDim("?"));
 			else if (consensus instanceof RaggedDim)
-				// TODO(https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524): once `RaggedTensorSpec` emission lands,
-				// route ragged dims there instead of collapsing.
-				shape.add(new SymbolicDim("?"));
+				/*
+				 * Preserve the ragged marker so the emission can produce a `RaggedTensorSpec` rather than a dense `TensorSpec` (#524). The
+				 * position renders as `None` on the spec surface either way; the marker drives the spec-type choice in
+				 * `InputSignature.toTensorSpecList`.
+				 */
+				shape.add(consensus);
 			else
 				shape.add(new SymbolicDim("?"));
 		}
@@ -2212,28 +2265,39 @@ public class Function {
 			Set<String> injectedNames = autoInjectedImportNames.get(file);
 
 			if (injectedNames == null) {
-				// `function` is always needed for the decorator. When input-signature emission applies, also bring `TensorSpec` and the
-				// signature's dtype constants into scope so the emission proceeds unqualified rather than being skipped. The dtype
-				// constants are sorted for deterministic emission; `function` and `TensorSpec` lead to match the conventional spelling.
+				// `function` is always needed for the decorator. When input-signature emission applies, also bring the signature's
+				// spec-type
+				// constructors (`TensorSpec`, and `RaggedTensorSpec` for a ragged parameter) and dtype constants into scope so the emission
+				// proceeds unqualified rather than being skipped. The names are sorted for deterministic emission; `function` leads.
 				Set<String> names = new LinkedHashSet<>();
 				names.add("function");
 
 				if (this.getInferInputSignatures()) {
 					/*
-					 * Union this function's dtype constants with those of every other to-be-hybridized function in the file (pre-computed
-					 * by `planAutoInjectedImports`), so the single injected import line brings every function's dtypes into scope rather
-					 * than only the first-processed function's (#588). Falls back to this function's own dtypes when no plan was computed
-					 * (e.g. a direct `transform()` without the processor's pre-pass).
+					 * Union this function's spec-type and dtype names with those of every other to-be-hybridized function in the file
+					 * (pre-computed by `planAutoInjectedImports`), so the single injected import line brings every function's names into
+					 * scope rather than only the first-processed function's (#588). The spec-type names are the signature's own
+					 * `requiredSpecTypeNames` rather than a hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into
+					 * scope and its signature emits unqualified rather than being gated off (#524). Falls back to this function's own names
+					 * when no plan was computed (e.g. a direct `transform()` without the processor's pre-pass).
 					 */
+					SortedSet<String> specTypeNames = new TreeSet<>();
 					SortedSet<String> dtypeNames = new TreeSet<>();
-					this.inferInputSignature().ifPresent(sig -> dtypeNames.addAll(sig.requiredDTypeNames()));
+					this.inferInputSignature().signature().ifPresent(sig -> {
+						specTypeNames.addAll(sig.requiredSpecTypeNames());
+						dtypeNames.addAll(sig.requiredDTypeNames());
+					});
+
+					Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
+					if (plannedSpecTypeNames != null)
+						specTypeNames.addAll(plannedSpecTypeNames);
 
 					Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
 					if (plannedDTypeNames != null)
 						dtypeNames.addAll(plannedDTypeNames);
 
 					if (!dtypeNames.isEmpty()) {
-						names.add("TensorSpec");
+						names.addAll(specTypeNames);
 						names.addAll(dtypeNames);
 					}
 				}
@@ -2252,7 +2316,7 @@ public class Function {
 			// Emission is reachable iff this function's required names are among those the injected line brought into scope; the
 			// `computeInputSignatureKeyword` gate enforces that, so a later function needing a dtype the first did not inject is
 			// safely skipped rather than emitting a `NameError`-raising decorator.
-			ctx = new ImportContext("", injectedNames.contains("TensorSpec"), false, injectedNames);
+			ctx = new ImportContext("", false, injectedNames);
 		}
 
 		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
@@ -2321,7 +2385,7 @@ public class Function {
 			final int valueOffset = bracket;
 			final int valueLength = end - bracket + 1;
 			MultiTextEdit replacement = new MultiTextEdit();
-			this.inferInputSignature()
+			this.inferInputSignature().signature()
 					.ifPresent(sig -> replacement.addChild(new ReplaceEdit(valueOffset, valueLength, sig.toTensorSpecList(ctx.prefix()))));
 
 			if (replacement.hasChildren())
@@ -2392,15 +2456,13 @@ public class Function {
 	 * the explicitly listed names.
 	 *
 	 * @param prefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
-	 * @param tensorSpecReachable True iff {@code TensorSpec} can be referenced from the file using the {@code prefix}, without an
-	 *        additional import.
 	 * @param allNamesReachable True iff every TensorFlow name (including all dtype constants) is reachable under the {@code prefix} without
 	 *        an additional import—the case for qualified ({@code import tensorflow [as X]}) and wildcard ({@code from tensorflow import *})
 	 *        shapes. False for the named-import shape, where only {@code namedImports} are in scope.
 	 * @param namedImports The bare names brought into scope by a {@code from tensorflow import ...} statement; consulted only when
 	 *        {@code allNamesReachable} is false.
 	 */
-	private record ImportContext(String prefix, boolean tensorSpecReachable, boolean allNamesReachable, Set<String> namedImports) {
+	private record ImportContext(String prefix, boolean allNamesReachable, Set<String> namedImports) {
 
 		/**
 		 * Whether the bare TensorFlow name {@code name} (e.g., a dtype constant like {@code "float32"}) can be referenced as
@@ -2418,23 +2480,30 @@ public class Function {
 	/**
 	 * Returns the {@code input_signature=[tfPrefix + "TensorSpec(...)", ...]} keyword argument when the flag is on and the inference
 	 * produces a signature whose names are all reachable under the import context. Returns {@link Optional#empty} otherwise (flag off, no
-	 * signature, {@code TensorSpec} not reachable, or a required dtype constant not reachable). The keyword text only; callers handle the
-	 * surrounding syntax (parenthesization via {@link #addInputSignature(ImportContext)}, or a leading {@code ", "} when injecting into an
-	 * existing arg list).
+	 * signature, a required spec-type constructor not reachable, or a required dtype constant not reachable). The keyword text only;
+	 * callers handle the surrounding syntax (parenthesization via {@link #addInputSignature(ImportContext)}, or a leading {@code ", "} when
+	 * injecting into an existing arg list).
 	 * <p>
-	 * The dtype-reachability check guards the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does
-	 * not imply the signature's dtype constants (e.g. {@code float32}) are too, so emitting unconditionally would produce a
-	 * {@code NameError}-raising decorator. When any required dtype constant is out of scope, emission is skipped rather than qualified—the
-	 * named-import shape has no module prefix to qualify with.
+	 * The reachability checks guard the {@code from tensorflow import ...} named-import path: {@code TensorSpec} being in scope does not
+	 * imply the signature's dtype constants (e.g. {@code float32}) are too, nor that {@code RaggedTensorSpec} is in scope for a ragged
+	 * parameter ({@link InputSignature#requiredSpecTypeNames}), so emitting unconditionally would produce a {@code NameError}-raising
+	 * decorator. When any required name is out of scope, emission is skipped rather than qualified—the named-import shape has no module
+	 * prefix to qualify with.
 	 *
 	 * @param ctx The import context for the containing file.
 	 * @return The {@code input_signature=...} keyword argument, or empty.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
-		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
+		if (!this.getInferInputSignatures())
 			return Optional.empty();
-		return this.inferInputSignature().filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
+		/*
+		 * The signature's own spec-type names (`TensorSpec` and/or `RaggedTensorSpec`) are authoritative for reachability. A separate
+		 * upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature when
+		 * `RaggedTensorSpec` is imported but `TensorSpec` is not.
+		 */
+		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
+				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
 
@@ -2512,11 +2581,11 @@ public class Function {
 		// unqualified. Otherwise a named `from tensorflow import ...` makes `function` reachable unqualified, and `TensorSpec` and the
 		// dtype constants only if they too were named.
 		if (qualifiedPrefix != null)
-			return new ImportContext(qualifiedPrefix, true, true, Collections.emptySet());
+			return new ImportContext(qualifiedPrefix, true, Collections.emptySet());
 		if (wildcard)
-			return new ImportContext("", true, true, Collections.emptySet());
+			return new ImportContext("", true, Collections.emptySet());
 		if (namedImports.contains("function"))
-			return new ImportContext("", namedImports.contains("TensorSpec"), false, namedImports);
+			return new ImportContext("", false, namedImports);
 
 		// not found.
 		return null;

@@ -492,7 +492,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
-				"jit_compile", "reduce_retracing", "refactoring", "passing precondition", "status");
+				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
+				"refactoring", "passing precondition", "status");
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
@@ -515,6 +516,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				: hybridizationParameters.getSuppliedInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasJitCompileParam());
 		printer.print(hybridizationParameters == null ? null : hybridizationParameters.hasReduceRetracingParam());
+
+		/*
+		 * The inferred signature the refactoring computed for this function, how it relates to an explicitly supplied one, and—when no
+		 * signature was inferred—why. All read the memoized inference result without recomputing, so they leave the status untouched. When
+		 * the refactoring did not run inference on a function, all three are blank. When it did, exactly one of the inferred-content and
+		 * absence-reason columns is populated: the content when a signature was inferred, the reason when inference was blocked. (The
+		 * inferred-content column is thus blank both when inference never ran and when it ran but was blocked.)
+		 */
+		printer.print(function.getInferredInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
+		printer.print(hybridizationParameters == null ? null
+				: hybridizationParameters.getSuppliedInputSignature()
+						.flatMap(supplied -> function.getInferredInputSignature().map(supplied::relate)).orElse(null));
+		printer.print(function.getInferredInputSignatureAbsenceReason().orElse(null));
 
 		printer.print(function.getRefactoring());
 		printer.print(function.getPassingPrecondition());
