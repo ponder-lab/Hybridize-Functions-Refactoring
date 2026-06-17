@@ -9,6 +9,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.junit.Test;
 
@@ -68,14 +69,29 @@ public class InputSignatureTest {
 	}
 
 	/**
-	 * {@link SymbolicDim} and {@link RaggedDim} render as {@code None}, the same as {@link DynamicDim}. The {@code TensorSpec} surface
-	 * cannot encode raggedness; the {@code RaggedTensorSpec} flip is tracked separately at #524.
+	 * {@link SymbolicDim}, {@link RaggedDim}, and {@link DynamicDim} all render as {@code None} on the shape surface. A {@link RaggedDim}
+	 * additionally selects {@code RaggedTensorSpec} over {@code TensorSpec}, since a ragged dimension marks the parameter as a
+	 * {@code tf.RaggedTensor} (#524).
 	 */
 	@Test
 	public void testSymbolicAndRaggedDimsCollapseToNone() {
 		InputSignature sig = new InputSignature(
 				List.of(new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), RaggedDim.INSTANCE, DynamicDim.INSTANCE))));
-		assertEquals("[tf.TensorSpec(shape=(3, None, None, None), dtype=tf.int32)]", sig.toTensorSpecList("tf."));
+		assertEquals("[tf.RaggedTensorSpec(shape=(3, None, None, None), dtype=tf.int32)]", sig.toTensorSpecList("tf."));
+	}
+
+	/**
+	 * {@link InputSignature#requiredSpecTypeNames} reports {@code TensorSpec} for a dense parameter, {@code RaggedTensorSpec} for a
+	 * parameter with a ragged dimension, and both for a mixed signature. The source-write gates emission on these being reachable (#524).
+	 */
+	@Test
+	public void testRequiredSpecTypeNames() {
+		TensorType dense = new TensorType(INT32, List.of(new NumericDim(3)));
+		TensorType ragged = new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE));
+
+		assertEquals(Set.of("TensorSpec"), new InputSignature(List.of(dense)).requiredSpecTypeNames());
+		assertEquals(Set.of("RaggedTensorSpec"), new InputSignature(List.of(ragged)).requiredSpecTypeNames());
+		assertEquals(Set.of("TensorSpec", "RaggedTensorSpec"), new InputSignature(List.of(dense, ragged)).requiredSpecTypeNames());
 	}
 
 	/**

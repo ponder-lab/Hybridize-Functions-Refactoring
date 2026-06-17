@@ -10,6 +10,7 @@ import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 
 /**
  * The inferred input signature of a hybridizable function: an ordered tuple of {@link TensorType}s in declaration order, one per
@@ -21,12 +22,19 @@ import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
  */
 public record InputSignature(List<TensorType> parameterTypes) {
 
+	/** The {@code tf.TensorSpec} constructor name, emitted for a dense tensor parameter. */
+	private static final String TENSOR_SPEC = "TensorSpec";
+
+	/** The {@code tf.RaggedTensorSpec} constructor name, emitted for a ragged tensor parameter (#524). */
+	private static final String RAGGED_TENSOR_SPEC = "RaggedTensorSpec";
+
 	/**
 	 * Format this signature as a Python source-code expression suitable for the {@code input_signature=} keyword argument of
-	 * {@code @tf.function(...)}. Each parameter's {@link TensorType} renders as {@code tfPrefix + "TensorSpec(shape=(...), dtype=" +
-	 * tfPrefix + "<dtype>)"}; shape dims render as concrete integers for {@link NumericDim} and {@code None} for every other
-	 * {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way on the {@code TensorSpec} surface). The whole thing is
-	 * wrapped in {@code [...]} so it can drop straight into {@code @tf.function(input_signature=...)}.
+	 * {@code @tf.function(...)}. Each parameter's {@link TensorType} renders as {@code tfPrefix + "<SpecType>(shape=(...), dtype=" +
+	 * tfPrefix + "<dtype>)"}, where {@code <SpecType>} is {@code RaggedTensorSpec} for a parameter with a ragged dimension and
+	 * {@code TensorSpec} otherwise ({@link #specTypeName}); shape dims render as concrete integers for {@link NumericDim} and {@code None}
+	 * for every other {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way on the spec surface). The whole thing
+	 * is wrapped in {@code [...]} so it can drop straight into {@code @tf.function(input_signature=...)}.
 	 * <p>
 	 * Examples (with {@code tfPrefix = "tf."}):
 	 * <ul>
@@ -61,10 +69,38 @@ public record InputSignature(List<TensorType> parameterTypes) {
 			}
 
 			String dtype = tfPrefix + dtypeName(t);
-			specs.add(tfPrefix + "TensorSpec(shape=" + shape + ", dtype=" + dtype + ")");
+			specs.add(tfPrefix + specTypeName(t) + "(shape=" + shape + ", dtype=" + dtype + ")");
 		}
 
 		return specs.toString();
+	}
+
+	/**
+	 * The TensorFlow spec-type constructor for a parameter: {@code RaggedTensorSpec} when the parameter has a ragged dimension (it is a
+	 * {@code tf.RaggedTensor}), otherwise {@code TensorSpec}. The bare name without any module prefix.
+	 *
+	 * @param t The parameter's {@link TensorType}.
+	 * @return {@code "RaggedTensorSpec"} or {@code "TensorSpec"}.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
+	 */
+	private static String specTypeName(TensorType t) {
+		List<Dimension<?>> dims = t.getDims();
+		boolean ragged = dims != null && dims.stream().anyMatch(RaggedDim.class::isInstance);
+		return ragged ? RAGGED_TENSOR_SPEC : TENSOR_SPEC;
+	}
+
+	/**
+	 * The set of spec-type constructor names this signature references (e.g., {@code "TensorSpec"}, {@code "RaggedTensorSpec"}), as the
+	 * bare Python identifiers emitted by {@link #toTensorSpecList(String)} (without any module prefix). The source-write verifies each is
+	 * reachable under the chosen import prefix before emitting an unqualified signature: on the {@code from tensorflow import ...}
+	 * named-import path a signature with a ragged parameter needs {@code RaggedTensorSpec} in scope, which {@code TensorSpec} being
+	 * imported does not imply, so an unguarded emission would produce a {@code NameError}-raising decorator.
+	 *
+	 * @return The referenced spec-type constructor names.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
+	 */
+	public Set<String> requiredSpecTypeNames() {
+		return parameterTypes.stream().map(InputSignature::specTypeName).collect(Collectors.toUnmodifiableSet());
 	}
 
 	/**

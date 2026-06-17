@@ -3868,8 +3868,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter59() throws Exception {
 		TensorType expectedParameterTensorType = new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE));
-		TensorType expectedSignatureTensorType = new TensorType(INT32,
-				List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?")));
+		TensorType expectedSignatureTensorType = new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE));
 		testHasLikelyTensorParameterHelper(expectedParameterTensorType, expectedSignatureTensorType);
 	}
 
@@ -3879,7 +3878,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter60() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3888,7 +3887,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter61() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3897,7 +3896,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter62() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3906,7 +3905,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter63() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3915,7 +3914,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter64() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3924,7 +3923,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter65() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3933,7 +3932,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter66() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(3), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE, RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3943,7 +3942,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter67() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3953,7 +3952,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter68() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3963,7 +3962,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter69() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3973,7 +3972,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter70() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -3982,7 +3981,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter71() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -3991,7 +3990,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter72() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4000,7 +3999,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter73() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4009,7 +4008,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter74() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4018,7 +4017,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter75() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4027,7 +4026,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter76() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4036,7 +4035,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter77() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4045,7 +4044,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter78() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4054,7 +4053,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter79() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(5), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(5), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4063,7 +4062,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter80() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(4), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4072,7 +4071,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter81() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(4), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4081,7 +4080,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter82() throws Exception {
 		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)),
-				new TensorType(INT32, List.of(new NumericDim(4), new SymbolicDim("?"))));
+				new TensorType(INT32, List.of(new NumericDim(4), RaggedDim.INSTANCE)));
 	}
 
 	/**
@@ -4400,7 +4399,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter118() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4410,7 +4409,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter119() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4420,7 +4419,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter120() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4430,7 +4429,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter121() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -4440,7 +4439,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testHasLikelyTensorParameter122() throws Exception {
 		testHasLikelyTensorParameterHelper(
 				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, DynamicDim.INSTANCE)),
-				new TensorType(STRING, List.of(new NumericDim(4), new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))));
+				new TensorType(STRING, List.of(new NumericDim(4), RaggedDim.INSTANCE, RaggedDim.INSTANCE, new SymbolicDim("?"))));
 	}
 
 	/**
@@ -8820,6 +8819,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotEquals("A `*Spec` type hint must NOT classify the parameter as tensor-typed.", TRUE, t.isTensor());
 		assertFalse("With no tensor classification, `getHasTensorParameter()` is FALSE.", function.getHasTensorParameter());
+	}
+
+	/**
+	 * A parameter receiving a {@code tf.RaggedTensor} (here via {@code tf.ragged.constant}) is typed by Ariadne with a {@code RaggedDim} at
+	 * the ragged position. Inference preserves that marker rather than collapsing it to a symbolic wildcard, and the emission produces a
+	 * {@code tf.RaggedTensorSpec} rather than a dense {@code tf.TensorSpec} (#524).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
+	 */
+	@Test
+	public void testInferRaggedTensorSpec() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertTrue("Parameter receiving a `tf.RaggedTensor` should be classified as tensor-typed.", function.getHasTensorParameter());
+
+		/*
+		 * Regression pin for the raw Ariadne type (the probe finding underpinning #524): Ariadne types the `tf.RaggedTensor` parameter with
+		 * a `RaggedDim` at the ragged axis. If a future Ariadne version stops emitting `RaggedDim` here, `RaggedTensorSpec` emission would
+		 * silently regress to a dense `TensorSpec`.
+		 */
+		Parameter t = function.getParameters().get(0);
+		assertEquals("Ariadne should type the `tf.RaggedTensor` parameter as `(INT32, [NumericDim(2), RaggedDim])`.",
+				Set.of(new TensorType(INT32, List.of(new NumericDim(2), RaggedDim.INSTANCE))), t.getTensorTypes());
+
+		InputSignature signature = function.inferInputSignature().signature()
+				.orElseThrow(() -> new AssertionError("Expected an inferred signature for the ragged parameter."));
+
+		// The ragged marker survives reduction (not collapsed to a symbolic wildcard).
+		List<TensorType.Dimension<?>> dims = signature.parameterTypes().get(0).getDims();
+		assertTrue("Inference should preserve the `RaggedDim` marker.", dims.get(dims.size() - 1) instanceof TensorType.RaggedDim);
+
+		// ...and the emission is a `RaggedTensorSpec`, with the ragged position rendered as `None`.
+		assertEquals("[tf.RaggedTensorSpec(shape=(2, None), dtype=tf.int32)]", signature.toTensorSpecList("tf."));
 	}
 
 	/**
