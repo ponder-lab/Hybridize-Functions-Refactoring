@@ -1036,10 +1036,12 @@ public class Function {
 							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 							this.setPassingPrecondition(P1);
 
-							// The eager→hybrid conversion emits the inferred signature into the new decorator during the change
-							// (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
-							// evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
-							// memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
+							/*
+							 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
+							 * (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
+							 * evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
+							 * memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
+							 */
 							if (this.getInferInputSignatures())
 								this.inferInputSignature();
 						} else if (this.isRecursive() != null) // it's recursive.
@@ -2255,10 +2257,12 @@ public class Function {
 				names.add("function");
 
 				if (this.getInferInputSignatures()) {
-					// Union this function's dtype constants with those of every other to-be-hybridized function in the file (pre-computed
-					// by `planAutoInjectedImports`), so the single injected import line brings every function's dtypes into scope rather
-					// than only the first-processed function's (#588). Falls back to this function's own dtypes when no plan was computed
-					// (e.g. a direct `transform()` without the processor's pre-pass).
+					/*
+					 * Union this function's dtype constants with those of every other to-be-hybridized function in the file (pre-computed
+					 * by `planAutoInjectedImports`), so the single injected import line brings every function's dtypes into scope rather
+					 * than only the first-processed function's (#588). Falls back to this function's own dtypes when no plan was computed
+					 * (e.g. a direct `transform()` without the processor's pre-pass).
+					 */
 					SortedSet<String> dtypeNames = new TreeSet<>();
 					this.inferInputSignature().signature().ifPresent(sig -> dtypeNames.addAll(sig.requiredDTypeNames()));
 
