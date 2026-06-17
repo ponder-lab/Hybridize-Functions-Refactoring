@@ -5,9 +5,8 @@ import java.util.Optional;
 /**
  * The outcome of {@link Function#inferInputSignature}: either a successfully {@link Inferred} {@link InputSignature}, or an {@link Absent}
  * result carrying the {@link AbsenceReason} that blocked inference. Replacing a bare {@link Optional} lets downstream callers and tests
- * distinguish <em>why</em> a signature could not be inferred rather than collapsing every blocking condition to {@code Optional.empty}.
- * <p>
- * The result is total over the function's parameters: a signature is produced only when every non-{@code self} parameter contributes a
+ * distinguish <em>why</em> a signature could not be inferred rather than collapsing every blocking condition to {@code Optional.empty}. The
+ * result is total over the function's parameters: a signature is produced only when every non-{@code self} parameter contributes a
  * {@link com.ibm.wala.cast.python.ml.types.TensorType}; if any parameter blocks, the whole result is {@link Absent}. The degenerate case of
  * a function with no non-{@code self} parameter (parameterless or {@code self}-only) is a contract violation of
  * {@link Function#inferInputSignature} (every refactoring call site is already gated on {@link Function#getHasTensorParameter}), so it
@@ -15,7 +14,7 @@ import java.util.Optional;
  *
  * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/483">Issue 483</a>
  */
-public sealed interface InferenceResult permits InferenceResult.Inferred, InferenceResult.Absent {
+public sealed interface InferenceResult {
 
 	/**
 	 * The reason a single input signature could not be inferred for a parameter, in the order the per-parameter dispatch in
