@@ -128,13 +128,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private boolean inferInputSignatures;
 
 	/**
-	 * The targeted k-CFA depth forwarded to the analysis engine (#600). Defaults to
-	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH}, the depth at which the model-forward archetype (chained-layer calls)
-	 * recovers precise per-context tensor shapes.
+	 * The default targeted k-CFA depth: {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH}, the depth at which the model-forward
+	 * archetype (chained-layer calls) recovers precise per-context tensor shapes (#600). Single source for the field default below and the
+	 * evaluator's property default.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
-	private int targetedCfaDepth = PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH;
+	public static final int DEFAULT_TARGETED_CFA_DEPTH = PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH;
+
+	/**
+	 * The targeted k-CFA depth forwarded to the analysis engine (#600), defaulting to {@link #DEFAULT_TARGETED_CFA_DEPTH}.
+	 */
+	private int targetedCfaDepth = DEFAULT_TARGETED_CFA_DEPTH;
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
