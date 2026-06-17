@@ -2282,7 +2282,7 @@ public class Function {
 			// Emission is reachable iff this function's required names are among those the injected line brought into scope; the
 			// `computeInputSignatureKeyword` gate enforces that, so a later function needing a dtype the first did not inject is
 			// safely skipped rather than emitting a `NameError`-raising decorator.
-			ctx = new ImportContext("", injectedNames.contains("TensorSpec"), false, injectedNames);
+			ctx = new ImportContext("", false, injectedNames);
 		}
 
 		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
@@ -2422,15 +2422,13 @@ public class Function {
 	 * the explicitly listed names.
 	 *
 	 * @param prefix The TensorFlow module prefix (e.g., {@code "tf."}, {@code "tensorflow."}, or {@code ""}).
-	 * @param tensorSpecReachable True iff {@code TensorSpec} can be referenced from the file using the {@code prefix}, without an
-	 *        additional import.
 	 * @param allNamesReachable True iff every TensorFlow name (including all dtype constants) is reachable under the {@code prefix} without
 	 *        an additional import—the case for qualified ({@code import tensorflow [as X]}) and wildcard ({@code from tensorflow import *})
 	 *        shapes. False for the named-import shape, where only {@code namedImports} are in scope.
 	 * @param namedImports The bare names brought into scope by a {@code from tensorflow import ...} statement; consulted only when
 	 *        {@code allNamesReachable} is false.
 	 */
-	private record ImportContext(String prefix, boolean tensorSpecReachable, boolean allNamesReachable, Set<String> namedImports) {
+	private record ImportContext(String prefix, boolean allNamesReachable, Set<String> namedImports) {
 
 		/**
 		 * Whether the bare TensorFlow name {@code name} (e.g., a dtype constant like {@code "float32"}) can be referenced as
@@ -2463,8 +2461,11 @@ public class Function {
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
 	private Optional<String> computeInputSignatureKeyword(ImportContext ctx) {
-		if (!this.getInferInputSignatures() || !ctx.tensorSpecReachable())
+		if (!this.getInferInputSignatures())
 			return Optional.empty();
+		// The signature's own spec-type names (`TensorSpec` and/or `RaggedTensorSpec`) are authoritative for reachability. A separate
+		// upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature
+		// when `RaggedTensorSpec` is imported but `TensorSpec` is not.
 		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
 				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
@@ -2544,11 +2545,11 @@ public class Function {
 		// unqualified. Otherwise a named `from tensorflow import ...` makes `function` reachable unqualified, and `TensorSpec` and the
 		// dtype constants only if they too were named.
 		if (qualifiedPrefix != null)
-			return new ImportContext(qualifiedPrefix, true, true, Collections.emptySet());
+			return new ImportContext(qualifiedPrefix, true, Collections.emptySet());
 		if (wildcard)
-			return new ImportContext("", true, true, Collections.emptySet());
+			return new ImportContext("", true, Collections.emptySet());
 		if (namedImports.contains("function"))
-			return new ImportContext("", namedImports.contains("TensorSpec"), false, namedImports);
+			return new ImportContext("", false, namedImports);
 
 		// not found.
 		return null;
