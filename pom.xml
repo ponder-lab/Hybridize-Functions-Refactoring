@@ -363,7 +363,7 @@
                   <jacocoReport>${project.basedir}/edu.cuny.hunter.hybridize.tests.report/target/site/jacoco-aggregate/jacoco.xml</jacocoReport>
                 </jacocoReports>
                 <repoToken>71wVjTUWdxts3DnxmkannlSruAfGsxN6d</repoToken>
-                <serviceName>travis-pro</serviceName>
+                <serviceName>github</serviceName>
               </configuration>
               <dependencies>
                 <dependency>
