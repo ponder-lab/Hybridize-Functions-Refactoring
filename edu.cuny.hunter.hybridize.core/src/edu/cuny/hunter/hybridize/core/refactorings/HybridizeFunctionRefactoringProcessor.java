@@ -539,6 +539,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		if (optimizableFunctions.isEmpty())
 			return new NullChange(Messages.NoFunctionsToOptimize);
 
+		// Pre-compute, per file, the union of dtype constants needed across all functions being converted to hybrid, so an auto-injected
+		// import line covers every function's signature rather than only the first-processed one's (#588).
+		Function.planAutoInjectedImports(optimizableFunctions);
+
 		Map<IFile, Queue<TextEdit>> fileToEdits = new HashMap<>();
 
 		// for each optimizable function (i.e., those with transformations.

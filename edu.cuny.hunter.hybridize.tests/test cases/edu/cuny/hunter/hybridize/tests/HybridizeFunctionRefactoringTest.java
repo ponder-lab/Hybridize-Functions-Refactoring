@@ -1588,6 +1588,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Auto-inject union variant (#588). An import-less file with two hybridizable functions whose inferred signatures need divergent
+	 * dtypes. The single auto-injected {@code from tensorflow import ...} line must carry the union of both functions' dtypes so each emits
+	 * its {@code input_signature} unqualified, rather than carrying only the first-processed function's dtype and gating the other off
+	 * emission. Exercises {@link Function#planAutoInjectedImports}, mirroring the pre-pass the processor runs in {@code createChange}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/588">Issue 588</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionAutoInjectImportUnion() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(2, functions.size());
+
+		for (Function function : functions) {
+			assertFalse("Fixture functions should be eager pre-refactoring.", function.isHybrid());
+			assertTrue("Fixture functions should select `CONVERT_TO_HYBRID` after analysis.",
+					function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+
+		// Mirror the processor's pre-pass so the auto-injected import line carries every function's dtypes, not just the first's (#588).
+		Function.planAutoInjectedImports(functions);
+
+		// All functions share the file's document; apply every function's edits to it. Highest-offset edits first so the low-offset
+		// injected import does not shift later anchors (mirrors `helperAssertInputSignatureEmission`).
+		IDocument doc = functions.iterator().next().getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>();
+		for (Function function : functions)
+			edits.addAll(function.transform());
+
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		String expected = this.getFileContents(this.getOutputTestFileName("A"));
+		assertEqualLines(expected, doc.get());
+	}
+
+	/**
 	 * Runs the refactoring on the current test's fixture and asserts the produced source matches the expected {@code out/A.py}. The single
 	 * fixture function must be eager pre-refactoring, select {@link Transformation#CONVERT_TO_HYBRID}, and carry the harness-enabled
 	 * {@code inferInputSignatures} flag. Shared by the input-signature emission tests, which differ only in their import-shape fixture.
