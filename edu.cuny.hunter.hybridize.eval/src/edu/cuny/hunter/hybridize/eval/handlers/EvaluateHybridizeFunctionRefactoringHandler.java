@@ -12,7 +12,9 @@ import static org.eclipse.core.runtime.Platform.getLog;
 import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -36,6 +39,7 @@ import org.eclipse.core.resources.IncrementalProjectBuilder;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Status;
@@ -126,7 +130,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
-	private static final String TARGETED_CFA_DEPTH_KEY = "edu.cuny.hunter.hybridize.eval.targetedCfaDepth";
+	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
@@ -165,16 +169,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_KEY);
-
-	/**
-	 * The targeted k-CFA depth forwarded to the analysis engine, defaulting to
-	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH}; set via the
-	 * {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
-	 */
-	private int targetedCfaDepth = Integer.getInteger(TARGETED_CFA_DEPTH_KEY,
-			HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -235,13 +229,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// set up analysis for single project.
+					int targetedCfaDepth = getTargetedCfaDepth(project);
 					TimeCollector resultsTimeCollector = new TimeCollector();
 
 					resultsTimeCollector.start();
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
 							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
 							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
-					processor.setTargetedCfaDepth(this.getTargetedCfaDepth());
+					processor.setTargetedCfaDepth(targetedCfaDepth);
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -345,7 +340,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsPrinter.print(this.getInferInputSignatures());
 
 					// targeted CFA depth.
-					resultsPrinter.print(this.getTargetedCfaDepth());
+					resultsPrinter.print(targetedCfaDepth);
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -635,7 +630,34 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return this.inferInputSignatures;
 	}
 
-	public int getTargetedCfaDepth() {
-		return this.targetedCfaDepth;
+	/**
+	 * Returns the targeted k-CFA depth for the given project, read from the {@code targetedCfaDepth} entry of the nearest
+	 * {@code eval.properties} file (searched from the project's location upward), or
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} when no such file or entry is present. Mirrors how the Java
+	 * 8 stream-refactoring evaluator reads its per-project analysis depth from {@code eval.properties}.
+	 *
+	 * @param project The project being evaluated.
+	 * @return The targeted k-CFA depth for the project.
+	 * @throws IOException If the {@code eval.properties} file cannot be read.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
+	 */
+	private int getTargetedCfaDepth(IProject project) throws IOException {
+		IPath location = project.getLocation();
+		File file = location == null ? null : this.findEvaluationPropertiesFile(location.toFile());
+
+		if (file != null && file.exists())
+			try (Reader reader = new FileReader(file)) {
+				Properties properties = new Properties();
+				properties.load(reader);
+				String value = properties.getProperty(TARGETED_CFA_DEPTH_PROPERTY_KEY);
+
+				if (value != null) {
+					int depth = Integer.parseInt(value.trim());
+					LOG.info("Using eval.properties targeted CFA depth: " + depth + ".");
+					return depth;
+				}
+			}
+
+		return HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
 	}
 }
