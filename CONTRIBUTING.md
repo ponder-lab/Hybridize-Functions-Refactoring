@@ -66,13 +66,7 @@ You can run the evaluator in several different ways, including as a command or a
 
 #### Configuring the Evaluation
 
-Most evaluator settings are system properties passed as VM arguments (the launch configuration above sets them; the full list is on [the wiki][evaluator wiki]). The targeted k-CFA depth, however, is read *per project* from an `eval.properties` file placed at or above the project root, so each subject project can be analyzed at its own depth. The following keys are available:
-
-Key | Value Type | Description
---- | ---------- | -----------
-`targetedCfaDepth` | Integer | The targeted k-CFA depth used for per-context input-signature inference. Defaults to `4` (`MODEL_FORWARD_CFA_DEPTH`) when absent.
-
-For example, an `eval.properties` containing `targetedCfaDepth=2` evaluates that project at depth 2.
+Most evaluator settings are system properties passed as VM arguments (the launch configuration above sets them; the full list is on [the wiki][evaluator wiki]). The targeted k-CFA depth, however, is read *per project* from an `eval.properties` file placed at or above the project root, so each subject project can be analyzed at its own depth. For example, an `eval.properties` containing `targetedCfaDepth=2` evaluates that project at depth 2. See [the wiki][evaluator wiki] for the available keys.
 
 [wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki
 [evaluator wiki]: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/wiki/Running-the-Evaluator
