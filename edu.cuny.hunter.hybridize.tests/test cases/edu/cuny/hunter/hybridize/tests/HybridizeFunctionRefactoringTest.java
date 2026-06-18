@@ -131,6 +131,7 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
 
+import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
@@ -7003,6 +7004,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				throw new IllegalStateException("Not expecting: " + function.getIdentifier() + ".");
 			}
 		}
+	}
+
+	/**
+	 * Pins the soundness gain of forwarding {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} to the analysis engine (#600).
+	 * {@code accuracy}'s {@code y_pred} is bound to a model-forward output ({@code pred = neural_net(...)}) reached from two call sites
+	 * that carry different shapes ({@code (256, 10)} from training, {@code (10000, 10)} from test). At the shallow
+	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} the two contexts collapse and the training shape leaks into the test
+	 * call site, so the inferred {@link TensorType} set is a single, unsound concrete shape. At {@code MODEL_FORWARD_CFA_DEPTH} the
+	 * contexts separate and the test context falls to a wildcard ({@code null}-dims) over-approximation, so the set strictly grows. A
+	 * consumer emitting {@code input_signature} from the shallow result would unsoundly assert {@code y_pred} is always {@code (256, 10)}
+	 * when the test path can pass {@code (10000, 10)}. Parameters bound directly to call-site arguments (e.g. {@code NeuralNet.call}'s
+	 * {@code x}) are depth-invariant; this output-bound parameter is the one whose type set is depth-sensitive (wala/ML#587).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
+	 */
+	@Test
+	public void testTargetedCfaDepthSoundness() throws Exception {
+		Set<TensorType> shallow = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.DEFAULT_TARGETED_CFA_DEPTH);
+		Set<TensorType> deep = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH);
+
+		// The shallow targeted depth collapses the two call-site contexts into a single, concrete (unsound) shape.
+		assertEquals("Shallow targeted depth should collapse `y_pred` to a single shape.", 1, shallow.size());
+		assertTrue("The collapsed shape should be concrete.", shallow.stream().allMatch(t -> t.getDims() != null));
+
+		// The deeper targeted depth separates the contexts: it keeps the concrete shape and adds the wildcard over-approximation.
+		assertTrue("Deeper targeted depth must retain every shallow shape.", deep.containsAll(shallow));
+		assertEquals("Deeper targeted depth should add exactly the wildcard over-approximation.", shallow.size() + 1, deep.size());
+
+		Set<TensorType> added = new HashSet<>(deep);
+		added.removeAll(shallow);
+		assertTrue("The added type should be a wildcard (unconstrained-shape) over-approximation.",
+				added.stream().allMatch(t -> t.getDims() == null));
+	}
+
+	/**
+	 * Analyzes the soundness fixture at the given targeted k-CFA depth and returns the inferred {@link TensorType} set for
+	 * {@code accuracy}'s {@code y_pred} parameter. Clears the analysis caches first so each depth gets a fresh call graph.
+	 *
+	 * @param targetedCfaDepth The targeted k-CFA depth to analyze at.
+	 * @return The {@link TensorType}s inferred for {@code accuracy}'s {@code y_pred} parameter.
+	 */
+	private Set<TensorType> analyzeAccuracyYPredAtDepth(int targetedCfaDepth) throws Exception {
+		Function.clearCaches();
+		this.setTargetedCfaDepth(targetedCfaDepth);
+		Function accuracy = this.getFunctions().stream().filter(f -> f.getIdentifier().equals("accuracy")).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected an `accuracy` function."));
+		Parameter yPred = accuracy.getParameters().stream().filter(p -> "y_pred".equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected a `y_pred` parameter."));
+		return yPred.getTensorTypes();
 	}
 
 	@Test
