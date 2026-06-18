@@ -541,8 +541,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected boolean inferInputSignatures;
 
 	/**
-	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to
-	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the suite's behavior is unchanged. A test sets it via
+	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to the refactoring's own
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the harness does not override it. A test sets it via
 	 * {@link #setTargetedCfaDepth(int)} to analyze a fixture at a chosen depth (#600).
 	 */
 	private int targetedCfaDepth = HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
