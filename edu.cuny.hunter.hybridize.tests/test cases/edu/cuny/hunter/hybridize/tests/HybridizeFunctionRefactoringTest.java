@@ -539,6 +539,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	protected boolean inferInputSignatures;
 
+	/**
+	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the suite's behavior is unchanged. A test sets it via
+	 * {@link #setTargetedCfaDepth(int)} to analyze a fixture at a chosen depth (#600).
+	 */
+	private int targetedCfaDepth = HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -603,6 +610,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public void setInferInputSignatures(boolean inferInputSignatures) {
 		this.inferInputSignatures = inferInputSignatures;
+	}
+
+	/**
+	 * Sets the targeted k-CFA depth the harness forwards to the analysis engine (#600).
+	 *
+	 * @param targetedCfaDepth The targeted k-CFA depth.
+	 */
+	public void setTargetedCfaDepth(int targetedCfaDepth) {
+		this.targetedCfaDepth = targetedCfaDepth;
 	}
 
 	@Override
@@ -741,6 +757,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
+		processor.setTargetedCfaDepth(this.targetedCfaDepth);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
