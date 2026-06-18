@@ -11,6 +11,7 @@ import org.eclipse.jdt.ui.refactoring.RefactoringSaveHelper;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.ui.refactoring.RefactoringWizard;
+import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Shell;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 
@@ -31,7 +32,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		public static final String PAGE_NAME = "HybridizeFunctionsInputPage"; // $NON-NLS-1$
 
-		@SuppressWarnings("unused")
+		private static final String TARGETED_CFA_DEPTH_KEY = "targetedCfaDepth"; // $NON-NLS-1$
+
 		private HybridizeFunctionRefactoringProcessor processor;
 
 		public HybridizeFunctionsInputPage() {
@@ -59,6 +61,12 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 			if (!(processor instanceof HybridizeFunctionRefactoringProcessor))
 				throw new IllegalArgumentException("Expecing HybridizeFunctionRefactoringProcessor.");
 			this.processor = (HybridizeFunctionRefactoringProcessor) processor;
+		}
+
+		@Override
+		protected void addOptions(Composite optionComposite) {
+			this.addIntegerButton("Targeted k-CFA depth for tensor-type precision:", TARGETED_CFA_DEPTH_KEY,
+					HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH, this.processor::setTargetedCfaDepth, optionComposite);
 		}
 	}
 
