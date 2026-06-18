@@ -126,6 +126,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
+	private static final String TARGETED_CFA_DEPTH_KEY = "edu.cuny.hunter.hybridize.eval.targetedCfaDepth";
+
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
@@ -164,6 +166,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_KEY);
 
+	/**
+	 * The targeted k-CFA depth forwarded to the analysis engine, defaulting to
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH}; set via the
+	 * {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
+	 */
+	private int targetedCfaDepth = Integer.getInteger(TARGETED_CFA_DEPTH_KEY,
+			HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH);
+
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
 		Job.create("Evaluating Hybridize Functions refactoring...", monitor -> {
@@ -180,7 +192,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				resultsHeader.add(transformation.toString());
 
 			String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "type hints", "parallel", "speculative",
-					"test entrypoints", "infer input signatures" };
+					"test entrypoints", "infer input signatures", "targeted CFA depth" };
 			resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 			resultsHeader.add("time (s)");
@@ -229,6 +241,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
 							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
 							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
+					processor.setTargetedCfaDepth(this.getTargetedCfaDepth());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -330,6 +343,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// infer input signatures.
 					resultsPrinter.print(this.getInferInputSignatures());
+
+					// targeted CFA depth.
+					resultsPrinter.print(this.getTargetedCfaDepth());
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -617,5 +633,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	public int getTargetedCfaDepth() {
+		return this.targetedCfaDepth;
 	}
 }

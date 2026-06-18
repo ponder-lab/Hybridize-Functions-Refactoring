@@ -55,6 +55,21 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		this.initialize(project);
 	}
 
+	/**
+	 * Constructs an engine that selects framework methods, {@code tf.keras.Model} subclasses, and user model-forward methods with the given
+	 * targeted k-CFA depth, rather than the default {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH}. A deeper depth recovers
+	 * precise per-context tensor shapes for the model-forward archetype (chained-layer calls), at a cost confined to those targeted methods
+	 * (#600).
+	 *
+	 * @param project The project to analyze.
+	 * @param pythonPath The Python path entries.
+	 * @param targetedCfaDepth The targeted k-CFA depth to forward to the analysis engine.
+	 */
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath, int targetedCfaDepth) {
+		super(pythonPath, TENSORFLOW, targetedCfaDepth);
+		this.initialize(project);
+	}
+
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
 		this.initialize(project);
 	}
