@@ -362,7 +362,7 @@
                 <jacocoReports>
                   <jacocoReport>${project.basedir}/edu.cuny.hunter.hybridize.tests.report/target/site/jacoco-aggregate/jacoco.xml</jacocoReport>
                 </jacocoReports>
-                <repoToken>71wVjTUWdxts3DnxmkannlSruAfGsxN6d</repoToken>
+                <repoToken>${env.COVERALLS_REPO_TOKEN}</repoToken>
                 <serviceName>github</serviceName>
               </configuration>
               <dependencies>
