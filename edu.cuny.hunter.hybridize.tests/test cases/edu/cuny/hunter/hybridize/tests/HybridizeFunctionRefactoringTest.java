@@ -4190,8 +4190,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4201,8 +4201,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4212,8 +4212,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4324,8 +4324,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4335,8 +4335,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
@@ -4346,8 +4346,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
