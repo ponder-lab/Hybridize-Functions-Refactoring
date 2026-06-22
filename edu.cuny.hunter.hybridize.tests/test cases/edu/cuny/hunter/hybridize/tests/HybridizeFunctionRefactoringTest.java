@@ -7082,6 +7082,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		return yPred.getTensorTypes();
 	}
 
+	/**
+	 * A keyword-only parameter (declared after a bare {@code *}) is wrapped as a {@link Parameter} and, when it carries a tensor-typed type
+	 * hint, classifies as a tensor. PyDev's by-name type-hint resolver scans only the positional argument array, so {@link Parameter} reads
+	 * the keyword-only annotation array directly.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/607">Issue 607</a>
+	 */
+	@Test
+	public void testKwonlyTensorParameter() throws Exception {
+		Function f = getFunction("f");
+
+		Parameter y = f.getParameters().stream().filter(p -> "y".equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected the keyword-only parameter `y` to be wrapped."));
+
+		assertEquals("tf.Tensor", y.getTypeHintName());
+		assertTrue("Keyword-only parameter `y` should have a tensor type hint.", y.hasTensorTypeHint(new NullProgressMonitor()));
+		assertTrue("Keyword-only parameter `y` should classify as a tensor via its type hint.", y.isTensor());
+		assertTrue(f.getHasTensorParameter());
+	}
+
+	/**
+	 * Pinning test: a keyword-only parameter whose tensor value arrives only through a keyword argument at the call site (no type hint)
+	 * does not yet classify as a tensor. WALA's Python frontend does not model keyword-only parameters as formal parameters in the IR, so
+	 * no pointer key corresponds to the parameter and the call-site (Phase 2) path contributes no tensor type. Invert this assertion when
+	 * that upstream gap is closed.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/607">Issue 607</a>
+	 * @see <a href="https://github.com/wala/ML/issues/596">WALA ML issue 596</a>
+	 */
+	@Test
+	public void testKwonlyTensorParameterCallSite() throws Exception {
+		Function f = getFunction("f");
+
+		Parameter y = f.getParameters().stream().filter(p -> "y".equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected the keyword-only parameter `y` to be wrapped."));
+
+		// TODO: Invert once WALA models keyword-only parameters as formal parameters (wala/ML#596).
+		assertFalse("Keyword-only parameter `y` does not yet classify from a call-site keyword argument alone.", y.isTensor());
+	}
+
 	@Test
 	public void testAutoEncoder() throws Exception {
 		Set<Function> functions = getFunctions();
