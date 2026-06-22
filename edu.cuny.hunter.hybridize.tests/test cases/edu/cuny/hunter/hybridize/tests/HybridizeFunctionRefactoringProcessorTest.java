@@ -37,4 +37,17 @@ public class HybridizeFunctionRefactoringProcessorTest {
 				false);
 		assertFalse(processor.getInferInputSignatures());
 	}
+
+	/**
+	 * {@link HybridizeFunctionRefactoringProcessor#setInferInputSignatures(boolean)} updates the flag the accessor returns (the setter the
+	 * wizard checkbox calls, #481).
+	 */
+	@Test
+	public void testSetInferInputSignatures() {
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor();
+		processor.setInferInputSignatures(true);
+		assertTrue(processor.getInferInputSignatures());
+		processor.setInferInputSignatures(false);
+		assertFalse(processor.getInferInputSignatures());
+	}
 }
