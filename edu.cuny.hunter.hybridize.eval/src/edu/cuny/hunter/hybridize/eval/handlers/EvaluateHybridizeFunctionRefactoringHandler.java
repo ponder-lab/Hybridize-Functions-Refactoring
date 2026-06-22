@@ -131,6 +131,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
 
+	private static final String TARGETED_CFA_DEPTH_KEY = "edu.cuny.hunter.hybridize.eval.targetedCfaDepth";
+
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
@@ -170,6 +172,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_KEY);
+
+	/**
+	 * The global targeted k-CFA depth, set via the {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property and defaulting
+	 * to {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH}. A per-project {@code eval.properties}
+	 * {@code targetedCfaDepth} entry overrides this for that project; see {@link #getTargetedCfaDepth(IProject)}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
+	 */
+	private int targetedCfaDepth = Integer.getInteger(TARGETED_CFA_DEPTH_KEY,
+			HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH);
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -632,18 +644,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	/**
-	 * Returns the targeted k-CFA depth for the given project, read from the {@code targetedCfaDepth} entry of the nearest
-	 * {@code eval.properties} file (searched from the project's location upward), or
-	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} when no such file or entry is present, when the value is not
-	 * a positive integer, or when the file cannot be read. Mirrors how the Java 8 stream-refactoring evaluator reads its per-project
+	 * Returns the targeted k-CFA depth for the given project: the {@code targetedCfaDepth} entry of the nearest {@code eval.properties}
+	 * file (searched from the project's location upward) when present and a positive integer, otherwise the global
+	 * {@link #targetedCfaDepth} (the {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property, or
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH}). A missing file or entry, a non-positive or malformed
+	 * value, or a read failure falls back to the global depth. Mirrors how the Java 8 stream-refactoring evaluator reads its per-project
 	 * analysis depth from {@code eval.properties}.
 	 *
 	 * @param project The project being evaluated.
 	 * @return The targeted k-CFA depth for the project.
-	 * @throws IOException If the {@code eval.properties} file cannot be read.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
-	private int getTargetedCfaDepth(IProject project) throws IOException {
+	private int getTargetedCfaDepth(IProject project) {
 		IPath location = project.getLocation();
 		File file = location == null ? null : this.findEvaluationPropertiesFile(location.toFile());
 
@@ -662,12 +674,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							return depth;
 						}
 
-						LOG.warn("Ignoring non-positive eval.properties targeted CFA depth: " + depth + ". Using the default.");
+						LOG.warn("Ignoring non-positive eval.properties targeted CFA depth: " + depth + ". Using " + this.targetedCfaDepth
+								+ ".");
 					} catch (NumberFormatException e) {
-						LOG.warn("Ignoring malformed eval.properties targeted CFA depth: " + value.trim() + ". Using the default.", e);
+						LOG.warn("Ignoring malformed eval.properties targeted CFA depth: " + value.trim() + ". Using "
+								+ this.targetedCfaDepth + ".", e);
 					}
+			} catch (IOException e) {
+				LOG.warn("Could not read " + file + " for the targeted CFA depth. Using " + this.targetedCfaDepth + ".", e);
 			}
 
-		return HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
+		return this.targetedCfaDepth;
 	}
 }
