@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.ui.wizards;
 
 import static edu.cuny.hunter.hybridize.core.messages.Messages.Name;
+import static edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
 import static edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring;
 
 import java.util.Set;
@@ -11,6 +12,7 @@ import org.eclipse.jdt.ui.refactoring.RefactoringSaveHelper;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.ui.refactoring.RefactoringWizard;
+import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Shell;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 
@@ -31,7 +33,10 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		public static final String PAGE_NAME = "HybridizeFunctionsInputPage"; // $NON-NLS-1$
 
-		@SuppressWarnings("unused")
+		private static final String TARGETED_CFA_DEPTH_KEY = "targetedCfaDepth"; // $NON-NLS-1$
+
+		private static final String TARGETED_CFA_DEPTH_LABEL = "Targeted k-CFA depth for tensor-type precision:";
+
 		private HybridizeFunctionRefactoringProcessor processor;
 
 		public HybridizeFunctionsInputPage() {
@@ -57,8 +62,14 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		@Override
 		protected void setProcessor(RefactoringProcessor processor) {
 			if (!(processor instanceof HybridizeFunctionRefactoringProcessor))
-				throw new IllegalArgumentException("Expecing HybridizeFunctionRefactoringProcessor.");
+				throw new IllegalArgumentException("Expecting " + HybridizeFunctionRefactoringProcessor.class.getSimpleName() + ".");
 			this.processor = (HybridizeFunctionRefactoringProcessor) processor;
+		}
+
+		@Override
+		protected void addOptions(Composite optionComposite) {
+			this.addSpinnerButton(TARGETED_CFA_DEPTH_LABEL, TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH, /* minimum */ 1,
+					this.processor::setTargetedCfaDepth, optionComposite);
 		}
 	}
 
