@@ -7076,10 +7076,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pinning test: a keyword-only parameter whose tensor value arrives only through a keyword argument at the call site (no type hint)
-	 * does not yet classify as a tensor. WALA's Python frontend does not model keyword-only parameters as formal parameters in the IR, so
-	 * no pointer key corresponds to the parameter and the call-site (Phase 2) path contributes no tensor type. Invert this assertion when
-	 * that upstream gap is closed.
+	 * A keyword-only parameter whose tensor value arrives only through a keyword argument at the call site (no type hint) classifies as a
+	 * tensor. WALA models keyword-only parameters as formal parameters (wala/ML#596, Ariadne 0.51.1), so the call-site keyword argument
+	 * binds to the parameter and Ariadne types it via the call-site (Phase 2) path.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/607">Issue 607</a>
 	 * @see <a href="https://github.com/wala/ML/issues/596">WALA ML issue 596</a>
@@ -7091,8 +7090,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter y = f.getParameters().stream().filter(p -> "y".equals(p.getName())).findFirst()
 				.orElseThrow(() -> new AssertionError("Expected the keyword-only parameter `y` to be wrapped."));
 
-		// TODO: Invert once WALA models keyword-only parameters as formal parameters (wala/ML#596).
-		assertFalse("Keyword-only parameter `y` does not yet classify from a call-site keyword argument alone.", y.isTensor());
+		assertTrue("Keyword-only parameter `y` should classify as a tensor from its call-site keyword argument.", y.isTensor());
+		assertFalse("Keyword-only parameter `y` should carry a concrete tensor type from the call site.", y.getTensorTypes().isEmpty());
 	}
 
 	@Test
