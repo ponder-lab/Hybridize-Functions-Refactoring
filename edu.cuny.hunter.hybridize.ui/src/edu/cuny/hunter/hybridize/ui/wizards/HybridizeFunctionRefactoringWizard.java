@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.ui.wizards;
 
 import static edu.cuny.hunter.hybridize.core.messages.Messages.Name;
+import static edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
 import static edu.cuny.hunter.hybridize.core.utils.Util.createRefactoring;
 
 import java.util.Set;
@@ -65,8 +66,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		@Override
 		protected void addOptions(Composite optionComposite) {
-			this.addIntegerButton("Targeted k-CFA depth for tensor-type precision:", TARGETED_CFA_DEPTH_KEY,
-					HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH, this.processor::setTargetedCfaDepth, optionComposite);
+			this.addIntegerButton("Targeted k-CFA depth for tensor-type precision:", TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH,
+					this.processor::setTargetedCfaDepth, optionComposite);
 		}
 	}
 
