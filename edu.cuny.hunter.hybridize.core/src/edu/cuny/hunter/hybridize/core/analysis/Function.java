@@ -982,6 +982,11 @@ public class Function {
 		if (args != null && args.args != null)
 			for (int i = 0; i < args.args.length; i++)
 				built.add(new Parameter(args, i, this));
+		// Keyword-only parameters (declared after a bare `*`) are a sibling array; tensor parameters declared keyword-only (idiomatic in
+		// Keras `call()` methods) would otherwise be missed (#607). `vararg`/`kwarg` remain unwrapped (#465).
+		if (args != null && args.kwonlyargs != null)
+			for (int i = 0; i < args.kwonlyargs.length; i++)
+				built.add(new Parameter(args, i, this, true));
 		this.parameters = Collections.unmodifiableList(built);
 	}
 
