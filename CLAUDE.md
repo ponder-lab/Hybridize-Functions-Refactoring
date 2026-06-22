@@ -53,7 +53,8 @@ Useful system properties (all `Boolean.getBoolean`):
 - `edu.cuny.hunter.hybridize.tests.runInput` — actually `python3.10`-execute the input `.py` files (and pip-install their requirements) before analysis.
 - `edu.cuny.hunter.hybridize.tests.compareOutput` — diff against expected output files.
 - `edu.cuny.hunter.hybridize.dumpCallGraph` — dump WALA call graphs (verbose; off by default in tests, on in some launches).
-- Evaluator-only knobs (`edu.cuny.hunter.hybridize.eval.*`): `alwaysCheckPythonSideEffects`, `alwaysCheckRecursion`, `processFunctionsInParallel`, `useTestEntrypoints`, `alwaysFollowTypeHints`, `useSpeculativeAnalysis`, `performAnalysis`, `performChange`, `outputCalls`.
+- Evaluator-only knobs (`edu.cuny.hunter.hybridize.eval.*`): `alwaysCheckPythonSideEffects`, `alwaysCheckRecursion`, `processFunctionsInParallel`, `useTestEntrypoints`, `alwaysFollowTypeHints`, `useSpeculativeAnalysis`, `inferInputSignatures`, `performAnalysis`, `performChange`, `outputCalls`.
+- The targeted k-CFA depth the evaluator forwards to the engine is set per-project via a `targetedCfaDepth` entry in an `eval.properties` file (searched from the project directory upward; **not** a system property, mirroring the `nToUseForStreams` knob in `~/Java-8-Stream-Refactoring`), defaulting to `MODEL_FORWARD_CFA_DEPTH` (4).
 
 ## Module layout
 
