@@ -62,13 +62,13 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		@Override
 		protected void setProcessor(RefactoringProcessor processor) {
 			if (!(processor instanceof HybridizeFunctionRefactoringProcessor))
-				throw new IllegalArgumentException("Expecting HybridizeFunctionRefactoringProcessor.");
+				throw new IllegalArgumentException("Expecting " + HybridizeFunctionRefactoringProcessor.class.getSimpleName() + ".");
 			this.processor = (HybridizeFunctionRefactoringProcessor) processor;
 		}
 
 		@Override
 		protected void addOptions(Composite optionComposite) {
-			this.addIntegerButton(TARGETED_CFA_DEPTH_LABEL, TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH,
+			this.addSpinnerButton(TARGETED_CFA_DEPTH_LABEL, TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH, /* minimum */ 1,
 					this.processor::setTargetedCfaDepth, optionComposite);
 		}
 	}
