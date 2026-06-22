@@ -80,6 +80,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
 
+	private static final String INFER_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.inferInputSignatures";
+
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
 	private Set<Function> functions = new LinkedHashSet<>();
@@ -121,11 +123,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private boolean useSpeculativeAnalysis;
 
 	/**
-	 * True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator.
+	 * True iff the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator. Off by default;
+	 * defaults from the {@code edu.cuny.hunter.hybridize.inferInputSignatures} system property (for headless runs), is overridden by the
+	 * value passed to the constructors, and is settable from the wizard via {@link #setInferInputSignatures(boolean)} (#481).
 	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481">Issue 481</a>
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
-	private boolean inferInputSignatures;
+	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_PROPERTY_KEY);
 
 	/**
 	 * The default targeted k-CFA depth: {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH}, the depth at which the model-forward
@@ -634,6 +639,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	/**
+	 * Sets whether the refactoring should emit an inferred {@code input_signature} keyword into the generated decorator (#481).
+	 *
+	 * @param inferInputSignatures True iff the refactoring should emit an inferred {@code input_signature}.
+	 */
+	public void setInferInputSignatures(boolean inferInputSignatures) {
+		this.inferInputSignatures = inferInputSignatures;
 	}
 
 	/**
