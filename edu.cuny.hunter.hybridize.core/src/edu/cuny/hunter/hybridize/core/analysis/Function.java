@@ -2023,6 +2023,11 @@ public class Function {
 			// conservative drop because `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Pending #494.
 			return Optional.empty();
 
+		// Sparseness consensus: preserve the sparse layout only when every context agrees the parameter is sparse, so the emission can
+		// produce a `SparseTensorSpec` rather than a dense `TensorSpec` (#533). A mixed sparse/dense parameter falls through to dense (the
+		// pre-#533 behavior); neither spec admits both layouts, so refining that case is left for later.
+		boolean sparse = contexts.stream().allMatch(TensorType::isSparse);
+
 		// Step 2: rank consensus or shape-⊤. If any context has shape = null or ranks disagree, emit `TensorType(dtype, null)`,
 		// preserving the dtype axis even when the shape axis degrades.
 		// `rank` uses -1 as a "not yet set" sentinel: dim list sizes are always non-negative, so the sentinel can't collide. A boxed
@@ -2032,11 +2037,11 @@ public class Function {
 		for (TensorType t : contexts) {
 			List<Dimension<?>> dims = t.getDims();
 			if (dims == null)
-				return Optional.of(new TensorType(dtype, null));
+				return Optional.of(withSparseness(new TensorType(dtype, null), sparse));
 			if (rank == -1)
 				rank = dims.size();
 			else if (rank != dims.size())
-				return Optional.of(new TensorType(dtype, null));
+				return Optional.of(withSparseness(new TensorType(dtype, null), sparse));
 		}
 
 		// Step 3: per-dim consensus or wildcard. If all contexts agree on a concrete value at position j, keep it; else emit a
@@ -2074,7 +2079,20 @@ public class Function {
 				shape.add(new SymbolicDim("?"));
 		}
 
-		return Optional.of(new TensorType(dtype, shape));
+		return Optional.of(withSparseness(new TensorType(dtype, shape), sparse));
+	}
+
+	/**
+	 * Returns the sparse view of the given {@link TensorType} when {@code sparse} is true, otherwise the type unchanged. Used by
+	 * {@link #inferSpec} to carry a sparse-layout consensus onto the reduced type so {@link InputSignature#toTensorSpecList} emits a
+	 * {@code SparseTensorSpec} (#533).
+	 *
+	 * @param type The reduced {@link TensorType}.
+	 * @param sparse True iff the parameter's contexts agreed it is sparse.
+	 * @return The sparse view when {@code sparse}, otherwise {@code type}.
+	 */
+	private static TensorType withSparseness(TensorType type, boolean sparse) {
+		return sparse ? type.asSparse() : type;
 	}
 
 	private boolean hasTensorContext() {
