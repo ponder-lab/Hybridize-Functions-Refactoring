@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -633,8 +634,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	/**
 	 * Returns the targeted k-CFA depth for the given project, read from the {@code targetedCfaDepth} entry of the nearest
 	 * {@code eval.properties} file (searched from the project's location upward), or
-	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} when no such file or entry is present. Mirrors how the Java
-	 * 8 stream-refactoring evaluator reads its per-project analysis depth from {@code eval.properties}.
+	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} when no such file or entry is present, when the value is not
+	 * a positive integer, or when the file cannot be read. Mirrors how the Java 8 stream-refactoring evaluator reads its per-project
+	 * analysis depth from {@code eval.properties}.
 	 *
 	 * @param project The project being evaluated.
 	 * @return The targeted k-CFA depth for the project.
@@ -646,16 +648,24 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		File file = location == null ? null : this.findEvaluationPropertiesFile(location.toFile());
 
 		if (file != null && file.exists())
-			try (Reader reader = new FileReader(file)) {
+			try (Reader reader = new FileReader(file, StandardCharsets.UTF_8)) {
 				Properties properties = new Properties();
 				properties.load(reader);
 				String value = properties.getProperty(TARGETED_CFA_DEPTH_PROPERTY_KEY);
 
-				if (value != null) {
-					int depth = Integer.parseInt(value.trim());
-					LOG.info("Using eval.properties targeted CFA depth: " + depth + ".");
-					return depth;
-				}
+				if (value != null)
+					try {
+						int depth = Integer.parseInt(value.trim());
+
+						if (depth >= 1) {
+							LOG.info("Using eval.properties targeted CFA depth: " + depth + ".");
+							return depth;
+						}
+
+						LOG.warn("Ignoring non-positive eval.properties targeted CFA depth: " + depth + ". Using the default.");
+					} catch (NumberFormatException e) {
+						LOG.warn("Ignoring malformed eval.properties targeted CFA depth: " + value.trim() + ". Using the default.", e);
+					}
 			}
 
 		return HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
