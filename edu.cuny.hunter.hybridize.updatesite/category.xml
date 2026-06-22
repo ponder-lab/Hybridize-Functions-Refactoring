@@ -8,6 +8,6 @@
     </description>
   </category-def>
   <repository-reference location="http://download.eclipse.org/eclipse/updates/4.25" enabled="true" />
-  <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" enabled="true" />
+  <repository-reference location="https://ponder-lab.github.io/Common-Eclipse-Refactoring-Framework/releases/" enabled="true" />
   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" enabled="true" />
 </site>
