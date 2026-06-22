@@ -3344,10 +3344,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter24() throws Exception {
 		// Precision audit. `add(tf.SparseTensor([[0,0],[1,2]], [1,2], [3,4]), ...)` — verified at runtime: INT32 dtype, dense shape (3, 4).
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -3559,10 +3556,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter46() throws Exception {
 		// Precision audit. Two INT32 SparseTensors with dense shape (3, 4).
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -3667,10 +3661,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter57() throws Exception {
 		// Precision audit. `SparseTensor(...)` from `tensorflow` — INT32 dense shape (3, 4).
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -4199,45 +4190,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
-				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
-				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
-				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
@@ -4342,45 +4324,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
-		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
-				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
