@@ -35,6 +35,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		private static final String TARGETED_CFA_DEPTH_KEY = "targetedCfaDepth"; // $NON-NLS-1$
 
+		private static final String TARGETED_CFA_DEPTH_LABEL = "Targeted k-CFA depth for tensor-type precision:";
+
 		private HybridizeFunctionRefactoringProcessor processor;
 
 		public HybridizeFunctionsInputPage() {
@@ -66,7 +68,7 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		@Override
 		protected void addOptions(Composite optionComposite) {
-			this.addIntegerButton("Targeted k-CFA depth for tensor-type precision:", TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH,
+			this.addIntegerButton(TARGETED_CFA_DEPTH_LABEL, TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH,
 					this.processor::setTargetedCfaDepth, optionComposite);
 		}
 	}
