@@ -3344,7 +3344,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter24() throws Exception {
 		// Precision audit. `add(tf.SparseTensor([[0,0],[1,2]], [1,2], [3,4]), ...)` — verified at runtime: INT32 dtype, dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -3556,7 +3559,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter46() throws Exception {
 		// Precision audit. Two INT32 SparseTensors with dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -3661,7 +3667,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter57() throws Exception {
 		// Precision audit. `SparseTensor(...)` from `tensorflow` — INT32 dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -4197,7 +4206,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
+				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4208,7 +4220,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
+				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4219,7 +4234,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse(),
+				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
 	}
 
 	/**
@@ -4331,7 +4349,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -4342,7 +4363,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
@@ -4353,7 +4377,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		// Layer 1 (Ariadne) types the SparseTensor param as sparse; Layer 2 (Hybridize inference) still drops sparseness to a dense
+		// TensorSpec. Pin that divergence; the signature flips to sparse when SparseTensorSpec emission lands (#533).
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse(),
+				new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
 	}
 
 	/**
