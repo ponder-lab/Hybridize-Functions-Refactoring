@@ -37,6 +37,10 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		private static final String TARGETED_CFA_DEPTH_LABEL = "Targeted k-CFA depth for tensor-type precision:";
 
+		private static final String INFER_INPUT_SIGNATURES_KEY = "inferInputSignatures"; // $NON-NLS-1$
+
+		private static final String INFER_INPUT_SIGNATURES_LABEL = "Emit an inferred input_signature into the @tf.function decorator.";
+
 		private HybridizeFunctionRefactoringProcessor processor;
 
 		public HybridizeFunctionsInputPage() {
@@ -68,6 +72,8 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 
 		@Override
 		protected void addOptions(Composite optionComposite) {
+			this.addBooleanButton(INFER_INPUT_SIGNATURES_LABEL, INFER_INPUT_SIGNATURES_KEY, this.processor.getInferInputSignatures(),
+					this.processor::setInferInputSignatures, optionComposite);
 			this.addSpinnerButton(TARGETED_CFA_DEPTH_LABEL, TARGETED_CFA_DEPTH_KEY, DEFAULT_TARGETED_CFA_DEPTH, /* minimum */ 1,
 					this.processor::setTargetedCfaDepth, optionComposite);
 		}
