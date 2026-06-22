@@ -28,13 +28,17 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	/** The {@code tf.RaggedTensorSpec} constructor name, emitted for a ragged tensor parameter (#524). */
 	private static final String RAGGED_TENSOR_SPEC = "RaggedTensorSpec";
 
+	/** The {@code tf.SparseTensorSpec} constructor name, emitted for a sparse tensor parameter (#533). */
+	private static final String SPARSE_TENSOR_SPEC = "SparseTensorSpec";
+
 	/**
 	 * Format this signature as a Python source-code expression suitable for the {@code input_signature=} keyword argument of
 	 * {@code @tf.function(...)}. Each parameter's {@link TensorType} renders as {@code tfPrefix + "<SpecType>(shape=(...), dtype=" +
-	 * tfPrefix + "<dtype>)"}, where {@code <SpecType>} is {@code RaggedTensorSpec} for a parameter with a ragged dimension and
-	 * {@code TensorSpec} otherwise ({@link #specTypeName}); shape dims render as concrete integers for {@link NumericDim} and {@code None}
-	 * for every other {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way on the spec surface). The whole thing
-	 * is wrapped in {@code [...]} so it can drop straight into {@code @tf.function(input_signature=...)}.
+	 * tfPrefix + "<dtype>)"}, where {@code <SpecType>} is {@code SparseTensorSpec} for a sparse parameter, {@code RaggedTensorSpec} for a
+	 * parameter with a ragged dimension, and {@code TensorSpec} otherwise ({@link #specTypeName}); shape dims render as concrete integers
+	 * for {@link NumericDim} and {@code None} for every other {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way
+	 * on the spec surface). The whole thing is wrapped in {@code [...]} so it can drop straight into
+	 * {@code @tf.function(input_signature=...)}.
 	 * <p>
 	 * Examples (with {@code tfPrefix = "tf."}):
 	 * <ul>
@@ -76,25 +80,31 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	}
 
 	/**
-	 * The TensorFlow spec-type constructor for a parameter: {@code RaggedTensorSpec} when the parameter has a ragged dimension (it is a
-	 * {@code tf.RaggedTensor}), otherwise {@code TensorSpec}. The bare name without any module prefix.
+	 * The TensorFlow spec-type constructor for a parameter: {@code SparseTensorSpec} when the parameter is sparse (it is a
+	 * {@code tf.SparseTensor}, #533), {@code RaggedTensorSpec} when it has a ragged dimension (it is a {@code tf.RaggedTensor}, #524),
+	 * otherwise {@code TensorSpec}. The bare name without any module prefix.
 	 *
 	 * @param t The parameter's {@link TensorType}.
-	 * @return {@code "RaggedTensorSpec"} or {@code "TensorSpec"}.
+	 * @return {@code "SparseTensorSpec"}, {@code "RaggedTensorSpec"}, or {@code "TensorSpec"}.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Issue 533</a>
 	 */
 	private static String specTypeName(TensorType t) {
+		if (t.isSparse())
+			return SPARSE_TENSOR_SPEC;
+
 		List<Dimension<?>> dims = t.getDims();
 		boolean ragged = dims != null && dims.stream().anyMatch(RaggedDim.class::isInstance);
 		return ragged ? RAGGED_TENSOR_SPEC : TENSOR_SPEC;
 	}
 
 	/**
-	 * The set of spec-type constructor names this signature references (e.g., {@code "TensorSpec"}, {@code "RaggedTensorSpec"}), as the
-	 * bare Python identifiers emitted by {@link #toTensorSpecList(String)} (without any module prefix). The source-write verifies each is
-	 * reachable under the chosen import prefix before emitting an unqualified signature: on the {@code from tensorflow import ...}
-	 * named-import path a signature with a ragged parameter needs {@code RaggedTensorSpec} in scope, which {@code TensorSpec} being
-	 * imported does not imply, so an unguarded emission would produce a {@code NameError}-raising decorator.
+	 * The set of spec-type constructor names this signature references (e.g., {@code "TensorSpec"}, {@code "RaggedTensorSpec"},
+	 * {@code "SparseTensorSpec"}), as the bare Python identifiers emitted by {@link #toTensorSpecList(String)} (without any module prefix).
+	 * The source-write verifies each is reachable under the chosen import prefix before emitting an unqualified signature: on the
+	 * {@code from tensorflow import ...} named-import path a signature with a sparse or ragged parameter needs {@code SparseTensorSpec} or
+	 * {@code RaggedTensorSpec} in scope, which {@code TensorSpec} being imported does not imply, so an unguarded emission would produce a
+	 * {@code NameError}-raising decorator.
 	 *
 	 * @return The referenced spec-type constructor names.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>

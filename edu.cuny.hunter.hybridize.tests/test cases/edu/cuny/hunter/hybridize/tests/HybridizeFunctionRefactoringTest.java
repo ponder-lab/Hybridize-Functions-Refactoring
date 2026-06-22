@@ -3344,7 +3344,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter24() throws Exception {
 		// Precision audit. `add(tf.SparseTensor([[0,0],[1,2]], [1,2], [3,4]), ...)` — verified at runtime: INT32 dtype, dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -3556,7 +3556,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter46() throws Exception {
 		// Precision audit. Two INT32 SparseTensors with dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -3661,7 +3661,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testHasLikelyTensorParameter57() throws Exception {
 		// Precision audit. `SparseTensor(...)` from `tensorflow` — INT32 dense shape (3, 4).
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -4190,36 +4190,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter94() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter95() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.eye`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec} rejects
-	 * {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.eye`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter96() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))));
+		testHasLikelyTensorParameterHelper(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))).asSparse());
 	}
 
 	/**
@@ -4324,36 +4324,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter109() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter110() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
-	 * Test for #2 for TF API `sparse.SparseTensor`. The shape/dtype assertion is numerically correct but the inferred {@code TensorSpec}
-	 * rejects {@code SparseTensor} arguments at runtime; the {@code SparseTensorSpec} emission flip target is tracked separately.
+	 * Test for #2 for TF API `sparse.SparseTensor`. The parameter is inferred as a sparse {@code TensorType}, so the signature emits a
+	 * {@code SparseTensorSpec} that admits the {@code SparseTensor} arguments (#533).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Hybridize#533</a>
 	 */
 	@Test
 	public void testHasLikelyTensorParameter111() throws Exception {
-		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))));
+		testHasLikelyTensorParameterHelper(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse());
 	}
 
 	/**
@@ -7053,6 +7053,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter yPred = accuracy.getParameters().stream().filter(p -> "y_pred".equals(p.getName())).findFirst()
 				.orElseThrow(() -> new AssertionError("Expected a `y_pred` parameter."));
 		return yPred.getTensorTypes();
+	}
+
+	/**
+	 * A keyword-only parameter (declared after a bare {@code *}) is wrapped as a {@link Parameter} and, when it carries a tensor-typed type
+	 * hint, classifies as a tensor. PyDev's by-name type-hint resolver scans only the positional argument array, so {@link Parameter} reads
+	 * the keyword-only annotation array directly.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/607">Issue 607</a>
+	 */
+	@Test
+	public void testKwonlyTensorParameter() throws Exception {
+		Function f = getFunction("f");
+
+		Parameter y = f.getParameters().stream().filter(p -> "y".equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected the keyword-only parameter `y` to be wrapped."));
+
+		assertEquals("tf.Tensor", y.getTypeHintName());
+		assertTrue("Keyword-only parameter `y` should have a tensor type hint.", y.hasTensorTypeHint(new NullProgressMonitor()));
+		assertTrue("Keyword-only parameter `y` should classify as a tensor via its type hint.", y.isTensor());
+		assertTrue(f.getHasTensorParameter());
+	}
+
+	/**
+	 * Pinning test: a keyword-only parameter whose tensor value arrives only through a keyword argument at the call site (no type hint)
+	 * does not yet classify as a tensor. WALA's Python frontend does not model keyword-only parameters as formal parameters in the IR, so
+	 * no pointer key corresponds to the parameter and the call-site (Phase 2) path contributes no tensor type. Invert this assertion when
+	 * that upstream gap is closed.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/607">Issue 607</a>
+	 * @see <a href="https://github.com/wala/ML/issues/596">WALA ML issue 596</a>
+	 */
+	@Test
+	public void testKwonlyTensorParameterCallSite() throws Exception {
+		Function f = getFunction("f");
+
+		Parameter y = f.getParameters().stream().filter(p -> "y".equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("Expected the keyword-only parameter `y` to be wrapped."));
+
+		// TODO: Invert once WALA models keyword-only parameters as formal parameters (wala/ML#596).
+		assertFalse("Keyword-only parameter `y` does not yet classify from a call-site keyword argument alone.", y.isTensor());
 	}
 
 	@Test

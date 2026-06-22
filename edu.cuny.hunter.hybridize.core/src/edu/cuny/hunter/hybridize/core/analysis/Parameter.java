@@ -110,14 +110,22 @@ public final class Parameter {
 
 	/**
 	 * Parent Jython AST node carrying every positional name expression (in {@link argumentsType#args}) and per-position annotation (in
-	 * {@link argumentsType#annotation}) of the owning function. Shared across all {@link Parameter}s of the same function.
+	 * {@link argumentsType#annotation}) of the owning function, plus the sibling keyword-only arrays ({@link argumentsType#kwonlyargs} and
+	 * {@link argumentsType#kwonlyargannotation}). Shared across all {@link Parameter}s of the same function.
 	 */
 	private final argumentsType arguments;
 
 	/**
-	 * Zero-based position of this parameter within {@link #arguments}{@code .args}. Bounded at construction time to be a valid index.
+	 * Zero-based position of this parameter within {@link #arguments}{@code .args} (positional) or {@link #arguments}{@code .kwonlyargs}
+	 * (keyword-only, see {@link #keywordOnly}). Bounded at construction time to be a valid index for the relevant array.
 	 */
 	private final int index;
+
+	/**
+	 * True iff this parameter is keyword-only (declared after a bare {@code *}), indexing into {@link #arguments}{@code .kwonlyargs} rather
+	 * than {@code .args} (#607).
+	 */
+	private final boolean keywordOnly;
 
 	/**
 	 * The possible {@link TensorType}s of this {@link Parameter}.
@@ -160,11 +168,27 @@ public final class Parameter {
 	 * @throws IndexOutOfBoundsException If {@code index} is out of range for {@code arguments.args}.
 	 */
 	Parameter(argumentsType arguments, int index, Function function) {
+		this(arguments, index, function, false);
+	}
+
+	/**
+	 * Package-private constructor allowing keyword-only parameters (#607). Positional parameters index into {@code arguments.args};
+	 * keyword-only parameters (declared after a bare {@code *}) index into {@code arguments.kwonlyargs}.
+	 *
+	 * @param arguments The parent {@link argumentsType} node. Non-null.
+	 * @param index The zero-based index within the relevant name array ({@code args} or {@code kwonlyargs}).
+	 * @param function The owning {@link Function}. Non-null.
+	 * @param keywordOnly True iff this is a keyword-only parameter (indexing into {@code arguments.kwonlyargs}).
+	 * @throws IndexOutOfBoundsException If {@code index} is out of range for the relevant name array.
+	 */
+	Parameter(argumentsType arguments, int index, Function function, boolean keywordOnly) {
 		this.arguments = Objects.requireNonNull(arguments);
 		this.function = Objects.requireNonNull(function);
-		if (index < 0 || arguments.args == null || index >= arguments.args.length)
-			throw new IndexOutOfBoundsException("Parameter index " + index + " out of bounds for arguments of length "
-					+ (arguments.args == null ? 0 : arguments.args.length) + ".");
+		this.keywordOnly = keywordOnly;
+		exprType[] names = keywordOnly ? arguments.kwonlyargs : arguments.args;
+		if (index < 0 || names == null || index >= names.length)
+			throw new IndexOutOfBoundsException("Parameter index " + index + " out of bounds for " + (keywordOnly ? "kwonlyargs" : "args")
+					+ " of length " + (names == null ? 0 : names.length) + ".");
 		this.index = index;
 	}
 
@@ -194,7 +218,7 @@ public final class Parameter {
 	 * @return True iff this parameter is at index {@code 0} and is named {@code self}.
 	 */
 	public boolean isSelf() {
-		return this.getIndex() == 0 && SELF_PARAMETER_NAME.equals(this.getName());
+		return !this.keywordOnly && this.getIndex() == 0 && SELF_PARAMETER_NAME.equals(this.getName());
 	}
 
 	/**
@@ -204,6 +228,15 @@ public final class Parameter {
 	 * @return The {@link TypeInfo} for this parameter, or {@code null} if no type hint is present.
 	 */
 	protected TypeInfo getTypeInfo() {
+		// PyDev's by-name resolver (NodeUtils.getTypeForParameterFromStaticTyping) scans only `args.args`/`args.annotation`, so it never
+		// finds a keyword-only parameter's annotation (ponder-lab/Pydev#11). Read `kwonlyargannotation` directly for keyword-only
+		// parameters (#607).
+		if (this.keywordOnly) {
+			exprType[] kwonlyAnnotations = this.arguments.kwonlyargannotation;
+			if (kwonlyAnnotations != null && this.index < kwonlyAnnotations.length && kwonlyAnnotations[this.index] != null)
+				return new TypeInfo(kwonlyAnnotations[this.index]);
+			return null;
+		}
 		return getTypeForParameterFromAST(this.getName(), this.function.getFunctionDefinition().getFunctionDef());
 	}
 
@@ -557,7 +590,7 @@ public final class Parameter {
 	}
 
 	private exprType getNameExpr() {
-		return this.arguments.args[this.index];
+		return (this.keywordOnly ? this.arguments.kwonlyargs : this.arguments.args)[this.index];
 	}
 
 	/**

@@ -32,7 +32,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: recursive
     - name: Set up JDK 25
@@ -73,4 +73,7 @@ jobs:
     - name: Test with Maven
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report
+      # Skip the Coveralls upload when no token is available (Dependabot and fork PRs do not receive repository secrets), so coverage
+      # reporting stays best-effort and a token-less run does not fail the build. Runs with the token (including Dependabot once the token
+      # is also added as a Dependabot secret) still upload.
+      run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report -Dcoveralls.skip=${{ secrets.COVERALLS_REPO_TOKEN == '' }}

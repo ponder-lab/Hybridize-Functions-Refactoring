@@ -81,17 +81,31 @@ public class InputSignatureTest {
 	}
 
 	/**
+	 * A sparse {@link TensorType} selects {@code SparseTensorSpec} over {@code TensorSpec}, since sparseness marks the parameter as a
+	 * {@code tf.SparseTensor} (#533). The shape renders the same as a dense tensor of the same dimensions.
+	 */
+	@Test
+	public void testSparseRendersAsSparseTensorSpec() {
+		InputSignature sig = new InputSignature(List.of(new TensorType(INT32, List.of(new NumericDim(3), new NumericDim(4))).asSparse()));
+		assertEquals("[tf.SparseTensorSpec(shape=(3, 4), dtype=tf.int32)]", sig.toTensorSpecList("tf."));
+	}
+
+	/**
 	 * {@link InputSignature#requiredSpecTypeNames} reports {@code TensorSpec} for a dense parameter, {@code RaggedTensorSpec} for a
-	 * parameter with a ragged dimension, and both for a mixed signature. The source-write gates emission on these being reachable (#524).
+	 * parameter with a ragged dimension, {@code SparseTensorSpec} for a sparse parameter, and the union for a mixed signature. The
+	 * source-write gates emission on these being reachable (#524, #533).
 	 */
 	@Test
 	public void testRequiredSpecTypeNames() {
 		TensorType dense = new TensorType(INT32, List.of(new NumericDim(3)));
 		TensorType ragged = new TensorType(INT32, List.of(new NumericDim(3), RaggedDim.INSTANCE));
+		TensorType sparse = new TensorType(INT32, List.of(new NumericDim(3))).asSparse();
 
 		assertEquals(Set.of("TensorSpec"), new InputSignature(List.of(dense)).requiredSpecTypeNames());
 		assertEquals(Set.of("RaggedTensorSpec"), new InputSignature(List.of(ragged)).requiredSpecTypeNames());
-		assertEquals(Set.of("TensorSpec", "RaggedTensorSpec"), new InputSignature(List.of(dense, ragged)).requiredSpecTypeNames());
+		assertEquals(Set.of("SparseTensorSpec"), new InputSignature(List.of(sparse)).requiredSpecTypeNames());
+		assertEquals(Set.of("TensorSpec", "RaggedTensorSpec", "SparseTensorSpec"),
+				new InputSignature(List.of(dense, ragged, sparse)).requiredSpecTypeNames());
 	}
 
 	/**
