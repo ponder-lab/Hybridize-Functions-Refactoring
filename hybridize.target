@@ -15,8 +15,8 @@
 			<unit id="org.python.pydev.feature.feature.group" version="9.3.3.202403291807"/>
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-			<repository location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite"/>
-			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.2.0"/>
+			<repository location="https://ponder-lab.github.io/Common-Eclipse-Refactoring-Framework/releases/"/>
+			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.5.0"/>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
