@@ -8577,6 +8577,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Expected one INPUT_SIGNATURE_INFERENCE INFO per blocking parameter.", 2, infoEntries.size());
 		assertTrue("Expected an INFO citing parameter `m`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`m`")));
 		assertTrue("Expected an INFO citing parameter `n`.", infoEntries.stream().anyMatch(e -> e.getMessage().contains("`n`")));
+
+		// Per-parameter attribution (#654): both blocking parameters are recorded with their reason, in declaration order, where the
+		// function-level `absenceReason()` collapses to only the first.
+		Map<Parameter, InferenceResult.AbsenceReason> blocking = function.getBlockingParameterReasons();
+		assertEquals("Both non-tensor parameters must be recorded as blocking.", 2, blocking.size());
+		assertEquals("Parameter `m` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
+				blocking.get(m));
+		assertEquals("Parameter `n` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
+				blocking.get(n));
+		assertEquals("Blocking parameters must be in declaration order.", List.of(m, n), new ArrayList<>(blocking.keySet()));
 	}
 
 	/**
