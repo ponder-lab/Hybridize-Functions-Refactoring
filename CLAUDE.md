@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Eclipse PDE refactoring plug-ins (Tycho-built) that automate hybridization of Python TensorFlow functions — i.e., deciding when to add/remove `@tf.function` and applying the transformation. Runs inside Eclipse on top of PyDev and uses WALA/Ariadne for static analysis of Python.
 
-The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fork (`pydev_9_3` branch). See `hybridize.target` for the active target platform (Eclipse 4.25, PyDev 9.3.x, WALA 1.7, Ariadne via `maven.pkg.github.com/ponder-lab/ML`).
+The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fork (`pydev_9_3` branch). See `hybridize.target` for the active target platform (Eclipse 4.39, PyDev 9.3.x, WALA 1.7, Ariadne via `maven.pkg.github.com/ponder-lab/ML`).
 
 ## Build / test commands
 
