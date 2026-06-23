@@ -7,7 +7,7 @@
     <description> Refactorings for optimizing imperative TensorFlow clients for greater efficiency.
     </description>
   </category-def>
-  <repository-reference location="http://download.eclipse.org/eclipse/updates/4.25" enabled="true" />
+  <repository-reference location="https://download.eclipse.org/eclipse/updates/4.39" enabled="true" />
   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Common-Eclipse-Refactoring-Framework/master/edu.cuny.citytech.refactoring.common.updatesite" enabled="true" />
   <repository-reference location="https://raw.githubusercontent.com/ponder-lab/Pydev/pydev_9_3/org.python.pydev.updatesite" enabled="true" />
 </site>
