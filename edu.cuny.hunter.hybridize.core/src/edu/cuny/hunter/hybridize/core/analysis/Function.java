@@ -2008,11 +2008,16 @@ public class Function {
 	 * {@link InputSignature#toTensorSpecList} to emit a {@code RaggedTensorSpec}); any other non-{@link NumericDim} context dim yields a
 	 * wildcard at that position.
 	 * </ol>
+	 * <p>
+	 * Visible (rather than {@code private}) so the reduction can be exercised directly with a hand-built context set, isolating algorithm
+	 * behavior from upstream tensor-type precision. This is the only seam for branches that upstream cannot currently produce as a fixture
+	 * (e.g., the dtype-⊤ singleton, #494); {@link #inferInputSignature()} cannot stand in because it requires a fully classified
+	 * {@link Function}.
 	 *
 	 * @param contexts The non-empty set of {@link TensorType}s Ariadne associated with the parameter across call contexts.
 	 * @return The reduced single {@link TensorType}, or {@link Optional#empty} for the dtype-⊥ and dtype-⊤ branches.
 	 */
-	private static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
+	public static Optional<TensorType> inferSpec(Set<TensorType> contexts) {
 		// Step 1: dtype consensus. Walk the contexts; any disagreement drops the signature.
 		DType dtype = null;
 		for (TensorType t : contexts) {
