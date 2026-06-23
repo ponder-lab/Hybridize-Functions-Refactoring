@@ -1960,20 +1960,31 @@ public class Function {
 			if (spec.isEmpty()) {
 				/*
 				 * `inferSpec` reduced to bottom. With the per-context reduction
-				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it now drops for only two reasons:
-				 * heterogeneous dtype (|D| ≠ 1) or dtype-⊤ (a single agreed `UNKNOWN`). Shape-⊤ and symbolic-dim no longer drop here—it
-				 * emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Emit a per-parameter INFO naming the
-				 * reason; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it drops for three reasons: heterogeneous
+				 * dtype (|D| ≠ 1), dtype-⊤ (a single agreed `UNKNOWN`), or mixed sparse/dense
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642). Shape-⊤ and symbolic-dim no longer drop
+				 * here—it emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own
+				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
+				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				boolean heterogeneous = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
-				if (heterogeneous)
+				boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
+				boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
+				AbsenceReason reason;
+				if (heterogeneousDtype) {
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-				else
+					reason = AbsenceReason.HETEROGENEOUS_DTYPE;
+				} else if (unknownDtype) {
 					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
+					reason = AbsenceReason.UNKNOWN_DTYPE;
+				} else {
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+							+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
+					reason = AbsenceReason.HETEROGENEOUS_SPARSITY;
+				}
 				if (firstReason == null)
-					firstReason = heterogeneous ? AbsenceReason.HETEROGENEOUS_DTYPE : AbsenceReason.UNKNOWN_DTYPE;
+					firstReason = reason;
 				continue;
 			}
 
@@ -2033,10 +2044,15 @@ public class Function {
 			// conservative drop because `tf.UNKNOWN` isn't a valid runtime dtype for `input_signature`. Pending #494.
 			return Optional.empty();
 
-		// Sparseness consensus: preserve the sparse layout only when every context agrees the parameter is sparse, so the emission can
-		// produce a `SparseTensorSpec` rather than a dense `TensorSpec` (#533). A mixed sparse/dense parameter falls through to dense (the
-		// pre-#533 behavior); neither spec admits both layouts, so refining that case is left for later.
-		boolean sparse = contexts.stream().allMatch(TensorType::isSparse);
+		// Sparseness consensus: a parameter must be uniformly sparse or uniformly dense across contexts. A `SparseTensorSpec` admits only
+		// sparse tensors and a dense `TensorSpec` admits only dense tensors (#533), so a parameter that is sparse at some call sites and
+		// dense at others has no single spec that accepts both layouts. Emitting either would reject traffic the function accepts, so the
+		// conservative reduction is bottom—the same `|sparseness| ≠ 1 ⇒ ⊥` discipline the dtype axis uses above (#642).
+		boolean anySparse = contexts.stream().anyMatch(TensorType::isSparse);
+		boolean allSparse = contexts.stream().allMatch(TensorType::isSparse);
+		if (anySparse && !allSparse)
+			return Optional.empty();
+		boolean sparse = allSparse;
 
 		// Step 2: rank consensus or shape-⊤. If any context has shape = null or ranks disagree, emit `TensorType(dtype, null)`,
 		// preserving the dtype axis even when the shape axis degrades.
