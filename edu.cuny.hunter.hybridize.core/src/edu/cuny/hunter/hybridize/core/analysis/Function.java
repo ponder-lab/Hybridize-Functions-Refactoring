@@ -34,6 +34,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -900,6 +901,14 @@ public class Function {
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
 	 */
 	private InferenceResult inferredInputSignature;
+
+	/**
+	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
+	 * inference produced a signature or was never run. Where {@link #getInferredInputSignatureAbsenceReason()} reports only the first
+	 * blocking reason for the whole function, this retains every blocking parameter's reason for read-only per-parameter reporting (e.g.
+	 * the evaluator); see {@link #getBlockingParameterReasons()}.
+	 */
+	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -1908,6 +1917,18 @@ public class Function {
 	}
 
 	/**
+	 * Returns the blocking {@link InferenceResult.AbsenceReason} for each parameter that prevented input-signature inference, in parameter
+	 * declaration order, from the memoized result without triggering inference. Where {@link #getInferredInputSignatureAbsenceReason()}
+	 * collapses the function to its first blocking reason, this surfaces every blocking parameter so a consumer can report per-parameter
+	 * attribution (#654). Empty both when inference was never run and when it produced a signature.
+	 *
+	 * @return An unmodifiable map from each blocking {@link Parameter} to its {@link InferenceResult.AbsenceReason}, in declaration order.
+	 */
+	public Map<Parameter, AbsenceReason> getBlockingParameterReasons() {
+		return Collections.unmodifiableMap(this.blockingParameterReasons);
+	}
+
+	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
 	 * recovery INFOs as a side effect. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking
 	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
@@ -1918,6 +1939,7 @@ public class Function {
 	private InferenceResult computeInputSignature() {
 		List<TensorType> specs = new ArrayList<>();
 		AbsenceReason firstReason = null;
+		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
 
 		for (Parameter param : this.getParameters()) {
 			// `self` is excluded from the signature.
@@ -1937,6 +1959,7 @@ public class Function {
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
+				blocking.put(param, AbsenceReason.NON_TENSOR_PARAMETER);
 				if (firstReason == null)
 					firstReason = AbsenceReason.NON_TENSOR_PARAMETER;
 				continue;
@@ -1951,6 +1974,7 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
 								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
 								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
+				blocking.put(param, AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE);
 				if (firstReason == null)
 					firstReason = AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE;
 				continue;
@@ -1983,6 +2007,7 @@ public class Function {
 							+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
 					reason = AbsenceReason.HETEROGENEOUS_SPARSITY;
 				}
+				blocking.put(param, reason);
 				if (firstReason == null)
 					firstReason = reason;
 				continue;
@@ -1990,6 +2015,8 @@ public class Function {
 
 			specs.add(spec.get());
 		}
+
+		this.blockingParameterReasons = blocking;
 
 		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
 		// reduced.

@@ -111,6 +111,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String[] CALLS_HEADER = { "subject", "callee", "expr" };
 
+	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
+
 	private static final String PERFORM_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performAnalysis";
 
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
@@ -218,7 +220,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
 							buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 					CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));
-					CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);) {
+					CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);
+					CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
+							buildAttributeColumnNames("param index", "param name", "absence reason"));) {
 				if (BUILD_WORKSPACE) {
 					// build the workspace.
 					monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -269,8 +273,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<Function> functions = processor.getFunctions();
 					resultsPrinter.print(functions.size());
 
-					for (Function func : functions)
+					for (Function func : functions) {
 						printFunction(functionsPrinter, func);
+						printBlockedParameters(blockedParametersPrinter, func);
+					}
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
 					// have a tensor-like parameter or are currently hybrid.
@@ -518,6 +524,22 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
 				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
 				"refactoring", "passing precondition", "status");
+	}
+
+	/**
+	 * Emits one row per parameter that blocked input-signature inference for the given function, naming the parameter and its
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Where the {@code functions.csv} {@code input_signature
+	 * absence reason} column reports only the function's first blocking reason, this surfaces the per-parameter attribution (#654). Reads
+	 * the memoized inference result without triggering inference, so it leaves the function's status untouched.
+	 *
+	 * @param printer The {@code blocked_parameters.csv} printer.
+	 * @param function The function whose blocking parameters to emit.
+	 * @throws IOException If a record cannot be written.
+	 */
+	private static void printBlockedParameters(CSVPrinter printer, Function function) throws IOException {
+		for (var entry : function.getBlockingParameterReasons().entrySet())
+			printer.printRecord(
+					buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), entry.getValue()));
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
