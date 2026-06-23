@@ -48,4 +48,25 @@ public class InferSpecTest {
 		assertFalse("A concrete-dtype singleton should reduce to a spec.", spec.isEmpty());
 		assertEquals(concrete, spec.get());
 	}
+
+	/**
+	 * Pinning test: a parameter that is sparse at one call site and dense at another (same dtype, same shape) does not abandon. The dtype
+	 * consensus holds, the sparseness consensus fails, and the reduction falls through to a <em>dense</em> spec. A dense {@code TensorSpec}
+	 * would reject the {@code SparseTensor} the function accepts at the sparse call site, so the emission is unsound; abandoning to bottom
+	 * instead is tracked by issue 642. Invert when the sparse/dense axis is taught to drop on disagreement.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642">Issue 642</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Issue 533</a>
+	 */
+	@Test
+	public void testMixedSparseDenseFallsThroughToDense() {
+		TensorType dense = new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3)));
+		TensorType sparse = new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(3))).asSparse();
+		Optional<TensorType> spec = Function.inferSpec(Set.of(dense, sparse));
+
+		// TODO: Invert to a drop once the sparse/dense axis abandons on disagreement rather than emitting an unsound dense spec (#642).
+		assertFalse("A mixed sparse/dense parameter currently reduces to a spec rather than abandoning.", spec.isEmpty());
+		assertFalse("The reduced spec is currently dense, which would reject the sparse calls the function accepts (#642).",
+				spec.get().isSparse());
+	}
 }
