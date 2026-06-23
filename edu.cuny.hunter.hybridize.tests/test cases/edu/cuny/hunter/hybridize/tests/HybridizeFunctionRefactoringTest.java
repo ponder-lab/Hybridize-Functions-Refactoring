@@ -9030,10 +9030,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * modeled, so it falls through to {@code null}.</li>
 	 * </ul>
 	 * The {@code tf.constant} wrap is load-bearing: a bare {@code numpy.array(...)} does not classify the parameter as tensor-typed (an
-	 * un-wrapped ndarray does not reach the parameter as a tensor), so the {@code tf.constant} TensorFlow tensor is what carries the ⊤ type
-	 * to {@code t}. This is a durable full-⊤ source—both axes are unknown by construction rather than by defeating a specific Ariadne
-	 * model—unlike the {@code json.loads} shape-⊤ source in {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against
-	 * wala/ML#536.
+	 * un-wrapped ndarray's {@code TensorType} does not propagate to the callee parameter, wala/ML#598), so the {@code tf.constant}
+	 * TensorFlow tensor is what carries the ⊤ type to {@code t}. This is a durable full-⊤ source—both axes are unknown by construction
+	 * rather than by defeating a specific Ariadne model—unlike the {@code json.loads} shape-⊤ source in
+	 * {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against wala/ML#536.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
 	 */
