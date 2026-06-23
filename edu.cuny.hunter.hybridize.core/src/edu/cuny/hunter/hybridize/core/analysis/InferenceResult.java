@@ -43,7 +43,14 @@ public sealed interface InferenceResult {
 		 * A parameter receives a tensor whose dtype cannot be determined (dtype-⊤: a single agreed {@code UNKNOWN}), which is not a valid
 		 * runtime dtype for {@code tf.function(input_signature=...)} (#494).
 		 */
-		UNKNOWN_DTYPE
+		UNKNOWN_DTYPE,
+
+		/**
+		 * A parameter is sparse at some call sites and dense at others. A {@code SparseTensorSpec} admits only sparse tensors and a dense
+		 * {@code TensorSpec} admits only dense tensors, so no single spec accepts both layouts; emitting either would reject traffic the
+		 * function accepts, so the reduction is bottom (#642). Checked after the dtype axis, mirroring {@link Function#inferSpec}.
+		 */
+		HETEROGENEOUS_SPARSITY
 	}
 
 	/**
