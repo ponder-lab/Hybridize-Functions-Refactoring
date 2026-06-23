@@ -9074,6 +9074,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Characterizes that Ariadne types a parameter from its call-site argument (forward), not from its in-body uses (backward). The
+	 * parameter `adj` is used as sparse in one arm of an `isinstance(adj, tf.SparseTensor)` guard and dense in the other, but the single
+	 * call site passes a <em>dense</em> argument; `adj` carries only a dense type, with no sparse type leaking from the sparse use. This is
+	 * the property that makes the call-site-precise recovery contemplated in #653 unnecessary: because the parameter's inferred type
+	 * already reflects its actual arguments, a mixed sparse/dense union is genuine polymorphism (correctly abandoned, #642) rather than a
+	 * spurious artifact to recover from. A regression here (a sparse type appearing on `adj`) would mean Ariadne had switched to use-based
+	 * typing, reopening #653.
+	 */
+	@Test
+	public void testParameterTypedFromArgumentNotUse() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter adj = parameters.get(0);
+		assertEquals("adj", adj.getName());
+
+		Set<TensorType> inferred = adj.getTensorTypes();
+		assertFalse("Parameter `adj` should be tensor-typed from its dense argument.", inferred.isEmpty());
+		assertEquals(
+				"No sparse type should leak onto `adj` from the in-body sparse use; it is typed from its dense argument. Got: " + inferred,
+				0, inferred.stream().filter(TensorType::isSparse).count());
+	}
+
+	/**
 	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
 	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
 	 * objects (`getDims() == null` for shape-⊤, `getDType() == UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
