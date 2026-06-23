@@ -9008,12 +9008,59 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull(inferred);
 		// NOTE: This assertion is fragile. The fixture relies on Ariadne NOT seeing through `json.loads("[32]")` to defeat shape inference.
 		// If Ariadne ever learns to model `json.loads` for compile-time-constant string inputs (tracked at wala/ML#536), this fixture stops
-		// producing a shape-⊤ marker and the assertions below flip. The Hybridize-side follow-up to swap to a more durable shape-⊤ source
-		// is tracked at #491. Tight assertions (exact size + null dims) ensure that future Ariadne changes—either dropping the marker or
-		// emitting additional TensorTypes alongside it—are caught cleanly rather than silently masked.
+		// producing a shape-⊤ marker and the assertions below flip. A durable shape-⊤ source (immune to wala/ML#536) is now available via
+		// the `tf.constant(np.array(...))` construction in testInferredTensorTypesDtypeTop (#491), which pins full-⊤; this fixture is
+		// retained as the shape-⊤-with-concrete-dtype lattice point (`float32` from `tf.keras.Input`'s default). Tight assertions (exact
+		// size + null dims) ensure that future Ariadne changes—either dropping the marker or emitting additional TensorTypes alongside
+		// it—are caught cleanly rather than silently masked.
 		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
 		TensorType only = inferred.iterator().next();
 		assertNull("Expected shape-⊤ marker (null dims).", only.getDims());
+	}
+
+	/**
+	 * Regression test for #491 (full-⊤). Pins the full-⊤ marker {@code TensorType(UNKNOWN, null)}—both axes simultaneously unknown—on a
+	 * decorated parameter, end-to-end through Ariadne. The source is {@code tf.constant(numpy.array([...]))} with no {@code dtype=}
+	 * argument and a list-literal first argument:
+	 * <ul>
+	 * <li><em>dtype-⊤.</em> {@code NpArray.getDefaultDTypes} returns {@code EnumSet.of(DType.UNKNOWN)} whenever the {@code dtype} argument
+	 * is absent (numpy infers the dtype from the data at runtime, which a static points-to analysis does not model), per the wala/ML
+	 * lattice contract; {@code tf.constant} propagates it (wala/ML#539).</li>
+	 * <li><em>shape-⊤.</em> {@code NpArray.getDefaultShapes} returns the shape of arg 0, and a bare Python list literal's shape is not
+	 * modeled, so it falls through to {@code null}.</li>
+	 * </ul>
+	 * The {@code tf.constant} wrap is load-bearing: a bare {@code numpy.array(...)} does not classify the parameter as tensor-typed (an
+	 * un-wrapped ndarray does not reach the parameter as a tensor), so the {@code tf.constant} TensorFlow tensor is what carries the ⊤ type
+	 * to {@code t}. This is a durable full-⊤ source—both axes are unknown by construction rather than by defeating a specific Ariadne
+	 * model—unlike the {@code json.loads} shape-⊤ source in {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against
+	 * wala/ML#536.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
+	 */
+	@Test
+	public void testInferredTensorTypesDtypeTop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue("The `tf.constant(np.array(...))` source should classify parameter `t` as tensor-typed.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertEquals("Expected dtype-⊤ marker (UNKNOWN). Got: " + only, DType.UNKNOWN, only.getDType());
+		assertNull("Expected shape-⊤ marker (null dims) for full-⊤. Got: " + only, only.getDims());
 	}
 
 	/**
