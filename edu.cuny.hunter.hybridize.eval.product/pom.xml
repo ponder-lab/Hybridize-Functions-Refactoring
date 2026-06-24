@@ -15,6 +15,22 @@
     <plugins>
       <plugin>
         <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho-version}</version>
+        <configuration>
+          <!-- The product only needs a runnable launcher for the platform we evaluate/reproduce on. The
+               root pom also lists 32-bit and other-OS environments, which have no launcher in Eclipse 4.39. -->
+          <environments combine.children="override">
+            <environment>
+              <os>linux</os>
+              <ws>gtk</ws>
+              <arch>x86_64</arch>
+            </environment>
+          </environments>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
         <artifactId>tycho-p2-director-plugin</artifactId>
         <version>${tycho-version}</version>
         <executions>
