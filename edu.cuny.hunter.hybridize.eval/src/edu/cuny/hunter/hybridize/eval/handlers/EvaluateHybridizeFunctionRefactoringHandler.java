@@ -208,7 +208,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * @param monitor The progress monitor.
 	 * @return An {@link IStatus} describing the outcome.
 	 */
-	IStatus evaluate(IProject[] pythonProjects, IProgressMonitor monitor) {
+	public IStatus evaluate(IProject[] pythonProjects, IProgressMonitor monitor) {
 		List<String> resultsHeader = new ArrayList<>(
 				Arrays.asList("subject", "functions", "optimization available functions", "optimizable functions", "failed preconditions"));
 

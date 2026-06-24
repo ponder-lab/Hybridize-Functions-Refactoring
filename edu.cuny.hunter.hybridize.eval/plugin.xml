@@ -79,4 +79,15 @@
          </toolbar>
       </menuContribution>
    </extension>
+   <extension
+         id="evaluate"
+         point="org.eclipse.core.runtime.applications">
+      <application
+            cardinality="singleton-global"
+            thread="main">
+         <run
+               class="edu.cuny.hunter.hybridize.eval.application.EvaluateHybridizeFunctionRefactoringApplication">
+         </run>
+      </application>
+   </extension>
 </plugin>
