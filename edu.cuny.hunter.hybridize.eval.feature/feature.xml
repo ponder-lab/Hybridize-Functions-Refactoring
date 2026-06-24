@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature id="edu.cuny.hunter.hybridize.eval.feature" label="Hybridize Functions Evaluation (Internal)" version="1.5.0.qualifier" provider-name="City University of New York (CUNY) Hunter College">
+  <description url="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/660">Internal evaluation tooling for the Hybridize Functions refactoring. Not shipped to end users; packages the evaluator so it can be run headlessly (command line) for reproducibility.</description>
+  <copyright>2025 Raffi Khatchadourian and Tatiana Castro Vélez. All rights reserved.</copyright>
+  <license url="https://www.eclipse.org/legal/epl-2.0">Eclipse Public License - v 2.0. The full text is available at https://www.eclipse.org/legal/epl-2.0.</license>
+  <includes id="edu.cuny.hunter.hybridize.feature" version="0.0.0" />
+  <requires>
+    <import plugin="org.eclipse.equinox.app" />
+  </requires>
+  <plugin id="edu.cuny.hunter.hybridize.eval" download-size="0" install-size="0" version="0.0.0" unpack="false" />
+</feature>
