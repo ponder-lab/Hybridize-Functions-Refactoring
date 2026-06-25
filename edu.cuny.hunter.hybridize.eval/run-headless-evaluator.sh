@@ -7,19 +7,22 @@
 # the workspace's working directory (the same outputs as the in-IDE evaluator).
 #
 # Prerequisites:
-#   - An Eclipse installation that contains the Hybridize eval bundle and its
-#     runtime (the ponder-lab PyDev fork, WALA, Ariadne) -- e.g. the development
-#     Eclipse, or a product built to include `edu.cuny.hunter.hybridize.eval`.
-#     Packaging a self-contained product so no pre-existing Eclipse is required
-#     is tracked separately.
+#   - The headless evaluator: either the self-contained product
+#     (`edu.cuny.hunter.hybridize.eval.product`; set ECLIPSE to its materialized
+#     `hybridize-evaluator` launcher), or an Eclipse install containing the eval
+#     bundle and its runtime (the ponder-lab PyDev fork, WALA, Ariadne).
 #   - A workspace already populated with the subjects as PyDev projects.
 #
 # Usage:
-#   ECLIPSE=/path/to/eclipse WORKSPACE=/path/to/workspace ./run-headless-evaluator.sh
+#   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace ./run-headless-evaluator.sh
 #
-# Configuration knobs mirror the IDE launch and can be overridden via the
-# environment (defaults shown below). Parallelization defaults to off because it
-# is nondeterministic (issue 315).
+# The knobs below are this script's defaults for a typical run; the tool itself
+# defaults every flag off (it reads them as system properties), so the script
+# sets the ones a normal run wants. Override via the environment. PERFORM_CHANGE
+# defaults off -- the evaluation applies the transformation only in special cases
+# (e.g. the performance evaluation); analysis-only runs leave the subjects
+# untouched. Parallelization defaults to off because it is nondeterministic
+# (issue 315).
 #
 set -eu
 
@@ -27,7 +30,7 @@ ECLIPSE="${ECLIPSE:?Set ECLIPSE to the Eclipse launcher of an install containing
 WORKSPACE="${WORKSPACE:?Set WORKSPACE to the workspace holding the subjects as PyDev projects.}"
 
 : "${PERFORM_ANALYSIS:=true}"
-: "${PERFORM_CHANGE:=true}"
+: "${PERFORM_CHANGE:=false}"
 : "${INFER_INPUT_SIGNATURES:=false}"
 : "${PROCESS_IN_PARALLEL:=false}"
 : "${FOLLOW_TYPE_HINTS:=true}"
@@ -39,7 +42,7 @@ WORKSPACE="${WORKSPACE:?Set WORKSPACE to the workspace holding the subjects as P
 exec "$ECLIPSE" \
 	-application edu.cuny.hunter.hybridize.eval.evaluate \
 	-data "$WORKSPACE" \
-	-consoleLog -nosplash \
+	-consoleLog -nosplash --launcher.suppressErrors \
 	-vmargs \
 	-Xms1024m "-Xmx${MAX_HEAP}" \
 	-Dedu.cuny.hunter.hybridize.eval.performAnalysis="$PERFORM_ANALYSIS" \
