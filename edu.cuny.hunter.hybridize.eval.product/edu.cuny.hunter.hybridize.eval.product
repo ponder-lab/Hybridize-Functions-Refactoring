@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?pde version="3.5"?>
+
+<product name="Hybridize Functions Evaluator" uid="edu.cuny.hunter.hybridize.eval.product" application="edu.cuny.hunter.hybridize.eval.evaluate" version="1.5.0.qualifier" useFeatures="true" includeLaunchers="true">
+
+   <configIni use="default">
+   </configIni>
+
+   <launcherArgs>
+      <vmArgs>-Xms1024m -Xmx30480m</vmArgs>
+   </launcherArgs>
+
+   <launcher name="hybridize-evaluator">
+   </launcher>
+
+   <features>
+      <feature id="edu.cuny.hunter.hybridize.eval.feature"/>
+      <feature id="org.eclipse.rcp"/>
+      <feature id="org.eclipse.equinox.executable"/>
+   </features>
+
+   <configurations>
+      <plugin id="org.eclipse.equinox.simpleconfigurator" autoStart="true" startLevel="1"/>
+      <plugin id="org.eclipse.equinox.common" autoStart="true" startLevel="2"/>
+      <plugin id="org.apache.felix.scr" autoStart="true" startLevel="2"/>
+      <plugin id="org.eclipse.equinox.event" autoStart="true" startLevel="2"/>
+      <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="4"/>
+      <plugin id="org.eclipse.equinox.app" autoStart="true" startLevel="4"/>
+   </configurations>
+
+</product>

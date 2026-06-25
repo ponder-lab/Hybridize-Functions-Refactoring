@@ -8,6 +8,7 @@
 			<unit id="org.eclipse.equinox.p2.discovery.feature.feature.group" version="0.0.0"/>
 			<unit id="org.eclipse.pde.feature.group" version="0.0.0"/>
 			<unit id="org.eclipse.rcp.feature.group" version="0.0.0"/>
+			<unit id="org.eclipse.equinox.executable.feature.group" version="0.0.0"/>
 			<unit id="org.eclipse.test.feature.group" version="0.0.0"/>
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
@@ -16,7 +17,7 @@
 		</location>
 		<location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
 			<repository location="https://ponder-lab.github.io/Common-Eclipse-Refactoring-Framework/releases/"/>
-			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.5.0"/>
+			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.6.1"/>
 		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
