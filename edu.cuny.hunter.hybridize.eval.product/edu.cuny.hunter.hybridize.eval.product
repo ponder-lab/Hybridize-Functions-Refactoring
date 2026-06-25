@@ -7,7 +7,8 @@
    </configIni>
 
    <launcherArgs>
-      <vmArgs>-Xms1024m -Xmx30480m</vmArgs>
+      <programArgs>--launcher.suppressErrors</programArgs>
+      <vmArgs>--add-modules=ALL-SYSTEM -XX:+UseG1GC -XX:+UseStringDeduplication -Xms1024m -Xmx30480m</vmArgs>
    </launcherArgs>
 
    <launcher name="hybridize-evaluator">
