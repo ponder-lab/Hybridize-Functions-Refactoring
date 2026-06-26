@@ -18,6 +18,7 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 
+import edu.cuny.hunter.hybridize.eval.config.EvaluationOption;
 import edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler;
 
 /**
@@ -48,24 +49,6 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 	/** Exit code returned when a command-line argument is unrecognized. */
 	private static final int EXIT_BAD_ARGUMENTS = 3;
-
-	/** Common prefix of the evaluator's configuration system properties. */
-	private static final String EVAL_PROPERTY_PREFIX = "edu.cuny.hunter.hybridize.eval.";
-
-	/**
-	 * The configuration names settable from the command line, each backing the {@code edu.cuny.hunter.hybridize.eval.}<i>name</i> system
-	 * property of the same name. On the command line they are passed in kebab-case (e.g. {@code --perform-change}). The per-project
-	 * {@code targetedCfaDepth} is intentionally excluded: it is read from {@code eval.properties}, not a system property.
-	 */
-	private static final Set<String> CONFIG_NAMES = Set.of("performAnalysis", "performChange", "inferInputSignatures",
-			"alwaysCheckPythonSideEffects", "alwaysCheckRecursion", "processFunctionsInParallel", "useTestEntrypoints",
-			"alwaysFollowTypeHints", "useSpeculativeAnalysis", "outputCalls", "projects");
-
-	/**
-	 * System property naming a comma-separated subset of project names to evaluate; when unset or blank, all open Python projects in the
-	 * workspace are evaluated.
-	 */
-	private static final String PROJECTS_PROPERTY_KEY = EVAL_PROPERTY_PREFIX + "projects";
 
 	@Override
 	public Object start(IApplicationContext context) throws Exception {
@@ -122,13 +105,13 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 			String value = separator < 0 ? Boolean.TRUE.toString() : body.substring(separator + 1);
 			String name = toCamelCase(flag);
 
-			if (!CONFIG_NAMES.contains(name)) {
+			if (!EvaluationOption.propertyNames().contains(name)) {
 				LOG.error("Unrecognized evaluator option --" + flag + ". Recognized configuration names (pass as --kebab-case): "
-						+ new TreeSet<>(CONFIG_NAMES));
+						+ new TreeSet<>(EvaluationOption.propertyNames()));
 				return false;
 			}
 
-			System.setProperty(EVAL_PROPERTY_PREFIX + name, value);
+			System.setProperty(EvaluationOption.PREFIX + name, value);
 		}
 
 		return true;
@@ -152,14 +135,14 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	}
 
 	/**
-	 * Returns the open, Python-natured projects in the workspace, restricted to the names listed in the {@value #PROJECTS_PROPERTY_KEY}
-	 * system property when it is set.
+	 * Returns the open, Python-natured projects in the workspace, restricted to the names listed in the {@link EvaluationOption#PROJECTS
+	 * projects} system property when it is set.
 	 *
 	 * @return The open Python projects to evaluate.
 	 * @throws org.eclipse.core.runtime.CoreException If a project's nature cannot be read.
 	 */
 	private static IProject[] getOpenPythonProjects() throws Exception {
-		String filter = System.getProperty(PROJECTS_PROPERTY_KEY);
+		String filter = System.getProperty(EvaluationOption.PROJECTS.key());
 		Set<String> wanted = null;
 
 		if (filter != null && !filter.isBlank()) {
