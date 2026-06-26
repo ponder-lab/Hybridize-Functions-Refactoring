@@ -41,13 +41,13 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	private static final ILog LOG = getLog(EvaluateHybridizeFunctionRefactoringApplication.class);
 
 	/** Exit code returned when the workspace contains no open Python project to evaluate. */
-	private static final Integer EXIT_NO_PROJECTS = Integer.valueOf(2);
+	private static final int EXIT_NO_PROJECTS = 2;
 
 	/** Exit code returned when the evaluation completes but its status is not OK. */
-	private static final Integer EXIT_EVALUATION_FAILED = Integer.valueOf(1);
+	private static final int EXIT_EVALUATION_FAILED = 1;
 
 	/** Exit code returned when a command-line argument is unrecognized. */
-	private static final Integer EXIT_BAD_ARGUMENTS = Integer.valueOf(3);
+	private static final int EXIT_BAD_ARGUMENTS = 3;
 
 	/** Common prefix of the evaluator's configuration system properties. */
 	private static final String EVAL_PROPERTY_PREFIX = "edu.cuny.hunter.hybridize.eval.";
