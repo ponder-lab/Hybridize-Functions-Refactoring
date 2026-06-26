@@ -1,43 +1,41 @@
 package edu.cuny.hunter.hybridize.eval.config;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * The evaluator's command-line and system-property configuration options, single-sourced so the argument parser
  * ({@code EvaluateHybridizeFunctionRefactoringApplication}) and the readers ({@code EvaluateHybridizeFunctionRefactoringHandler}) cannot
- * drift: each option contributes both its camelCase name (the canonical form of its {@code --kebab-case} flag) and its full system-property
- * key. Adding an option is one entry here.
+ * drift: each constant yields both its camelCase name (the canonical form of its {@code --kebab-case} flag) and its full system-property
+ * key, both derived from the constant itself. Adding an option is one entry here.
  * <p>
  * The per-project {@code targetedCfaDepth} is deliberately not an option: it is an integer read from {@code eval.properties} (with a global
  * system-property fallback), not a {@code --kebab-case} boolean flag. Its key still shares {@link #PREFIX}.
  */
 public enum EvaluationOption {
 
-	PERFORM_ANALYSIS("performAnalysis"), PERFORM_CHANGE("performChange"), ALWAYS_CHECK_PYTHON_SIDE_EFFECTS("alwaysCheckPythonSideEffects"),
-	ALWAYS_CHECK_RECURSION("alwaysCheckRecursion"), PROCESS_FUNCTIONS_IN_PARALLEL("processFunctionsInParallel"),
-	USE_TEST_ENTRYPOINTS("useTestEntrypoints"), ALWAYS_FOLLOW_TYPE_HINTS("alwaysFollowTypeHints"),
-	USE_SPECULATIVE_ANALYSIS("useSpeculativeAnalysis"), INFER_INPUT_SIGNATURES("inferInputSignatures"), OUTPUT_CALLS("outputCalls"),
-	PROJECTS("projects");
+	PERFORM_ANALYSIS, PERFORM_CHANGE, ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, ALWAYS_CHECK_RECURSION, PROCESS_FUNCTIONS_IN_PARALLEL,
+	USE_TEST_ENTRYPOINTS, ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, INFER_INPUT_SIGNATURES, OUTPUT_CALLS, PROJECTS;
 
 	/** Common prefix of the evaluator's configuration system properties. */
 	public static final String PREFIX = "edu.cuny.hunter.hybridize.eval.";
 
-	private final String propertyName;
-
-	EvaluationOption(String propertyName) {
-		this.propertyName = propertyName;
-	}
-
 	/**
 	 * Returns this option's camelCase configuration name, the canonical form of its {@code --kebab-case} flag and the suffix of its
-	 * system-property key.
+	 * system-property key, derived from the constant name (e.g. {@code PERFORM_ANALYSIS} yields {@code performAnalysis}).
 	 *
 	 * @return This option's camelCase configuration name.
 	 */
 	public String propertyName() {
-		return this.propertyName;
+		String[] words = name().toLowerCase(Locale.ROOT).split("_");
+		StringBuilder camelCase = new StringBuilder(words[0]);
+
+		for (int word = 1; word < words.length; word++)
+			camelCase.append(Character.toUpperCase(words[word].charAt(0))).append(words[word].substring(1));
+
+		return camelCase.toString();
 	}
 
 	/**
@@ -46,7 +44,7 @@ public enum EvaluationOption {
 	 * @return This option's full system-property key.
 	 */
 	public String key() {
-		return PREFIX + this.propertyName;
+		return PREFIX + propertyName();
 	}
 
 	/**
