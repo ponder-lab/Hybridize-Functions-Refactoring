@@ -76,8 +76,10 @@ import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHan
 import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
+import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -114,6 +116,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String[] CALLS_HEADER = { "subject", "callee", "expr" };
 
 	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
+
+	private static final String INPUT_SIGNATURES_CSV_FILENAME = "input_signatures.csv";
 
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
@@ -229,7 +233,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));
 				CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);
 				CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
-						buildAttributeColumnNames("param index", "param name", "absence reason"));) {
+						buildAttributeColumnNames("param index", "param name", "absence reason"));
+				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));) {
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -285,6 +291,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Function func : functions) {
 						printFunction(functionsPrinter, func);
 						printBlockedParameters(blockedParametersPrinter, func);
+						printInputSignatures(inputSignaturesPrinter, func);
 					}
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
@@ -555,6 +562,58 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		for (var entry : function.getBlockingParameterReasons().entrySet())
 			printer.printRecord(
 					buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), entry.getValue()));
+	}
+
+	/**
+	 * Emits the function's input signatures at per-parameter (per-{@code TensorSpec}) granularity into {@code input_signatures.csv}, so
+	 * downstream analysis is a group-by rather than a parse of the joined {@code input_signature} string in {@code functions.csv}. There is
+	 * one row per non-{@code self} parameter of the inferred signature (source {@code "inferred"}) and of the developer-supplied signature
+	 * (source {@code "supplied"}); when inference was blocked, one row per blocking parameter (source {@code "absent"}) carrying its
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. The {@code dtype} and {@code shape} columns hold the
+	 * raw per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
+	 * recomputing, so it leaves the function's status untouched.
+	 *
+	 * @param printer The {@code input_signatures.csv} printer.
+	 * @param function The function whose per-parameter signatures to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
+	 */
+	private static void printInputSignatures(CSVPrinter printer, Function function) throws IOException {
+		// The non-self parameters in declaration order, aligned position-wise with InputSignature.parameterSpecs().
+		List<Parameter> parameters = function.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+		if (function.getInferredInputSignature().isPresent())
+			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), "inferred");
+		else
+			for (var entry : function.getBlockingParameterReasons().entrySet())
+				printer.printRecord(
+						buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue(), null, null));
+
+		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
+		if (hybridizationParameters != null && hybridizationParameters.getSuppliedInputSignature().isPresent())
+			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), "supplied");
+	}
+
+	/**
+	 * Emits one {@code input_signatures.csv} row per parameter of the given signature, tagging each with {@code source} and pairing it
+	 * position-wise with the function's non-{@code self} parameters for the {@code param index} join key. A signature entry beyond the
+	 * declared non-{@code self} parameter count (a parameter-count mismatch) gets a {@code null} index rather than failing the row.
+	 *
+	 * @param printer The {@code input_signatures.csv} printer.
+	 * @param function The function the signature belongs to.
+	 * @param parameters The function's non-{@code self} parameters in declaration order.
+	 * @param signature The signature whose per-parameter rows to emit.
+	 * @param source The source tag ({@code "inferred"} or {@code "supplied"}).
+	 * @throws IOException If a record cannot be written.
+	 */
+	private static void printSignatureRows(CSVPrinter printer, Function function, List<Parameter> parameters, InputSignature signature,
+			String source) throws IOException {
+		var specs = signature.parameterSpecs();
+
+		for (int i = 0; i < specs.size(); i++) {
+			Integer index = i < parameters.size() ? parameters.get(i).getIndex() : null;
+			printer.printRecord(buildAttributeColumnValues(function, index, source, null, specs.get(i).dtype(), specs.get(i).shape()));
+		}
 	}
 
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {

@@ -20,6 +20,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature.ParameterSpec;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature.Relation;
 
 /**
@@ -164,6 +165,37 @@ public class InputSignatureTest {
 		} finally {
 			Locale.setDefault(prior);
 		}
+	}
+
+	/**
+	 * {@link InputSignature#parameterSpecs()} exposes each parameter's dtype and raw shape in declaration order, the per-parameter view the
+	 * {@code input_signatures.csv} emitter consumes, matching the rendering {@link InputSignature#toTensorSpecList(String)} joins (#665).
+	 */
+	@Test
+	public void testParameterSpecs() {
+		InputSignature sig = sig(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))),
+				new TensorType(INT32, List.of(new NumericDim(5))));
+		assertEquals(List.of(new ParameterSpec("float32", "(2, 3)"), new ParameterSpec("int32", "(5,)")), sig.parameterSpecs());
+	}
+
+	/**
+	 * {@link InputSignature#parameterSpecs()} renders a rank-0 tensor's shape as {@code "()"} and a shape-⊤ ({@code null} dims) tensor's
+	 * shape as {@code "None"}, matching {@link InputSignature#toTensorSpecList(String)}.
+	 */
+	@Test
+	public void testParameterSpecsScalarAndShapeTop() {
+		assertEquals(List.of(new ParameterSpec("int32", "()")), sig(new TensorType(INT32, List.of())).parameterSpecs());
+		assertEquals(List.of(new ParameterSpec("float32", "None")), sig(new TensorType(FLOAT32, null)).parameterSpecs());
+	}
+
+	/**
+	 * {@link InputSignature#parameterSpecs()} collapses every non-numeric dimension to {@code None} on the shape surface, as
+	 * {@link InputSignature#toTensorSpecList(String)} does.
+	 */
+	@Test
+	public void testParameterSpecsWildcardDims() {
+		assertEquals(List.of(new ParameterSpec("float32", "(None, 32)")),
+				sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(32)))).parameterSpecs());
 	}
 
 	private static InputSignature sig(TensorType... types) {
