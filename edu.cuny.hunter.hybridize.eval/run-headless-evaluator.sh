@@ -22,9 +22,11 @@
 # only the flags you set in the environment and lets the tool default the rest,
 # so a useful run sets at least PERFORM_ANALYSIS=true. Recognized knobs:
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, PROCESS_IN_PARALLEL,
-# FOLLOW_TYPE_HINTS, SPECULATIVE, TEST_ENTRYPOINTS, OUTPUT_CALLS. PERFORM_CHANGE
-# applies the transformation; leave it off except in special cases (e.g. the
-# performance evaluation). PROCESS_IN_PARALLEL is nondeterministic (issue 315).
+# FOLLOW_TYPE_HINTS, SPECULATIVE, TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
+# PERFORM_CHANGE applies the transformation; leave it off except in special cases
+# (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
+# (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
+# subset; unset evaluates all open Python projects.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
@@ -49,4 +51,5 @@ exec "$ECLIPSE" \
 	${FOLLOW_TYPE_HINTS+-Dedu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints="$FOLLOW_TYPE_HINTS"} \
 	${SPECULATIVE+-Dedu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis="$SPECULATIVE"} \
 	${TEST_ENTRYPOINTS+-Dedu.cuny.hunter.hybridize.eval.useTestEntrypoints="$TEST_ENTRYPOINTS"} \
-	${OUTPUT_CALLS+-Dedu.cuny.hunter.hybridize.eval.outputCalls="$OUTPUT_CALLS"}
+	${OUTPUT_CALLS+-Dedu.cuny.hunter.hybridize.eval.outputCalls="$OUTPUT_CALLS"} \
+	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"}
