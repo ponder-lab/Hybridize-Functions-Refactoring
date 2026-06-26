@@ -118,27 +118,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String INPUT_SIGNATURES_CSV_FILENAME = "input_signatures.csv";
 
-	// CSV column names, named so emitters that share a column (e.g. "param index" and "absence reason" across
-	// blocked_parameters.csv and input_signatures.csv, or "refactoring"/"severity"/"code"/"message" across the
-	// failed-precondition and status CSVs) stay single-sourced.
-	private static final String COLUMN_TRANSFORMATION = "transformation";
-	private static final String COLUMN_REFACTORING = "refactoring";
-	private static final String COLUMN_SEVERITY = "severity";
-	private static final String COLUMN_CODE = "code";
-	private static final String COLUMN_MESSAGE = "message";
-	private static final String COLUMN_DECORATOR = "decorator";
-	private static final String COLUMN_PARAM_INDEX = "param index";
-	private static final String COLUMN_PARAM_NAME = "param name";
-	private static final String COLUMN_ABSENCE_REASON = "absence reason";
-	private static final String COLUMN_SOURCE = "source";
-	private static final String COLUMN_DTYPE = "dtype";
-	private static final String COLUMN_SHAPE = "shape";
-
-	// The input_signatures.csv "source" column values.
-	private static final String SOURCE_INFERRED = "inferred";
-	private static final String SOURCE_SUPPLIED = "supplied";
-	private static final String SOURCE_ABSENT = "absent";
-
 	private static final String PERFORM_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performAnalysis";
 
 	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
@@ -259,19 +238,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
 				CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
-						buildAttributeColumnNames(COLUMN_TRANSFORMATION));
+						buildAttributeColumnNames("transformation"));
 				CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
-						buildAttributeColumnNames(COLUMN_REFACTORING, COLUMN_SEVERITY, COLUMN_CODE, COLUMN_MESSAGE));
+						buildAttributeColumnNames("refactoring", "severity", "code", "message"));
 				CSVPrinter statusPrinter = createCSVPrinter(STATUS_CSV_FILENAME,
-						buildAttributeColumnNames(COLUMN_REFACTORING, COLUMN_SEVERITY, COLUMN_CODE, COLUMN_MESSAGE));
-				CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames(COLUMN_DECORATOR));
+						buildAttributeColumnNames("refactoring", "severity", "code", "message"));
+				CSVPrinter decoratorPrinter = createCSVPrinter(DECORATOR_CSV_FILENAME, buildAttributeColumnNames("decorator"));
 				CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);
 				CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
-						buildAttributeColumnNames(COLUMN_PARAM_INDEX, COLUMN_PARAM_NAME, COLUMN_ABSENCE_REASON));
+						buildAttributeColumnNames("param index", "param name", "absence reason"));
 				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
-						buildAttributeColumnNames(COLUMN_PARAM_INDEX, COLUMN_SOURCE, COLUMN_ABSENCE_REASON, COLUMN_DTYPE, COLUMN_SHAPE));) {
+						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));) {
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -619,15 +598,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		List<Parameter> parameters = function.getParameters().stream().filter(p -> !p.isSelf()).toList();
 
 		if (function.getInferredInputSignature().isPresent())
-			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), SOURCE_INFERRED);
+			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), "inferred");
 		else
 			for (var entry : function.getBlockingParameterReasons().entrySet())
 				printer.printRecord(
-						buildAttributeColumnValues(function, entry.getKey().getIndex(), SOURCE_ABSENT, entry.getValue(), null, null));
+						buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue(), null, null));
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 		if (hybridizationParameters != null && hybridizationParameters.getSuppliedInputSignature().isPresent())
-			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), SOURCE_SUPPLIED);
+			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), "supplied");
 	}
 
 	/**
