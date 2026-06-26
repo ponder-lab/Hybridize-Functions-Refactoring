@@ -83,6 +83,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
 import edu.cuny.hunter.hybridize.core.utils.Util;
+import edu.cuny.hunter.hybridize.eval.config.EvaluationOption;
 
 public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefactoringHandler {
 
@@ -114,29 +115,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
 
-	private static final String PERFORM_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performAnalysis";
-
-	private static final String PERFORM_CHANGE_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.performChange";
-
-	private static final String ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects";
-
-	private static final String ALWAYS_CHECK_RECURSION_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.alwaysCheckRecursion";
-
-	private static final String PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.processFunctionsInParallel";
-
-	private static final String USE_TEST_ENTRYPOINTS_KEY = "edu.cuny.hunter.hybridize.eval.useTestEntrypoints";
-
-	private static final String ALWAYS_FOLLOW_TYPE_HINTS_KEY = "edu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints";
-
-	private static final String USE_SPECULATIVE_ANALYSIS_KEY = "edu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis";
-
-	private static final String INFER_INPUT_SIGNATURES_KEY = "edu.cuny.hunter.hybridize.eval.inferInputSignatures";
-
-	private static final String OUTPUT_CALLS_KEY = "edu.cuny.hunter.hybridize.eval.outputCalls";
-
-	private static final String TARGETED_CFA_DEPTH_KEY = "edu.cuny.hunter.hybridize.eval.targetedCfaDepth";
-
+	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
+
+	/**
+	 * The targeted k-CFA depth system-property key: {@link EvaluationOption#PREFIX} prepended to {@link #TARGETED_CFA_DEPTH_PROPERTY_KEY}.
+	 */
+	private static final String TARGETED_CFA_DEPTH_KEY = EvaluationOption.PREFIX + TARGETED_CFA_DEPTH_PROPERTY_KEY;
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
 		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
@@ -155,17 +140,17 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return ret.toArray(Object[]::new);
 	}
 
-	private boolean alwaysCheckPythonSideEffects = Boolean.getBoolean(ALWAYS_CHECK_PYTHON_SIDE_EFFECTS_PROPERTY_KEY);
+	private boolean alwaysCheckPythonSideEffects = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_PYTHON_SIDE_EFFECTS.key());
 
-	private boolean alwaysCheckRecursion = Boolean.getBoolean(ALWAYS_CHECK_RECURSION_PROPERTY_KEY);
+	private boolean alwaysCheckRecursion = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_RECURSION.key());
 
-	private boolean processFunctionsInParallel = Boolean.getBoolean(PROCESS_FUNCTIONS_IN_PARALLEL_PROPERTY_KEY);
+	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
-	private boolean useTestEntrypoints = Boolean.getBoolean(USE_TEST_ENTRYPOINTS_KEY);
+	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
 
-	private boolean alwaysFollowTypeHints = Boolean.getBoolean(ALWAYS_FOLLOW_TYPE_HINTS_KEY);
+	private boolean alwaysFollowTypeHints = Boolean.getBoolean(EvaluationOption.ALWAYS_FOLLOW_TYPE_HINTS.key());
 
-	private boolean useSpeculativeAnalysis = Boolean.getBoolean(USE_SPECULATIVE_ANALYSIS_KEY);
+	private boolean useSpeculativeAnalysis = Boolean.getBoolean(EvaluationOption.USE_SPECULATIVE_ANALYSIS.key());
 
 	/**
 	 * True iff the refactoring should emit an inferred {@code input_signature=...} keyword into the generated {@code @tf.function}
@@ -174,7 +159,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/481">Issue 481</a>
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
-	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_KEY);
+	private boolean inferInputSignatures = Boolean.getBoolean(EvaluationOption.INFER_INPUT_SIGNATURES.key());
 
 	/**
 	 * The global targeted k-CFA depth, set via the {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property and defaulting
@@ -266,7 +251,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsRecord.add(project.getName());
 
 					// calls.
-					if (Boolean.getBoolean(OUTPUT_CALLS_KEY))
+					if (Boolean.getBoolean(EvaluationOption.OUTPUT_CALLS.key()))
 						printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// set up analysis for single project.
@@ -429,11 +414,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	private static boolean shouldPerformChange() {
-		return Boolean.getBoolean(PERFORM_CHANGE_PROPERTY_KEY);
+		return Boolean.getBoolean(EvaluationOption.PERFORM_CHANGE.key());
 	}
 
 	private static boolean shouldPerformAnalysis() {
-		return Boolean.getBoolean(PERFORM_ANALYSIS_PROPERTY_KEY);
+		return Boolean.getBoolean(EvaluationOption.PERFORM_ANALYSIS.key());
 	}
 
 	private static Set<RefactoringStatusEntry> getRefactoringStatusEntries(Set<Function> functionSet,
