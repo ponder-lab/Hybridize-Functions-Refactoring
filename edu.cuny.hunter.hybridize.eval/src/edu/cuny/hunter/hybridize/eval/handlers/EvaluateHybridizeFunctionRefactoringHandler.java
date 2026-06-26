@@ -228,6 +228,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		resultsHeader.add("time (s)");
 
 		HybridizeFunctionRefactoringProcessor processor = null;
+		List<String> failedProjects = new ArrayList<>();
 
 		try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 				CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
@@ -253,150 +254,160 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			monitor.beginTask("Analyzing projects...", pythonProjects.length);
 
 			for (IProject project : pythonProjects) {
-				if (!(project.isOpen() && project.exists() && project.hasNature(PYTHON_NATURE_ID)
-						&& project.isNatureEnabled(PYTHON_NATURE_ID)))
-					throw new IllegalStateException("Python project: " + project.getName() + " must be open and must exist.");
+				// Per-project isolation: record and skip a single project's failure rather than aborting the whole run.
+				List<Object> resultsRecord = new ArrayList<>();
 
-				// subject.
-				resultsPrinter.print(project.getName());
+				try {
+					if (!(project.isOpen() && project.exists() && project.hasNature(PYTHON_NATURE_ID)
+							&& project.isNatureEnabled(PYTHON_NATURE_ID)))
+						throw new IllegalStateException("Python project: " + project.getName() + " must be open and must exist.");
 
-				// calls.
-				if (Boolean.getBoolean(OUTPUT_CALLS_KEY))
-					printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
+					// subject.
+					resultsRecord.add(project.getName());
 
-				// set up analysis for single project.
-				int targetedCfaDepth = getTargetedCfaDepth(project);
-				TimeCollector resultsTimeCollector = new TimeCollector();
+					// calls.
+					if (Boolean.getBoolean(OUTPUT_CALLS_KEY))
+						printCalls(callPrinter, project, monitor.slice(IProgressMonitor.UNKNOWN));
 
-				resultsTimeCollector.start();
-				processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
-						this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
-						this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
-				processor.setTargetedCfaDepth(targetedCfaDepth);
-				resultsTimeCollector.stop();
+					// set up analysis for single project.
+					int targetedCfaDepth = getTargetedCfaDepth(project);
+					TimeCollector resultsTimeCollector = new TimeCollector();
 
-				// run the precondition checking.
-				RefactoringStatus status = null;
-				ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
-
-				if (shouldPerformAnalysis()) {
 					resultsTimeCollector.start();
-					status = refactoring.checkAllConditions(new NullProgressMonitor());
+					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
+							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
+							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
+					processor.setTargetedCfaDepth(targetedCfaDepth);
 					resultsTimeCollector.stop();
 
-					LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
-				} else
-					status = new RefactoringStatus();
+					// run the precondition checking.
+					RefactoringStatus status = null;
+					ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
-				// functions.
-				Set<Function> functions = processor.getFunctions();
-				resultsPrinter.print(functions.size());
+					if (shouldPerformAnalysis()) {
+						resultsTimeCollector.start();
+						status = refactoring.checkAllConditions(new NullProgressMonitor());
+						resultsTimeCollector.stop();
 
-				for (Function func : functions) {
-					printFunction(functionsPrinter, func);
-					printBlockedParameters(blockedParametersPrinter, func);
+						LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
+					} else
+						status = new RefactoringStatus();
+
+					// functions.
+					Set<Function> functions = processor.getFunctions();
+					resultsRecord.add(functions.size());
+
+					for (Function func : functions) {
+						printFunction(functionsPrinter, func);
+						printBlockedParameters(blockedParametersPrinter, func);
+					}
+
+					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
+					// have a tensor-like parameter or are currently hybrid.
+					Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable).filter(
+							f -> f.isHybrid() != null && f.isHybrid() || f.getHasTensorParameter() != null && f.getHasTensorParameter())
+							.collect(Collectors.toSet());
+					resultsRecord.add(candidates.size()); // number.
+
+					// candidate functions.
+					for (Function function : candidates) {
+						candidatesPrinter.printRecord(buildAttributeColumnValues(function));
+
+						// transformations.
+						for (Transformation transformation : function.getTransformations())
+							transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation));
+					}
+
+					// optimizable candidate functions.
+					Set<Function> optimizableFunctions = Sets.intersection(candidates, processor.getOptimizableFunctions());
+					resultsRecord.add(optimizableFunctions.size()); // number.
+
+					for (Function function : optimizableFunctions)
+						optimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
+
+					// failed functions.
+					SetView<Function> failures = Sets.difference(candidates, optimizableFunctions);
+
+					for (Function function : failures)
+						nonOptimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
+
+					// failed preconditions.
+					Collection<RefactoringStatusEntry> errorEntries = getRefactoringStatusEntries(failures,
+							RefactoringStatusEntry::isError);
+
+					resultsRecord.add(errorEntries.size()); // number.
+
+					printStatuses(errorPrinter, errorEntries);
+
+					// general refactoring statuses.
+					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
+					printStatuses(statusPrinter, generalEntries);
+
+					// decorators.
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
+
+					// refactoring type counts.
+					for (Refactoring refactoringKind : Refactoring.values())
+						resultsRecord.add(candidates.parallelStream().map(Function::getRefactoring)
+								.filter(r -> Objects.equals(r, refactoringKind)).count());
+
+					// precondition success counts.
+					for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
+						resultsRecord.add(candidates.parallelStream().map(Function::getPassingPrecondition)
+								.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
+
+					// transformation counts.
+					for (Transformation transformation : Transformation.values())
+						resultsRecord.add(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
+								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
+
+					// side-effects.
+					resultsRecord.add(this.getAlwaysCheckPythonSideEffects());
+
+					// recursion.
+					resultsRecord.add(this.getAlwaysCheckRecusion());
+
+					// type hints.
+					resultsRecord.add(this.getAlwaysFollowTypeHints());
+
+					// parallel.
+					resultsRecord.add(this.getProcessFunctionsInParallel());
+
+					// speculative.
+					resultsRecord.add(this.getUseSpeculativeAnalysis());
+
+					// test entrypoints.
+					resultsRecord.add(this.getUseTestEntrypoints());
+
+					// infer input signatures.
+					resultsRecord.add(this.getInferInputSignatures());
+
+					// targeted CFA depth.
+					resultsRecord.add(targetedCfaDepth);
+
+					// actually perform the refactoring if there are no fatal
+					// errors.
+					if (shouldPerformChange() && !status.hasFatalError()) {
+						resultsTimeCollector.start();
+						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
+						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
+						resultsTimeCollector.stop();
+					}
+
+					// overall results time.
+					resultsRecord.add(
+							(resultsTimeCollector.getCollectedTime() - processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
+
+					// end the record.
+					resultsPrinter.printRecord(resultsRecord);
+				} catch (Exception e) {
+					LOG.error("Evaluation failed for project " + project.getName() + "; recording and skipping it.", e);
+					failedProjects.add(project.getName() + " (" + e.getClass().getSimpleName()
+							+ (e.getMessage() != null ? ": " + e.getMessage() : "") + ")");
+				} finally {
+					if (processor != null)
+						processor.clearCaches();
 				}
-
-				// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
-				// have a tensor-like parameter or are currently hybrid.
-				Set<Function> candidates = functions.stream().filter(Function::isHybridizationAvailable)
-						.filter(f -> f.isHybrid() != null && f.isHybrid() || f.getHasTensorParameter() != null && f.getHasTensorParameter())
-						.collect(Collectors.toSet());
-				resultsPrinter.print(candidates.size()); // number.
-
-				// candidate functions.
-				for (Function function : candidates) {
-					candidatesPrinter.printRecord(buildAttributeColumnValues(function));
-
-					// transformations.
-					for (Transformation transformation : function.getTransformations())
-						transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation));
-				}
-
-				// optimizable candidate functions.
-				Set<Function> optimizableFunctions = Sets.intersection(candidates, processor.getOptimizableFunctions());
-				resultsPrinter.print(optimizableFunctions.size()); // number.
-
-				for (Function function : optimizableFunctions)
-					optimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
-
-				// failed functions.
-				SetView<Function> failures = Sets.difference(candidates, optimizableFunctions);
-
-				for (Function function : failures)
-					nonOptimizableFunctionPrinter.printRecord(buildAttributeColumnValues(function));
-
-				// failed preconditions.
-				Collection<RefactoringStatusEntry> errorEntries = getRefactoringStatusEntries(failures, RefactoringStatusEntry::isError);
-
-				resultsPrinter.print(errorEntries.size()); // number.
-
-				printStatuses(errorPrinter, errorEntries);
-
-				// general refactoring statuses.
-				Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
-				printStatuses(statusPrinter, generalEntries);
-
-				// decorators.
-				printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
-
-				// refactoring type counts.
-				for (Refactoring refactoringKind : Refactoring.values())
-					resultsPrinter.print(candidates.parallelStream().map(Function::getRefactoring)
-							.filter(r -> Objects.equals(r, refactoringKind)).count());
-
-				// precondition success counts.
-				for (PreconditionSuccess preconditionSuccess : PreconditionSuccess.values())
-					resultsPrinter.print(candidates.parallelStream().map(Function::getPassingPrecondition)
-							.filter(pp -> Objects.equals(pp, preconditionSuccess)).count());
-
-				// transformation counts.
-				for (Transformation transformation : Transformation.values())
-					resultsPrinter.print(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
-							.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
-
-				// side-effects.
-				resultsPrinter.print(this.getAlwaysCheckPythonSideEffects());
-
-				// recursion.
-				resultsPrinter.print(this.getAlwaysCheckRecusion());
-
-				// type hints.
-				resultsPrinter.print(this.getAlwaysFollowTypeHints());
-
-				// parallel.
-				resultsPrinter.print(this.getProcessFunctionsInParallel());
-
-				// speculative.
-				resultsPrinter.print(this.getUseSpeculativeAnalysis());
-
-				// test entrypoints.
-				resultsPrinter.print(this.getUseTestEntrypoints());
-
-				// infer input signatures.
-				resultsPrinter.print(this.getInferInputSignatures());
-
-				// targeted CFA depth.
-				resultsPrinter.print(targetedCfaDepth);
-
-				// actually perform the refactoring if there are no fatal
-				// errors.
-				if (shouldPerformChange() && !status.hasFatalError()) {
-					resultsTimeCollector.start();
-					Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
-					change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
-					resultsTimeCollector.stop();
-				}
-
-				// overall results time.
-				resultsPrinter.print(
-						(resultsTimeCollector.getCollectedTime() - processor.getExcludedTimeCollector().getCollectedTime()) / 1000.0);
-
-				// end the record.
-				resultsPrinter.println();
-
-				// clear the cache.
-				processor.clearCaches();
 
 				monitor.worked(1);
 			}
@@ -409,6 +420,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 			SubMonitor.done(monitor);
 		}
+
+		if (!failedProjects.isEmpty())
+			return Status.warning("Evaluation completed; " + failedProjects.size() + " of " + pythonProjects.length
+					+ " project(s) failed and were skipped: " + String.join(", ", failedProjects));
 
 		return Status.info("Evaluation was successful.");
 	}
