@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
@@ -25,11 +26,13 @@ import edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactor
  * projects already in the workspace, without the IDE.
  * <p>
  * The workspace must be pre-populated with the subjects as PyDev projects (e.g., imported once via the UI); this application enumerates the
- * open Python projects and evaluates them. Configuration comes from the same {@code edu.cuny.hunter.hybridize.eval.*} system properties as
- * the IDE launch. By default all open Python projects are evaluated; set {@code edu.cuny.hunter.hybridize.eval.projects} to a
- * comma-separated list of project names to evaluate only a subset. Launch with
- * {@code eclipse -application edu.cuny.hunter.hybridize.eval.evaluate -data <workspace> ...}. See
- * <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/657">issue 657</a>; programmatic project import (so a
+ * open Python projects and evaluates them. Configuration may be given either as {@code --kebab-case} program arguments (e.g.
+ * {@code --perform-change --projects=A,B}) or, equivalently, as the {@code edu.cuny.hunter.hybridize.eval.*} system properties used by the
+ * IDE launch; a bare flag means {@code true}, and any name not given on the command line falls back to its system property. By default all
+ * open Python projects are evaluated; {@code --projects} (or {@code edu.cuny.hunter.hybridize.eval.projects}) restricts to a
+ * comma-separated subset. Launch with {@code eclipse -application edu.cuny.hunter.hybridize.eval.evaluate -data <workspace> ...}. See
+ * <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/657">issue 657</a> and
+ * <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/664">issue 664</a>; programmatic project import (so a
  * workspace need not be pre-populated) is the follow-up
  * <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/658">issue 658</a>.
  */
@@ -38,19 +41,37 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	private static final ILog LOG = getLog(EvaluateHybridizeFunctionRefactoringApplication.class);
 
 	/** Exit code returned when the workspace contains no open Python project to evaluate. */
-	private static final Integer EXIT_NO_PROJECTS = Integer.valueOf(2);
+	private static final int EXIT_NO_PROJECTS = 2;
 
 	/** Exit code returned when the evaluation completes but its status is not OK. */
-	private static final Integer EXIT_EVALUATION_FAILED = Integer.valueOf(1);
+	private static final int EXIT_EVALUATION_FAILED = 1;
+
+	/** Exit code returned when a command-line argument is unrecognized. */
+	private static final int EXIT_BAD_ARGUMENTS = 3;
+
+	/** Common prefix of the evaluator's configuration system properties. */
+	private static final String EVAL_PROPERTY_PREFIX = "edu.cuny.hunter.hybridize.eval.";
+
+	/**
+	 * The configuration names settable from the command line, each backing the {@code edu.cuny.hunter.hybridize.eval.}<i>name</i> system
+	 * property of the same name. On the command line they are passed in kebab-case (e.g. {@code --perform-change}). The per-project
+	 * {@code targetedCfaDepth} is intentionally excluded: it is read from {@code eval.properties}, not a system property.
+	 */
+	private static final Set<String> CONFIG_NAMES = Set.of("performAnalysis", "performChange", "inferInputSignatures",
+			"alwaysCheckPythonSideEffects", "alwaysCheckRecursion", "processFunctionsInParallel", "useTestEntrypoints",
+			"alwaysFollowTypeHints", "useSpeculativeAnalysis", "outputCalls", "projects");
 
 	/**
 	 * System property naming a comma-separated subset of project names to evaluate; when unset or blank, all open Python projects in the
 	 * workspace are evaluated.
 	 */
-	private static final String PROJECTS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.eval.projects";
+	private static final String PROJECTS_PROPERTY_KEY = EVAL_PROPERTY_PREFIX + "projects";
 
 	@Override
 	public Object start(IApplicationContext context) throws Exception {
+		if (!applyArguments(context))
+			return EXIT_BAD_ARGUMENTS;
+
 		// Refresh so the workspace reflects the subjects' current on-disk state (e.g., after a git checkout of the evaluated branch).
 		ResourcesPlugin.getWorkspace().getRoot().refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
 
@@ -75,6 +96,59 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	@Override
 	public void stop() {
 		// Nothing to clean up; evaluate(...) runs synchronously within start(...).
+	}
+
+	/**
+	 * Translates {@code --kebab-name[=value]} program arguments into their backing {@code edu.cuny.hunter.hybridize.eval.}<i>name</i>
+	 * system properties, so the headless CLI need not pass evaluator configuration as {@code -vmargs}. A bare flag sets {@code "true"}. Any
+	 * configuration not named on the command line still falls back to its system property, preserving the existing {@code -D} surface.
+	 *
+	 * @param context The application context carrying the program arguments.
+	 * @return True iff every argument was a recognized option.
+	 */
+	private static boolean applyArguments(IApplicationContext context) {
+		Object rawArguments = context.getArguments().get(IApplicationContext.APPLICATION_ARGS);
+		String[] arguments = rawArguments instanceof String[] strings ? strings : new String[0];
+
+		for (String argument : arguments) {
+			if (!argument.startsWith("--")) {
+				LOG.warn("Ignoring unexpected non-option argument: " + argument);
+				continue;
+			}
+
+			String body = argument.substring("--".length());
+			int separator = body.indexOf('=');
+			String flag = separator < 0 ? body : body.substring(0, separator);
+			String value = separator < 0 ? Boolean.TRUE.toString() : body.substring(separator + 1);
+			String name = toCamelCase(flag);
+
+			if (!CONFIG_NAMES.contains(name)) {
+				LOG.error("Unrecognized evaluator option --" + flag + ". Recognized configuration names (pass as --kebab-case): "
+						+ new TreeSet<>(CONFIG_NAMES));
+				return false;
+			}
+
+			System.setProperty(EVAL_PROPERTY_PREFIX + name, value);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Converts a kebab-case command-line flag to the camelCase configuration name backing its system property.
+	 *
+	 * @param flag The kebab-case flag, without the leading dashes.
+	 * @return The camelCase configuration name.
+	 */
+	private static String toCamelCase(String flag) {
+		String[] parts = flag.split("-");
+		StringBuilder name = new StringBuilder(parts[0]);
+
+		for (int part = 1; part < parts.length; part++)
+			if (!parts[part].isEmpty())
+				name.append(Character.toUpperCase(parts[part].charAt(0))).append(parts[part].substring(1));
+
+		return name.toString();
 	}
 
 	/**
