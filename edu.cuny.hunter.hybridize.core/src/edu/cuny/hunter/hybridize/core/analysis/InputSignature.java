@@ -58,25 +58,51 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	public String toTensorSpecList(String tfPrefix) {
 		StringJoiner specs = new StringJoiner(", ", "[", "]");
 
-		for (TensorType t : parameterTypes) {
-			List<Dimension<?>> dims = t.getDims();
-			String shape;
-			if (dims == null) {
-				// Shape-⊤ from `Function.inferSpec` Step 2 (rank disagrees across contexts, or any context has null dims). TF's
-				// `tf.TensorSpec(shape=None, ...)` accepts any shape at runtime—the appropriate encoding when rank itself is unknown.
-				shape = "None";
-			} else {
-				StringJoiner shapeDims = new StringJoiner(", ", "(", dims.size() == 1 ? ",)" : ")");
-				for (Dimension<?> d : dims)
-					shapeDims.add(d instanceof NumericDim ? d.value().toString() : "None");
-				shape = shapeDims.toString();
-			}
-
-			String dtype = tfPrefix + dtypeName(t);
-			specs.add(tfPrefix + specTypeName(t) + "(shape=" + shape + ", dtype=" + dtype + ")");
-		}
+		for (TensorType t : parameterTypes)
+			specs.add(tfPrefix + specTypeName(t) + "(shape=" + shapeString(t) + ", dtype=" + tfPrefix + dtypeName(t) + ")");
 
 		return specs.toString();
+	}
+
+	/**
+	 * The raw shape rendering for a parameter's {@link TensorType}: {@code "None"} when the rank is unknown (null dims—shape-⊤, which
+	 * {@code tf.TensorSpec(shape=None, ...)} accepts at runtime), otherwise a tuple of the per-dimension renderings, the concrete size for
+	 * a {@link NumericDim} and {@code "None"} for every other {@link Dimension} subtype (dynamic, ragged, symbolic).
+	 *
+	 * @param t The parameter's tensor type.
+	 * @return The raw shape rendering (e.g. {@code "(None, 128)"}, {@code "(20,)"}, {@code "()"}, or {@code "None"}).
+	 */
+	private static String shapeString(TensorType t) {
+		List<Dimension<?>> dims = t.getDims();
+		if (dims == null)
+			return "None";
+
+		StringJoiner shapeDims = new StringJoiner(", ", "(", dims.size() == 1 ? ",)" : ")");
+		for (Dimension<?> d : dims)
+			shapeDims.add(d instanceof NumericDim ? d.value().toString() : "None");
+
+		return shapeDims.toString();
+	}
+
+	/**
+	 * This signature's per-parameter characteristics in declaration order (one {@link ParameterSpec} per non-{@code self} parameter), so
+	 * downstream analysis reads each parameter's dtype and shape as columns rather than parsing {@link #toTensorSpecList(String)}.
+	 *
+	 * @return The per-parameter (dtype, shape) rows.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
+	 */
+	public List<ParameterSpec> parameterSpecs() {
+		return parameterTypes.stream().map(t -> new ParameterSpec(dtypeName(t), shapeString(t))).toList();
+	}
+
+	/**
+	 * A parameter's inferred tensor characteristics at per-{@code TensorSpec} granularity: the bare dtype constant name and the raw shape
+	 * rendering this signature emits, without the spec-type wrapping of {@link #toTensorSpecList(String)}.
+	 *
+	 * @param dtype The bare dtype constant name (e.g. {@code "float32"}).
+	 * @param shape The raw shape rendering (e.g. {@code "(None, 128)"} or {@code "None"}).
+	 */
+	public record ParameterSpec(String dtype, String shape) {
 	}
 
 	/**
