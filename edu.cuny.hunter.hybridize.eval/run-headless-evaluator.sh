@@ -21,8 +21,9 @@
 # defaulting to off. This script does not restate those defaults; it forwards
 # only the flags you set in the environment and lets the tool default the rest,
 # so a useful run sets at least PERFORM_ANALYSIS=true. Recognized knobs:
-# PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, PROCESS_IN_PARALLEL,
-# FOLLOW_TYPE_HINTS, SPECULATIVE, TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
+# PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
+# CHECK_RECURSION, PROCESS_IN_PARALLEL, FOLLOW_TYPE_HINTS, SPECULATIVE,
+# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
 # (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
 # (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
@@ -47,6 +48,8 @@ exec "$ECLIPSE" \
 	${PERFORM_ANALYSIS+-Dedu.cuny.hunter.hybridize.eval.performAnalysis="$PERFORM_ANALYSIS"} \
 	${PERFORM_CHANGE+-Dedu.cuny.hunter.hybridize.eval.performChange="$PERFORM_CHANGE"} \
 	${INFER_INPUT_SIGNATURES+-Dedu.cuny.hunter.hybridize.eval.inferInputSignatures="$INFER_INPUT_SIGNATURES"} \
+	${CHECK_SIDE_EFFECTS+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckPythonSideEffects="$CHECK_SIDE_EFFECTS"} \
+	${CHECK_RECURSION+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckRecursion="$CHECK_RECURSION"} \
 	${PROCESS_IN_PARALLEL+-Dedu.cuny.hunter.hybridize.eval.processFunctionsInParallel="$PROCESS_IN_PARALLEL"} \
 	${FOLLOW_TYPE_HINTS+-Dedu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints="$FOLLOW_TYPE_HINTS"} \
 	${SPECULATIVE+-Dedu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis="$SPECULATIVE"} \
