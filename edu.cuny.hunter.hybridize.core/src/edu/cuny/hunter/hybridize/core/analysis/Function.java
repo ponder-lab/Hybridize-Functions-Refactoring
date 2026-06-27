@@ -2290,6 +2290,27 @@ public class Function {
 				String fullRepresentationString = getFullRepresentationString(decorator.func);
 				int length = fullRepresentationString.length() + 1;
 
+				// A called decorator (`@tf.function(...)`) carries an argument list past its name; `getFullRepresentationString`
+				// yields only the dotted name, so extend the span through the matching close bracket. Otherwise the delete strips
+				// just `@tf.function` and orphans the arguments as an invalid bare `(...)` (issue #681). A bare `@tf.function` has no
+				// `(` here, so its span is unchanged.
+				int afterName = offset + length;
+				if (afterName < doc.getLength() && doc.getChar(afterName) == '(') {
+					int depth = 0;
+					int end = afterName;
+					for (; end < doc.getLength(); end++) {
+						char c = doc.getChar(end);
+						if (c == '(' || c == '[' || c == '{')
+							++depth;
+						else if (c == ')' || c == ']' || c == '}') {
+							--depth;
+							if (depth == 0)
+								break;
+						}
+					}
+					length = end - offset + 1;
+				}
+
 				int newline = offset + length;
 				char charAtEnd = doc.getChar(newline);
 

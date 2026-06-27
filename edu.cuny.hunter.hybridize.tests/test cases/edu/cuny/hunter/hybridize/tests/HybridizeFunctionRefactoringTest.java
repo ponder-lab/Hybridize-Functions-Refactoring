@@ -1687,6 +1687,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test that de-hybridizing a function whose {@code @tf.function} decorator carries arguments removes the ENTIRE decorator, not just its
+	 * name. Regression for #681: {@code Function.convertToEager()} computed the delete span from the decorator name alone, orphaning a
+	 * parameterized decorator's argument list as an invalid bare {@code (...)}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/681">Issue 681</a>
+	 */
+	@Test
+	public void testConvertToEagerParameterizedDecorator() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function should be hybrid pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function should select CONVERT_TO_EAGER.", f.getTransformations().contains(CONVERT_TO_EAGER));
+
+		IDocument doc = f.getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
 	 * Test that {@code RECONFIGURE} adds an inferred {@code input_signature=[tf.TensorSpec(...)]} to an already-hybrid function whose bare
 	 * {@code @tf.function} decorator (no parentheses) carries no signature. The remaining half of #563: the eager case is
 	 * {@code CONVERT_TO_HYBRID} (#565); this is the already-hybrid case. The source-write appends a parenthesized argument list right after
