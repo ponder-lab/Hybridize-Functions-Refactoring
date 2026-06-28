@@ -1,0 +1,3 @@
+# These are shipped Jython runtime resources, not build output; keep them tracked.
+!frozen_importlib/
+!frozen_importlib/*.class
