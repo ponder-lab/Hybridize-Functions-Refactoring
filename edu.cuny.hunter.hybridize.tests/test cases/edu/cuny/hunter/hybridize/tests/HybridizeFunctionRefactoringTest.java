@@ -9127,6 +9127,73 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Coverage: a method parameter that receives a direct tensor argument at the call site is tensor-typed. Companion to
+	 * {@link #testParameterTypedFromArgumentNotUse} (a module function with a direct tensor argument), adding the instance-method
+	 * {@code self} offset to exercise the parameter-position handling.
+	 */
+	@Test
+	public void testTensorParamMethodDirectArg() throws Exception {
+		Parameter x = findParameter(this.getFunctions(), "x");
+		assertFalse("Method with a direct tensor argument: `x` should be tensor-typed.", x.getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Coverage: a module-function parameter that receives a <em>derived</em> tensor argument (another function's result, not a direct
+	 * {@code tf.constant}) is tensor-typed, exercising tensor-type propagation across the producing call.
+	 */
+	@Test
+	public void testTensorParamFunctionDerivedArg() throws Exception {
+		Parameter x = findParameter(this.getFunctions(), "x");
+		assertFalse("Function with a derived tensor argument: `x` should be tensor-typed.", x.getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Coverage: an instance method whose parameters receive derived tensor arguments (a method-call result and a threaded parameter) are
+	 * tensor-typed, the interprocedural multi-parameter case.
+	 */
+	@Test
+	public void testTensorParamMethodDerivedArg() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertFalse("Method with a derived argument: `real` should be tensor-typed.",
+				findParameter(functions, "real").getTensorTypes().isEmpty());
+		assertFalse("Method with a derived argument: `pred` should be tensor-typed.",
+				findParameter(functions, "pred").getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Coverage: a parameter fed a value tuple-unpacked from a Keras {@code __call__} result ({@code predictions, _ = self(inputs)}) is
+	 * tensor-typed, exercising tuple-element propagation through the implicit Keras dispatch. The full-program counterpart of this shape is
+	 * the under-approximation tracked in wala/ML#618.
+	 */
+	@Test
+	public void testTensorParamTupleUnpackKeras() throws Exception {
+		Parameter pred = findParameter(this.getFunctions(), "pred");
+		assertFalse("Tuple-unpacked Keras __call__ result: `pred` should be tensor-typed.", pred.getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Coverage: the same tuple unpack as {@link #testTensorParamTupleUnpackKeras}, but from a plain method call rather than a Keras
+	 * {@code __call__}, isolating tuple-element propagation from the Keras dispatch.
+	 */
+	@Test
+	public void testTensorParamTupleUnpackDirect() throws Exception {
+		Parameter pred = findParameter(this.getFunctions(), "pred");
+		assertFalse("Tuple-unpacked method result: `pred` should be tensor-typed.", pred.getTensorTypes().isEmpty());
+	}
+
+	/**
+	 * Finds the analyzed {@link Parameter} with the given name across all the given {@link Function}s.
+	 *
+	 * @param functions The analyzed functions.
+	 * @param name The parameter name to find.
+	 * @return The first {@link Parameter} so named.
+	 */
+	private static Parameter findParameter(Set<Function> functions, String name) {
+		return functions.stream().flatMap(f -> f.getParameters().stream()).filter(p -> name.equals(p.getName())).findFirst()
+				.orElseThrow(() -> new AssertionError("No parameter named `" + name + "` among analyzed functions."));
+	}
+
+	/**
 	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
 	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
 	 * objects (`getDims() == null` for shape-⊤, `getDType() == UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this
