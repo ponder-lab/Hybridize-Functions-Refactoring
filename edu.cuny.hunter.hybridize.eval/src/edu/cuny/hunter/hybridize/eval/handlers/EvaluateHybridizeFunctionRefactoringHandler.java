@@ -392,7 +392,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// end the record.
 					resultsPrinter.printRecord(resultsRecord);
-				} catch (Exception e) {
+				} catch (Throwable e) {
+					// Per-project isolation (#689): a subject whose analysis throws, including a recoverable java.lang.Error such
+					// as wala's UnimplementedError (wala/ML#616), is recorded and skipped rather than aborting the whole run. A
+					// VirtualMachineError (OutOfMemoryError, StackOverflowError, ...) is rethrown: the JVM is then unrecoverable, so
+					// isolating one subject and continuing would be meaningless.
+					if (e instanceof VirtualMachineError vmError)
+						throw vmError;
+
 					LOG.error("Evaluation failed for project " + project.getName() + "; recording and skipping it.", e);
 					failedProjects.add(project.getName() + " (" + e.getClass().getSimpleName()
 							+ (e.getMessage() != null ? ": " + e.getMessage() : "") + ")");
