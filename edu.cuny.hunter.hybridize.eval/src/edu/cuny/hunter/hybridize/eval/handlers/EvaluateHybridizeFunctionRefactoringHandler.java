@@ -420,11 +420,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			SubMonitor.done(monitor);
 		}
 
-		if (!failedProjects.isEmpty())
-			return Status.warning("Evaluation completed; " + failedProjects.size() + " of " + pythonProjects.length
-					+ " project(s) failed and were skipped: " + String.join(", ", failedProjects));
+		int failedCount = failedProjects.size();
+		int succeededCount = pythonProjects.length - failedCount;
 
-		return Status.info("Evaluation was successful.");
+		if (failedCount > 0)
+			return Status.warning("Evaluation completed: " + succeededCount + " of " + pythonProjects.length + " project(s) succeeded, "
+					+ failedCount + " failed and were skipped: " + String.join(", ", failedProjects));
+
+		return Status.info("Evaluation completed: all " + pythonProjects.length + " project(s) succeeded.");
 	}
 
 	private static boolean shouldPerformChange() {
