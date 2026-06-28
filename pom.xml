@@ -14,6 +14,7 @@
   </organization>
   <modules>
     <module>edu.cuny.hunter.hybridize.core</module>
+    <module>edu.cuny.hunter.hybridize.jython.frozen</module>
     <module>edu.cuny.hunter.hybridize.ui</module>
     <module>edu.cuny.hunter.hybridize.eval</module>
     <module>edu.cuny.hunter.hybridize.tests</module>

@@ -9194,6 +9194,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression guard for #429. The argument {@code tf.zeros([2 * 14])} has a literal-arithmetic shape that only folds to a numeric
+	 * dimension (28) when Jython's interpreter is healthy under Tycho-OSGi, i.e. when the {@code edu.cuny.hunter.hybridize.jython.frozen}
+	 * fragment puts {@code _frozen_importlib.class} on the wrapped Ariadne bundle's classloader. On a degraded interpreter the
+	 * constant-folding pass falls back to a {@link SymbolicDim}, so this assertion fails if the fragment regresses.
+	 */
+	@Test
+	public void testFrozenImportlibConstantFolding() throws Exception {
+		Parameter t = findParameter(this.getFunctions(), "t");
+		assertEquals("`t` receives tf.zeros([2 * 14]); its shape must fold to the numeric dimension 28, not a symbolic one.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(28)))), t.getTensorTypes());
+	}
+
+	/**
 	 * Regression test for #486 (no-iterator-entry case). A non-tensor parameter produces an empty {@link Set} at the
 	 * {@link Parameter#getTensorTypes()} level. The wala/ML lattice is defined per-shape and per-dtype inside individual {@link TensorType}
 	 * objects (`getDims() == null` for shape-⊤, `getDType() == UNKNOWN` for dtype-⊤); the absence of any {@link TensorType} for this

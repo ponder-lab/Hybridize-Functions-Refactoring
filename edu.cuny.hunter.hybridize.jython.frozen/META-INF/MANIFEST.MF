@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Hybridize Jython frozen_importlib OSGi fragment
+Bundle-SymbolicName: edu.cuny.hunter.hybridize.jython.frozen
+Bundle-Version: 1.5.0.qualifier
+Fragment-Host: wrapped.com.ibm.wala.com.ibm.wala.cast.python.ml
+Bundle-RequiredExecutionEnvironment: JavaSE-25
