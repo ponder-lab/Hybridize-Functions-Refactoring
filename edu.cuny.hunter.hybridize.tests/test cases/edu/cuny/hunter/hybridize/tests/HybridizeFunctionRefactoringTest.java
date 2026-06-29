@@ -1107,8 +1107,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test for #557. A valid TensorFlow dtype the tool does not model ({@code tf.complex64}) is supplied; the parse drops the whole
+	 * Test for #557. A valid TensorFlow dtype the tool does not model ({@code tf.bfloat16}) is supplied; the parse drops the whole
 	 * signature to {@link Optional#empty} while {@code hasInputSignatureParam()} stays true (the presence-true/parse-empty contract state).
+	 * Uses {@code bfloat16} rather than {@code complex64} so the dtype stays unmodeled after Ariadne added complex support (wala/ML#472).
 	 */
 	@Test
 	public void testSuppliedInputSignatureUnmodeledDType() throws Exception {
@@ -9191,6 +9192,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private static Parameter findParameter(Set<Function> functions, String name) {
 		return functions.stream().flatMap(f -> f.getParameters().stream()).filter(p -> name.equals(p.getName())).findFirst()
 				.orElseThrow(() -> new AssertionError("No parameter named `" + name + "` among analyzed functions."));
+	}
+
+	/**
+	 * Consumer-side guard for the distributed training reach (wala/ML#461). A {@code get_loss(targets, predictions)} call is reached
+	 * through {@code distributed_train_step -> strategy.run(_train_step, args=(inputs, targets))}; both parameters resolve to the
+	 * {@code (2, 2)} {@code int32} element type, the {@code real} parameter via the dataset target threaded through {@code _train_step} and
+	 * the {@code pred} parameter via the keras call result. Pins that the distributed {@code strategy.run} argument forwarding types the
+	 * callee parameters from the consumer's perspective.
+	 */
+	@Test
+	public void testGetLossDistributedReach() throws Exception {
+		Set<Function> fns = this.getFunctions();
+		Set<TensorType> expected = Set.of(new TensorType(INT32, List.of(new NumericDim(2), new NumericDim(2))));
+		assertEquals("`get_loss`'s `real` types through the distributed `strategy.run` reach (wala/ML#461).", expected,
+				findParameter(fns, "real").getTensorTypes());
+		assertEquals("`get_loss`'s `pred` types from the keras call result.", expected, findParameter(fns, "pred").getTensorTypes());
 	}
 
 	/**
