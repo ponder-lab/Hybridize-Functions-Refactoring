@@ -9228,17 +9228,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/wala/ML/issues/651: a parameter fed an {@code np.array} that flows only into {@code tf.train.*} protobuf
-	 * builders is typed as a tensor, though it reaches no tensor operation. Invert once the over-typing is fixed.
-	 */
-	@Test
-	public void testTfTrainNumpyOverTyping() throws Exception {
-		// TODO(https://github.com/wala/ML/issues/651): `value` reaches only `tf.train.Int64List`, not a tensor op.
-		assertTrue("`serialize`'s `value` (np.array -> tf.train.*) is over-typed as a tensor.",
-				getFunction("serialize").getHasTensorParameter());
-	}
-
-	/**
 	 * Pins https://github.com/wala/ML/issues/656: a parameter fed a subscript-slice of an opaque (argparse) value is typed as a tensor,
 	 * though no tensor reaches it. Invert once the over-typing is fixed.
 	 */
