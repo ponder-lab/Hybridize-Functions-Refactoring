@@ -9228,6 +9228,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the Python list-repetition tensor over-typing (wala/ML#653). {@code rep}'s {@code value} receives {@code [0] * 3}, whose
+	 * {@code *} the tensor-type analysis models as tensor multiplication, so the parameter is typed as a tensor. {@code lit}'s
+	 * {@code value} receives the list literal {@code [1, 2, 3]} (no {@code *}) and is correctly not typed as a tensor, isolating the
+	 * repetition as the trigger. Distilled from {@code voc_ap} ({@code tp = [0] * nd}) in {@code YunYang1994/TensorFlow2.0-Examples} (mAP),
+	 * which the 2024 evaluation typed non-tensor. Invert {@code rep} once wala/ML#653 is fixed.
+	 */
+	@Test
+	public void testListRepetitionTensorOverTyping() throws Exception {
+		// TODO(wala/ML#653): `[0] * 3` is a Python list, not a tensor; `rep` should be false once the over-typing is fixed.
+		assertTrue("`rep`'s `value` receives a list repetition (`[0] * 3`), over-typed as a tensor.",
+				getFunction("rep").getHasTensorParameter());
+		assertFalse("`lit`'s `value` receives a list literal (`[1, 2, 3]`); correctly not a tensor.",
+				Boolean.TRUE.equals(getFunction("lit").getHasTensorParameter()));
+	}
+
+	/**
 	 * Regression guard for #429. The argument {@code tf.zeros([2 * 14])} has a literal-arithmetic shape that only folds to a numeric
 	 * dimension (28) when Jython's interpreter is healthy under Tycho-OSGi, i.e. when the {@code edu.cuny.hunter.hybridize.jython.frozen}
 	 * fragment puts {@code _frozen_importlib.class} on the wrapped Ariadne bundle's classloader. On a degraded interpreter the
