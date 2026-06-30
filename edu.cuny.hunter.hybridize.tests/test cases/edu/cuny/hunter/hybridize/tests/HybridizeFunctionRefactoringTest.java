@@ -9228,16 +9228,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the Python list-repetition tensor over-typing (wala/ML#653). {@code rep}'s {@code value} receives {@code [0] * 3}: the
-	 * tensor-type analysis treats the list operand of {@code *} as a tensor, so the parameter is typed as a tensor. Two controls isolate
-	 * the trigger to a list operand of {@code *}, not the list or {@code *} alone: {@code lit}'s {@code value} (the list literal
-	 * {@code [1, 2, 3]}, no {@code *}) and {@code mul}'s {@code value} (scalar {@code 2 * 3}) are both correctly not typed as tensors.
-	 * Distilled from {@code voc_ap} ({@code tp = [0] * nd}) in {@code YunYang1994/TensorFlow2.0-Examples} (mAP), which the 2024 evaluation
-	 * typed non-tensor. Invert {@code rep} once wala/ML#653 is fixed.
+	 * Pins the Python list-repetition tensor over-typing (https://github.com/wala/ML/issues/653). {@code rep}'s {@code value} receives
+	 * {@code [0] * 3}: the tensor-type analysis treats the list operand of {@code *} as a tensor, so the parameter is typed as a tensor.
+	 * Two controls isolate the trigger to a list operand of {@code *}, not the list or {@code *} alone: {@code lit}'s {@code value} (the
+	 * list literal {@code [1, 2, 3]}, no {@code *}) and {@code mul}'s {@code value} (scalar {@code 2 * 3}) are both correctly not typed as
+	 * tensors. Distilled from {@code voc_ap} ({@code tp = [0] * nd}) in {@code YunYang1994/TensorFlow2.0-Examples} (mAP), which the 2024
+	 * evaluation typed non-tensor. Invert {@code rep} once https://github.com/wala/ML/issues/653 is fixed.
 	 */
 	@Test
 	public void testListRepetitionTensorOverTyping() throws Exception {
-		// TODO(wala/ML#653): `[0] * 3` is a Python list, not a tensor; `rep` should be false once the over-typing is fixed.
+		// TODO: `[0] * 3` is a Python list, not a tensor; `rep` should be false once the over-typing is fixed.
+		// See https://github.com/wala/ML/issues/653.
 		assertTrue("`rep`'s `value` receives a list repetition (`[0] * 3`), over-typed as a tensor.",
 				getFunction("rep").getHasTensorParameter());
 		assertFalse("`lit`'s `value` receives a list literal (`[1, 2, 3]`); correctly not a tensor.",
