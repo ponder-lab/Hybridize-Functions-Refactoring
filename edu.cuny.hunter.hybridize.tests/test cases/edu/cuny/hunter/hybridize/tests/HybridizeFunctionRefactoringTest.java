@@ -9248,6 +9248,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/wala/ML/issues/656: a parameter fed a subscript-slice of an opaque (argparse) value is typed as a tensor,
+	 * though no tensor reaches it. Invert once the over-typing is fixed.
+	 */
+	@Test
+	public void testSubscriptSliceOpaqueOverTyping() throws Exception {
+		// TODO(https://github.com/wala/ML/issues/656): `value` is a sliced argparse attribute, not a tensor.
+		assertTrue("`check`'s `value` (slice of an opaque argparse attribute) is over-typed as a tensor.",
+				getFunction("check").getHasTensorParameter());
+		// Control: the same opaque attribute without a slice isolates whether the slice is the trigger.
+		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not over-typed.",
+				getFunction("plain").getHasTensorParameter());
+	}
+
+	/**
 	 * Regression guard for #429. The argument {@code tf.zeros([2 * 14])} has a literal-arithmetic shape that only folds to a numeric
 	 * dimension (28) when Jython's interpreter is healthy under Tycho-OSGi, i.e. when the {@code edu.cuny.hunter.hybridize.jython.frozen}
 	 * fragment puts {@code _frozen_importlib.class} on the wrapped Ariadne bundle's classloader. On a degraded interpreter the
