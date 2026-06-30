@@ -9211,20 +9211,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pinning test for the residual {@code get_loss} dehybridization (wala/ML#618). The full {@code akanyaani/gpt-2-tensorflow2.0} subject
-	 * is vendored verbatim (the model body, its {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and
-	 * driven through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. Where a minimal reach types
-	 * {@code get_loss}, the full subject reproduces the real evaluation: {@code get_loss}'s {@code real} and {@code pred} parameters
-	 * receive no tensor type, so {@code get_loss} is not a hybridization candidate. This pins the current (incorrect) behavior; invert it
-	 * to expect the element type once wala/ML#618 is fixed.
+	 * Guard for the {@code get_loss} call-site-to-callee typing (wala/ML#618). The full {@code akanyaani/gpt-2-tensorflow2.0} subject is
+	 * vendored verbatim (the model body, its {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven
+	 * through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. As of Ariadne 0.52.8, {@code real} receives the
+	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
+	 * flows from the keras call result rather than the dataset, still receives no tensor type, the residual tracked in wala/ML#618.
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
 		Set<Function> fns = this.getFunctions();
-		// TODO(wala/ML#618): both should carry the dataset element type once the residual call-site-to-callee-parameter gap is fixed.
-		assertEquals("`get_loss`'s `real` does not type in the full subject (wala/ML#618).", Set.of(),
-				findParameter(fns, "real").getTensorTypes());
-		assertEquals("`get_loss`'s `pred` does not type in the full subject (wala/ML#618).", Set.of(),
+		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
+				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
+		// TODO(wala/ML#618): `pred` should also carry the element type once the residual keras-call-result reach is fixed.
+		assertEquals("`get_loss`'s `pred` does not yet type in the full subject (residual wala/ML#618).", Set.of(),
 				findParameter(fns, "pred").getTensorTypes());
 	}
 
