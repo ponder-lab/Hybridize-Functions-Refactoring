@@ -9228,36 +9228,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the Python list-repetition tensor over-typing (https://github.com/wala/ML/issues/653). {@code rep}'s {@code value} receives
-	 * {@code [0] * 3}: the tensor-type analysis treats the list operand of {@code *} as a tensor, so the parameter is typed as a tensor.
-	 * Two controls isolate the trigger to a list operand of {@code *}, not the list or {@code *} alone: {@code lit}'s {@code value} (the
-	 * list literal {@code [1, 2, 3]}, no {@code *}) and {@code mul}'s {@code value} (scalar {@code 2 * 3}) are both correctly not typed as
-	 * tensors. Distilled from {@code voc_ap} ({@code tp = [0] * nd}) in {@code YunYang1994/TensorFlow2.0-Examples} (mAP), which the 2024
-	 * evaluation typed non-tensor. Invert {@code rep} once https://github.com/wala/ML/issues/653 is fixed.
+	 * Regression guard against Python list-repetition tensor over-typing (fixed by https://github.com/wala/ML/issues/653, released in
+	 * Ariadne 0.52.9). {@code rep}'s {@code value} receives {@code [0] * 3}: a Python list repetition, not a tensor, so the parameter must
+	 * not be typed as a tensor. Two controls isolate the scenario to a list operand of {@code *}, not the list or {@code *} alone:
+	 * {@code lit}'s {@code value} (the list literal {@code [1, 2, 3]}, no {@code *}) and {@code mul}'s {@code value} (scalar {@code 2 * 3})
+	 * are likewise not typed as tensors. Distilled from {@code voc_ap} ({@code tp = [0] * nd}) in
+	 * {@code YunYang1994/TensorFlow2.0-Examples} (mAP), which the 2024 evaluation typed non-tensor.
 	 */
 	@Test
 	public void testListRepetitionTensorOverTyping() throws Exception {
-		// TODO: `[0] * 3` is a Python list, not a tensor; `rep` should be false once the over-typing is fixed.
-		// See https://github.com/wala/ML/issues/653.
-		assertTrue("`rep`'s `value` receives a list repetition (`[0] * 3`), over-typed as a tensor.",
+		assertFalse("`rep`'s `value` receives a list repetition (`[0] * 3`), a Python list and not a tensor.",
 				getFunction("rep").getHasTensorParameter());
 		assertFalse("`lit`'s `value` receives a list literal (`[1, 2, 3]`); correctly not a tensor.",
 				getFunction("lit").getHasTensorParameter());
-		assertFalse("`mul`'s `value` receives scalar `2 * 3`; correctly not a tensor (only a list operand of `*` over-types).",
+		assertFalse("`mul`'s `value` receives scalar `2 * 3`; correctly not a tensor (only a list operand of `*` over-typed).",
 				getFunction("mul").getHasTensorParameter());
 	}
 
 	/**
-	 * Pins https://github.com/wala/ML/issues/656: a parameter fed a subscript-slice of an opaque (argparse) value is typed as a tensor,
-	 * though no tensor reaches it. Invert once the over-typing is fixed.
+	 * Regression guard against typing a parameter fed a subscript-slice of an opaque (argparse) value as a tensor (fixed by
+	 * https://github.com/wala/ML/issues/656, released in Ariadne 0.52.9): no tensor reaches {@code check}'s {@code value}, so it must not
+	 * be typed as a tensor.
 	 */
 	@Test
 	public void testSubscriptSliceOpaqueOverTyping() throws Exception {
-		// TODO(https://github.com/wala/ML/issues/656): `value` is a sliced argparse attribute, not a tensor.
-		assertTrue("`check`'s `value` (slice of an opaque argparse attribute) is over-typed as a tensor.",
+		assertFalse("`check`'s `value` (slice of an opaque argparse attribute) is not a tensor.",
 				getFunction("check").getHasTensorParameter());
-		// Control: the same opaque attribute without a slice isolates whether the slice is the trigger.
-		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not over-typed.",
+		// Control: the same opaque attribute without a slice.
+		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not a tensor.",
 				getFunction("plain").getHasTensorParameter());
 	}
 
