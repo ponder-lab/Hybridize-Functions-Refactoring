@@ -377,12 +377,25 @@ public class Util {
 			}
 		}
 
-		// Transitively check user-defined callees. TensorFlow op calls are detected at the call site above, so we need not follow them.
-		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
-			if (performsTensorFlowOp(succNodes.next(), callGraph, pointerAnalysis, tensorTypedKeys, seen))
+		// Transitively check callees, but skip TensorFlow library nodes: their ops are already detected at the call site above, so
+		// recursing into their internal IR adds overhead and could misattribute their computation to this function.
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode succNode = succNodes.next();
+
+			if (isTensorFlowNode(succNode))
+				continue;
+
+			if (performsTensorFlowOp(succNode, callGraph, pointerAnalysis, tensorTypedKeys, seen))
 				return true;
+		}
 
 		return false;
+	}
+
+	/** True iff {@code node}'s declaring class is in the TensorFlow namespace, i.e. a modeled op or library node rather than user code. */
+	private static boolean isTensorFlowNode(CGNode node) {
+		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
+		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
 	}
 
 	/** True iff any value defined by {@code instruction} is typed as a tensor (its pointer key is in {@code tensorTypedKeys}). */

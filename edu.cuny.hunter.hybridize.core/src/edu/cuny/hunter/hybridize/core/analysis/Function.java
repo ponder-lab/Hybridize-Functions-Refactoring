@@ -1337,10 +1337,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
-	 * @param tensorAnalysis The tensor type analysis whose typed values identify tensor-op results in the body.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#tensorTypedPointerKeys}), used to
+	 *        identify tensor-op results in the body.
 	 */
 	public void computeTensorComputation(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			TensorTypeAnalysis tensorAnalysis) {
+			Set<PointerKey> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -1358,8 +1359,7 @@ public class Function {
 		}
 
 		CGNode cgNode = nodes.iterator().next();
-		boolean performsTensorOp = Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis,
-				Util.tensorTypedPointerKeys(tensorAnalysis));
+		boolean performsTensorOp = Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis, tensorTypedKeys);
 		this.hasTensorComputation = performsTensorOp;
 
 		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
