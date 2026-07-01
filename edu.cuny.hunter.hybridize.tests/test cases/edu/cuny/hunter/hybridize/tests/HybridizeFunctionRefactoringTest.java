@@ -9241,7 +9241,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				getFunction("rep").getHasTensorParameter());
 		assertFalse("`lit`'s `value` receives a list literal (`[1, 2, 3]`); correctly not a tensor.",
 				getFunction("lit").getHasTensorParameter());
-		assertFalse("`mul`'s `value` receives scalar `2 * 3`; correctly not a tensor (only a list operand of `*` over-typed).",
+		assertFalse("`mul`'s `value` receives scalar `2 * 3`; correctly not a tensor (only a list operand of `*` was over-typed).",
 				getFunction("mul").getHasTensorParameter());
 	}
 
