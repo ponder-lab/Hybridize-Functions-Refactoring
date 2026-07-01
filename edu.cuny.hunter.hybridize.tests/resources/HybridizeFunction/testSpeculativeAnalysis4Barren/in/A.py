@@ -4,7 +4,7 @@ import tensorflow as tf
 class Encoder(tf.keras.Model):
 
     def call(self, x):
-        return tf.reduce_sum(x)
+        pass
 
 
 encoder = Encoder()

@@ -9260,6 +9260,83 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the benefit heuristic (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): an eager function with a
+	 * tensor parameter but no tensor computation must not hybridize (it fails with {@link PreconditionFailure#NO_TENSOR_COMPUTATION}),
+	 * while one that performs a tensor op still passes P1.
+	 */
+	@Test
+	public void testNoTensorComputationBlocksHybridization() throws Exception {
+		Function barren = getFunction("barren");
+		assertTrue("`barren` has a tensor parameter.", barren.getHasTensorParameter());
+		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
+		assertNull("`barren` must not pass a precondition; it performs no tensor computation.", barren.getPassingPrecondition());
+		assertNotNull("`barren` fails with NO_TENSOR_COMPUTATION.",
+				barren.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+
+		Function compute = getFunction("compute");
+		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
+		assertEquals("`compute` performs a tensor op, so it still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Barren counterpart of {@link #testSpeculativeAnalysis4}: the same keras {@code Model} with the original empty {@code call} body. The
+	 * parameter still types speculatively, but the function performs no tensor computation, so it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testSpeculativeAnalysis4Barren() throws Exception {
+		Function f = this.getFunctions().iterator().next();
+		assertFalse(f.isHybrid());
+		assertFalse("The empty `call` body performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testPreconditionChecking2}: {@code func} has a tensor parameter but an empty body, so it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testPreconditionChecking2Barren() throws Exception {
+		Function f = getFunction("func");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse("The empty body performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testRetracing2}: {@code f} returns its tensor parameter unchanged, so it performs no tensor computation
+	 * and fails with {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testRetracing2Barren() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse("Returning the parameter unchanged performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testRecursion2}: {@code not_recursive_fn} computes {@code abs(n - 1)}. The {@code n - 1} subtraction
+	 * types as tensor computation in isolation, but wrapping it in the opaque Python builtin {@code abs()} suppresses the analysis's typing
+	 * of the intermediate, so no tensor computation is detected and the function fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709). This is an analysis-modeling limitation;
+	 * blocking the eager-to-hybrid conversion here is incompleteness-safe (we decline to hybridize but never violate semantics).
+	 */
+	@Test
+	public void testRecursion2Barren() throws Exception {
+		Function f = getFunction("not_recursive_fn");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse(f.isRecursive());
+		assertFalse("The abs() wrapper suppresses typing of the n - 1 intermediate, so no tensor computation is detected.",
+				f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
 	 * Regression guard for #429. The argument {@code tf.zeros([2 * 14])} has a literal-arithmetic shape that only folds to a numeric
 	 * dimension (28) when Jython's interpreter is healthy under Tycho-OSGi, i.e. when the {@code edu.cuny.hunter.hybridize.jython.frozen}
 	 * fragment puts {@code _frozen_importlib.class} on the wrapped Ariadne bundle's classloader. On a degraded interpreter the

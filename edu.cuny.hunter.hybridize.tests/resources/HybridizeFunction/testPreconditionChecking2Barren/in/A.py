@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 def func(a):
-    return tf.reduce_sum(a)
+    pass
 
 
 func(tf.convert_to_tensor(5))

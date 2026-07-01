@@ -945,6 +945,13 @@ public class Function {
 	private Boolean recursive;
 
 	/**
+	 * True iff this {@link Function}'s body performs a (transitive) TensorFlow tensor computation. {@code null} when it could not be
+	 * determined (e.g., no call-graph node), in which case the precondition does not block hybridization. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	private Boolean hasTensorComputation;
+
+	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
 	private Boolean hasPrimitiveParameter;
@@ -1062,17 +1069,26 @@ public class Function {
 						this.addInfo("This eager function does not have Python side-effects.");
 						if (this.isRecursive() != null && !this.isRecursive()) {
 							this.addInfo("This eager function is not recursive.");
-							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-							this.setPassingPrecondition(P1);
 
-							/*
-							 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
-							 * (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
-							 * evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
-							 * memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
-							 */
-							if (this.getInferInputSignatures())
-								this.inferInputSignature();
+							if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
+								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
+								// incompleteness-safe: it never violates semantics preservation.
+								this.addFailure(PreconditionFailure.NO_TENSOR_COMPUTATION,
+										"This function performs no tensor computation, so hybridization is unlikely to improve performance.");
+							else {
+								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+								this.setPassingPrecondition(P1);
+
+								/*
+								 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
+								 * (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time
+								 * (wizard, evaluator), mirroring how the reconfigure path computes it while checking preconditions. The
+								 * result is memoized, so the change does not recompute it, and computing it has no bearing on the P1
+								 * decision.
+								 */
+								if (this.getInferInputSignatures())
+									this.inferInputSignature();
+							}
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
@@ -1312,6 +1328,50 @@ public class Function {
 			LOG.info(this + " is not recursive.");
 			this.setRecursive(false);
 		}
+	}
+
+	/**
+	 * Determines whether this {@link Function}'s body performs a (transitive) TensorFlow tensor computation, storing the result in
+	 * {@link #hasTensorComputation}. When there is no call-graph node for the function, the result is left {@code null} (undetermined), so
+	 * the precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorAnalysis The tensor type analysis whose typed values identify tensor-op results in the body.
+	 */
+	public void computeTensorComputation(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			TensorTypeAnalysis tensorAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " performs a tensor computation.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " performs a tensor computation without a call graph node.");
+			return;
+		}
+
+		CGNode cgNode = nodes.iterator().next();
+		boolean performsTensorOp = Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis,
+				Util.tensorTypedPointerKeys(tensorAnalysis));
+		this.hasTensorComputation = performsTensorOp;
+
+		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body performs a (transitive) TensorFlow tensor computation, {@code null} if undetermined.
+	 *
+	 * @return True iff this function performs a tensor computation, null if undetermined.
+	 */
+	public Boolean getHasTensorComputation() {
+		return this.hasTensorComputation;
 	}
 
 	@Override
