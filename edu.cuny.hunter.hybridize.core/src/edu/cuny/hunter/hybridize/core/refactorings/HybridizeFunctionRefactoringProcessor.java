@@ -104,6 +104,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckRecursion;
 
+	private boolean alwaysCheckTensorComputation;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -436,8 +438,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check whether the function performs a tensor computation (issue 709). Consulted on both directions: it blocks an
 				// eager-to-hybrid conversion when the body is barren, and drives the hybrid-to-eager de-hybridization of a barren hybrid.
-				// Gated on a tensor-parameter candidate, mirroring the recursion check.
-				if (func.getHasTensorParameter() != null && func.getHasTensorParameter())
+				// Gated on a tensor-parameter candidate (the only case it can affect a decision), overridable to run on every function,
+				// mirroring the recursion check.
+				if (this.getAlwaysCheckTensorComputation() || func.getHasTensorParameter() != null && func.getHasTensorParameter())
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.
@@ -698,6 +701,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public boolean getAlwaysCheckRecursion() {
 		return alwaysCheckRecursion;
+	}
+
+	public boolean getAlwaysCheckTensorComputation() {
+		return this.alwaysCheckTensorComputation;
+	}
+
+	/**
+	 * Force the tensor-computation check (issue 709) on every candidate, not only tensor-parameter ones. Off by default: the check only
+	 * affects a transformation decision when the function has a tensor parameter, so this is for measurement (reporting barren-ness
+	 * corpus-wide) and to hedge against a missed tensor parameter, mirroring the {@code alwaysCheckRecursion} and side-effect flags.
+	 *
+	 * @param alwaysCheckTensorComputation Whether to always compute whether a function performs a tensor computation.
+	 */
+	public void setAlwaysCheckTensorComputation(boolean alwaysCheckTensorComputation) {
+		this.alwaysCheckTensorComputation = alwaysCheckTensorComputation;
 	}
 
 	@Override

@@ -148,6 +148,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckRecursion = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_RECURSION.key());
 
+	private boolean alwaysCheckTensorComputation = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_COMPUTATION.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -210,8 +212,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		for (Transformation transformation : Transformation.values())
 			resultsHeader.add(transformation.toString());
 
-		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "type hints", "parallel", "speculative",
-				"test entrypoints", "infer input signatures", "targeted CFA depth" };
+		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "type hints", "parallel",
+				"speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		resultsHeader.add("time (s)");
@@ -269,6 +271,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							this.getProcessFunctionsInParallel(), this.getAlwaysCheckRecusion(), this.getUseTestEntrypoints(),
 							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
 					processor.setTargetedCfaDepth(targetedCfaDepth);
+					processor.setAlwaysCheckTensorComputation(this.getAlwaysCheckTensorComputation());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -358,6 +361,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// recursion.
 					resultsRecord.add(this.getAlwaysCheckRecusion());
+
+					// tensor computation.
+					resultsRecord.add(this.getAlwaysCheckTensorComputation());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -552,10 +558,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
-				"primitive parameter", "hybrid", "side-effects", "recursive", "autograph", "experimental_autograph_options",
-				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
-				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
-				"refactoring", "passing precondition", "status");
+				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "autograph",
+				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
+				"supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation",
+				"input_signature absence reason", "refactoring", "passing precondition", "status");
 	}
 
 	/**
@@ -629,7 +635,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
-				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive());
+				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
+				function.getHasTensorComputation());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -727,6 +734,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckRecusion() {
 		return alwaysCheckRecursion;
+	}
+
+	public boolean getAlwaysCheckTensorComputation() {
+		return alwaysCheckTensorComputation;
 	}
 
 	public boolean getProcessFunctionsInParallel() {
