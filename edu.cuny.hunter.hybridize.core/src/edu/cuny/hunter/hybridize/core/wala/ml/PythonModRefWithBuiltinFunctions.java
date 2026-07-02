@@ -48,7 +48,8 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 				AstLexicalRead read = (AstLexicalRead) def;
 				Access[] accesses = read.getAccesses();
 
-				if (accesses.length > 0 && accesses[0].variableName.equals(PRINT_FUNCTION_VARIABLE_NAME)) {
+				// Use the getName() accessor rather than the variableName field: WALA 1.8.0 encapsulated the field (made it private).
+				if (accesses.length > 0 && accesses[0].getName().fst.equals(PRINT_FUNCTION_VARIABLE_NAME)) {
 					PointerKey pk = this.h.getPointerKeyForLocal(this.n, use);
 					OrdinalSet<T> pointsToSet = this.pa.getPointsToSet(pk);
 
