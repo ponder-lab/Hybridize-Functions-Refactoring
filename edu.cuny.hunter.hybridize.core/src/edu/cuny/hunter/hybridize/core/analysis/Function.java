@@ -1358,8 +1358,11 @@ public class Function {
 			return;
 		}
 
-		CGNode cgNode = nodes.iterator().next();
-		boolean performsTensorOp = Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis, tensorTypedKeys);
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It performs a tensor computation if any of
+		// them does; sampling a single node can miss the op at an imprecise context.
+		boolean performsTensorOp = nodes.stream()
+				.anyMatch(cgNode -> Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis, tensorTypedKeys));
+
 		this.hasTensorComputation = performsTensorOp;
 
 		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));

@@ -9194,6 +9194,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.orElseThrow(() -> new AssertionError("No parameter named `" + name + "` among analyzed functions."));
 	}
 
+	private static Function findFunction(Set<Function> functions, String identifier) {
+		return functions.stream().filter(f -> identifier.equals(f.getIdentifier())).findFirst()
+				.orElseThrow(() -> new AssertionError("No function with identifier `" + identifier + "` among analyzed functions."));
+	}
+
 	/**
 	 * Consumer-side guard for the distributed training reach (wala/ML#461). A {@code get_loss(targets, predictions)} call is reached
 	 * through {@code distributed_train_step -> strategy.run(_train_step, args=(inputs, targets))}; both parameters resolve to the
@@ -9211,11 +9216,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Guard for the {@code get_loss} call-site-to-callee typing (wala/ML#618). The full {@code akanyaani/gpt-2-tensorflow2.0} subject is
-	 * vendored verbatim (the model body, its {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven
-	 * through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. As of Ariadne 0.52.8, {@code real} receives the
-	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
-	 * flows from the keras call result rather than the dataset, still receives no tensor type, the residual tracked in wala/ML#618.
+	 * Guards on the vendored {@code akanyaani/gpt-2-tensorflow2.0} subject. The full subject is vendored verbatim (the model body, its
+	 * {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven through
+	 * {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}.
+	 * <p>
+	 * (a) {@code get_loss} call-site-to-callee typing (wala/ML#618): as of Ariadne 0.52.8, {@code real} receives the dataset element type
+	 * ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which flows from the keras
+	 * call result rather than the dataset, still receives no tensor type, the residual tracked in wala/ML#618.
+	 * <p>
+	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
+	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
+	 * the tensor-op detector must recognize the op via the import-alias fallback ({@link edu.cuny.hunter.hybridize.core.analysis.Util})
+	 * rather than misreport the function as performing no tensor computation and block its hybridization.
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
@@ -9225,6 +9237,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// TODO(wala/ML#618): `pred` should also carry the element type once the residual keras-call-result reach is fixed.
 		assertEquals("`get_loss`'s `pred` does not yet type in the full subject (residual wala/ML#618).", Set.of(),
 				findParameter(fns, "pred").getTensorTypes());
+		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
+				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
 	}
 
 	/**

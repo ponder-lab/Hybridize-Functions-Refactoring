@@ -34,6 +34,7 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
@@ -323,6 +324,12 @@ public class Util {
 	private static final String TENSORFLOW_FQN_PREFIX = "tensorflow.";
 
 	/**
+	 * Global-read names bound to the TensorFlow module by a module-level import ({@code import tensorflow [as tf]}), used to root an
+	 * attribute chain at TensorFlow when the module global's points-to set is unavailable. See {@link #isTensorFlowModule}.
+	 */
+	private static final Set<String> TENSORFLOW_MODULE_GLOBAL_NAMES = Set.of("global tf", "global tensorflow");
+
+	/**
 	 * TensorFlow sub-namespaces that construct specs or protobufs rather than performing tensor computation, so a call into them does not
 	 * count as a tensor op. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
 	 */
@@ -443,7 +450,7 @@ public class Util {
 			int objectRef = read.getObjectRef();
 
 			// If the receiver is the TensorFlow module, we have reached the root of the chain.
-			if (pointsToType(node, objectRef, pointerAnalysis, TENSORFLOW_MODULE_TYPE_NAME, true))
+			if (isTensorFlowModule(node, objectRef, defUse, pointerAnalysis))
 				return TENSORFLOW_FQN_PREFIX + member;
 
 			// Otherwise, continue up the attribute chain, e.g. tf.train.Feature.
@@ -453,6 +460,21 @@ public class Util {
 		}
 
 		return null;
+	}
+
+	/**
+	 * True iff {@code use} refers to the TensorFlow module. Prefers points-to (precise), but falls back to the module import alias on a
+	 * global read: a module-level {@code import tensorflow as tf} frequently leaves the {@code tf} global with an empty points-to set in a
+	 * given call-graph context, which would otherwise strand every {@code tf.<op>} call as unresolvable and misreport the enclosing
+	 * function as performing no tensor computation. The fallback keys off the global's name, so a non-TensorFlow global that happens to be
+	 * named {@code tf} would match; that is incompleteness-safe here, since over-recognizing a tensor op only lets an eager function
+	 * hybridize (the pre-benefit-signal default). See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	private static boolean isTensorFlowModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		if (pointsToType(node, use, pointerAnalysis, TENSORFLOW_MODULE_TYPE_NAME, true))
+			return true;
+
+		return defUse.getDef(use) instanceof AstGlobalRead global && TENSORFLOW_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 
 	/** The string value of a {@link ConstantKey} in {@code use}'s points-to set, or {@code null} if none. */
