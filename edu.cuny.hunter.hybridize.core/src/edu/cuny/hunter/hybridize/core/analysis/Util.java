@@ -34,16 +34,28 @@ import org.python.pydev.parser.visitors.NodeUtils;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
+import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
+import com.ibm.wala.util.collections.Iterator2Iterable;
+import com.ibm.wala.util.collections.Pair;
 
 public class Util {
 
@@ -296,6 +308,198 @@ public class Util {
 
 			// otherwise, check its callees.
 			if (!seen.contains(reference) && calls(next, methodReference, callGraph, seen))
+				return true;
+		}
+
+		return false;
+	}
+
+	/** The WALA type name of the TensorFlow module object (what {@code import tensorflow as tf} binds). */
+	private static final String TENSORFLOW_MODULE_TYPE_NAME = "Ltensorflow";
+
+	/** WALA type-name prefix for modeled TensorFlow operations, e.g. {@code Ltensorflow/functions/matmul}. */
+	private static final String TENSORFLOW_FUNCTION_TYPE_NAME_PREFIX = "Ltensorflow/functions/";
+
+	/** The TensorFlow module prefix used to recognize a call as a TensorFlow op from its fully-qualified name. */
+	private static final String TENSORFLOW_FQN_PREFIX = "tensorflow.";
+
+	/**
+	 * Global-read names bound to the TensorFlow module by a module-level import ({@code import tensorflow [as tf]}), used to root an
+	 * attribute chain at TensorFlow when the module global's points-to set is unavailable. See {@link #isTensorFlowModule}.
+	 */
+	private static final Set<String> TENSORFLOW_MODULE_GLOBAL_NAMES = Set.of("global tf", "global tensorflow");
+
+	/**
+	 * TensorFlow sub-namespaces that construct specs or protobufs rather than performing tensor computation, so a call into them does not
+	 * count as a tensor op. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	private static final Set<String> NON_OP_TENSORFLOW_FQN_PREFIXES = Set.of("tensorflow.train.", "tensorflow.io.");
+
+	/** The set of pointer keys the given {@link TensorTypeAnalysis} types as tensors. */
+	public static Set<PointerKey> tensorTypedPointerKeys(TensorTypeAnalysis tensorAnalysis) {
+		Set<PointerKey> keys = new HashSet<>();
+
+		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis)
+			keys.add(pair.fst);
+
+		return keys;
+	}
+
+	/**
+	 * True iff {@code node}, transitively over its (user-defined) callees, performs a TensorFlow tensor op. A body instruction counts as a
+	 * tensor op when it either (a) defines a value the tensor-type analysis types as a tensor (which covers modeled ops, tensor operators,
+	 * and layer calls, and correctly excludes proto and spec builders whose results are not tensors), or (b) invokes a {@code tensorflow.*}
+	 * op recognized from the IR (which additionally covers ops not modeled by the tensor-type analysis). See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param callGraph The call graph, used to follow user-defined callees transitively.
+	 * @param pointerAnalysis The pointer analysis, used to resolve def, callee, and attribute-name pointer keys.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link #tensorTypedPointerKeys}).
+	 * @return True iff a TensorFlow tensor op is reachable from {@code node}.
+	 */
+	public static boolean performsTensorFlowOp(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<PointerKey> tensorTypedKeys) {
+		return performsTensorFlowOp(node, callGraph, pointerAnalysis, tensorTypedKeys, Sets.newHashSet());
+	}
+
+	private static boolean performsTensorFlowOp(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<PointerKey> tensorTypedKeys, Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		IR ir = node.getIR();
+
+		if (ir != null) {
+			DefUse defUse = node.getDU();
+
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+				// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops).
+				if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys))
+					return true;
+
+				// (b) The instruction invokes an unmodeled `tensorflow.*` op recognized from the IR.
+				if (instruction instanceof PythonInvokeInstruction invoke && invokesTensorFlowOp(node, invoke, defUse, pointerAnalysis))
+					return true;
+			}
+		}
+
+		// Transitively check callees, but skip TensorFlow library nodes: their ops are already detected at the call site above, so
+		// recursing into their internal IR adds overhead and could misattribute their computation to this function.
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode succNode = succNodes.next();
+
+			if (isTensorFlowNode(succNode))
+				continue;
+
+			if (performsTensorFlowOp(succNode, callGraph, pointerAnalysis, tensorTypedKeys, seen))
+				return true;
+		}
+
+		return false;
+	}
+
+	/** True iff {@code node}'s declaring class is in the TensorFlow namespace, i.e. a modeled op or library node rather than user code. */
+	private static boolean isTensorFlowNode(CGNode node) {
+		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
+		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
+	}
+
+	/** True iff any value defined by {@code instruction} is typed as a tensor (its pointer key is in {@code tensorTypedKeys}). */
+	private static boolean definesTensor(CGNode node, SSAInstruction instruction, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<PointerKey> tensorTypedKeys) {
+		for (int i = 0; i < instruction.getNumberOfDefs(); i++) {
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, instruction.getDef(i));
+
+			if (tensorTypedKeys.contains(pointerKey))
+				return true;
+		}
+
+		return false;
+	}
+
+	private static boolean invokesTensorFlowOp(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		int callee = invoke.getUse(0); // the invoked function (a reference to the callee).
+
+		// Modeled op: the callee points to a TensorFlow function instance.
+		if (pointsToType(node, callee, pointerAnalysis, TENSORFLOW_FUNCTION_TYPE_NAME_PREFIX, false))
+			return true;
+
+		// Unmodeled op: resolve the callee's fully-qualified name from the IR and test it against the TensorFlow namespace.
+		String fqn = resolveCalleeFullyQualifiedName(node, callee, defUse, pointerAnalysis);
+
+		return fqn != null && fqn.startsWith(TENSORFLOW_FQN_PREFIX) && NON_OP_TENSORFLOW_FQN_PREFIXES.stream().noneMatch(fqn::startsWith);
+	}
+
+	/**
+	 * Resolves the fully-qualified name of the callee referenced by {@code use} (e.g. {@code tensorflow.train.Feature}) by walking the
+	 * attribute (property-read) chain in {@code node}'s IR back to the TensorFlow module, or {@code null} when the chain does not root at
+	 * the TensorFlow module.
+	 */
+	private static String resolveCalleeFullyQualifiedName(CGNode node, int use, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		SSAInstruction def = defUse.getDef(use);
+
+		if (def instanceof PythonPropertyRead read) {
+			String member = resolveStringConstant(node, read.getMemberRef(), pointerAnalysis);
+
+			if (member == null)
+				return null;
+
+			int objectRef = read.getObjectRef();
+
+			// If the receiver is the TensorFlow module, we have reached the root of the chain.
+			if (isTensorFlowModule(node, objectRef, defUse, pointerAnalysis))
+				return TENSORFLOW_FQN_PREFIX + member;
+
+			// Otherwise, continue up the attribute chain, e.g. tf.train.Feature.
+			String base = resolveCalleeFullyQualifiedName(node, objectRef, defUse, pointerAnalysis);
+
+			return base == null ? null : base + "." + member;
+		}
+
+		return null;
+	}
+
+	/**
+	 * True iff {@code use} refers to the TensorFlow module. Prefers points-to (precise), but falls back to the module import alias on a
+	 * global read: a module-level {@code import tensorflow as tf} frequently leaves the {@code tf} global with an empty points-to set in a
+	 * given call-graph context, which would otherwise strand every {@code tf.<op>} call as unresolvable and misreport the enclosing
+	 * function as performing no tensor computation. The fallback keys off the global's name, so a non-TensorFlow global that happens to be
+	 * named {@code tf} would match; that is incompleteness-safe here, since over-recognizing a tensor op only lets an eager function
+	 * hybridize (the pre-benefit-signal default). See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	private static boolean isTensorFlowModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		if (pointsToType(node, use, pointerAnalysis, TENSORFLOW_MODULE_TYPE_NAME, true))
+			return true;
+
+		return defUse.getDef(use) instanceof AstGlobalRead global && TENSORFLOW_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
+	}
+
+	/** The string value of a {@link ConstantKey} in {@code use}'s points-to set, or {@code null} if none. */
+	private static String resolveStringConstant(CGNode node, int use, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, use);
+
+		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey))
+			if (instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof String value)
+				return value;
+
+		return null;
+	}
+
+	/**
+	 * True iff any instance in {@code use}'s points-to set has a concrete type whose name equals (when {@code exact}) or starts with (when
+	 * not {@code exact}) {@code typeName}.
+	 */
+	private static boolean pointsToType(CGNode node, int use, PointerAnalysis<InstanceKey> pointerAnalysis, String typeName,
+			boolean exact) {
+		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, use);
+
+		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey)) {
+			String name = instanceKey.getConcreteType().getReference().getName().toString();
+
+			if (exact ? name.equals(typeName) : name.startsWith(typeName))
 				return true;
 		}
 

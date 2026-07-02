@@ -71,6 +71,7 @@ import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
+import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
@@ -359,6 +360,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			LOG.info("Tensor analysis: " + analysis.toString());
 
+			// The pointer keys the tensor analysis types as tensors, computed once and shared across this project's functions (issue 709).
+			Set<PointerKey> tensorTypedKeys = Util.tensorTypedPointerKeys(analysis);
+
 			subMonitor.checkCanceled();
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
@@ -429,6 +433,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.error("Can't compute recursion.", e);
 					throw new RuntimeException("Can't compute recursion.", e);
 				}
+
+				// Check whether the function performs a tensor computation (issue 709). Only consulted on the eager-to-hybrid path, so
+				// gated on an eager, tensor-parameter candidate, whose conversion it can block when the body is barren.
+				if (!func.isHybrid() && func.getHasTensorParameter() != null && func.getHasTensorParameter())
+					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.
 				func.check();

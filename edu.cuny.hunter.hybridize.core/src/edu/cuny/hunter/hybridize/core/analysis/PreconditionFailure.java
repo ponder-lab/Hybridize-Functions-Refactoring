@@ -41,7 +41,13 @@ public enum PreconditionFailure {
 	/**
 	 * P3 failure.
 	 */
-	HAS_NO_PRIMITIVE_PARAMETERS(13);
+	HAS_NO_PRIMITIVE_PARAMETERS(13),
+
+	/**
+	 * The function's body performs no (transitive) TensorFlow tensor computation, so graph execution yields no benefit and hybridization is
+	 * unnecessary. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	NO_TENSOR_COMPUTATION(14);
 
 	static {
 		// check that the codes are unique.
