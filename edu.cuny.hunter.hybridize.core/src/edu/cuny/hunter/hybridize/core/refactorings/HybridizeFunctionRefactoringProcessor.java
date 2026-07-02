@@ -434,9 +434,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new RuntimeException("Can't compute recursion.", e);
 				}
 
-				// Check whether the function performs a tensor computation (issue 709). Only consulted on the eager-to-hybrid path, so
-				// gated on an eager, tensor-parameter candidate, whose conversion it can block when the body is barren.
-				if (!func.isHybrid() && func.getHasTensorParameter() != null && func.getHasTensorParameter())
+				// Check whether the function performs a tensor computation (issue 709). Consulted on both directions: it blocks an
+				// eager-to-hybrid conversion when the body is barren, and drives the hybrid-to-eager de-hybridization of a barren hybrid.
+				// Gated on a tensor-parameter candidate, mirroring the recursion check.
+				if (func.getHasTensorParameter() != null && func.getHasTensorParameter())
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.

@@ -19,4 +19,12 @@ public enum PreconditionSuccess {
 	 * that is strictly broader than the inferred one is preserved (no transformation), and an agreeing signature is a no-op.
 	 */
 	P5,
+
+	/**
+	 * A hybrid function with a tensor parameter that performs no tensor computation and has no Python side-effects: graph execution offers
+	 * no benefit, only tracing overhead, so de-hybridize it. This is the hybrid-to-eager counterpart of the eager-to-hybrid
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} benefit precondition, and a peer of {@link #P2} and {@link #P3} in reaching
+	 * {@link Transformation#CONVERT_TO_EAGER}. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	P6,
 }

@@ -19,6 +19,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -9274,9 +9275,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the benefit heuristic (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): an eager function with a
-	 * tensor parameter but no tensor computation must not hybridize (it fails with {@link PreconditionFailure#NO_TENSOR_COMPUTATION}),
-	 * while one that performs a tensor op still passes P1.
+	 * Pins the hybrid-to-eager benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): a hybrid
+	 * function with a tensor parameter that performs no tensor computation and has no Python side-effects is de-hybridized (P6,
+	 * {@link Transformation#CONVERT_TO_EAGER}), while a computing hybrid function is not.
+	 */
+	@Test
+	public void testBarrenHybridDehybridizes() throws Exception {
+		Function barren = getFunction("barren");
+		assertTrue("`barren` is hybrid.", barren.isHybrid());
+		assertTrue("`barren` has a tensor parameter.", barren.getHasTensorParameter());
+		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
+		assertEquals("A barren hybrid function de-hybridizes (P6).", P6, barren.getPassingPrecondition());
+		assertTrue("`barren` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+
+		Function compute = getFunction("compute");
+		assertTrue("`compute` is hybrid.", compute.isHybrid());
+		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
+		assertFalse("A computing hybrid function is not de-hybridized as barren.", compute.getTransformations().contains(CONVERT_TO_EAGER));
+	}
+
+	/**
+	 * Pins the eager-to-hybrid benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): an eager
+	 * function with a tensor parameter but no tensor computation must not hybridize (it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION}), while one that performs a tensor op still passes P1.
 	 */
 	@Test
 	public void testNoTensorComputationBlocksHybridization() throws Exception {
