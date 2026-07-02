@@ -436,11 +436,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new RuntimeException("Can't compute recursion.", e);
 				}
 
-				// Check whether the function performs a tensor computation (issue 709). Consulted on both directions: it blocks an
-				// eager-to-hybrid conversion when the body is barren, and drives the hybrid-to-eager de-hybridization of a barren hybrid.
-				// Gated on a tensor-parameter candidate (the only case it can affect a decision), overridable to run on every function,
-				// mirroring the recursion check.
-				if (this.getAlwaysCheckTensorComputation() || func.getHasTensorParameter() != null && func.getHasTensorParameter())
+				// Check whether the function performs a tensor computation (issue 709). The result affects a decision only for an eager
+				// tensor-parameter candidate (barren blocks hybridization) or a hybrid tensor-parameter candidate with no primitive
+				// parameter (barren de-hybridizes); a hybrid function with a primitive parameter de-hybridizes on the literal regardless,
+				// so computing it there is wasted. This gate is deliberately narrower than the recursion check, whose result is consulted
+				// for every tensor-parameter candidate. Overridable to run on every function via alwaysCheckTensorComputation.
+				boolean tensorParameter = func.getHasTensorParameter() != null && func.getHasTensorParameter();
+				boolean barrenCouldDecide = tensorParameter
+						&& (!func.isHybrid() || func.getHasPrimitiveParameter() != null && !func.getHasPrimitiveParameter());
+
+				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.
