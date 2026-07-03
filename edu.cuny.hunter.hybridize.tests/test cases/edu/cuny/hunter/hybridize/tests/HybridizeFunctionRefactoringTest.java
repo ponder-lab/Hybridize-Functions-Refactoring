@@ -6445,6 +6445,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/722. {@code compute} pipes two nested callbacks through
+	 * {@code dataset.map(...)}. The {@code tensorflow.data.map} summary has one call-graph node per callback context, each with a different
+	 * callee, so a closure walk that expands only a reference's first node descends into the first callback and never reaches the second;
+	 * the second callback's op-summary allocations ({@code tf.matmul}'s result tensor, its own result tuple) then read as external writes
+	 * and the side-effect precondition misfires on pure-tensor code.
+	 */
+	@Test
+	public void testPythonSideEffects68() throws Exception {
+		Function function = this.getFunction("compute");
+		assertFalse("Op-summary allocations in a `dataset.map` callback are not Python side-effects of the mapping function.",
+				function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
