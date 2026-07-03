@@ -3834,19 +3834,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for the no-tensor-parameter case: neither parameter is classified as a tensor. Asserts both
-	 * {@link Parameter#getTensorTypes()} are empty and the inferred signature is {@link Optional#empty}—the signature drops at the
-	 * per-parameter classification step before reaching {@code inferSpec}, distinct from in-{@code inferSpec} drops (e.g., dtype
-	 * disagreement) where the per-parameter classification succeeded.
-	 *
-	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @throws Exception If the underlying analysis fails.
-	 */
-	private void testHasLikelyTensorParameterHelperNoTensor(boolean expectingHybridFunction) throws Exception {
-		testHasLikelyTensorParameterHelperExpectingDrop(expectingHybridFunction, false, Set.of(), Set.of());
-	}
-
-	/**
 	 * Precision-audit overload for multi-context fixtures where each parameter is observed with multiple distinct {@link TensorType}s
 	 * across call sites and the inference algorithm narrows to a single inferred type via per-dim consensus. Applies
 	 * {@code expectedParameterTensorTypes} identically to both {@code a} and {@code b} and asserts the signature is
@@ -4715,13 +4702,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265. {@code add(element, element)} inside
-	 * {@code for element in list} where {@code list = list()} then {@code .append(tf.ones(...))}—the dynamic-list construction prevents
-	 * Ariadne from tracking the appended tensors into {@code element}, so neither parameter is classified as a tensor and the inferred
-	 * signature drops at the per-parameter classification step.
+	 * {@code for element in list} where {@code list = list()} then {@code .append(tf.ones(...))}—the dynamic-list construction is tracked
+	 * as of Ariadne 0.52.12 (ML#502 recovers tensor types through {@code append} and {@code for}-destructuring), so the fixture behaves
+	 * exactly like its list-literal twin {@link #testHasLikelyTensorParameter145()}: multi-context across loop iterations, position-0 dim
+	 * narrowed to a wildcard, position-1 kept.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter147() throws Exception {
-		testHasLikelyTensorParameterHelperNoTensor(false);
+		TensorType expectedParameterTensorTypeContext1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType expectedParameterTensorTypeContext2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		TensorType expectedSignatureTensorType = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiContext(Set.of(expectedParameterTensorTypeContext1, expectedParameterTensorTypeContext2),
+				expectedSignatureTensorType);
 	}
 
 	/**
@@ -9215,15 +9207,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * vendored verbatim (the model body, its {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven
 	 * through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. As of Ariadne 0.52.8, {@code real} receives the
 	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
-	 * flows from the keras call result rather than the dataset, still receives no tensor type, the residual tracked in wala/ML#618.
+	 * flows from the keras call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras
+	 * call-result modeling), closing the reach half of wala/ML#618. Precision is the residual: the rank-3 model output carries an
+	 * {@code unknown} dtype (in dynamic and symbolic dimension forms), and a rank-2 {@code float32} type accompanies it.
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
 		Set<Function> fns = this.getFunctions();
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#618): `pred` should also carry the element type once the residual keras-call-result reach is fixed.
-		assertEquals("`get_loss`'s `pred` does not yet type in the full subject (residual wala/ML#618).", Set.of(),
+		// TODO(wala/ML#618): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
+		assertEquals("`get_loss`'s `pred` types via the keras call result (reach fixed in Ariadne 0.52.13; dtype precision residual).",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, DynamicDim.INSTANCE)),
+						new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
+						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE))),
 				findParameter(fns, "pred").getTensorTypes());
 	}
 
