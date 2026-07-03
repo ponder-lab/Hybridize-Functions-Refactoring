@@ -6420,6 +6420,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/720. A container {@code call} invoking a sublayer
+	 * reaches the sublayer's {@code build} through the {@code __call__} trampoline (Ariadne 0.52.12), and {@code build}'s writes—the
+	 * {@code add_weight} store and the {@code built} flag, on an object created in the container's {@code __init__}—land in the container's
+	 * mod set as external writes. They are the once-only Keras lazy-initialization protocol, not recurring Python side-effects, so the
+	 * side-effect precondition must not block the container.
+	 */
+	@Test
+	public void testPythonSideEffects66() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertFalse("The sublayer's lazy-`build` weight creation is not a Python side-effect of the container's `call`.",
+				function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Control for {@link #testPythonSideEffects66()}, mirroring NLPGNN's {@code cached_result} caching: the sublayer mutates its own
+	 * attribute in {@code call}—a recurring state change on every invocation, not the once-only {@code build} protocol—so the container's
+	 * {@code call} keeps its side-effect verdict and the issue 720 exemption must not mask it.
+	 */
+	@Test
+	public void testPythonSideEffects67() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertTrue("The sublayer's `cached_result`-style mutation in `call` is a recurring Python side-effect.",
+				function.getHasPythonSideEffects());
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/722. {@code compute} pipes two nested callbacks through
 	 * {@code dataset.map(...)}. The {@code tensorflow.data.map} summary has one call-graph node per callback context, each with a different
 	 * callee, so a closure walk that expands only a reference's first node descends into the first callback and never reaches the second;
