@@ -46,6 +46,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -585,9 +586,10 @@ public class Function {
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
 	/**
-	 * Per-node direct (non-transitive) mod sets, shared across {@link Function}s since the closure walks revisit the same nodes.
+	 * Per-node direct (non-transitive) mod sets, shared across {@link Function}s since the closure walks revisit the same nodes. Concurrent
+	 * because functions may be processed in parallel.
 	 */
-	private static final Map<CGNode, Set<PointerKey>> directModCache = Maps.newHashMap();
+	private static final Map<CGNode, Set<PointerKey>> directModCache = new ConcurrentHashMap<>();
 
 	private static final ILog LOG = getLog(Function.class);
 
@@ -1456,20 +1458,16 @@ public class Function {
 	 */
 	private static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
-		Set<PointerKey> cached = directModCache.get(node);
+		return directModCache.computeIfAbsent(node, n -> {
+			Set<PointerKey> ret = new HashSet<>();
+			IR ir = n.getIR();
 
-		if (cached != null)
-			return cached;
+			if (ir != null)
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					ret.addAll(modRef.getMod(n, heapModel, pointerAnalysis, instruction, null));
 
-		Set<PointerKey> ret = new HashSet<>();
-		IR ir = node.getIR();
-
-		if (ir != null)
-			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-				ret.addAll(modRef.getMod(node, heapModel, pointerAnalysis, instruction, null));
-
-		directModCache.put(node, ret);
-		return ret;
+			return ret;
+		});
 	}
 
 	/**
