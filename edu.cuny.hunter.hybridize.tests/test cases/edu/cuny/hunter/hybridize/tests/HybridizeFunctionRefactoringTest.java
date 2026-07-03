@@ -7066,15 +7066,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the soundness gain of forwarding {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} to the analysis engine (#600).
-	 * {@code accuracy}'s {@code y_pred} is bound to a model-forward output ({@code pred = neural_net(...)}) reached from two call sites
-	 * that carry different shapes ({@code (256, 10)} from training, {@code (10000, 10)} from test). At the shallow
-	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} the two contexts collapse and the training shape leaks into the test
-	 * call site, so the inferred {@link TensorType} set is a single, unsound concrete shape. At {@code MODEL_FORWARD_CFA_DEPTH} the
-	 * contexts separate and the test context falls to a wildcard ({@code null}-dims) over-approximation, so the set strictly grows. A
-	 * consumer emitting {@code input_signature} from the shallow result would unsoundly assert {@code y_pred} is always {@code (256, 10)}
-	 * when the test path can pass {@code (10000, 10)}. Parameters bound directly to call-site arguments (e.g. {@code NeuralNet.call}'s
-	 * {@code x}) are depth-invariant; this output-bound parameter is the one whose type set is depth-sensitive (wala/ML#587).
+	 * Pins the soundness of {@code accuracy}'s {@code y_pred} type set across targeted k-CFA depths (#600). The parameter is bound to a
+	 * model-forward output ({@code pred = neural_net(...)}) reached from two call sites carrying different shapes ({@code (256, 10)} from
+	 * training, {@code (10000, 10)} from test). Before Ariadne 0.52.16, the depth was the deciding factor: the shallow
+	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} collapsed the contexts into a single, unsound concrete shape, and
+	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} separated them (wala/ML#587). As of Ariadne 0.52.16, layer-method
+	 * trampolines are keyed on the receiver instance (ponder-lab/ML#520), which separates the model-forward contexts at any depth: both
+	 * depths now yield the identical sound set, the concrete training shape plus the wildcard ({@code null}-dims) over-approximation
+	 * covering the test call site. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no longer
+	 * demonstrate depth sensitivity.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
@@ -7083,18 +7083,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> shallow = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.DEFAULT_TARGETED_CFA_DEPTH);
 		Set<TensorType> deep = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH);
 
-		// The shallow targeted depth collapses the two call-site contexts into a single, concrete (unsound) shape.
-		assertEquals("Shallow targeted depth should collapse `y_pred` to a single shape.", 1, shallow.size());
-		assertTrue("The collapsed shape should be concrete.", shallow.stream().allMatch(t -> t.getDims() != null));
-
-		// The deeper targeted depth separates the contexts: it keeps the concrete shape and adds the wildcard over-approximation.
-		assertTrue("Deeper targeted depth must retain every shallow shape.", deep.containsAll(shallow));
-		assertEquals("Deeper targeted depth should add exactly the wildcard over-approximation.", shallow.size() + 1, deep.size());
-
-		Set<TensorType> added = new HashSet<>(deep);
-		added.removeAll(shallow);
-		assertTrue("The added type should be a wildcard (unconstrained-shape) over-approximation.",
-				added.stream().allMatch(t -> t.getDims() == null));
+		assertEquals("Receiver-keyed trampolines (Ariadne 0.52.16) make the set depth-invariant.", shallow, deep);
+		assertEquals("The set holds the concrete training shape and the wildcard over-approximation.", 2, deep.size());
+		assertTrue("One member is concrete.", deep.stream().anyMatch(t -> t.getDims() != null));
+		assertTrue("One member is the wildcard (unconstrained-shape) over-approximation.",
+				deep.stream().anyMatch(t -> t.getDims() == null));
 	}
 
 	/**
@@ -9249,11 +9242,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
 	 * flows from the keras call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras
 	 * call-result modeling), closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword
-	 * forwarding, ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims: the fixture drives the model with
-	 * {@code max_seq_len=4}, {@code vocab_size=10}, and {@code d_model=8}, and the constants appear in the dynamic-dimension rank-3 forms
-	 * (ending in 4, the position dim, and 10, the logits' vocab dim) and the rank-2 {@code float32} hidden-state form (ending in 8); an
-	 * all-symbolic rank-3 form persists alongside them. Dtype is the residual: the rank-3 forms stay {@code unknown}, from
-	 * reshape/elementwise producers on the logits path (ponder-lab/ML#514's wala/ML#672 triage).
+	 * forwarding, ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed
+	 * layer-method trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the
+	 * rank-2 hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
+	 * {@code vocab_size=10}), the all-symbolic rank-3 form, and a rank-unknown {@code float32} member (the dtype survives the re-keying;
+	 * the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
+	 * (ponder-lab/ML#514's wala/ML#672 triage).
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
@@ -9261,11 +9255,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
 		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
-		assertEquals("`get_loss`'s `pred` types via the keras call result; shape constants recovered in Ariadne 0.52.14.",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(4))),
-						new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
+		assertEquals("`get_loss`'s `pred` types via the keras call result; cross-context artifacts dropped in Ariadne 0.52.16.",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
 						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(8)))),
+						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
 	}
 
