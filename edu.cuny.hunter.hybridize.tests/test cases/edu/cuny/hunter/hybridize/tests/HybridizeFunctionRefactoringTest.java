@@ -5600,14 +5600,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		});
 	}
 
-	private static void testPythonSideEffects(Map<Function, Boolean> functionToHasSideEffects) {
-		functionToHasSideEffects.forEach((f, s) -> {
-			assertFalse(f.isHybrid());
-			assertFalse(f.getHasTensorParameter());
-			assertEquals("Function: " + f + " should " + (s ? "" : "not ") + "have side-effects.", s, f.getHasPythonSideEffects());
-		});
-	}
-
 	/**
 	 * Returns the only function defined in the default test file.
 	 *
@@ -6294,7 +6286,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects59() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6302,21 +6293,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("g", functionFromB.getIdentifier());
 
-		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
-		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
-
-		for (Function function : functionSet) {
-			switch (function.getIdentifier()) {
-			case "f":
-			case "g":
-				functionToExpectedSideEffects.put(function, true);
-				break;
-			default:
-				fail("Not expecting: " + function + ".");
-			}
-		}
-
-		testPythonSideEffects(functionToExpectedSideEffects);
+		// TODO(wala/ML#687): both should have side-effects; the plain-import binding to `B` never forms, so `g` is unanalyzed and
+		// `f` sees no transitive effect. Invert to `assertTrue` on both when the upstream fix lands.
+		assertFalse("`f`'s transitive side-effect through `B.g()` is invisible while `import B` does not bind.",
+				functionFromA.getHasPythonSideEffects());
+		assertNull("`g` is unanalyzed while `import B` does not bind.", functionFromB.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6324,7 +6305,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects60() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6332,21 +6312,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.g", functionFromB.getIdentifier());
 
-		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
-		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
-
-		for (Function function : functionSet) {
-			switch (function.getIdentifier()) {
-			case "f":
-			case "C.g":
-				functionToExpectedSideEffects.put(function, true);
-				break;
-			default:
-				fail("Not expecting: " + function + ".");
-			}
-		}
-
-		testPythonSideEffects(functionToExpectedSideEffects);
+		// TODO(wala/ML#687): both should have side-effects; the plain-import binding to `B` never forms, so `C.g` is unanalyzed and
+		// `f` sees no transitive effect. Invert to `assertTrue` on both when the upstream fix lands.
+		assertFalse("`f`'s transitive side-effect through `B.C().g()` is invisible while `import B` does not bind.",
+				functionFromA.getHasPythonSideEffects());
+		assertNull("`C.g` is unanalyzed while `import B` does not bind.", functionFromB.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6354,7 +6324,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects61() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
@@ -6362,21 +6331,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.__init__", functionFromB.getIdentifier());
 
-		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
-		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
-
-		for (Function function : functionSet) {
-			switch (function.getIdentifier()) {
-			case "f":
-			case "C.__init__":
-				functionToExpectedSideEffects.put(function, true);
-				break;
-			default:
-				fail("Not expecting: " + function + ".");
-			}
-		}
-
-		testPythonSideEffects(functionToExpectedSideEffects);
+		// TODO(wala/ML#687): both should have side-effects; the plain-import binding to `B` never forms, so `C.__init__` is
+		// unanalyzed and `f` sees no transitive effect. Invert to `assertTrue` on both when the upstream fix lands.
+		assertFalse("`f`'s transitive side-effect through `B.C()` is invisible while `import B` does not bind.",
+				functionFromA.getHasPythonSideEffects());
+		assertNull("`C.__init__` is unanalyzed while `import B` does not bind.", functionFromB.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6960,13 +6919,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
+		// TODO(wala/ML#687): `Padding2D.call`'s `x` should type as a tensor from A.py's `B.Padding2D(...)` application; the
+		// plain-import binding to `B` never forms, so the class reference is unresolved and the parameter is unanalyzed. Invert to
+		// `assertTrue` when the upstream fix lands.
+		assertNull("`Padding2D.call` is unanalyzed while `import B` does not bind.", f.getHasTensorParameter());
 	}
 
 	/**
@@ -6997,13 +6958,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile4() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
+		// TODO(wala/ML#687): as testClassInDifferentFile, for the explicit `.call(...)` spelling. Invert to `assertTrue` when the
+		// upstream fix lands.
+		assertNull("`Padding2D.call` is unanalyzed while `import B` does not bind.", f.getHasTensorParameter());
 	}
 
 	/**
@@ -7716,7 +7678,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testModule6() throws Exception {
 		Set<Function> functions = this.getFunctions("B");
 		assertEquals(1, functions.size());
@@ -7724,7 +7685,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			assertTrue(function.getHasTensorParameter());
+			// TODO(wala/ML#687): `f`'s parameter should type as a tensor from the importing script; the plain-import binding never
+			// forms, so the parameter is unanalyzed. Invert to `assertTrue` when the upstream fix lands.
+			assertNull("`f` is unanalyzed while the plain import does not bind.", function.getHasTensorParameter());
 		}
 	}
 
