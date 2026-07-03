@@ -703,17 +703,17 @@ public class Function {
 		if (cgNodes.isEmpty())
 			throw new IllegalArgumentException("Can't find call graph nodes corresponding to: " + methodReference + ".");
 
-		// Only consider the first node. The only difference should be the calling context, which shouldn't make a difference for us.
-		CGNode node = cgNodes.iterator().next();
+		// Check the callees of every node of this reference. A shared synthetic summary (e.g., `tensorflow.data.map`) has one node
+		// per callback context, each with a different callee, so a single node's successors miss the branch the analyzed function
+		// actually reaches.
+		for (CGNode node : cgNodes)
+			for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+				MethodReference reference = next.getMethod().getReference();
 
-		// check the callees.
-		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
-			CGNode next = succNodes.next();
-			MethodReference reference = next.getMethod().getReference();
-
-			if (!seen.contains(reference) && allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
-				return true;
-		}
+				if (!seen.contains(reference) && allCreationsWithinClosureInteral(reference, instanceKey, callGraph, seen))
+					return true;
+			}
 
 		return false;
 	}
