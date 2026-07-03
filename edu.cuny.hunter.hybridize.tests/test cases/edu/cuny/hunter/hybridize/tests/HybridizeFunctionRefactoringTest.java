@@ -9210,9 +9210,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * flows from the keras call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras
 	 * call-result modeling), closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword
 	 * forwarding, ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims: the fixture drives the model with
-	 * {@code max_seq_len=4}, {@code vocab_size=10}, and {@code d_model=8}, and the union carries rank-3 forms ending in 4 (position) and 10
-	 * (the logits' vocab dim) plus a rank-2 {@code float32} hidden-state form ending in 8. Dtype is the residual: the rank-3 forms stay
-	 * {@code unknown}, from reshape/elementwise producers on the logits path (ponder-lab/ML#514's wala/ML#672 triage).
+	 * {@code max_seq_len=4}, {@code vocab_size=10}, and {@code d_model=8}, and the constants appear in the dynamic-dimension rank-3 forms
+	 * (ending in 4, the position dim, and 10, the logits' vocab dim) and the rank-2 {@code float32} hidden-state form (ending in 8); an
+	 * all-symbolic rank-3 form persists alongside them. Dtype is the residual: the rank-3 forms stay {@code unknown}, from
+	 * reshape/elementwise producers on the logits path (ponder-lab/ML#514's wala/ML#672 triage).
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
