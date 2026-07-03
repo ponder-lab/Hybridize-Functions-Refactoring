@@ -27,10 +27,12 @@ import static org.python.pydev.parser.visitors.NodeUtils.getOffset;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -1369,6 +1371,63 @@ public class Function {
 	}
 
 	/**
+	 * Returns the given mod set less the contributions of Keras lazy-{@code build} protocol methods reachable from the given
+	 * {@link CGNode}. A sublayer's {@code build}, reached through the {@code __call__} trampoline, creates the layer's weights once, on the
+	 * first call—a framework-sanctioned initialization that {@code tf.function} supports on the first trace—so its writes (the
+	 * {@code add_weight} stores and the {@code built} flag) are not the recurring Python side-effects the side-effect precondition guards
+	 * against. A {@code build} body performing a genuinely recurring side effect is masked by this subtraction; the Keras contract makes
+	 * that pathological, and the analysis never reached {@code build} bodies before the trampoline modeled them.
+	 *
+	 * @param modSet The transitive mod set of the function under analysis.
+	 * @param mod The ModRef analysis result.
+	 * @param node The {@link CGNode} of the function under analysis.
+	 * @param callGraph The system {@link CallGraph}.
+	 * @return The pointer keys in {@code modSet} not contributed by a reachable {@code build} method.
+	 * @throws CoreException If resolving this function's {@link MethodReference} fails.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/720">Issue 720</a>
+	 */
+	private Set<PointerKey> subtractBuildProtocolContributions(OrdinalSet<PointerKey> modSet, Map<CGNode, OrdinalSet<PointerKey>> mod,
+			CGNode node, CallGraph callGraph) throws CoreException {
+		MethodReference thisMethodReference = this.getMethodReference();
+		Set<PointerKey> buildContributions = new HashSet<>();
+		Set<CGNode> seen = new HashSet<>();
+		Deque<CGNode> worklist = new ArrayDeque<>();
+
+		seen.add(node);
+		worklist.add(node);
+
+		while (!worklist.isEmpty()) {
+			CGNode current = worklist.remove();
+			MethodReference reference = current.getMethod().getReference();
+
+			// The function under analysis may itself be a `build` method; its own writes must not be masked.
+			if (!reference.equals(thisMethodReference) && reference.getDeclaringClass().getName().toString().endsWith("/build")) {
+				OrdinalSet<PointerKey> nodeMod = mod.get(current);
+
+				if (nodeMod != null)
+					nodeMod.forEach(buildContributions::add);
+			}
+
+			for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(current); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+
+				if (seen.add(next))
+					worklist.add(next);
+			}
+		}
+
+		Set<PointerKey> ret = new HashSet<>();
+
+		for (PointerKey pointerKey : modSet)
+			if (!buildContributions.contains(pointerKey))
+				ret.add(pointerKey);
+
+		LOG.info("Subtracted " + (modSet.size() - ret.size()) + " lazy-`build` protocol modified location(s).");
+
+		return ret;
+	}
+
+	/**
 	 * Returns true iff we should use type hints regardless of a hybridization parameter.
 	 *
 	 * @return Whether we should use type hints regardless of what is specified in any hybridization parameters.
@@ -1776,8 +1835,11 @@ public class Function {
 		LOG.info("Found " + modSet.size() + " original modified location(s).");
 		modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
+		// Subtract the Keras lazy-`build` protocol contributions.
+		Set<PointerKey> modSetLessBuild = this.subtractBuildProtocolContributions(modSet, mod, cgNode, callGraph);
+
 		// Filter out the modified locations.
-		Set<PointerKey> filteredModSet = this.filterSideEffects(modSet, callGraph, pointerAnalysis);
+		Set<PointerKey> filteredModSet = this.filterSideEffects(modSetLessBuild, callGraph, pointerAnalysis);
 		LOG.info("Found " + filteredModSet.size() + " filtered modified location(s).");
 		filteredModSet.forEach(pk -> LOG.info("Filtered modified location: " + pk + "."));
 
