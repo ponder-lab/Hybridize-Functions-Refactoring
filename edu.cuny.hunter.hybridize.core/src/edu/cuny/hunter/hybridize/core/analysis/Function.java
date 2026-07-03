@@ -46,6 +46,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -123,15 +124,21 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
+import com.ibm.wala.ipa.modref.ExtendedHeapModel;
+import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
+import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 import com.python.pydev.analysis.refactoring.refactorer.Refactorer;
 
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
+import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
 /**
  * A representation of a (syntactic) Python function.
@@ -578,6 +585,12 @@ public class Function {
 
 	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
 
+	/**
+	 * Per-node direct (non-transitive) mod sets, shared across {@link Function}s since the closure walks revisit the same nodes. Concurrent
+	 * because functions may be processed in parallel.
+	 */
+	private static final Map<CGNode, Set<PointerKey>> directModCache = new ConcurrentHashMap<>();
+
 	private static final ILog LOG = getLog(Function.class);
 
 	public static final String PLUGIN_ID = FrameworkUtil.getBundle(Function.class).getSymbolicName();
@@ -722,6 +735,7 @@ public class Function {
 
 	public static void clearCaches() {
 		creationsCache.clear();
+		directModCache.clear();
 		Parameter.clearCaches();
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
@@ -1371,25 +1385,32 @@ public class Function {
 	}
 
 	/**
-	 * Returns the given mod set less the contributions of Keras lazy-{@code build} protocol methods reachable from the given
+	 * Returns the given mod set less the writes exclusive to Keras lazy-{@code build} protocol methods reachable from the given
 	 * {@link CGNode}. A sublayer's {@code build}, reached through the {@code __call__} trampoline, creates the layer's weights once, on the
 	 * first call—a framework-sanctioned initialization that {@code tf.function} supports on the first trace—so its writes (the
 	 * {@code add_weight} stores and the {@code built} flag) are not the recurring Python side-effects the side-effect precondition guards
-	 * against. A {@code build} body performing a genuinely recurring side effect is masked by this subtraction; the Keras contract makes
-	 * that pathological, and the analysis never reached {@code build} bodies before the trampoline modeled them.
+	 * against. Subtraction is at write-level granularity (issue 728): a pointer key is subtracted only when every reachable direct writer
+	 * of it is a {@code build} method, so a key that {@code build} initializes and a recurring method re-assigns (NLPGNN's
+	 * {@code cached_result}) survives and keeps blocking.
 	 *
 	 * @param modSet The transitive mod set of the function under analysis.
-	 * @param mod The ModRef analysis result.
 	 * @param node The {@link CGNode} of the function under analysis.
 	 * @param callGraph The system {@link CallGraph}.
-	 * @return The pointer keys in {@code modSet} not contributed by a reachable {@code build} method.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}, used to compute per-node direct mod sets.
+	 * @return The pointer keys in {@code modSet} not exclusively written by reachable {@code build} methods.
 	 * @throws CoreException If resolving this function's {@link MethodReference} fails.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/720">Issue 720</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/728">Issue 728</a>
 	 */
-	private Set<PointerKey> subtractBuildProtocolContributions(OrdinalSet<PointerKey> modSet, Map<CGNode, OrdinalSet<PointerKey>> mod,
-			CGNode node, CallGraph callGraph) throws CoreException {
+	private Set<PointerKey> subtractBuildProtocolContributions(OrdinalSet<PointerKey> modSet, CGNode node, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) throws CoreException {
 		MethodReference thisMethodReference = this.getMethodReference();
-		Set<PointerKey> buildContributions = new HashSet<>();
+		ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
+		// The Python mod visitor requires the pipeline's own AstHeapModel; wrap only a heap model that isn't already extended.
+		ExtendedHeapModel heapModel = pointerAnalysis.getHeapModel() instanceof ExtendedHeapModel ehm ? ehm
+				: new DelegatingExtendedHeapModel(pointerAnalysis.getHeapModel());
+		Set<PointerKey> buildDirect = new HashSet<>();
+		Set<PointerKey> nonBuildDirect = new HashSet<>();
 		Set<CGNode> seen = new HashSet<>();
 		Deque<CGNode> worklist = new ArrayDeque<>();
 
@@ -1400,13 +1421,11 @@ public class Function {
 			CGNode current = worklist.remove();
 			MethodReference reference = current.getMethod().getReference();
 
-			// The function under analysis may itself be a `build` method; its own writes must not be masked.
-			if (!reference.equals(thisMethodReference) && reference.getDeclaringClass().getName().toString().endsWith("/build")) {
-				OrdinalSet<PointerKey> nodeMod = mod.get(current);
+			// The function under analysis may itself be a `build` method; its own writes go to the protecting side.
+			boolean isBuild = !reference.equals(thisMethodReference)
+					&& reference.getDeclaringClass().getName().toString().endsWith("/build");
 
-				if (nodeMod != null)
-					nodeMod.forEach(buildContributions::add);
-			}
+			(isBuild ? buildDirect : nonBuildDirect).addAll(getDirectMod(current, modRef, heapModel, pointerAnalysis));
 
 			for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(current); succNodes.hasNext();) {
 				CGNode next = succNodes.next();
@@ -1419,12 +1438,36 @@ public class Function {
 		Set<PointerKey> ret = new HashSet<>();
 
 		for (PointerKey pointerKey : modSet)
-			if (!buildContributions.contains(pointerKey))
+			if (!buildDirect.contains(pointerKey) || nonBuildDirect.contains(pointerKey))
 				ret.add(pointerKey);
 
 		LOG.info("Subtracted " + (modSet.size() - ret.size()) + " lazy-`build` protocol modified location(s).");
 
 		return ret;
+	}
+
+	/**
+	 * Returns the direct (non-transitive) mod set of the given {@link CGNode}: the pointer keys its own instructions write, excluding
+	 * callee contributions. Memoized in {@link #directModCache} since the per-function closure walks revisit the same nodes.
+	 *
+	 * @param node The {@link CGNode} whose direct mod set to compute.
+	 * @param modRef The {@link ModRef} used to interpret heap-writing instructions.
+	 * @param heapModel The {@link ExtendedHeapModel} for pointer-key construction.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @return The pointer keys directly written by {@code node}.
+	 */
+	private static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return directModCache.computeIfAbsent(node, n -> {
+			Set<PointerKey> ret = new HashSet<>();
+			IR ir = n.getIR();
+
+			if (ir != null)
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					ret.addAll(modRef.getMod(n, heapModel, pointerAnalysis, instruction, null));
+
+			return ret;
+		});
 	}
 
 	/**
@@ -1836,7 +1879,7 @@ public class Function {
 		modSet.forEach(pk -> LOG.info("Original modified location: " + pk + "."));
 
 		// Subtract the Keras lazy-`build` protocol contributions.
-		Set<PointerKey> modSetLessBuild = this.subtractBuildProtocolContributions(modSet, mod, cgNode, callGraph);
+		Set<PointerKey> modSetLessBuild = this.subtractBuildProtocolContributions(modSet, cgNode, callGraph, pointerAnalysis);
 
 		// Filter out the modified locations.
 		Set<PointerKey> filteredModSet = this.filterSideEffects(modSetLessBuild, callGraph, pointerAnalysis);

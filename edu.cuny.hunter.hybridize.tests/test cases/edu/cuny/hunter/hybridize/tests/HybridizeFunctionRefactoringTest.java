@@ -6459,6 +6459,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/728. The sublayer's {@code build} initializes
+	 * {@code self.cached_result = None} and its {@code call} re-assigns it on the forward path, mirroring NLPGNN's
+	 * {@code GraphConvolution}. The shared pointer key must not be masked by the lazy-{@code build} subtraction of issue 720: the recurring
+	 * writer makes it a genuine Python side-effect, so the container's {@code call} keeps its blocking verdict. Complements
+	 * {@link #testPythonSideEffects66()} (build-only writes are exempt) and {@link #testPythonSideEffects67()} (recurring writes without a
+	 * {@code build} writer block).
+	 */
+	@Test
+	public void testPythonSideEffects69() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertTrue("A key written by `build` and re-assigned on the recurring path is a Python side-effect.",
+				function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
