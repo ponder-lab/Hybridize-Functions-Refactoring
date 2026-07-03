@@ -368,29 +368,31 @@ public class Util {
 		if (!seen.add(node))
 			return false;
 
-		IR ir = node.getIR();
+		// Don't scan a TensorFlow library node's own body: its ops are detected at the user call site, and attributing its internal
+		// IR to the analyzed function would misreport library internals as user computation.
+		if (!isTensorFlowNode(node)) {
+			IR ir = node.getIR();
 
-		if (ir != null) {
-			DefUse defUse = node.getDU();
+			if (ir != null) {
+				DefUse defUse = node.getDU();
 
-			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
-				// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops).
-				if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys))
-					return true;
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+					// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops).
+					if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys))
+						return true;
 
-				// (b) The instruction invokes an unmodeled `tensorflow.*` op recognized from the IR.
-				if (instruction instanceof PythonInvokeInstruction invoke && invokesTensorFlowOp(node, invoke, defUse, pointerAnalysis))
-					return true;
+					// (b) The instruction invokes an unmodeled `tensorflow.*` op recognized from the IR.
+					if (instruction instanceof PythonInvokeInstruction invoke && invokesTensorFlowOp(node, invoke, defUse, pointerAnalysis))
+						return true;
+				}
 			}
 		}
 
-		// Transitively check callees, but skip TensorFlow library nodes: their ops are already detected at the call site above, so
-		// recursing into their internal IR adds overhead and could misattribute their computation to this function.
+		// Transitively check callees, walking through TensorFlow library nodes rather than pruning them: a higher-order API
+		// (`strategy.run`, `dataset.map`) invokes user callbacks whose tensor ops live behind the summary, and the successor edges
+		// are per-node (context-sensitive), so the traversal reaches exactly the callbacks this function passes in.
 		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
 			CGNode succNode = succNodes.next();
-
-			if (isTensorFlowNode(succNode))
-				continue;
 
 			if (performsTensorFlowOp(succNode, callGraph, pointerAnalysis, tensorTypedKeys, seen))
 				return true;

@@ -9314,6 +9314,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
+	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
+	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation
+	 * ({@code tf.reduce_mean}) lives in {@code train_step}, invoked by the {@code strategy.run} summary (the wala/ML#461
+	 * argument-forwarding machinery, whose call-graph edge the summary materializes). The transitive walk must traverse the TensorFlow
+	 * summary node to find it; pruning the subtree there misreports {@code dist_train_step} as barren, the mechanism behind the
+	 * {@code __dist_train_step}/{@code distributed_train_step} corpus false positives.
+	 */
+	@Test
+	public void testTensorComputationThroughStrategyRun() throws Exception {
+		Function function = getFunction("dist_train_step");
+		assertTrue("`dist_train_step` reaches `train_step`'s tensor computation through the `strategy.run` summary.",
+				Boolean.TRUE.equals(function.getHasTensorComputation()));
+	}
+
+	/**
 	 * Barren counterpart of {@link #testSpeculativeAnalysis4}: the same keras {@code Model} with the original empty {@code call} body. The
 	 * parameter still types speculatively, but the function performs no tensor computation, so it fails with
 	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
