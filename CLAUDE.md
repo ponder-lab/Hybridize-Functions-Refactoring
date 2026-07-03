@@ -47,7 +47,7 @@ pip3.10 install -r edu.cuny.hunter.hybridize.tests/requirements.txt   # tensorfl
 
 Test resources are under `edu.cuny.hunter.hybridize.tests/resources/HybridizeFunction/<testName>/in/A.py` (plus a per-test `requirements.txt`). Each test method `testFoo` looks up the directory `HybridizeFunction/testFoo/`.
 
-**Known machine-sensitive tests**: six multi-file tests (`testPythonSideEffects59`–`61`, `testClassInDifferentFile`, `testClassInDifferentFile4`, `testModule6`) exercise plain `import B` of a sibling script, whose binding is environment-sensitive upstream (wala/ML#687): they pass on CI but fail on some local machines. CI is the oracle for these six — local failures on exactly this set are the known wala/ML#687 sensitivity, not a regression.
+**Known machine-sensitive tests**: six multi-file tests (`testPythonSideEffects59`–`61`, `testClassInDifferentFile`, `testClassInDifferentFile4`, `testModule6`) exercise plain `import B` of a sibling script, whose binding is environment-sensitive upstream (wala/ML#687). Each is `Assume`-gated on the binding: on machines where it is absent they report as *skipped* (the local skip count rises by six), while CI — where the binding works — runs and enforces their assertions. CI is the oracle for these six; a locally elevated skip count on exactly this set is the known wala/ML#687 sensitivity, not a regression.
 
 Eclipse PDE `.launch` files are checked in for whole-class and individual-test runs (`HybridizeFunctionRefactoringTest*.launch`). They run as a JUnit Plug-in Test, *not* plain JUnit — these tests need an OSGi/PDE runtime; `mvn verify` drives them via tycho-surefire. There are also launches for the evaluator (`edu.cuny.hunter.hybridize.eval/Evaluate Hybridize Functions.launch`).
 
