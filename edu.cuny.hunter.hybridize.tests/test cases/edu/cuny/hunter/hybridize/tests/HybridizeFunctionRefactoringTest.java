@@ -9208,8 +9208,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. As of Ariadne 0.52.8, {@code real} receives the
 	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
 	 * flows from the keras call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras
-	 * call-result modeling), closing the reach half of wala/ML#618. Precision is the residual: the rank-3 model output carries an
-	 * {@code unknown} dtype (in dynamic and symbolic dimension forms), and a rank-2 {@code float32} type accompanies it.
+	 * call-result modeling), closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword
+	 * forwarding, ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims: the fixture drives the model with
+	 * {@code max_seq_len=4}, {@code vocab_size=10}, and {@code d_model=8}, and the constants appear in the dynamic-dimension rank-3 forms
+	 * (ending in 4, the position dim, and 10, the logits' vocab dim) and the rank-2 {@code float32} hidden-state form (ending in 8); an
+	 * all-symbolic rank-3 form persists alongside them. Dtype is the residual: the rank-3 forms stay {@code unknown}, from
+	 * reshape/elementwise producers on the logits path (ponder-lab/ML#514's wala/ML#672 triage).
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
@@ -9217,10 +9221,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
 		// TODO(wala/ML#618): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
-		assertEquals("`get_loss`'s `pred` types via the keras call result (reach fixed in Ariadne 0.52.13; dtype precision residual).",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, DynamicDim.INSTANCE)),
+		assertEquals("`get_loss`'s `pred` types via the keras call result; shape constants recovered in Ariadne 0.52.14.",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(4))),
 						new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
-						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE))),
+						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(8)))),
 				findParameter(fns, "pred").getTensorTypes());
 	}
 
