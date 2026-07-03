@@ -9220,7 +9220,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> fns = this.getFunctions();
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#618): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
+		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
 		assertEquals("`get_loss`'s `pred` types via the keras call result; shape constants recovered in Ariadne 0.52.14.",
 				Set.of(new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(4))),
 						new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
