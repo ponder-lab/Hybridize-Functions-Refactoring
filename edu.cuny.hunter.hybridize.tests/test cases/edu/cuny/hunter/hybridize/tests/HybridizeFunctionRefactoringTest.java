@@ -42,6 +42,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -847,6 +848,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param functionIndentifier The {@link Function} to return.
 	 * @return The first {@link Function} in the default test file with the given identifier.
 	 */
+	/**
+	 * Gates a test on the plain-import binding of a sibling script, which is environment-sensitive upstream
+	 * (https://github.com/wala/ML/issues/687). On CI the binding is expected to work, so a regression there must fail rather than silently
+	 * skip; on other machines its absence is the known sensitivity and the test skips.
+	 *
+	 * @param bound Whether the binding materialized (the cross-file analysis result is present).
+	 */
+	private static void gateOnImportBinding(boolean bound) {
+		if (System.getenv("CI") != null)
+			assertTrue("The plain-import binding regressed on CI (https://github.com/wala/ML/issues/687).", bound);
+		else
+			assumeTrue("Skipping: the plain import did not bind in this environment (https://github.com/wala/ML/issues/687).", bound);
+	}
+
 	private Function getFunction(String functionIndentifier) throws Exception {
 		Set<Function> functions = this.getFunctions();
 		return functions.stream().filter(f -> f.getIdentifier().equals(functionIndentifier)).findFirst().orElseThrow();
@@ -3835,19 +3850,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Precision-audit overload for the no-tensor-parameter case: neither parameter is classified as a tensor. Asserts both
-	 * {@link Parameter#getTensorTypes()} are empty and the inferred signature is {@link Optional#empty}—the signature drops at the
-	 * per-parameter classification step before reaching {@code inferSpec}, distinct from in-{@code inferSpec} drops (e.g., dtype
-	 * disagreement) where the per-parameter classification succeeded.
-	 *
-	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @throws Exception If the underlying analysis fails.
-	 */
-	private void testHasLikelyTensorParameterHelperNoTensor(boolean expectingHybridFunction) throws Exception {
-		testHasLikelyTensorParameterHelperExpectingDrop(expectingHybridFunction, false, Set.of(), Set.of());
-	}
-
-	/**
 	 * Precision-audit overload for multi-context fixtures where each parameter is observed with multiple distinct {@link TensorType}s
 	 * across call sites and the inference algorithm narrows to a single inferred type via per-dim consensus. Applies
 	 * {@code expectedParameterTensorTypes} identically to both {@code a} and {@code b} and asserts the signature is
@@ -4716,13 +4718,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/265. {@code add(element, element)} inside
-	 * {@code for element in list} where {@code list = list()} then {@code .append(tf.ones(...))}—the dynamic-list construction prevents
-	 * Ariadne from tracking the appended tensors into {@code element}, so neither parameter is classified as a tensor and the inferred
-	 * signature drops at the per-parameter classification step.
+	 * {@code for element in list} where {@code list = list()} then {@code .append(tf.ones(...))}—the dynamic-list construction is tracked
+	 * as of Ariadne 0.52.12 (ML#502 recovers tensor types through {@code append} and {@code for}-destructuring), so the fixture behaves
+	 * exactly like its list-literal twin {@link #testHasLikelyTensorParameter145()}: multi-context across loop iterations, position-0 dim
+	 * narrowed to a wildcard, position-1 kept.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter147() throws Exception {
-		testHasLikelyTensorParameterHelperNoTensor(false);
+		TensorType expectedParameterTensorTypeContext1 = new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(2)));
+		TensorType expectedParameterTensorTypeContext2 = new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)));
+		TensorType expectedSignatureTensorType = new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(2)));
+		testHasLikelyTensorParameterHelperMultiContext(Set.of(expectedParameterTensorTypeContext1, expectedParameterTensorTypeContext2),
+				expectedSignatureTensorType);
 	}
 
 	/**
@@ -6303,13 +6310,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects59() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
 
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("g", functionFromB.getIdentifier());
+
+		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
+		// the
+		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
+		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
+		// anomalous CI skip rather than a failure.
+		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
 
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
@@ -6333,13 +6347,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects60() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
 
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.g", functionFromB.getIdentifier());
+
+		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
+		// the
+		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
+		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
+		// anomalous CI skip rather than a failure.
+		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
 
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
@@ -6363,13 +6384,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testPythonSideEffects61() throws Exception {
 		Function functionFromA = this.getSingleFunction("A");
 		assertEquals("f", functionFromA.getIdentifier());
 
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.__init__", functionFromB.getIdentifier());
+
+		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
+		// the
+		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
+		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
+		// anomalous CI skip rather than a failure.
+		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
 
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
@@ -6426,6 +6454,61 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = this.getSingleFunction("A");
 		assertEquals("f", function.getIdentifier());
 		assertTrue(function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/720. A container {@code call} invoking a sublayer
+	 * reaches the sublayer's {@code build} through the {@code __call__} trampoline (Ariadne 0.52.12), and {@code build}'s writes—the
+	 * {@code add_weight} store and the {@code built} flag, on an object created in the container's {@code __init__}—land in the container's
+	 * mod set as external writes. They are the once-only Keras lazy-initialization protocol, not recurring Python side-effects, so the
+	 * side-effect precondition must not block the container.
+	 */
+	@Test
+	public void testPythonSideEffects66() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertFalse("The sublayer's lazy-`build` weight creation is not a Python side-effect of the container's `call`.",
+				function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Control for {@link #testPythonSideEffects66()}, mirroring NLPGNN's {@code cached_result} caching: the sublayer mutates its own
+	 * attribute in {@code call}—a recurring state change on every invocation, not the once-only {@code build} protocol—so the container's
+	 * {@code call} keeps its side-effect verdict and the issue 720 exemption must not mask it.
+	 */
+	@Test
+	public void testPythonSideEffects67() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertTrue("The sublayer's `cached_result`-style mutation in `call` is a recurring Python side-effect.",
+				function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/722. {@code compute} pipes two nested callbacks through
+	 * {@code dataset.map(...)}. The {@code tensorflow.data.map} summary has one call-graph node per callback context, each with a different
+	 * callee, so a closure walk that expands only a reference's first node descends into the first callback and never reaches the second;
+	 * the second callback's op-summary allocations ({@code tf.matmul}'s result tensor, its own result tuple) then read as external writes
+	 * and the side-effect precondition misfires on pure-tensor code.
+	 */
+	@Test
+	public void testPythonSideEffects68() throws Exception {
+		Function function = this.getFunction("compute");
+		assertFalse("Op-summary allocations in a `dataset.map` callback are not Python side-effects of the mapping function.",
+				function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/728. The sublayer's {@code build} initializes
+	 * {@code self.cached_result = None} and its {@code call} re-assigns it on the forward path, mirroring NLPGNN's
+	 * {@code GraphConvolution}. The shared pointer key must not be masked by the lazy-{@code build} subtraction of issue 720: the recurring
+	 * writer makes it a genuine Python side-effect, so the container's {@code call} keeps its blocking verdict. Complements
+	 * {@link #testPythonSideEffects66()} (build-only writes are exempt) and {@link #testPythonSideEffects67()} (recurring writes without a
+	 * {@code build} writer block).
+	 */
+	@Test
+	public void testPythonSideEffects69() throws Exception {
+		Function function = this.getFunction("MyModel.call");
+		assertTrue("A key written by `build` and re-assigned on the recurring path is a Python side-effect.",
+				function.getHasPythonSideEffects());
 	}
 
 	@Test
@@ -6914,12 +6997,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
+		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
+		// the
+		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+		gateOnImportBinding(f.getHasTensorParameter() != null);
 		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
 	}
 
@@ -6951,12 +7037,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/311.
 	 */
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testClassInDifferentFile4() throws Exception {
 		Set<Function> functions = getFunctions("B");
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
+		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
+		// the
+		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+		gateOnImportBinding(f.getHasTensorParameter() != null);
 		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
 	}
 
@@ -7035,15 +7124,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the soundness gain of forwarding {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} to the analysis engine (#600).
-	 * {@code accuracy}'s {@code y_pred} is bound to a model-forward output ({@code pred = neural_net(...)}) reached from two call sites
-	 * that carry different shapes ({@code (256, 10)} from training, {@code (10000, 10)} from test). At the shallow
-	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} the two contexts collapse and the training shape leaks into the test
-	 * call site, so the inferred {@link TensorType} set is a single, unsound concrete shape. At {@code MODEL_FORWARD_CFA_DEPTH} the
-	 * contexts separate and the test context falls to a wildcard ({@code null}-dims) over-approximation, so the set strictly grows. A
-	 * consumer emitting {@code input_signature} from the shallow result would unsoundly assert {@code y_pred} is always {@code (256, 10)}
-	 * when the test path can pass {@code (10000, 10)}. Parameters bound directly to call-site arguments (e.g. {@code NeuralNet.call}'s
-	 * {@code x}) are depth-invariant; this output-bound parameter is the one whose type set is depth-sensitive (wala/ML#587).
+	 * Pins the soundness of {@code accuracy}'s {@code y_pred} type set across targeted k-CFA depths (#600). The parameter is bound to a
+	 * model-forward output ({@code pred = neural_net(...)}) reached from two call sites carrying different shapes ({@code (256, 10)} from
+	 * training, {@code (10000, 10)} from test). Before Ariadne 0.52.16, the depth was the deciding factor: the shallow
+	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} collapsed the contexts into a single, unsound concrete shape, and
+	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} separated them (wala/ML#587). As of Ariadne 0.52.16, layer-method
+	 * trampolines are keyed on the receiver instance (ponder-lab/ML#520), which separates the model-forward contexts at any depth: both
+	 * depths now yield the identical sound set, the concrete training shape plus the wildcard ({@code null}-dims) over-approximation
+	 * covering the test call site. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no longer
+	 * demonstrate depth sensitivity.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
@@ -7052,18 +7141,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> shallow = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.DEFAULT_TARGETED_CFA_DEPTH);
 		Set<TensorType> deep = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH);
 
-		// The shallow targeted depth collapses the two call-site contexts into a single, concrete (unsound) shape.
-		assertEquals("Shallow targeted depth should collapse `y_pred` to a single shape.", 1, shallow.size());
-		assertTrue("The collapsed shape should be concrete.", shallow.stream().allMatch(t -> t.getDims() != null));
-
-		// The deeper targeted depth separates the contexts: it keeps the concrete shape and adds the wildcard over-approximation.
-		assertTrue("Deeper targeted depth must retain every shallow shape.", deep.containsAll(shallow));
-		assertEquals("Deeper targeted depth should add exactly the wildcard over-approximation.", shallow.size() + 1, deep.size());
-
-		Set<TensorType> added = new HashSet<>(deep);
-		added.removeAll(shallow);
-		assertTrue("The added type should be a wildcard (unconstrained-shape) over-approximation.",
-				added.stream().allMatch(t -> t.getDims() == null));
+		assertEquals("Receiver-keyed trampolines (Ariadne 0.52.16) make the set depth-invariant.", shallow, deep);
+		assertEquals("The set holds the concrete training shape and the wildcard over-approximation.", 2, deep.size());
+		assertTrue("One member is concrete.", deep.stream().anyMatch(t -> t.getDims() != null));
+		assertTrue("One member is the wildcard (unconstrained-shape) over-approximation.",
+				deep.stream().anyMatch(t -> t.getDims() == null));
 	}
 
 	/**
@@ -7677,7 +7759,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	@Test
-	@Ignore("Workaround https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/374.")
 	public void testModule6() throws Exception {
 		Set<Function> functions = this.getFunctions("B");
 		assertEquals(1, functions.size());
@@ -7685,6 +7766,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
+			// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is
+			// absent, the
+			// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
+			gateOnImportBinding(function.getHasTensorParameter() != null);
 			assertTrue(function.getHasTensorParameter());
 		}
 	}
@@ -9223,7 +9308,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <p>
 	 * (a) {@code get_loss} call-site-to-callee typing (wala/ML#618): as of Ariadne 0.52.8, {@code real} receives the dataset element type
 	 * ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which flows from the keras
-	 * call result rather than the dataset, still receives no tensor type, the residual tracked in wala/ML#618.
+	 * call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras call-result modeling),
+	 * closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword forwarding,
+	 * ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed layer-method
+	 * trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the rank-2
+	 * hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
+	 * {@code vocab_size=10}), the all-symbolic rank-3 form, and a rank-unknown {@code float32} member (the dtype survives the re-keying;
+	 * the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
+	 * (ponder-lab/ML#514's wala/ML#672 triage).
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
@@ -9235,8 +9327,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> fns = this.getFunctions();
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#618): `pred` should also carry the element type once the residual keras-call-result reach is fixed.
-		assertEquals("`get_loss`'s `pred` does not yet type in the full subject (residual wala/ML#618).", Set.of(),
+		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
+		assertEquals("`get_loss`'s `pred` types via the keras call result; cross-context artifacts dropped in Ariadne 0.52.16.",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
+						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
 				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
