@@ -58,6 +58,10 @@ Useful system properties (all `Boolean.getBoolean`):
 - Evaluator-only knobs (`edu.cuny.hunter.hybridize.eval.*`): `alwaysCheckPythonSideEffects`, `alwaysCheckRecursion`, `processFunctionsInParallel`, `useTestEntrypoints`, `alwaysFollowTypeHints`, `useSpeculativeAnalysis`, `inferInputSignatures`, `performAnalysis`, `performChange`, `outputCalls`.
 - The targeted k-CFA depth the evaluator forwards to the engine is set per-project via a `targetedCfaDepth` entry in an `eval.properties` file (searched from the project directory upward; **not** a system property, mirroring the `nToUseForStreams` knob in `~/Java-8-Stream-Refactoring`), defaulting to `MODEL_FORWARD_CFA_DEPTH` (4).
 
+## Ariadne release verification
+
+Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent, and the corpus regeneration with its golden gate (`Python-Subjects/scripts/strip_baselines.sh` + `validate_promotion.sh`) is the regression net for that class. Run the per-release loop documented in the wiki page "Ariadne Release Verification Loop" for every bump: bump → full suite (failures are usually pins to advance, not bugs) → PR/merge → regen → gate/classify (CSVs are truth, keyed by subject+path+function) → overlay for in-flight branches → report measured deltas upstream, reopening issues whose subject-scale case persists.
+
 ## Module layout
 
 Maven reactor (see `pom.xml` `<modules>`):
