@@ -60,7 +60,7 @@ Useful system properties (all `Boolean.getBoolean`):
 
 ## Ariadne release verification
 
-Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent, and the corpus regeneration with its golden gate (`Python-Subjects/scripts/strip_baselines.sh` + `validate_promotion.sh`) is the regression net for that class. Run the per-release loop documented in the wiki page "Ariadne Release Verification Loop" for every bump: bump → full suite (failures are usually pins to advance, not bugs) → PR/merge → regen → gate/classify (CSVs are truth, keyed by subject+path+function) → overlay for in-flight branches → report measured deltas upstream, reopening issues whose subject-scale case persists.
+Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump, after the suite is green (failures are usually pins to advance, not bugs) and the PR merges, run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` and report measured deltas upstream, reopening issues whose subject-scale case persists.
 
 ## Module layout
 
