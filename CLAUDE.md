@@ -56,6 +56,8 @@ Useful system properties (all `Boolean.getBoolean`):
 - Evaluator-only knobs (`edu.cuny.hunter.hybridize.eval.*`): `alwaysCheckPythonSideEffects`, `alwaysCheckRecursion`, `processFunctionsInParallel`, `useTestEntrypoints`, `alwaysFollowTypeHints`, `useSpeculativeAnalysis`, `inferInputSignatures`, `performAnalysis`, `performChange`, `outputCalls`.
 - The targeted k-CFA depth the evaluator forwards to the engine is set per-project via a `targetedCfaDepth` entry in an `eval.properties` file (searched from the project directory upward; **not** a system property, mirroring the `nToUseForStreams` knob in `~/Java-8-Stream-Refactoring`), defaulting to `MODEL_FORWARD_CFA_DEPTH` (4).
 
+JUL logging in test runs: tycho-surefire injects `java.util.logging.config.file` into the forked test JVM from the Maven property `logging.config.file` (parent `pom.xml`), defaulting to the repo-root `logging.properties` (WARNING level). To raise verbosity (e.g. FINE-level Ariadne traces), pass a config at the Maven level: `./mvnw verify -Dlogging.config.file=<file>`. A `-Djava.util.logging.config.file` set via `JAVA_TOOL_OPTIONS` silently loses to the pom's explicit `-D` for the same property.
+
 ## Ariadne release verification
 
 Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump, after the suite is green (failures are usually pins to advance, not bugs) and the PR merges, run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` and report measured deltas upstream, reopening issues whose subject-scale case persists.
