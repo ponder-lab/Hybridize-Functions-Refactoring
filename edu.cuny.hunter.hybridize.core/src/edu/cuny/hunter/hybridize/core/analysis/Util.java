@@ -346,14 +346,16 @@ public class Util {
 	}
 
 	/**
-	 * True iff {@code node}, transitively over its (user-defined) callees, performs a TensorFlow tensor op. A body instruction counts as a
+	 * True iff {@code node}, transitively over its call-graph successors, performs a TensorFlow tensor op. A body instruction counts as a
 	 * tensor op when it either (a) defines a value the tensor-type analysis types as a tensor (which covers modeled ops, tensor operators,
 	 * and layer calls, and correctly excludes proto and spec builders whose results are not tensors), or (b) invokes a {@code tensorflow.*}
-	 * op recognized from the IR (which additionally covers ops not modeled by the tensor-type analysis). See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 * op recognized from the IR (which additionally covers ops not modeled by the tensor-type analysis). Only user-defined bodies are
+	 * scanned—a TensorFlow library node's own body is skipped, since its ops are detected at the user call site—but the traversal walks
+	 * through library nodes to their successors, so user callbacks passed to higher-order TensorFlow APIs ({@code strategy.run},
+	 * {@code dataset.map}) are still reached. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
 	 *
 	 * @param node The call-graph node to check.
-	 * @param callGraph The call graph, used to follow user-defined callees transitively.
+	 * @param callGraph The call graph, used to follow callees transitively.
 	 * @param pointerAnalysis The pointer analysis, used to resolve def, callee, and attribute-name pointer keys.
 	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link #tensorTypedPointerKeys}).
 	 * @return True iff a TensorFlow tensor op is reachable from {@code node}.
