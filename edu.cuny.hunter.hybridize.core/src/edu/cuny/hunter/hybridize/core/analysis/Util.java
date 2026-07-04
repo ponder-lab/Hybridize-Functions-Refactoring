@@ -499,7 +499,7 @@ public class Util {
 		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, use);
 
 		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey)) {
-			String name = instanceKey.getConcreteType().getReference().getName().toString();
+			String name = instanceKey.concreteType().getReference().getName().toString();
 
 			if (exact ? name.equals(typeName) : name.startsWith(typeName))
 				return true;
