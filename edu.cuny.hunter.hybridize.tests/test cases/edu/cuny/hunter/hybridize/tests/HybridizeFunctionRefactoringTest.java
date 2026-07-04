@@ -41,7 +41,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -847,20 +846,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param functionIndentifier The {@link Function} to return.
 	 * @return The first {@link Function} in the default test file with the given identifier.
 	 */
-	/**
-	 * Gates a test on the plain-import binding of a sibling script, which is environment-sensitive upstream
-	 * (https://github.com/wala/ML/issues/687). On CI the binding is expected to work, so a regression there must fail rather than silently
-	 * skip; on other machines its absence is the known sensitivity and the test skips.
-	 *
-	 * @param bound Whether the binding materialized (the cross-file analysis result is present).
-	 */
-	private static void gateOnImportBinding(boolean bound) {
-		if (System.getenv("CI") != null)
-			assertTrue("The plain-import binding regressed on CI (https://github.com/wala/ML/issues/687).", bound);
-		else
-			assumeTrue("Skipping: the plain import did not bind in this environment (https://github.com/wala/ML/issues/687).", bound);
-	}
-
 	private Function getFunction(String functionIndentifier) throws Exception {
 		Set<Function> functions = this.getFunctions();
 		return functions.stream().filter(f -> f.getIdentifier().equals(functionIndentifier)).findFirst().orElseThrow();
@@ -6316,14 +6301,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("g", functionFromB.getIdentifier());
 
-		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
-		// the
-		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
-		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
-		// anomalous CI skip rather than a failure.
-		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
-
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
 
@@ -6353,14 +6330,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.g", functionFromB.getIdentifier());
 
-		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
-		// the
-		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
-		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
-		// anomalous CI skip rather than a failure.
-		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
-
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
 
@@ -6389,14 +6358,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function functionFromB = this.getSingleFunction("B");
 		assertEquals("C.__init__", functionFromB.getIdentifier());
-
-		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
-		// the
-		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-		// The gate keys on the A-side transitive verdict: the B-side entity's standalone analyzability is flaky on affected
-		// machines. On CI the remaining enforcement is therefore the B-side assertion; an A-side CI regression shows as an
-		// anomalous CI skip rather than a failure.
-		gateOnImportBinding(Boolean.TRUE.equals(functionFromA.getHasPythonSideEffects()));
 
 		Set<Function> functionSet = new HashSet<>(Arrays.asList(functionFromA, functionFromB));
 		Map<Function, Boolean> functionToExpectedSideEffects = new HashMap<>();
@@ -7001,10 +6962,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
-		// the
-		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-		gateOnImportBinding(f.getHasTensorParameter() != null);
 		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
 	}
 
@@ -7041,10 +6998,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> set = functions.stream().filter(f -> f.getIdentifier().equals("Padding2D.call")).collect(Collectors.toSet());
 		assertEquals(1, set.size());
 		Function f = set.iterator().next();
-		// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is absent,
-		// the
-		// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-		gateOnImportBinding(f.getHasTensorParameter() != null);
 		assertTrue("This function is called from A.py.", f.getHasTensorParameter());
 	}
 
@@ -7765,10 +7718,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			assertEquals("f", function.getIdentifier());
 			assertEquals(1, function.getNumberOfParameters());
-			// https://github.com/wala/ML/issues/687: the plain-import binding of a sibling script is environment-sensitive; where it is
-			// absent, the
-			// cross-file entity is unanalyzed and this test cannot run. CI, where the binding works, enforces the assertions.
-			gateOnImportBinding(function.getHasTensorParameter() != null);
 			assertTrue(function.getHasTensorParameter());
 		}
 	}
