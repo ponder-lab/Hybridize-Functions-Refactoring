@@ -150,6 +150,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckTensorComputation = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_COMPUTATION.key());
 
+	private boolean alwaysCheckEagerOnlyCalls = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_EAGER_ONLY_CALLS.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -212,8 +214,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		for (Transformation transformation : Transformation.values())
 			resultsHeader.add(transformation.toString());
 
-		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "type hints", "parallel",
-				"speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
+		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
+				"type hints", "parallel", "speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		resultsHeader.add("time (s)");
@@ -272,6 +274,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 							this.getAlwaysFollowTypeHints(), this.getUseSpeculativeAnalysis(), this.getInferInputSignatures());
 					processor.setTargetedCfaDepth(targetedCfaDepth);
 					processor.setAlwaysCheckTensorComputation(this.getAlwaysCheckTensorComputation());
+					processor.setAlwaysCheckEagerOnlyCalls(this.getAlwaysCheckEagerOnlyCalls());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -364,6 +367,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// tensor computation.
 					resultsRecord.add(this.getAlwaysCheckTensorComputation());
+
+					// eager-only calls.
+					resultsRecord.add(this.getAlwaysCheckEagerOnlyCalls());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -558,7 +564,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
-				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "autograph",
+				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls", "autograph",
 				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
 				"supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation",
 				"input_signature absence reason", "refactoring", "passing precondition", "status");
@@ -636,7 +642,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
-				function.getHasTensorComputation());
+				function.getHasTensorComputation(), function.getHasEagerOnlyCalls());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -738,6 +744,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckTensorComputation() {
 		return alwaysCheckTensorComputation;
+	}
+
+	public boolean getAlwaysCheckEagerOnlyCalls() {
+		return alwaysCheckEagerOnlyCalls;
 	}
 
 	public boolean getProcessFunctionsInParallel() {

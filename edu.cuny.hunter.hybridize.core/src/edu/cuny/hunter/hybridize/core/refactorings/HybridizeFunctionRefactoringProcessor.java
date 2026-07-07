@@ -106,6 +106,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckTensorComputation;
 
+	private boolean alwaysCheckEagerOnlyCalls;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -448,6 +450,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
+				// Check whether the function calls an eager-only API (issue 363). Its failure is reachable in exactly the same
+				// precondition region as the barren check, so it shares the gate; overridable independently via
+				// alwaysCheckEagerOnlyCalls.
+				if (this.getAlwaysCheckEagerOnlyCalls() || barrenCouldDecide)
+					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -721,6 +729,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckTensorComputation(boolean alwaysCheckTensorComputation) {
 		this.alwaysCheckTensorComputation = alwaysCheckTensorComputation;
+	}
+
+	public boolean getAlwaysCheckEagerOnlyCalls() {
+		return this.alwaysCheckEagerOnlyCalls;
+	}
+
+	/**
+	 * Force the eager-only-API check (issue 363) on every candidate, not only tensor-parameter ones. Off by default: the check only affects
+	 * a transformation decision when the function has a tensor parameter, so this is for measurement (reporting eager-only calls
+	 * corpus-wide), mirroring {@code alwaysCheckTensorComputation}.
+	 *
+	 * @param alwaysCheckEagerOnlyCalls Whether to always compute whether a function calls an eager-only API.
+	 */
+	public void setAlwaysCheckEagerOnlyCalls(boolean alwaysCheckEagerOnlyCalls) {
+		this.alwaysCheckEagerOnlyCalls = alwaysCheckEagerOnlyCalls;
 	}
 
 	@Override

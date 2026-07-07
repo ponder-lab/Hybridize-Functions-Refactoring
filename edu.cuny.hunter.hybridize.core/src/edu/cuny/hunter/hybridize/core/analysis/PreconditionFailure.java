@@ -47,7 +47,13 @@ public enum PreconditionFailure {
 	 * The function's body performs no (transitive) TensorFlow tensor computation, so graph execution yields no benefit and hybridization is
 	 * unnecessary. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
 	 */
-	NO_TENSOR_COMPUTATION(14);
+	NO_TENSOR_COMPUTATION(14),
+
+	/**
+	 * The function's body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under {@code tf.function}
+	 * tracing, so hybridization would not preserve semantics. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
+	 */
+	HAS_EAGER_ONLY_CALLS(15);
 
 	static {
 		// check that the codes are unique.
