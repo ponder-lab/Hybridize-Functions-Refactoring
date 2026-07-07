@@ -10,6 +10,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -961,6 +962,13 @@ public class Function {
 	private Boolean recursive;
 
 	/**
+	 * True iff this {@link Function}'s body performs a (transitive) TensorFlow tensor computation. {@code null} when it could not be
+	 * determined (e.g., no call-graph node), in which case the precondition does not block hybridization. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 */
+	private Boolean hasTensorComputation;
+
+	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
 	private Boolean hasPrimitiveParameter;
@@ -1078,17 +1086,26 @@ public class Function {
 						this.addInfo("This eager function does not have Python side-effects.");
 						if (this.isRecursive() != null && !this.isRecursive()) {
 							this.addInfo("This eager function is not recursive.");
-							this.addTransformation(Transformation.CONVERT_TO_HYBRID);
-							this.setPassingPrecondition(P1);
 
-							/*
-							 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
-							 * (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time (wizard,
-							 * evaluator), mirroring how the reconfigure path computes it while checking preconditions. The result is
-							 * memoized, so the change does not recompute it, and computing it has no bearing on the P1 decision.
-							 */
-							if (this.getInferInputSignatures())
-								this.inferInputSignature();
+							if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
+								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
+								// incompleteness-safe: it never violates semantics preservation.
+								this.addFailure(PreconditionFailure.NO_TENSOR_COMPUTATION,
+										"This function performs no tensor computation, so hybridization is unlikely to improve performance.");
+							else {
+								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
+								this.setPassingPrecondition(P1);
+
+								/*
+								 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
+								 * (`convertToHybrid`). Compute it here too so the inferred signature is observable at analysis time
+								 * (wizard, evaluator), mirroring how the reconfigure path computes it while checking preconditions. The
+								 * result is memoized, so the change does not recompute it, and computing it has no bearing on the P1
+								 * decision.
+								 */
+								if (this.getInferInputSignatures())
+									this.inferInputSignature();
+							}
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					} else if (this.getHasPythonSideEffects() != null) { // it has side-effects.
@@ -1148,60 +1165,76 @@ public class Function {
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					/*
-					 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature inference
-					 * is enabled, the function is side-effect-free and non-recursive, and a signature can be inferred and emitted, the
-					 * decorator is reconfigured: if it carries no `input_signature` yet, add the inferred one (the add path); if it carries
-					 * one that is more specific than, or incomparable with, the inferred one, overwrite it; if it carries one broader than
-					 * the inferred one, preserve it (the broader signature may be intentional); if they agree, do nothing. A supplied
-					 * signature whose content could not be modeled is left untouched. Gating on the flag keeps the default precondition
-					 * matrix unchanged.
-					 */
-					boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
-							&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-							&& this.canEmitInferredInputSignature();
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()) {
+						// Barren (issue 709): a hybrid function performing no tensor computation gains nothing from graph execution, only
+						// tracing overhead, so de-hybridize it when semantics are preserved (no Python side-effects). This is the
+						// hybrid-to-eager counterpart of the eager-to-hybrid NO_TENSOR_COMPUTATION precondition and a peer of P2/P3.
+						this.addInfo("This hybrid function performs no tensor computation.");
 
-					if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
-						// Add path: no existing `input_signature`.
-						this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
-						this.addTransformation(RECONFIGURE);
-						this.setPassingPrecondition(P4);
-					} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
-							&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
-						// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
-						// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern always
-						// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
-						InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
+						if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
+							this.addInfo("This hybrid function does not have Python side-effects.");
+							this.addTransformation(CONVERT_TO_EAGER);
+							this.setPassingPrecondition(P6);
+						} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
+							this.addFailure(HAS_PYTHON_SIDE_EFFECTS,
+									"De-hybridizing a function with Python side-effects may alter semantics.");
+					} else {
+						/*
+						 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature
+						 * inference is enabled, the function is side-effect-free and non-recursive, and a signature can be inferred and
+						 * emitted, the decorator is reconfigured: if it carries no `input_signature` yet, add the inferred one (the add
+						 * path); if it carries one that is more specific than, or incomparable with, the inferred one, overwrite it; if it
+						 * carries one broader than the inferred one, preserve it (the broader signature may be intentional); if they agree,
+						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
+						 * the default precondition matrix unchanged.
+						 */
+						boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
+								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
+								&& this.canEmitInferredInputSignature();
 
-						switch (supplied.relate(inferred)) {
-						case SUPPLIED_TIGHTER -> {
-							this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
-									+ "it can be reconfigured to admit the observed inputs.");
+						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
+							// Add path: no existing `input_signature`.
+							this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
 							this.addTransformation(RECONFIGURE);
-							this.setPassingPrecondition(P5);
-						}
-						case INCOMPARABLE -> {
-							this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-									+ "reconfiguring it will change the inputs the function accepts.");
-							this.addTransformation(RECONFIGURE);
-							this.setPassingPrecondition(P5);
-						}
-						case SUPPLIED_BROADER -> {
-							this.addInfo("This hybrid function's input signature is broader than its call sites require; "
-									+ "it is left unchanged in case the broader signature is intentional.");
+							this.setPassingPrecondition(P4);
+						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
+								&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
+							// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
+							// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern
+							// always
+							// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
+							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
+
+							switch (supplied.relate(inferred)) {
+							case SUPPLIED_TIGHTER -> {
+								this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
+										+ "it can be reconfigured to admit the observed inputs.");
+								this.addTransformation(RECONFIGURE);
+								this.setPassingPrecondition(P5);
+							}
+							case INCOMPARABLE -> {
+								this.addWarning("This hybrid function's input signature disagrees with its call sites; "
+										+ "reconfiguring it will change the inputs the function accepts.");
+								this.addTransformation(RECONFIGURE);
+								this.setPassingPrecondition(P5);
+							}
+							case SUPPLIED_BROADER -> {
+								this.addInfo("This hybrid function's input signature is broader than its call sites require; "
+										+ "it is left unchanged in case the broader signature is intentional.");
+								this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+										"Functions with no Python literal arguments may benefit from hybridization.");
+							}
+							case AGREEMENT -> this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+									"Functions with no Python literal arguments may benefit from hybridization.");
+							}
+						} else {
 							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
-						}
-						case AGREEMENT -> this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-								"Functions with no Python literal arguments may benefit from hybridization.");
-						}
-					} else {
-						this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-								"Functions with no Python literal arguments may benefit from hybridization.");
 
-						if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
-							this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
-									"De-hybridizing a function with Python side-effects may alter semantics.");
+							if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
+								this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
+										"De-hybridizing a function with Python side-effects may alter semantics.");
+						}
 					}
 				}
 
@@ -1328,6 +1361,53 @@ public class Function {
 			LOG.info(this + " is not recursive.");
 			this.setRecursive(false);
 		}
+	}
+
+	/**
+	 * Determines whether this {@link Function}'s body performs a (transitive) TensorFlow tensor computation, storing the result in
+	 * {@link #hasTensorComputation}. When there is no call-graph node for the function, the result is left {@code null} (undetermined), so
+	 * the precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#tensorTypedPointerKeys}), used to
+	 *        identify tensor-op results in the body.
+	 */
+	public void computeTensorComputation(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<PointerKey> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " performs a tensor computation.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " performs a tensor computation without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It performs a tensor computation if any of
+		// them does; sampling a single node can miss the op at an imprecise context.
+		boolean performsTensorOp = nodes.stream()
+				.anyMatch(cgNode -> Util.performsTensorFlowOp(cgNode, callGraph, pointerAnalysis, tensorTypedKeys));
+
+		this.hasTensorComputation = performsTensorOp;
+
+		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body performs a (transitive) TensorFlow tensor computation, {@code null} if undetermined.
+	 *
+	 * @return True iff this function performs a tensor computation, null if undetermined.
+	 */
+	public Boolean getHasTensorComputation() {
+		return this.hasTensorComputation;
 	}
 
 	@Override

@@ -19,6 +19,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
@@ -9222,6 +9223,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.orElseThrow(() -> new AssertionError("No parameter named `" + name + "` among analyzed functions."));
 	}
 
+	private static Function findFunction(Set<Function> functions, String identifier) {
+		return functions.stream().filter(f -> identifier.equals(f.getIdentifier())).findFirst()
+				.orElseThrow(() -> new AssertionError("No function with identifier `" + identifier + "` among analyzed functions."));
+	}
+
 	/**
 	 * Consumer-side guard for the distributed training reach (wala/ML#461). A {@code get_loss(targets, predictions)} call is reached
 	 * through {@code distributed_train_step -> strategy.run(_train_step, args=(inputs, targets))}; both parameters resolve to the
@@ -9239,18 +9245,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Guard for the {@code get_loss} call-site-to-callee typing (wala/ML#618). The full {@code akanyaani/gpt-2-tensorflow2.0} subject is
-	 * vendored verbatim (the model body, its {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven
-	 * through {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}. As of Ariadne 0.52.8, {@code real} receives the
-	 * dataset element type ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which
-	 * flows from the keras call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras
-	 * call-result modeling), closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword
-	 * forwarding, ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed
-	 * layer-method trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the
-	 * rank-2 hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
+	 * Guards on the vendored {@code akanyaani/gpt-2-tensorflow2.0} subject. The full subject is vendored verbatim (the model body, its
+	 * {@code layers}/{@code utils} packages, and the {@code input_fn} dataset pipeline) and driven through
+	 * {@code fit -> train_step -> _train_step -> get_loss(targets, predictions)}.
+	 * <p>
+	 * (a) {@code get_loss} call-site-to-callee typing (wala/ML#618): as of Ariadne 0.52.8, {@code real} receives the dataset element type
+	 * ({@code int32} with a dynamic dimension), so the call-site-to-callee gap is fixed for it; {@code pred}, which flows from the keras
+	 * call result rather than the dataset, receives tensor types as of Ariadne 0.52.13 (the 0.52.11–0.52.13 keras call-result modeling),
+	 * closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword forwarding,
+	 * ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed layer-method
+	 * trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the rank-2
+	 * hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
 	 * {@code vocab_size=10}), the all-symbolic rank-3 form, and a rank-unknown {@code float32} member (the dtype survives the re-keying;
 	 * the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
 	 * (ponder-lab/ML#514's wala/ML#672 triage).
+	 * <p>
+	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
+	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
+	 * the tensor-op detector must recognize the op via the import-alias fallback ({@link edu.cuny.hunter.hybridize.core.analysis.Util})
+	 * rather than misreport the function as performing no tensor computation and block its hybridization.
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
@@ -9263,6 +9276,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
+		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
+				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
 	}
 
 	/**
@@ -9295,6 +9310,119 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Control: the same opaque attribute without a slice.
 		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not a tensor.",
 				getFunction("plain").getHasTensorParameter());
+	}
+
+	/**
+	 * Pins the hybrid-to-eager benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): a hybrid
+	 * function with a tensor parameter that performs no tensor computation and has no Python side-effects is de-hybridized (P6,
+	 * {@link Transformation#CONVERT_TO_EAGER}), while a computing hybrid function is not.
+	 */
+	@Test
+	public void testBarrenHybridDehybridizes() throws Exception {
+		Function barren = getFunction("barren");
+		assertTrue("`barren` is hybrid.", barren.isHybrid());
+		assertTrue("`barren` has a tensor parameter.", barren.getHasTensorParameter());
+		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
+		assertEquals("A barren hybrid function de-hybridizes (P6).", P6, barren.getPassingPrecondition());
+		assertTrue("`barren` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+
+		Function compute = getFunction("compute");
+		assertTrue("`compute` is hybrid.", compute.isHybrid());
+		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
+		assertFalse("A computing hybrid function is not de-hybridized as barren.", compute.getTransformations().contains(CONVERT_TO_EAGER));
+	}
+
+	/**
+	 * Pins the eager-to-hybrid benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): an eager
+	 * function with a tensor parameter but no tensor computation must not hybridize (it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION}), while one that performs a tensor op still passes P1.
+	 */
+	@Test
+	public void testNoTensorComputationBlocksHybridization() throws Exception {
+		Function barren = getFunction("barren");
+		assertTrue("`barren` has a tensor parameter.", barren.getHasTensorParameter());
+		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
+		assertNull("`barren` must not pass a precondition; it performs no tensor computation.", barren.getPassingPrecondition());
+		assertNotNull("`barren` fails with NO_TENSOR_COMPUTATION.",
+				barren.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+
+		Function compute = getFunction("compute");
+		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
+		assertEquals("`compute` performs a tensor op, so it still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
+	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
+	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation
+	 * ({@code tf.reduce_mean}) lives in {@code train_step}, invoked by the {@code strategy.run} summary (the wala/ML#461
+	 * argument-forwarding machinery, whose call-graph edge the summary materializes). The transitive walk must traverse the TensorFlow
+	 * summary node to find it; pruning the subtree there misreports {@code dist_train_step} as barren, the mechanism behind the
+	 * {@code __dist_train_step}/{@code distributed_train_step} corpus false positives.
+	 */
+	@Test
+	public void testTensorComputationThroughStrategyRun() throws Exception {
+		Function function = getFunction("dist_train_step");
+		assertTrue("`dist_train_step` reaches `train_step`'s tensor computation through the `strategy.run` summary.",
+				Boolean.TRUE.equals(function.getHasTensorComputation()));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testSpeculativeAnalysis4}: the same keras {@code Model} with the original empty {@code call} body. The
+	 * parameter still types speculatively, but the function performs no tensor computation, so it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testSpeculativeAnalysis4Barren() throws Exception {
+		Function f = this.getFunctions().iterator().next();
+		assertFalse(f.isHybrid());
+		assertFalse("The empty `call` body performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testPreconditionChecking2}: {@code func} has a tensor parameter but an empty body, so it fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testPreconditionChecking2Barren() throws Exception {
+		Function f = getFunction("func");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse("The empty body performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testRetracing2}: {@code f} returns its tensor parameter unchanged, so it performs no tensor computation
+	 * and fails with {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
+	 */
+	@Test
+	public void testRetracing2Barren() throws Exception {
+		Function f = getFunction("f");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse("Returning the parameter unchanged performs no tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+	}
+
+	/**
+	 * Barren counterpart of {@link #testRecursion2}: {@code not_recursive_fn} computes {@code abs(n - 1)}. The {@code n - 1} subtraction
+	 * types as tensor computation in isolation, but wrapping it in the opaque Python builtin {@code abs()} suppresses the analysis's typing
+	 * of the intermediate, so no tensor computation is detected and the function fails with
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709). This is an analysis-modeling limitation;
+	 * blocking the eager-to-hybrid conversion here is incompleteness-safe (we decline to hybridize but never violate semantics).
+	 */
+	@Test
+	public void testRecursion2Barren() throws Exception {
+		Function f = getFunction("not_recursive_fn");
+		assertTrue(f.getHasTensorParameter());
+		assertFalse(f.isRecursive());
+		assertFalse("The abs() wrapper suppresses typing of the n - 1 intermediate, so no tensor computation is detected.",
+				f.getHasTensorComputation());
+		assertNull(f.getPassingPrecondition());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
 	}
 
 	/**

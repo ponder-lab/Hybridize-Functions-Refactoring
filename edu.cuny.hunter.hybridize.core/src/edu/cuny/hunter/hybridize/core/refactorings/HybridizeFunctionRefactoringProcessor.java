@@ -71,6 +71,7 @@ import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
+import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
 import edu.cuny.hunter.hybridize.core.messages.Messages;
 import edu.cuny.hunter.hybridize.core.wala.ml.EclipsePythonProjectTensorAnalysisEngine;
@@ -102,6 +103,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private boolean alwaysCheckPythonSideEffects;
 
 	private boolean alwaysCheckRecursion;
+
+	private boolean alwaysCheckTensorComputation;
 
 	private boolean ignoreBooleansInLiteralCheck = true;
 
@@ -359,6 +362,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			LOG.info("Tensor analysis: " + analysis.toString());
 
+			// The pointer keys the tensor analysis types as tensors, computed once and shared across this project's functions (issue 709).
+			Set<PointerKey> tensorTypedKeys = Util.tensorTypedPointerKeys(analysis);
+
 			subMonitor.checkCanceled();
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
@@ -429,6 +435,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					LOG.error("Can't compute recursion.", e);
 					throw new RuntimeException("Can't compute recursion.", e);
 				}
+
+				// Check whether the function performs a tensor computation (issue 709). The result affects a decision only for a
+				// tensor-parameter candidate with no primitive parameter—eager (barren blocks hybridization) or hybrid (barren
+				// de-hybridizes); a function with a primitive parameter fails or de-hybridizes on the literal regardless, so computing it
+				// there is wasted. This gate is deliberately narrower than the recursion check, whose result is consulted for every
+				// tensor-parameter candidate. Overridable to run on every function via alwaysCheckTensorComputation.
+				boolean tensorParameter = func.getHasTensorParameter() != null && func.getHasTensorParameter();
+				boolean noPrimitiveParameter = func.getHasPrimitiveParameter() != null && !func.getHasPrimitiveParameter();
+				boolean barrenCouldDecide = tensorParameter && noPrimitiveParameter;
+
+				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
+					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.
 				func.check();
@@ -688,6 +706,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	public boolean getAlwaysCheckRecursion() {
 		return alwaysCheckRecursion;
+	}
+
+	public boolean getAlwaysCheckTensorComputation() {
+		return this.alwaysCheckTensorComputation;
+	}
+
+	/**
+	 * Force the tensor-computation check (issue 709) on every candidate, not only tensor-parameter ones. Off by default: the check only
+	 * affects a transformation decision when the function has a tensor parameter, so this is for measurement (reporting barren-ness
+	 * corpus-wide) and to hedge against a missed tensor parameter, mirroring the {@code alwaysCheckRecursion} and side-effect flags.
+	 *
+	 * @param alwaysCheckTensorComputation Whether to always compute whether a function performs a tensor computation.
+	 */
+	public void setAlwaysCheckTensorComputation(boolean alwaysCheckTensorComputation) {
+		this.alwaysCheckTensorComputation = alwaysCheckTensorComputation;
 	}
 
 	@Override
