@@ -969,6 +969,13 @@ public class Function {
 	private Boolean hasTensorComputation;
 
 	/**
+	 * True iff this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under
+	 * {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the precondition
+	 * does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
+	 */
+	private Boolean hasEagerOnlyCalls;
+
+	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
 	private Boolean hasPrimitiveParameter;
@@ -1087,7 +1094,12 @@ public class Function {
 						if (this.isRecursive() != null && !this.isRecursive()) {
 							this.addInfo("This eager function is not recursive.");
 
-							if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
+							if (this.getHasEagerOnlyCalls() != null && this.getHasEagerOnlyCalls())
+								// Invokes an eager-only API, which raises under tf.function tracing (issue 363). A safety failure, so it
+								// takes precedence over the barren benefit signal below.
+								this.addFailure(PreconditionFailure.HAS_EAGER_ONLY_CALLS,
+										"Can't hybridize a function that calls eager-only APIs like numpy().");
+							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
 								this.addFailure(PreconditionFailure.NO_TENSOR_COMPUTATION,
@@ -1408,6 +1420,49 @@ public class Function {
 	 */
 	public Boolean getHasTensorComputation() {
 		return this.hasTensorComputation;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), storing the
+	 * result for {@link #getHasEagerOnlyCalls()}. Mirrors {@link #computeTensorComputation(CallGraph, PointerAnalysis, Set)}: when the
+	 * function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " calls an eager-only API.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " calls an eager-only API without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
+		// them does; sampling a single node can miss the call at an imprecise context.
+		boolean eagerOnly = nodes.stream().anyMatch(cgNode -> Util.callsEagerOnlyApi(cgNode, callGraph, pointerAnalysis));
+
+		this.hasEagerOnlyCalls = eagerOnly;
+
+		LOG.info(this + (eagerOnly ? " calls an eager-only API." : " calls no eager-only APIs."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body (transitively) invokes an eager-only API, {@code null} if undetermined.
+	 *
+	 * @return True iff this function calls an eager-only API, null if undetermined.
+	 */
+	public Boolean getHasEagerOnlyCalls() {
+		return this.hasEagerOnlyCalls;
 	}
 
 	@Override

@@ -409,6 +409,67 @@ public class Util {
 		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
 	}
 
+	/** Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}). */
+	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy");
+
+	/**
+	 * True iff {@code node}, transitively over its call-graph successors, invokes an eager-only API (e.g. {@code Tensor.numpy()}), which
+	 * raises under {@code tf.function} tracing. Detection is by callee attribute name rather than receiver typing: the receiver's tensor
+	 * typing is frequently unavailable (e.g. the result of a user-defined callable), and missing a real {@code .numpy()} call would
+	 * hybridize a function that crashes on first call, while over-matching only declines an optimization. Only user-defined bodies are
+	 * scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks, both mirroring
+	 * {@link #performsTensorFlowOp(CGNode, CallGraph, PointerAnalysis, Set)}. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param callGraph The call graph, used to follow callees transitively.
+	 * @param pointerAnalysis The pointer analysis, used to resolve the callee's attribute name.
+	 * @return True iff an eager-only API call is reachable from {@code node}.
+	 */
+	public static boolean callsEagerOnlyApi(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return callsEagerOnlyApi(node, callGraph, pointerAnalysis, Sets.newHashSet());
+	}
+
+	private static boolean callsEagerOnlyApi(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		if (!isTensorFlowNode(node)) {
+			IR ir = node.getIR();
+
+			if (ir != null) {
+				DefUse defUse = node.getDU();
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (instruction instanceof PythonInvokeInstruction invoke && invokesEagerOnlyApi(node, invoke, defUse, pointerAnalysis))
+						return true;
+			}
+		}
+
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
+			CGNode succNode = succNodes.next();
+
+			if (callsEagerOnlyApi(succNode, callGraph, pointerAnalysis, seen))
+				return true;
+		}
+
+		return false;
+	}
+
+	/** True iff {@code invoke}'s callee is an attribute read whose member name is an eager-only method name (e.g. {@code numpy}). */
+	private static boolean invokesEagerOnlyApi(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (def instanceof PythonPropertyRead read) {
+			String member = resolveStringConstant(node, read.getMemberRef(), pointerAnalysis);
+			return member != null && EAGER_ONLY_METHOD_NAMES.contains(member);
+		}
+
+		return false;
+	}
+
 	/** True iff any value defined by {@code instruction} is typed as a tensor (its pointer key is in {@code tensorTypedKeys}). */
 	private static boolean definesTensor(CGNode node, SSAInstruction instruction, PointerAnalysis<InstanceKey> pointerAnalysis,
 			Set<PointerKey> tensorTypedKeys) {

@@ -9352,6 +9352,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
+	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
+	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The
+	 * top-level {@code compute(t).numpy()} call exercises the caller side: an eager-only call on a function's <em>result</em> must not be
+	 * attributed to the function itself.
+	 */
+	@Test
+	public void testEagerOnlyCallsBlockHybridization() throws Exception {
+		Function fetch = getFunction("fetch");
+		assertTrue("`fetch` calls `numpy()` on its reduced tensor.", fetch.getHasEagerOnlyCalls());
+		assertNull("`fetch` must not pass a precondition; it calls an eager-only API.", fetch.getPassingPrecondition());
+		assertNotNull("`fetch` fails with HAS_EAGER_ONLY_CALLS.",
+				fetch.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function outer = getFunction("outer");
+		assertTrue("`outer` reaches `numpy()` transitively through `fetch`.", outer.getHasEagerOnlyCalls());
+		assertNull("`outer` must not pass a precondition; it transitively calls an eager-only API.", outer.getPassingPrecondition());
+		assertNotNull("`outer` fails with HAS_EAGER_ONLY_CALLS.",
+				outer.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function compute = getFunction("compute");
+		assertFalse("`compute` makes no eager-only calls; the `numpy()` call on its result belongs to the caller.",
+				compute.getHasEagerOnlyCalls());
+		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
 	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
 	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation
