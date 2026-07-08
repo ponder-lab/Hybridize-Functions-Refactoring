@@ -9428,7 +9428,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a comprehension over a tainted parameter compiles to a
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
 	 * {@code np.concatenate} sink would go undetected. Distills NLPGNN's {@code TUDataset.cat}, the one corpus crasher the initial #743
 	 * detector missed.
