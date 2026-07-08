@@ -152,6 +152,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckEagerOnlyCalls = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_EAGER_ONLY_CALLS.key());
 
+	private boolean alwaysCheckNumpyCalls = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_NUMPY_CALLS.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -215,7 +217,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"type hints", "parallel", "speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
+				"numpy calls", "type hints", "parallel", "speculative", "test entrypoints", "infer input signatures",
+				"targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		resultsHeader.add("time (s)");
@@ -275,6 +278,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setTargetedCfaDepth(targetedCfaDepth);
 					processor.setAlwaysCheckTensorComputation(this.getAlwaysCheckTensorComputation());
 					processor.setAlwaysCheckEagerOnlyCalls(this.getAlwaysCheckEagerOnlyCalls());
+					processor.setAlwaysCheckNumpyCalls(this.getAlwaysCheckNumpyCalls());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -370,6 +374,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// eager-only calls.
 					resultsRecord.add(this.getAlwaysCheckEagerOnlyCalls());
+
+					// numpy calls.
+					resultsRecord.add(this.getAlwaysCheckNumpyCalls());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -564,10 +571,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
-				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls", "autograph",
-				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
-				"supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation",
-				"input_signature absence reason", "refactoring", "passing precondition", "status");
+				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
+				"numpy calls on parameters", "autograph", "experimental_autograph_options", "experimental_follow_type_hints",
+				"experimental_implements", "func", "input_signature", "supplied input_signature", "jit_compile", "reduce_retracing",
+				"inferred input_signature", "input_signature relation", "input_signature absence reason", "refactoring",
+				"passing precondition", "status");
 	}
 
 	/**
@@ -642,7 +650,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
-				function.getHasTensorComputation(), function.getHasEagerOnlyCalls());
+				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -748,6 +756,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckEagerOnlyCalls() {
 		return alwaysCheckEagerOnlyCalls;
+	}
+
+	public boolean getAlwaysCheckNumpyCalls() {
+		return alwaysCheckNumpyCalls;
 	}
 
 	public boolean getProcessFunctionsInParallel() {

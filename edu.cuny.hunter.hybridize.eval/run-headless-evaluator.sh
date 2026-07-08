@@ -22,7 +22,8 @@
 # only the flags you set in the environment and lets the tool default the rest,
 # so a useful run sets at least PERFORM_ANALYSIS=true. Recognized knobs:
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
-# CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, PROCESS_IN_PARALLEL, FOLLOW_TYPE_HINTS, SPECULATIVE,
+# CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, PROCESS_IN_PARALLEL,
+# FOLLOW_TYPE_HINTS, SPECULATIVE,
 # TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
 # (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
@@ -52,6 +53,7 @@ exec "$ECLIPSE" \
 	${CHECK_RECURSION+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckRecursion="$CHECK_RECURSION"} \
 	${CHECK_TENSOR_COMPUTATION+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckTensorComputation="$CHECK_TENSOR_COMPUTATION"} \
 	${CHECK_EAGER_ONLY_CALLS+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckEagerOnlyCalls="$CHECK_EAGER_ONLY_CALLS"} \
+	${CHECK_NUMPY_CALLS+-Dedu.cuny.hunter.hybridize.eval.alwaysCheckNumpyCalls="$CHECK_NUMPY_CALLS"} \
 	${PROCESS_IN_PARALLEL+-Dedu.cuny.hunter.hybridize.eval.processFunctionsInParallel="$PROCESS_IN_PARALLEL"} \
 	${FOLLOW_TYPE_HINTS+-Dedu.cuny.hunter.hybridize.eval.alwaysFollowTypeHints="$FOLLOW_TYPE_HINTS"} \
 	${SPECULATIVE+-Dedu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis="$SPECULATIVE"} \

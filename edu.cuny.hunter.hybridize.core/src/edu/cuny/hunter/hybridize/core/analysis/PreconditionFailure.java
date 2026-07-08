@@ -53,7 +53,14 @@ public enum PreconditionFailure {
 	 * The function's body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under {@code tf.function}
 	 * tracing, so hybridization would not preserve semantics. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
 	 */
-	HAS_EAGER_ONLY_CALLS(15);
+	HAS_EAGER_ONLY_CALLS(15),
+
+	/**
+	 * The function's body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises under
+	 * {@code tf.function} tracing once the parameters become symbolic tensors, so hybridization would not preserve semantics. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 */
+	HAS_NUMPY_CALLS_ON_PARAMETERS(16);
 
 	static {
 		// check that the codes are unique.

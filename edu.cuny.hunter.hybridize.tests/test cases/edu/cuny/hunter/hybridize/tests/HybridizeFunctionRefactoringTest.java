@@ -9379,6 +9379,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a
+	 * function that (transitively) applies a numpy API to a value flowing from its parameters must not hybridize, since the call raises
+	 * under {@code tf.function} tracing once the parameters become symbolic (it fails with
+	 * {@link PreconditionFailure#HAS_NUMPY_CALLS_ON_PARAMETERS}). Covers the direct sink ({@code scale}), the sink inside a callee reached
+	 * by argument flow ({@code outer} via {@code helper}), and the sink fed by a clean callee's tainted return ({@code chained} via
+	 * {@code half}); {@code compute} (no numpy) and {@code half} (tensor op only) remain P1.
+	 */
+	@Test
+	public void testNumpyCallsOnParametersBlockHybridization() throws Exception {
+		Function scale = getFunction("scale");
+		assertTrue("`scale` applies `np.maximum` to its parameter.", scale.getHasNumpyCallsOnParameters());
+		assertNull("`scale` must not pass a precondition.", scale.getPassingPrecondition());
+		assertNotNull("`scale` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				scale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function outer = getFunction("outer");
+		assertTrue("`outer` reaches `np.sum` through `helper` by argument flow.", outer.getHasNumpyCallsOnParameters());
+		assertNotNull("`outer` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				outer.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function chained = getFunction("chained");
+		assertTrue("`chained` applies `np.abs` to `half`'s tainted return.", chained.getHasNumpyCallsOnParameters());
+		assertNotNull("`chained` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				chained.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function half = getFunction("half");
+		assertFalse("`half` applies no numpy; its tainted return is the caller's concern.", half.getHasNumpyCallsOnParameters());
+		assertEquals("`half` still hybridizes (P1).", P1, half.getPassingPrecondition());
+
+		Function compute = getFunction("compute");
+		assertFalse("`compute` applies no numpy to its parameter.", compute.getHasNumpyCallsOnParameters());
+		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the trace-time-availability carve-out of the parameter-flow numpy precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): numpy over a parameter's {@code shape} is benign under
+	 * {@code tf.function} tracing (the shape is an ordinary Python object at trace time), so a {@code shape} read launders the taint and
+	 * the function still hybridizes. Distills deep_recommenders' {@code PositionEncoding.call}.
+	 */
+	@Test
+	public void testNumpyCallsSanitizedByShape() throws Exception {
+		Function encode = getFunction("encode");
+		assertFalse("`encode`'s numpy operates on `x.shape` reads, which are trace-time available.", encode.getHasNumpyCallsOnParameters());
+		assertEquals("`encode` still hybridizes (P1).", P1, encode.getPassingPrecondition());
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
 	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
 	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation

@@ -976,6 +976,13 @@ public class Function {
 	private Boolean hasEagerOnlyCalls;
 
 	/**
+	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises
+	 * under {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the
+	 * precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 */
+	private Boolean hasNumpyCallsOnParameters;
+
+	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
 	private Boolean hasPrimitiveParameter;
@@ -1098,7 +1105,12 @@ public class Function {
 								// Invokes an eager-only API, which raises under tf.function tracing (issue 363). A safety failure, so it
 								// takes precedence over the barren benefit signal below.
 								this.addFailure(PreconditionFailure.HAS_EAGER_ONLY_CALLS,
-										"Can't hybridize a function that calls eager-only APIs like numpy().");
+										"Can't hybridize a function that calls eager-only APIs like Tensor.numpy().");
+							else if (this.getHasNumpyCallsOnParameters() != null && this.getHasNumpyCallsOnParameters())
+								// Applies numpy to parameter-flowing values, which raises under tf.function tracing (issue 740). The
+								// second safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
+										"Can't hybridize a function that applies numpy to values derived from its parameters.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1463,6 +1475,51 @@ public class Function {
 	 */
 	public Boolean getHasEagerOnlyCalls() {
 		return this.hasEagerOnlyCalls;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters,
+	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
+	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeNumpyCallsOnParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " applies numpy to its parameters.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " applies numpy to its parameters without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It applies numpy to its parameters if
+		// any of them does; sampling a single node can miss the flow at an imprecise context.
+		boolean numpyOnParameters = nodes.stream()
+				.anyMatch(cgNode -> Util.appliesNumpyToParameters(cgNode, this.isMethod(), callGraph, pointerAnalysis));
+
+		this.hasNumpyCallsOnParameters = numpyOnParameters;
+
+		LOG.info(this + (numpyOnParameters ? " applies numpy to its parameters." : " applies no numpy to its parameters."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a parameter-flowing value, {@code null} if
+	 * undetermined.
+	 *
+	 * @return True iff this function applies numpy to its parameters, null if undetermined.
+	 */
+	public Boolean getHasNumpyCallsOnParameters() {
+		return this.hasNumpyCallsOnParameters;
 	}
 
 	@Override

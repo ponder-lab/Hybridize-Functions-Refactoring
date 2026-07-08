@@ -108,6 +108,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckEagerOnlyCalls;
 
+	private boolean alwaysCheckNumpyCalls;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -456,6 +458,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckEagerOnlyCalls() || barrenCouldDecide)
 					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis());
 
+				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
+				// gate; overridable independently via alwaysCheckNumpyCalls.
+				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
+					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -744,6 +751,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckEagerOnlyCalls(boolean alwaysCheckEagerOnlyCalls) {
 		this.alwaysCheckEagerOnlyCalls = alwaysCheckEagerOnlyCalls;
+	}
+
+	public boolean getAlwaysCheckNumpyCalls() {
+		return this.alwaysCheckNumpyCalls;
+	}
+
+	/**
+	 * Force the parameter-flow numpy check (issue 740) on every candidate, not only tensor-parameter ones. Off by default: the check only
+	 * affects a transformation decision when the function has a tensor parameter, so this is for measurement (reporting parameter-flow
+	 * numpy use corpus-wide), mirroring {@code alwaysCheckEagerOnlyCalls}.
+	 *
+	 * @param alwaysCheckNumpyCalls Whether to always compute whether a function applies numpy to its parameters.
+	 */
+	public void setAlwaysCheckNumpyCalls(boolean alwaysCheckNumpyCalls) {
+		this.alwaysCheckNumpyCalls = alwaysCheckNumpyCalls;
 	}
 
 	@Override
