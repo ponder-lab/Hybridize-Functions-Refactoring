@@ -57,7 +57,6 @@ import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
-import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
@@ -496,10 +495,6 @@ public class Util {
 	 */
 	private static final Set<String> TRACE_TIME_AVAILABLE_MEMBER_NAMES = Set.of("shape", "dtype");
 
-	/** The result of a taint scan: whether a numpy/scipy sink was reached, and whether the scanned node's return value is tainted. */
-	private record TaintResult(boolean sinkReached, boolean returnsTainted) {
-	}
-
 	/**
 	 * True iff {@code node} (transitively through user-defined callees) applies a numpy/scipy API to a value flowing from its parameters.
 	 * Under {@code @tf.function}, parameter values become symbolic tensors during tracing, and numpy/scipy applied to them raises, so such
@@ -534,47 +529,41 @@ public class Util {
 		if (sources.isEmpty())
 			return false;
 
-		return scanForTaintedNumpySinks(node, sources, callGraph, pointerAnalysis, new HashMap<>()).sinkReached();
+		return scanForTaintedNumpySinks(node, sources, callGraph, pointerAnalysis, new HashMap<>());
 	}
 
 	/**
 	 * Worklist taint propagation over {@code node}'s def-use chains from the given tainted value numbers. Any instruction with a tainted
 	 * use taints its definitions, except sanitizer reads; a numpy/scipy invocation with a tainted use is a sink; a user-defined callee
-	 * invoked with tainted positional arguments is scanned recursively (its tainted return taints the call-site definition). Memoized on
-	 * (node, tainted seed) with an optimistic cycle guard.
+	 * invoked with tainted positional arguments is scanned recursively, and the call-site definitions are tainted conservatively (issue
+	 * 745). Memoized on (node, tainted seed) with an optimistic cycle guard.
 	 */
-	private static TaintResult scanForTaintedNumpySinks(CGNode node, Set<Integer> taintedSeed, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis, Map<String, TaintResult> memo) {
+	private static boolean scanForTaintedNumpySinks(CGNode node, Set<Integer> taintedSeed, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<String, Boolean> memo) {
 		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(taintedSeed);
-		TaintResult cached = memo.get(key);
+		Boolean cached = memo.get(key);
 
 		if (cached != null)
 			return cached;
 
 		// Optimistic cycle guard: a recursive revisit contributes nothing new.
-		memo.put(key, new TaintResult(false, false));
+		memo.put(key, Boolean.FALSE);
 
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new TaintResult(false, false);
+			return false;
 
 		DefUse defUse = node.getDU();
 		Set<Integer> tainted = new HashSet<>(taintedSeed);
 		Deque<Integer> worklist = new ArrayDeque<>(taintedSeed);
 		boolean sink = false;
-		boolean returnsTainted = false;
 
 		while (!worklist.isEmpty()) {
 			int valueNumber = worklist.pop();
 
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
-
-				if (use instanceof SSAReturnInstruction) {
-					returnsTainted = true;
-					continue;
-				}
 
 				// Sanitizer: a shape/dtype read off a tainted value produces a trace-time-available result.
 				if (use instanceof PythonPropertyRead read && read.getObjectRef() == valueNumber) {
@@ -598,9 +587,6 @@ public class Util {
 						if (tainted.contains(invoke.getUse(j)))
 							taintedSlots.add(j);
 
-					boolean analyzedCallee = false;
-					boolean calleeReturnsTainted = false;
-
 					if (!taintedSlots.isEmpty())
 						for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
 							if (isTensorFlowNode(target))
@@ -621,22 +607,15 @@ public class Util {
 							if (targetSources.isEmpty())
 								continue;
 
-							analyzedCallee = true;
-
-							TaintResult targetResult = scanForTaintedNumpySinks(target, targetSources, callGraph, pointerAnalysis, memo);
-
-							if (targetResult.sinkReached())
+							if (scanForTaintedNumpySinks(target, targetSources, callGraph, pointerAnalysis, memo))
 								sink = true;
-
-							if (targetResult.returnsTainted())
-								calleeReturnsTainted = true;
 						}
 
-					// Precise return flow: when every analyzed user callee returns clean, the call site's definitions stay
-					// untainted. An unanalyzed callee (library summary, no IR) falls through to the conservative def-taint below,
-					// as does a tainted return.
-					if (analyzedCallee && !calleeReturnsTainted)
-						continue;
+					// Call-site definitions are tainted conservatively below whenever any argument is tainted. Value-level
+					// return-taint cannot see element-through-container flow—a comprehension over a tainted parameter returns a
+					// FRESH container whose elements are tainted but whose value is not (NLPGNN's TUDataset.cat, issue 745)—and
+					// for a safety precondition, over-tainting only declines an optimization while under-tainting ships a
+					// crasher.
 				}
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
@@ -648,9 +627,8 @@ public class Util {
 			}
 		}
 
-		TaintResult result = new TaintResult(sink, returnsTainted);
-		memo.put(key, result);
-		return result;
+		memo.put(key, sink);
+		return sink;
 	}
 
 	/** True iff {@code invoke}'s callee resolves to the numpy/scipy namespace by attribute-chain walk or import-alias fallback. */
