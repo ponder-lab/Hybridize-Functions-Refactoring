@@ -3,10 +3,15 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -52,6 +57,7 @@ import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
+import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
@@ -468,6 +474,202 @@ public class Util {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Global-read names identifying the numpy/scipy modules by import alias, mirroring {@link #TENSORFLOW_MODULE_GLOBAL_NAMES}. Unlike the
+	 * TensorFlow fallback, whose over-recognition is incompleteness-safe (it only lets an eager function hybridize), over-recognition here
+	 * over-blocks: a non-numpy global named {@code np} would fail the precondition. Accepted safety-first; the evaluation measures the
+	 * cost. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 */
+	private static final Set<String> NUMPY_MODULE_GLOBAL_NAMES = Set.of("global numpy", "global np", "global scipy", "global sp");
+
+	/** Type-name prefixes of the numpy/scipy module objects, for the points-to (precise) branch of the module test. */
+	private static final Set<String> NUMPY_MODULE_TYPE_NAME_PREFIXES = Set.of("Lnumpy", "Lscipy");
+
+	/**
+	 * Property-read member names whose results are available at {@code tf.function} trace time on a symbolic tensor, so a read of them
+	 * launders taint for {@link #appliesNumpyToParameters}: {@code x.shape} is a {@code TensorShape} and {@code x.dtype} a {@code DType},
+	 * both ordinary Python objects during tracing, and everything chaining off them ({@code ndims}, subscripts, {@code as_list()}) inherits
+	 * the laundered status. Probe-verified on TensorFlow 2.9.3. Deliberately minimal: {@code len()} and {@code str()} are also trace-time
+	 * legal but remain tainted conservatively, since no corpus case needs them.
+	 */
+	private static final Set<String> TRACE_TIME_AVAILABLE_MEMBER_NAMES = Set.of("shape", "dtype");
+
+	/** The result of a taint scan: whether a numpy/scipy sink was reached, and whether the scanned node's return value is tainted. */
+	private record TaintResult(boolean sinkReached, boolean returnsTainted) {
+	}
+
+	/**
+	 * True iff {@code node} (transitively through user-defined callees) applies a numpy/scipy API to a value flowing from its parameters.
+	 * Under {@code @tf.function}, parameter values become symbolic tensors during tracing, and numpy/scipy applied to them raises, so such
+	 * a function crashes on first call when hybridized. The gate is an SSA def-use taint slice rather than a points-to intersection: a
+	 * points-to-keyed gate silently passes a crasher under any modeling gap that empties a points-to set, and this precondition exists
+	 * precisely to hold while upstream modeling is in motion. Property reads of {@code shape}/{@code dtype} launder taint
+	 * ({@link #TRACE_TIME_AVAILABLE_MEMBER_NAMES}). Known narrowings, each documented on the issue: positional arguments only cross call
+	 * sites, field-mediated and subscript-store flows are not tracked, and a method's receiver is never a source. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
+	 * @param callGraph The call graph, used to follow user-defined callees.
+	 * @param pointerAnalysis The pointer analysis, used to resolve attribute names and module roots.
+	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
+	 */
+	public static boolean appliesNumpyToParameters(CGNode node, boolean method, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return false;
+
+		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver for an instance method. Neither is a
+		// taint source—tainting the receiver would block any method mixing numpy over scalar fields with sanitized tensor use.
+		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+		Set<Integer> sources = new HashSet<>();
+
+		for (int i = method ? 2 : 1; i < parameters.length; i++)
+			sources.add(parameters[i]);
+
+		if (sources.isEmpty())
+			return false;
+
+		return scanForTaintedNumpySinks(node, sources, callGraph, pointerAnalysis, new HashMap<>()).sinkReached();
+	}
+
+	/**
+	 * Worklist taint propagation over {@code node}'s def-use chains from the given tainted value numbers. Any instruction with a tainted
+	 * use taints its definitions, except sanitizer reads; a numpy/scipy invocation with a tainted use is a sink; a user-defined callee
+	 * invoked with tainted positional arguments is scanned recursively (its tainted return taints the call-site definition). Memoized on
+	 * (node, tainted seed) with an optimistic cycle guard.
+	 */
+	private static TaintResult scanForTaintedNumpySinks(CGNode node, Set<Integer> taintedSeed, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<String, TaintResult> memo) {
+		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(taintedSeed);
+		TaintResult cached = memo.get(key);
+
+		if (cached != null)
+			return cached;
+
+		// Optimistic cycle guard: a recursive revisit contributes nothing new.
+		memo.put(key, new TaintResult(false, false));
+
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return new TaintResult(false, false);
+
+		DefUse defUse = node.getDU();
+		Set<Integer> tainted = new HashSet<>(taintedSeed);
+		Deque<Integer> worklist = new ArrayDeque<>(taintedSeed);
+		boolean sink = false;
+		boolean returnsTainted = false;
+
+		while (!worklist.isEmpty()) {
+			int valueNumber = worklist.pop();
+
+			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
+				SSAInstruction use = uses.next();
+
+				if (use instanceof SSAReturnInstruction) {
+					returnsTainted = true;
+					continue;
+				}
+
+				// Sanitizer: a shape/dtype read off a tainted value produces a trace-time-available result.
+				if (use instanceof PythonPropertyRead read && read.getObjectRef() == valueNumber) {
+					String member = resolveStringConstant(node, read.getMemberRef(), pointerAnalysis);
+
+					if (member != null && TRACE_TIME_AVAILABLE_MEMBER_NAMES.contains(member))
+						continue;
+				}
+
+				if (use instanceof PythonInvokeInstruction invoke) {
+					if (invokesNumpyApi(node, invoke, defUse, pointerAnalysis)) {
+						sink = true;
+						continue;
+					}
+
+					// Cross into user-defined callees with the tainted positional argument slots. Positional argument j (use j)
+					// binds the callee's parameter slot j; slot 0 is the callee's function object on both sides.
+					Set<Integer> taintedSlots = new TreeSet<>();
+
+					for (int j = 1; j < invoke.getNumberOfUses(); j++)
+						if (tainted.contains(invoke.getUse(j)))
+							taintedSlots.add(j);
+
+					if (!taintedSlots.isEmpty())
+						for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+							if (isTensorFlowNode(target))
+								continue;
+
+							IR targetIr = target.getIR();
+
+							if (targetIr == null)
+								continue;
+
+							int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
+							Set<Integer> targetSources = new HashSet<>();
+
+							for (int slot : taintedSlots)
+								if (slot < targetParameters.length)
+									targetSources.add(targetParameters[slot]);
+
+							if (targetSources.isEmpty())
+								continue;
+
+							TaintResult targetResult = scanForTaintedNumpySinks(target, targetSources, callGraph, pointerAnalysis, memo);
+
+							if (targetResult.sinkReached())
+								sink = true;
+
+							if (!targetResult.returnsTainted())
+								continue;
+
+							// The callee's tainted return taints this call site's definitions (fall through below).
+						}
+				}
+
+				for (int d = 0; d < use.getNumberOfDefs(); d++) {
+					int def = use.getDef(d);
+
+					if (tainted.add(def))
+						worklist.push(def);
+				}
+			}
+		}
+
+		TaintResult result = new TaintResult(sink, returnsTainted);
+		memo.put(key, result);
+		return result;
+	}
+
+	/** True iff {@code invoke}'s callee resolves to the numpy/scipy namespace by attribute-chain walk or import-alias fallback. */
+	private static boolean invokesNumpyApi(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return isNumpyRooted(node, invoke.getUse(0), defUse, pointerAnalysis);
+	}
+
+	/** True iff {@code use}'s attribute chain roots at the numpy/scipy module (points-to preferred, import alias as fallback). */
+	private static boolean isNumpyRooted(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		if (isNumpyModule(node, use, defUse, pointerAnalysis))
+			return true;
+
+		SSAInstruction def = defUse.getDef(use);
+
+		if (def instanceof PythonPropertyRead read)
+			return isNumpyRooted(node, read.getObjectRef(), defUse, pointerAnalysis);
+
+		return false;
+	}
+
+	/** True iff {@code use} refers to the numpy/scipy module. Prefers points-to; falls back to the import alias on a global read. */
+	private static boolean isNumpyModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		for (String prefix : NUMPY_MODULE_TYPE_NAME_PREFIXES)
+			if (pointsToType(node, use, pointerAnalysis, prefix, false))
+				return true;
+
+		return defUse.getDef(use) instanceof AstGlobalRead global && NUMPY_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 
 	/** True iff any value defined by {@code instruction} is typed as a tensor (its pointer key is in {@code tensorTypedKeys}). */
