@@ -421,7 +421,11 @@ public class Util {
 	/** The {@code dtype} attribute: a trace-time-constant element type, so numpy over it is always safe (launders taint). */
 	private static final String DTYPE_MEMBER_NAME = "dtype";
 
-	/** The {@code shape} attribute: numpy over it is safe only when the tensor's shape is statically known (see #747). */
+	/**
+	 * The {@code shape} attribute: its read yields shape metadata, over which numpy is permitted (precision-favoring). This is sound for
+	 * the static dimensions the corpus exercises but misses numpy over a genuinely dynamic dimension, itself surfaced by the ⊤-shape
+	 * reporting. See {@link #scanForTaintedNumpySinks} and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 */
 	private static final String SHAPE_MEMBER_NAME = "shape";
 
 	/**
@@ -499,9 +503,10 @@ public class Util {
 	 * a function crashes on first call when hybridized. The gate is an SSA def-use taint slice rather than a points-to intersection: a
 	 * points-to-keyed gate silently passes a crasher under any modeling gap that empties a points-to set, and this precondition exists
 	 * precisely to hold while upstream modeling is in motion. A {@code dtype} read launders taint (the element type is a trace-time
-	 * constant); a {@code shape} read launders only when the tensor's shape is statically known, since numpy over a dynamic dimension
-	 * raises under tracing (#747). Known narrowings, each documented on the issue: positional arguments only cross call sites,
-	 * field-mediated and subscript-store flows are not tracked, and a method's receiver is never a source. See
+	 * constant); a {@code shape} read yields shape metadata, over which numpy is permitted (precision-favoring: sound for the static
+	 * dimensions the corpus exercises, but missing numpy over a genuinely dynamic dimension, surfaced separately by ⊤-shape reporting;
+	 * #747). Known narrowings, each documented on the issue: positional arguments only cross call sites, field-mediated and subscript-store
+	 * flows are not tracked, and a method's receiver is never a source. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
@@ -602,9 +607,14 @@ public class Util {
 
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (invokesNumpyApi(node, invoke, defUse, pointerAnalysis)) {
-						// numpy over a value-tainted argument raises; over a shape-tainted argument it is permitted.
-						if (valueColored)
+						// numpy over a value-tainted argument raises; over a shape-tainted argument it is permitted. A value-level numpy is
+						// also a value escape, so record it: this keeps the shape-extractor classification honest even though `sink`, once
+						// set, already dominates the decision.
+						if (valueColored) {
 							sink = true;
+							valueEscapes = true;
+						}
+
 						continue;
 					}
 
