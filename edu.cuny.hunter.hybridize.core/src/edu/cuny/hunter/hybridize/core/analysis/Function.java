@@ -1105,12 +1105,12 @@ public class Function {
 								// Invokes an eager-only API, which raises under tf.function tracing (issue 363). A safety failure, so it
 								// takes precedence over the barren benefit signal below.
 								this.addFailure(PreconditionFailure.HAS_EAGER_ONLY_CALLS,
-										"Can't hybridize a function that calls eager-only APIs like numpy().");
+										"Can't hybridize a function that calls eager-only APIs like Tensor.numpy().");
 							else if (this.getHasNumpyCallsOnParameters() != null && this.getHasNumpyCallsOnParameters())
 								// Applies numpy to parameter-flowing values, which raises under tf.function tracing (issue 740). The
 								// second safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
-										"Can't hybridize a function that applies numpy to its parameters.");
+										"Can't hybridize a function that applies numpy to values derived from its parameters.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.

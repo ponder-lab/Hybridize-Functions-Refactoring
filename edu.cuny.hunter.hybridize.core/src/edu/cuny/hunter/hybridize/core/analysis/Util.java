@@ -598,6 +598,9 @@ public class Util {
 						if (tainted.contains(invoke.getUse(j)))
 							taintedSlots.add(j);
 
+					boolean analyzedCallee = false;
+					boolean calleeReturnsTainted = false;
+
 					if (!taintedSlots.isEmpty())
 						for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
 							if (isTensorFlowNode(target))
@@ -618,16 +621,22 @@ public class Util {
 							if (targetSources.isEmpty())
 								continue;
 
+							analyzedCallee = true;
+
 							TaintResult targetResult = scanForTaintedNumpySinks(target, targetSources, callGraph, pointerAnalysis, memo);
 
 							if (targetResult.sinkReached())
 								sink = true;
 
-							if (!targetResult.returnsTainted())
-								continue;
-
-							// The callee's tainted return taints this call site's definitions (fall through below).
+							if (targetResult.returnsTainted())
+								calleeReturnsTainted = true;
 						}
+
+					// Precise return flow: when every analyzed user callee returns clean, the call site's definitions stay
+					// untainted. An unanalyzed callee (library summary, no IR) falls through to the conservative def-taint below,
+					// as does a tainted return.
+					if (analyzedCallee && !calleeReturnsTainted)
+						continue;
 				}
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
