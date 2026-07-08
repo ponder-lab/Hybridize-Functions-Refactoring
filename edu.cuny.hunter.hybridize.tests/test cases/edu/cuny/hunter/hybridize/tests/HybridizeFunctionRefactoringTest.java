@@ -9427,6 +9427,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy precondition through list comprehensions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
+	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
+	 * {@code np.concatenate} sink would go undetected. Distills NLPGNN's {@code TUDataset.cat}, the one corpus crasher the initial #743
+	 * detector missed.
+	 */
+	@Test
+	public void testNumpyCallsThroughComprehension() throws Exception {
+		Function cat = getFunction("cat");
+		assertTrue("`cat` applies numpy to its parameter's elements through list comprehensions.", cat.getHasNumpyCallsOnParameters());
+		assertNull("`cat` must not pass a precondition.", cat.getPassingPrecondition());
+		assertNotNull("`cat` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				cat.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
 	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
 	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation
