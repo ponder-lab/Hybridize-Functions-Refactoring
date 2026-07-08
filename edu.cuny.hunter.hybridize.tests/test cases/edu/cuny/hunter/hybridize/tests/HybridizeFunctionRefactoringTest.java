@@ -9427,6 +9427,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the interprocedural shape-extractor recovery of the parameter-flow numpy precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code reduce_via_shape} applies {@code np.prod} to the
+	 * result of a helper ({@code get_shape}) that consumes its tensor parameter only through {@code .shape.as_list()}. Because the helper
+	 * is a shape extractor, its result is shape metadata, so numpy over it is graph-compatible and the function still hybridizes — the
+	 * conservative call-site taint would have wrongly declined it. Distills NLPGNN's {@code DenseLayer3d.call} / {@code einsum_via_matmul}
+	 * / {@code get_shape_list}.
+	 */
+	@Test
+	public void testNumpyOnShapeThroughHelper() throws Exception {
+		Function reduce = getFunction("reduce_via_shape");
+		assertFalse("`reduce_via_shape`'s numpy operates on a shape extracted by `get_shape`, which is trace-time metadata.",
+				reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_via_shape` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+
+		Function getShape = getFunction("get_shape");
+		assertFalse("`get_shape` applies no numpy; it only reads `.shape`.", getShape.getHasNumpyCallsOnParameters());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
