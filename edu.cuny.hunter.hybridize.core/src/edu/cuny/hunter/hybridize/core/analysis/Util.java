@@ -41,6 +41,7 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
@@ -690,7 +691,14 @@ public class Util {
 	/** True iff {@code invoke} calls the built-in {@code slice} constructor (how a Python {@code x[a:b:c]} subscript is modeled). */
 	private static boolean invokesSliceBuiltin(PythonInvokeInstruction invoke, DefUse defUse) {
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-		return def instanceof AstLexicalRead lexical && SLICE_BUILTIN_NAME.equals(lexical.getAccess(0).variableName());
+
+		if (!(def instanceof AstLexicalRead lexical))
+			return false;
+
+		// Read the name via getName() rather than the variableName field, and guard the array: mirrors PythonModRefWithBuiltinFunctions
+		// (WALA 1.8.0 encapsulated the field).
+		Access[] accesses = lexical.getAccesses();
+		return accesses.length > 0 && SLICE_BUILTIN_NAME.equals(accesses[0].getName().fst);
 	}
 
 	/** The result of a two-color taint scan: whether numpy hit a value-tainted argument, and whether a value taint escaped this node. */
