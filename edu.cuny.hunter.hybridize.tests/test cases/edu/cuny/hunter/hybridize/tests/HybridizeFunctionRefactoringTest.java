@@ -9446,8 +9446,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the shape-aware (per-dimension) numpy precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747,
-	 * option D): {@code reduce_tail} calls {@code einsum_via_matmul(x, w, 1)}, which applies {@code np.prod} to
+	 * Pins the shape-aware (per-dimension) numpy precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747):
+	 * {@code reduce_tail} calls {@code einsum_via_matmul(x, w, 1)}, which applies {@code np.prod} to
 	 * {@code get_shape(input_tensor)[-num_inner_dims:]} - a slice covering only the trailing (statically-known) dimension. The precondition
 	 * consults the source tensor's per-dimension {@link com.ibm.wala.cast.python.ml.types.TensorType} across the interprocedural
 	 * {@code get_shape} extractor and the {@code slice} builtin (with {@code num_inner_dims} resolved to {@code 1} via the pointer
@@ -9482,6 +9482,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`clip_slice` must not pass a precondition.", clip.getPassingPrecondition());
 		assertNotNull("`clip_slice` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				clip.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the handling of shape metadata passed <em>as an argument</em> into a callee
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code via_arg} passes {@code get_shape(x)} to
+	 * {@code prod_of}, which applies {@code np.prod} to it. The shape descriptor is not propagated across the call boundary, so the callee
+	 * cannot prove the covered dimensions static; being precision-favoring on an unprovable shape, the precondition permits and the
+	 * function still hybridizes. TODO: with the sound policy this declines (#751); an alternative recovery is interprocedural descriptor
+	 * propagation, which would prove the shape static and permit soundly.
+	 */
+	@Test
+	public void testNumpyOnShapeArgumentToCallee() throws Exception {
+		Function viaArg = getFunction("via_arg");
+		assertFalse("`via_arg` passes shape metadata into a callee; without cross-boundary provenance the shape is unprovable and permitted"
+				+ " precision-favoringly.", viaArg.getHasNumpyCallsOnParameters());
+		assertEquals("`via_arg` still hybridizes (P1).", P1, viaArg.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins numpy over a shape derived from a tensor whose shape Ariadne cannot resolve (⊤): {@code reduce_top} applies {@code np.prod} to
+	 * the trailing dimension of {@code x}, but {@code x} is fed a {@code tf.constant(np.array(...))} value whose shape is ⊤ (wala/ML#539).
+	 * The precondition is precision-favoring on an unprovable shape, so it does not flag the function and it still hybridizes - the unit
+	 * reproduction of the corpus {@code DenseLayer3d.call} scenario, where {@code input_tensor} is likewise typed ⊤ (wala/ML#704) and is
+	 * recovered. TODO: with the sound policy this ⊤ case declines; invert when #751 lands (blocked on wala/ML#704).
+	 */
+	@Test
+	public void testNumpyOnTopShape() throws Exception {
+		Function reduceTop = getFunction("reduce_top");
+		assertFalse("`reduce_top`'s numpy is over an unprovable (⊤) shape, permitted precision-favoringly.",
+				reduceTop.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_top` still hybridizes (P1).", P1, reduceTop.getPassingPrecondition());
 	}
 
 	/**

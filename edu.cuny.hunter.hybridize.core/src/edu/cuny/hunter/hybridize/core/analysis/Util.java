@@ -523,9 +523,9 @@ public class Util {
 	 * points-to-keyed gate silently passes a crasher under any modeling gap that empties a points-to set, and this precondition exists
 	 * precisely to hold while upstream modeling is in motion. A {@code dtype} read launders taint (the element type is a trace-time
 	 * constant); a {@code shape} read (or {@code tf.shape}/{@code get_shape_list}) yields shape metadata, over which numpy is declined only
-	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (#747,
-	 * option D). Known narrowings, each documented on the issue: positional arguments only cross call sites, field-mediated and
-	 * subscript-store flows are not tracked, and a method's receiver is never a source. See
+	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (#747, the
+	 * per-dimension shape-aware verdict). Known narrowings, each documented on the issue: positional arguments only cross call sites,
+	 * field-mediated and subscript-store flows are not tracked, and a method's receiver is never a source. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
@@ -579,7 +579,7 @@ public class Util {
 	 * A shape-derived value tracked by the scan: the tensor whose shape it came from ({@code sourceTensor}, a value number in
 	 * {@code sourceNode}) and which of that tensor's dimensions it covers ({@code dims}; {@code null} means all dimensions). numpy over
 	 * such a value is safe iff the covered dimensions are statically known; the descriptor lets the sink consult the source tensor's
-	 * per-dim {@link TensorType}. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747 (option D).
+	 * per-dim {@link TensorType}. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private record ShapeDescriptor(CGNode sourceNode, int sourceTensor, Set<Integer> dims) {
 	}
@@ -593,8 +593,8 @@ public class Util {
 	 * The verdict for numpy applied to the shape-derived value described by {@code descriptor}. Consults the source tensor's per-dim
 	 * {@link TensorType} across all its analysis contexts: {@link ShapeStaticness#DYNAMIC} if any covered dimension is non-numeric in any
 	 * context (numpy would crash under tracing); {@link ShapeStaticness#STATIC} if every covered dimension is a {@link NumericDim} in every
-	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (unprovable,
-	 * so surfaced as a warning rather than a decline).
+	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (staticness
+	 * cannot be proven either way).
 	 */
 	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor, TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeAnalysis);
@@ -712,8 +712,10 @@ public class Util {
 	 * user-defined shape extractor such as {@code get_shape_list}); it carries a {@link ShapeDescriptor} identifying the source tensor and
 	 * the dimensions it covers, narrowed as the shape vector is sliced ({@code [-k:]}, with the bound resolved via the pointer analysis).
 	 * numpy over a shape-tainted argument is declined only when a covered dimension is provably dynamic in the source tensor's
-	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and an unprovable (⊤) shape is permitted here
-	 * (surfaced separately, not declined) - the option-D shape-aware verdict of #747.
+	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and only a provably-dynamic covered dimension
+	 * is a sink. An unprovable shape - a ⊤ type or a descriptor lost across a call boundary - is permitted here (precision-favoring), which
+	 * recovers the corpus DenseLayer idiom whose input tensor Ariadne types ⊤; the sound variant (decline the unprovable) is a one-line
+	 * change tracked by #751 (blocked on wala/ML#704). The per-dimension shape-aware verdict of #747.
 	 * <p>
 	 * Call sites are tainted conservatively (a value argument taints the call-site result), which follows a comprehension's
 	 * element-through-container flow (NLPGNN's {@code TUDataset.cat}, issue 745). The result is colored SHAPE only when the callee is a
@@ -779,8 +781,12 @@ public class Util {
 						// numpy over a value-tainted argument always raises under tracing (its content is never trace-time-static); it is
 						// also a value escape, so record that even though `sink`, once set, already dominates the decision. numpy over a
 						// shape-derived argument raises only when a covered dimension is dynamic: consult the source tensor's per-dim shape
-						// (option D, #747) and decline only on a provably-dynamic dimension; a proven-static shape is safe, and an
-						// unprovable (⊤) shape is permitted here (surfaced separately, not declined).
+						// and decline only on a provably-dynamic dimension (#747). A proven-static shape is safe; an unprovable shape - a ⊤
+						// type, or a descriptor lost across a call boundary - is PERMITTED here (precision-favoring), which recovers the
+						// corpus DenseLayer3d.call idiom whose input tensor Ariadne currently types ⊤ (wala/ML#704). This is unsound on a ⊤
+						// that is really dynamic; the sound variant declines instead.
+						// TODO: flip to decline-unless-provably-static (`descriptor == null || staticness(...) != STATIC`) once wala/ML#704
+						// lands and DenseLayer's shape resolves - a one-line change (#751).
 						if (valueColored) {
 							sink = true;
 							valueEscapes = true;
