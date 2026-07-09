@@ -657,7 +657,14 @@ public class Util {
 
 		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey))
 			if (instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof Number number) {
-				int candidate = number.intValue();
+				// Only an integral value in int range is a usable slice bound; a non-integral (e.g. float) constant would truncate under
+				// intValue() and wrongly "prove" a bound, so treat it as unresolvable.
+				long asLong = number.longValue();
+
+				if (number.doubleValue() != asLong || asLong < Integer.MIN_VALUE || asLong > Integer.MAX_VALUE)
+					return null;
+
+				int candidate = (int) asLong;
 
 				if (resolved != null && resolved != candidate)
 					return null; // ambiguous across contexts; refuse to guess.
