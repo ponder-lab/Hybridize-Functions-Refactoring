@@ -553,27 +553,33 @@ public class Util {
 		if (sources.isEmpty())
 			return false;
 
-		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, tensorTypeAnalysis, new HashMap<>())
-				.sink();
+		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, indexTensorTypes(tensorTypeAnalysis),
+				new HashMap<>()).sink();
 	}
 
 	/**
-	 * The {@link TensorType}s the tensor-type analysis associates with the local {@code valueNumber} in {@code node}, matched by (node,
-	 * value number) against the analysis's local pointer keys. Empty when the analysis has no tensor classification for the value (not
-	 * analyzed, or classified not-a-tensor).
+	 * Indexes {@code tensorTypeAnalysis}'s local pointer keys by (node, value number) once, so per-value lookups
+	 * ({@link #lookupTensorTypes}) are constant-time rather than a full linear scan of the analysis per call.
 	 */
-	private static Set<TensorType> lookupTensorTypes(CGNode node, int valueNumber, TensorTypeAnalysis tensorTypeAnalysis) {
-		Set<TensorType> result = new HashSet<>();
+	private static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
+		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
-			if (pair.fst instanceof LocalPointerKey local && local.getNode().equals(node) && local.getValueNumber() == valueNumber) {
-				TensorVariable tensorVariable = pair.snd;
+			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
+				index.computeIfAbsent(local.getNode(), n -> new HashMap<>()).computeIfAbsent(local.getValueNumber(), v -> new HashSet<>())
+						.addAll(pair.snd.getTypes());
 
-				if (tensorVariable != null)
-					result.addAll(tensorVariable.getTypes());
-			}
+		return index;
+	}
 
-		return result;
+	/**
+	 * The {@link TensorType}s the tensor-type analysis associates with the local {@code valueNumber} in {@code node}, from the (node, value
+	 * number) index built by {@link #indexTensorTypes}. Empty when the analysis has no tensor classification for the value (not analyzed,
+	 * or classified not-a-tensor).
+	 */
+	private static Set<TensorType> lookupTensorTypes(CGNode node, int valueNumber,
+			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
+		return tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(valueNumber, Set.of());
 	}
 
 	/**
@@ -597,8 +603,9 @@ public class Util {
 	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (staticness
 	 * cannot be proven either way).
 	 */
-	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor, TensorTypeAnalysis tensorTypeAnalysis) {
-		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeAnalysis);
+	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor,
+			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
+		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeIndex);
 
 		if (types.isEmpty())
 			return ShapeStaticness.TOP;
@@ -734,7 +741,7 @@ public class Util {
 	 * optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private static NumpyScanResult scanForTaintedNumpySinks(CGNode node, Set<Integer> valueSeed, Set<Integer> shapeSeed,
-			CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis,
+			CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex,
 			Map<String, NumpyScanResult> memo) {
 		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed);
 		NumpyScanResult cached = memo.get(key);
@@ -801,7 +808,7 @@ public class Util {
 						} else {
 							ShapeDescriptor descriptor = shapeDescriptors.get(valueNumber);
 
-							if (descriptor != null && numpyOverShapeStaticness(descriptor, tensorTypeAnalysis) == ShapeStaticness.DYNAMIC)
+							if (descriptor != null && numpyOverShapeStaticness(descriptor, tensorTypeIndex) == ShapeStaticness.DYNAMIC)
 								sink = true;
 						}
 
@@ -816,7 +823,7 @@ public class Util {
 							&& invoke.getUse(1) == valueNumber) {
 						ShapeDescriptor base = shapeDescriptors.get(valueNumber);
 						ShapeDescriptor narrowed = base == null ? null
-								: narrowBySlice(base, invoke, node, defUse, pointerAnalysis, tensorTypeAnalysis);
+								: narrowBySlice(base, invoke, node, defUse, pointerAnalysis, tensorTypeIndex);
 
 						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
 							if (narrowed != null)
@@ -883,7 +890,7 @@ public class Util {
 							analyzedCallee = true;
 
 							NumpyScanResult r = scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed, callGraph,
-									pointerAnalysis, tensorTypeAnalysis, memo);
+									pointerAnalysis, tensorTypeIndex, memo);
 
 							if (r.sink())
 								sink = true;
@@ -993,12 +1000,12 @@ public class Util {
 	 * slicing is not composed), so the caller falls back to an untracked shape taint.
 	 */
 	private static ShapeDescriptor narrowBySlice(ShapeDescriptor base, PythonInvokeInstruction invoke, CGNode node, DefUse defUse,
-			PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
 		if (base.dims() != null)
 			return null; // only slices of a full shape vector are modeled; nested slicing drops the descriptor (unprovable, so permitted
 							// under the current precision-favoring policy).
 
-		int rank = sourceRank(base, tensorTypeAnalysis);
+		int rank = sourceRank(base, tensorTypeIndex);
 
 		if (rank < 0)
 			return null;
@@ -1014,8 +1021,8 @@ public class Util {
 	/**
 	 * The rank of the source tensor of {@code descriptor} if all its analysis contexts agree on a concrete (non-⊤) rank, else {@code -1}.
 	 */
-	private static int sourceRank(ShapeDescriptor descriptor, TensorTypeAnalysis tensorTypeAnalysis) {
-		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeAnalysis);
+	private static int sourceRank(ShapeDescriptor descriptor, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
+		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeIndex);
 		int rank = -1;
 
 		for (TensorType type : types) {
