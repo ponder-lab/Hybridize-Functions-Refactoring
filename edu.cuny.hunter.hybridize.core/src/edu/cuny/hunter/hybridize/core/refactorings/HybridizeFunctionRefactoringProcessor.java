@@ -461,7 +461,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
 				// gate; overridable independently via alwaysCheckNumpyCalls.
 				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
-					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis());
+					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis(), analysis);
 
 				// check the function preconditions.
 				func.check();

@@ -9446,6 +9446,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the shape-aware (per-dimension) numpy precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747,
+	 * option D): {@code reduce_tail} calls {@code einsum_via_matmul(x, w, 1)}, which applies {@code np.prod} to
+	 * {@code get_shape(input_tensor)[-num_inner_dims:]} - a slice covering only the trailing (statically-known) dimension. The precondition
+	 * consults the source tensor's per-dimension {@link com.ibm.wala.cast.python.ml.types.TensorType} across the interprocedural
+	 * {@code get_shape} extractor and the {@code slice} builtin (with {@code num_inner_dims} resolved to {@code 1} via the pointer
+	 * analysis), proves the covered dimension static, and does not flag the function, so it still hybridizes. Distills NLPGNN's
+	 * {@code DenseLayer3d.call} / {@code einsum_via_matmul} / {@code get_shape_list}.
+	 */
+	@Test
+	public void testNumpyOnStaticShapeSlice() throws Exception {
+		Function reduce = getFunction("reduce_tail");
+		assertFalse("`reduce_tail`'s numpy touches only a statically-known trailing shape dimension.",
+				reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream

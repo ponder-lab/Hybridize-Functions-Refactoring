@@ -9,6 +9,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -40,8 +41,12 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
@@ -51,6 +56,7 @@ import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
+import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
@@ -58,6 +64,8 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
+import com.ibm.wala.ssa.SSAUnaryOpInstruction;
+import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
@@ -422,9 +430,10 @@ public class Util {
 	private static final String DTYPE_MEMBER_NAME = "dtype";
 
 	/**
-	 * The {@code shape} attribute: its read yields shape metadata, over which numpy is permitted (precision-favoring). This is sound for
-	 * the static dimensions the corpus exercises but misses numpy over a genuinely dynamic dimension, itself surfaced by the ⊤-shape
-	 * reporting. See {@link #scanForTaintedNumpySinks} and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * The {@code shape} attribute: its read yields shape metadata (a {@link ShapeDescriptor} covering every dimension of the read tensor).
+	 * numpy over shape metadata is safe iff the covered dimensions are statically known, which the scan decides per-dimension from the
+	 * source tensor's {@link TensorType}. See {@link #scanForTaintedNumpySinks} and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private static final String SHAPE_MEMBER_NAME = "shape";
 
@@ -503,10 +512,10 @@ public class Util {
 	 * a function crashes on first call when hybridized. The gate is an SSA def-use taint slice rather than a points-to intersection: a
 	 * points-to-keyed gate silently passes a crasher under any modeling gap that empties a points-to set, and this precondition exists
 	 * precisely to hold while upstream modeling is in motion. A {@code dtype} read launders taint (the element type is a trace-time
-	 * constant); a {@code shape} read yields shape metadata, over which numpy is permitted (precision-favoring: sound for the static
-	 * dimensions the corpus exercises, but missing numpy over a genuinely dynamic dimension, surfaced separately by ⊤-shape reporting;
-	 * #747). Known narrowings, each documented on the issue: positional arguments only cross call sites, field-mediated and subscript-store
-	 * flows are not tracked, and a method's receiver is never a source. See
+	 * constant); a {@code shape} read (or {@code tf.shape}/{@code get_shape_list}) yields shape metadata, over which numpy is declined only
+	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (#747,
+	 * option D). Known narrowings, each documented on the issue: positional arguments only cross call sites, field-mediated and
+	 * subscript-store flows are not tracked, and a method's receiver is never a source. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
@@ -516,7 +525,7 @@ public class Util {
 	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
 	 */
 	public static boolean appliesNumpyToParameters(CGNode node, boolean method, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis) {
+			PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
 		IR ir = node.getIR();
 
 		if (ir == null)
@@ -533,7 +542,146 @@ public class Util {
 		if (sources.isEmpty())
 			return false;
 
-		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, new HashMap<>()).sink();
+		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, tensorTypeAnalysis, new HashMap<>())
+				.sink();
+	}
+
+	/**
+	 * The {@link TensorType}s the tensor-type analysis associates with the local {@code valueNumber} in {@code node}, matched by (node,
+	 * value number) against the analysis's local pointer keys. Empty when the analysis has no tensor classification for the value (not
+	 * analyzed, or classified not-a-tensor).
+	 */
+	private static Set<TensorType> lookupTensorTypes(CGNode node, int valueNumber, TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<TensorType> result = new HashSet<>();
+
+		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
+			if (pair.fst instanceof LocalPointerKey local && local.getNode().equals(node) && local.getValueNumber() == valueNumber) {
+				TensorVariable tensorVariable = pair.snd;
+
+				if (tensorVariable != null)
+					result.addAll(tensorVariable.getTypes());
+			}
+
+		return result;
+	}
+
+	/**
+	 * A shape-derived value tracked by the scan: the tensor whose shape it came from ({@code sourceTensor}, a value number in
+	 * {@code sourceNode}) and which of that tensor's dimensions it covers ({@code dims}; {@code null} means all dimensions). numpy over
+	 * such a value is safe iff the covered dimensions are statically known; the descriptor lets the sink consult the source tensor's
+	 * per-dim {@link TensorType}. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747 (option D).
+	 */
+	private record ShapeDescriptor(CGNode sourceNode, int sourceTensor, Set<Integer> dims) {
+	}
+
+	/** The staticness verdict for numpy over a shape-derived value: safe, a crash (dynamic dim), or unprovable (⊤/unresolved). */
+	private enum ShapeStaticness {
+		STATIC, DYNAMIC, TOP
+	}
+
+	/**
+	 * The verdict for numpy applied to the shape-derived value described by {@code descriptor}. Consults the source tensor's per-dim
+	 * {@link TensorType} across all its analysis contexts: {@link ShapeStaticness#DYNAMIC} if any covered dimension is non-numeric in any
+	 * context (numpy would crash under tracing); {@link ShapeStaticness#STATIC} if every covered dimension is a {@link NumericDim} in every
+	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (unprovable,
+	 * so surfaced as a warning rather than a decline).
+	 */
+	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor, TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeAnalysis);
+
+		if (types.isEmpty())
+			return ShapeStaticness.TOP;
+
+		boolean top = false;
+
+		for (TensorType type : types) {
+			List<Dimension<?>> typeDims = type.getDims();
+
+			if (typeDims == null) {
+				top = true;
+				continue;
+			}
+
+			Set<Integer> covered = descriptor.dims();
+
+			if (covered == null) {
+				covered = new TreeSet<>();
+
+				for (int i = 0; i < typeDims.size(); i++)
+					covered.add(i);
+			}
+
+			for (int i : covered)
+				if (i < 0 || i >= typeDims.size())
+					top = true; // rank disagreement: can't prove staticness of this dimension.
+				else if (!(typeDims.get(i) instanceof NumericDim))
+					return ShapeStaticness.DYNAMIC; // a non-numeric (dynamic/symbolic/ragged) covered dim crashes numpy.
+		}
+
+		return top ? ShapeStaticness.TOP : ShapeStaticness.STATIC;
+	}
+
+	/**
+	 * Resolves {@code value} in {@code node} to an integer constant, or {@code null} if it cannot be resolved. Handles a literal integer in
+	 * the symbol table, a unary negation of a resolvable value, and an interprocedural constant surfaced by the pointer analysis (a
+	 * {@link ConstantKey} in the value's points-to set), mirroring how {@link Function#inferPrimitiveParameters} recovers literal arguments
+	 * across call sites.
+	 */
+	private static Integer resolveIntConstant(CGNode node, int value, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		SymbolTable symbolTable = node.getIR().getSymbolTable();
+
+		if (symbolTable.isIntegerConstant(value))
+			return symbolTable.getIntValue(value);
+
+		SSAInstruction def = defUse.getDef(value);
+
+		// A unary negation (the `-k` in a `[-k:]` slice). The opcode enum lives in a non-exported WALA package, so match by name.
+		if (def instanceof SSAUnaryOpInstruction unary && "neg".equalsIgnoreCase(String.valueOf(unary.getOpcode()))) {
+			Integer operand = resolveIntConstant(node, unary.getUse(0), defUse, pointerAnalysis);
+			return operand == null ? null : -operand;
+		}
+
+		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
+		Integer resolved = null;
+
+		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey))
+			if (instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof Number number) {
+				int candidate = number.intValue();
+
+				if (resolved != null && resolved != candidate)
+					return null; // ambiguous across contexts; refuse to guess.
+
+				resolved = candidate;
+			}
+
+		return resolved;
+	}
+
+	/**
+	 * The dimension indices selected by a Python slice {@code [start:stop:step]} of a shape vector of the given {@code rank}, following
+	 * Python's clamping and negative-index semantics, or {@code null} if the slice cannot be resolved to a concrete set (a non-unit or
+	 * unknown step). {@code null} bounds default to the whole extent.
+	 */
+	private static Set<Integer> resolveSliceDims(Integer start, Integer stop, Integer step, int rank) {
+		int stride = step == null ? 1 : step;
+
+		if (stride != 1)
+			return null; // only unit-stride slices are modeled precisely.
+
+		int from = start == null ? 0 : start < 0 ? Math.max(0, rank + start) : Math.min(start, rank);
+		int to = stop == null ? rank : stop < 0 ? Math.max(0, rank + stop) : Math.min(stop, rank);
+		Set<Integer> dims = new TreeSet<>();
+
+		for (int i = from; i < to; i++)
+			dims.add(i);
+
+		return dims;
+	}
+
+	/** True iff {@code invoke} calls the built-in {@code slice} constructor (how a Python {@code x[a:b:c]} subscript is modeled). */
+	private static boolean invokesSliceBuiltin(PythonInvokeInstruction invoke, DefUse defUse) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+		return def instanceof AstLexicalRead lexical && "slice".equals(lexical.getAccess(0).variableName());
 	}
 
 	/** The result of a two-color taint scan: whether numpy hit a value-tainted argument, and whether a value taint escaped this node. */
@@ -542,25 +690,25 @@ public class Util {
 
 	/**
 	 * Worklist taint propagation over {@code node}'s def-use chains, tracking two taint colors. A <em>value</em> taint marks the tensor
-	 * value itself, over which numpy always raises under {@code tf.function} tracing. A <em>shape</em> taint marks a value derived from a
-	 * tensor's shape (via {@code .shape}/{@code .shape.as_list()} or {@code tf.shape}/{@code size}/{@code rank}); numpy over shape metadata
-	 * is graph-compatible for the static shapes the corpus exercises, so it is permitted. A numpy/scipy invocation on a value-tainted
-	 * argument is a sink (decline); on a shape-tainted argument it is permitted.
+	 * value itself, over which numpy always raises under {@code tf.function} tracing (a sink, decline). A <em>shape</em> taint marks a
+	 * value derived from a tensor's shape (via {@code .shape}/{@code .shape.as_list()}, {@code tf.shape}/{@code size}/{@code rank}, or a
+	 * user-defined shape extractor such as {@code get_shape_list}); it carries a {@link ShapeDescriptor} identifying the source tensor and
+	 * the dimensions it covers, narrowed as the shape vector is sliced ({@code [-k:]}, with the bound resolved via the pointer analysis).
+	 * numpy over a shape-tainted argument is declined only when a covered dimension is provably dynamic in the source tensor's
+	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and an unprovable (⊤) shape is permitted here
+	 * (surfaced separately, not declined) - the option-D shape-aware verdict of #747.
 	 * <p>
 	 * Call sites are tainted conservatively (a value argument taints the call-site result), which follows a comprehension's
 	 * element-through-container flow (NLPGNN's {@code TUDataset.cat}, issue 745). The result is colored SHAPE only when the callee is a
 	 * pure <em>shape extractor</em> — its value-tainted arguments are consumed solely by shape operations and never escape (e.g.
-	 * {@code get_shape_list}) — so numpy over its result is permitted; otherwise the result is value-tainted. A callee's
+	 * {@code get_shape_list}), whose result then describes the tensor argument's shape — otherwise the result is value-tainted. A callee's
 	 * {@code valueEscapes} bit records whether any value taint reached a non-shape use inside it, and is what distinguishes a shape
 	 * extractor from a value carrier. A {@code dtype} read launders taint entirely. Memoized on (node, value seed, shape seed) with an
 	 * optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
-	 * <p>
-	 * This is precision-favoring on the shape axis: numpy over a shape-derived value is treated as safe, which is sound when the consumed
-	 * dimensions are static (as they are across the corpus) but would miss numpy over a genuinely dynamic dimension — itself a latent bug
-	 * surfaced separately by the ⊤-shape reporting.
 	 */
 	private static NumpyScanResult scanForTaintedNumpySinks(CGNode node, Set<Integer> valueSeed, Set<Integer> shapeSeed,
-			CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, Map<String, NumpyScanResult> memo) {
+			CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis,
+			Map<String, NumpyScanResult> memo) {
 		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed);
 		NumpyScanResult cached = memo.get(key);
 
@@ -578,6 +726,8 @@ public class Util {
 		DefUse defUse = node.getDU();
 		Set<Integer> valueTainted = new HashSet<>(valueSeed);
 		Set<Integer> shapeTainted = new HashSet<>(shapeSeed);
+		// For each shape-tainted value, the tensor+dimensions its shape came from (absent = shape-derived but provenance lost).
+		Map<Integer, ShapeDescriptor> shapeDescriptors = new HashMap<>();
 		Deque<Integer> worklist = new ArrayDeque<>();
 		worklist.addAll(valueSeed);
 		worklist.addAll(shapeSeed);
@@ -591,7 +741,8 @@ public class Util {
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
 
-				// A `dtype` read is a trace-time constant and launders taint entirely; a `shape` read yields shape metadata (SHAPE color).
+				// A `dtype` read is a trace-time constant and launders taint entirely; a `shape` read yields shape metadata (SHAPE color)
+				// covering every dimension of the read tensor.
 				if (use instanceof PythonPropertyRead read && read.getObjectRef() == valueNumber) {
 					String member = resolveStringConstant(node, read.getMemberRef(), pointerAnalysis);
 
@@ -600,28 +751,57 @@ public class Util {
 
 					if (SHAPE_MEMBER_NAME.equals(member)) {
 						for (int d = 0; d < read.getNumberOfDefs(); d++)
-							colorShape(read.getDef(d), valueTainted, shapeTainted, worklist);
+							colorShapeFrom(read.getDef(d), new ShapeDescriptor(node, valueNumber, null), valueTainted, shapeTainted,
+									shapeDescriptors, worklist);
 						continue;
 					}
 				}
 
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (invokesNumpyApi(node, invoke, defUse, pointerAnalysis)) {
-						// numpy over a value-tainted argument raises; over a shape-tainted argument it is permitted. A value-level numpy is
-						// also a value escape, so record it: this keeps the shape-extractor classification honest even though `sink`, once
-						// set, already dominates the decision.
+						// numpy over a value-tainted argument always raises under tracing (its content is never trace-time-static); it is
+						// also a value escape, so record that even though `sink`, once set, already dominates the decision. numpy over a
+						// shape-derived argument raises only when a covered dimension is dynamic: consult the source tensor's per-dim shape
+						// (option D, #747) and decline only on a provably-dynamic dimension; a proven-static shape is safe, and an
+						// unprovable (⊤) shape is permitted here (surfaced separately, not declined).
 						if (valueColored) {
 							sink = true;
 							valueEscapes = true;
+						} else {
+							ShapeDescriptor descriptor = shapeDescriptors.get(valueNumber);
+
+							if (descriptor != null && numpyOverShapeStaticness(descriptor, tensorTypeAnalysis) == ShapeStaticness.DYNAMIC)
+								sink = true;
 						}
 
 						continue;
 					}
 
-					// tf.shape/size/rank consume a tensor and return shape metadata: color the result SHAPE.
-					if (invokesShapeMetadataOp(node, invoke, defUse, pointerAnalysis)) {
+					// A Python `x[a:b:c]` subscript is modeled as `slice(x, a, b, c)`. When the sliced value is a shape vector, the result
+					// covers the sliced dimensions of the same source tensor: narrow the descriptor.
+					if (invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1 && invoke.getUse(1) == valueNumber) {
+						ShapeDescriptor base = shapeDescriptors.get(valueNumber);
+						ShapeDescriptor narrowed = base == null ? null
+								: narrowBySlice(base, invoke, node, defUse, pointerAnalysis, tensorTypeAnalysis);
+
 						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
-							colorShape(invoke.getDef(d), valueTainted, shapeTainted, worklist);
+							if (narrowed != null)
+								colorShapeFrom(invoke.getDef(d), narrowed, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							else
+								colorShape(invoke.getDef(d), valueTainted, shapeTainted, worklist);
+						continue;
+					}
+
+					// tf.shape/size/rank consume a tensor and return shape metadata covering every dimension of the argument tensor.
+					if (invokesShapeMetadataOp(node, invoke, defUse, pointerAnalysis)) {
+						ShapeDescriptor descriptor = invoke.getNumberOfUses() > 1 ? new ShapeDescriptor(node, invoke.getUse(1), null)
+								: null;
+
+						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+							if (descriptor != null)
+								colorShapeFrom(invoke.getDef(d), descriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							else
+								colorShape(invoke.getDef(d), valueTainted, shapeTainted, worklist);
 						continue;
 					}
 
@@ -669,7 +849,7 @@ public class Util {
 							analyzedCallee = true;
 
 							NumpyScanResult r = scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed, callGraph,
-									pointerAnalysis, memo);
+									pointerAnalysis, tensorTypeAnalysis, memo);
 
 							if (r.sink())
 								sink = true;
@@ -688,13 +868,23 @@ public class Util {
 					if (resultValue)
 						valueEscapes = true;
 
+					// A shape-extractor result (e.g. `get_shape_list(t)`) is the shape vector of the tensor argument it consumed, covering
+					// all of that tensor's dimensions: seed the descriptor from the (first) value-tainted argument.
+					ShapeDescriptor extractorDescriptor = null;
+
+					if (resultShape && shapeExtractor && !valueSlots.isEmpty())
+						extractorDescriptor = new ShapeDescriptor(node, invoke.getUse(valueSlots.iterator().next()), null);
+
 					for (int d = 0; d < invoke.getNumberOfDefs(); d++) {
 						int def = invoke.getDef(d);
 
 						if (resultValue)
 							colorValue(def, valueTainted, shapeTainted, worklist);
 						else if (resultShape)
-							colorShape(def, valueTainted, shapeTainted, worklist);
+							if (extractorDescriptor != null)
+								colorShapeFrom(def, extractorDescriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							else
+								colorShape(def, valueTainted, shapeTainted, worklist);
 					}
 
 					continue;
@@ -744,6 +934,66 @@ public class Util {
 
 		if (shapeTainted.add(value))
 			worklist.push(value);
+	}
+
+	/**
+	 * Colors {@code value} with the shape taint and records the {@code descriptor} of the tensor dimensions it covers, so a downstream
+	 * numpy sink can consult the source tensor's per-dim {@link TensorType}. Unless {@code value} is already value-tainted (value
+	 * dominates).
+	 */
+	private static void colorShapeFrom(int value, ShapeDescriptor descriptor, Set<Integer> valueTainted, Set<Integer> shapeTainted,
+			Map<Integer, ShapeDescriptor> shapeDescriptors, Deque<Integer> worklist) {
+		if (valueTainted.contains(value))
+			return;
+
+		shapeDescriptors.put(value, descriptor);
+
+		if (shapeTainted.add(value))
+			worklist.push(value);
+	}
+
+	/**
+	 * Narrows {@code base} (a shape vector covering {@code base}'s dimensions) by the slice {@code slice(x, start, stop, step)} in
+	 * {@code invoke}, resolving the bounds to integer constants and applying Python slice semantics against the source tensor's rank.
+	 * Returns {@code null} when the source rank or a bound cannot be resolved, or when {@code base} already covers a proper subset (nested
+	 * slicing is not composed), so the caller falls back to an untracked shape taint.
+	 */
+	private static ShapeDescriptor narrowBySlice(ShapeDescriptor base, PythonInvokeInstruction invoke, CGNode node, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+		if (base.dims() != null)
+			return null; // only slices of a full shape vector are modeled; nested slicing falls back to conservative.
+
+		int rank = sourceRank(base, tensorTypeAnalysis);
+
+		if (rank < 0)
+			return null;
+
+		Integer start = invoke.getNumberOfUses() > 2 ? resolveIntConstant(node, invoke.getUse(2), defUse, pointerAnalysis) : null;
+		Integer stop = invoke.getNumberOfUses() > 3 ? resolveIntConstant(node, invoke.getUse(3), defUse, pointerAnalysis) : null;
+		Integer step = invoke.getNumberOfUses() > 4 ? resolveIntConstant(node, invoke.getUse(4), defUse, pointerAnalysis) : null;
+		Set<Integer> dims = resolveSliceDims(start, stop, step, rank);
+
+		return dims == null ? null : new ShapeDescriptor(base.sourceNode(), base.sourceTensor(), dims);
+	}
+
+	/**
+	 * The rank of the source tensor of {@code descriptor} if all its analysis contexts agree on a concrete (non-⊤) rank, else {@code -1}.
+	 */
+	private static int sourceRank(ShapeDescriptor descriptor, TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeAnalysis);
+		int rank = -1;
+
+		for (TensorType type : types) {
+			if (type.getDims() == null)
+				return -1;
+
+			if (rank == -1)
+				rank = type.getDims().size();
+			else if (rank != type.getDims().size())
+				return -1;
+		}
+
+		return rank;
 	}
 
 	/** True iff {@code invoke}'s callee resolves to the numpy/scipy namespace by attribute-chain walk or import-alias fallback. */

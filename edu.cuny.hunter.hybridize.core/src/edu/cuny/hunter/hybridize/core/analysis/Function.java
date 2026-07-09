@@ -1485,7 +1485,8 @@ public class Function {
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
 	 */
-	public void computeNumpyCallsOnParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeNumpyCallsOnParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<CGNode> nodes;
 
 		try {
@@ -1505,7 +1506,7 @@ public class Function {
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It applies numpy to its parameters if
 		// any of them does; sampling a single node can miss the flow at an imprecise context.
 		boolean numpyOnParameters = nodes.stream()
-				.anyMatch(cgNode -> Util.appliesNumpyToParameters(cgNode, this.isMethod(), callGraph, pointerAnalysis));
+				.anyMatch(cgNode -> Util.appliesNumpyToParameters(cgNode, this.isMethod(), callGraph, pointerAnalysis, tensorTypeAnalysis));
 
 		this.hasNumpyCallsOnParameters = numpyOnParameters;
 
