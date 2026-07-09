@@ -988,7 +988,8 @@ public class Util {
 	private static ShapeDescriptor narrowBySlice(ShapeDescriptor base, PythonInvokeInstruction invoke, CGNode node, DefUse defUse,
 			PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
 		if (base.dims() != null)
-			return null; // only slices of a full shape vector are modeled; nested slicing falls back to conservative.
+			return null; // only slices of a full shape vector are modeled; nested slicing drops the descriptor (unprovable, so permitted
+							// under the current precision-favoring policy).
 
 		int rank = sourceRank(base, tensorTypeAnalysis);
 
