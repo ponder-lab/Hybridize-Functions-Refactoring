@@ -1484,6 +1484,7 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness of numpy over a tensor's shape.
 	 */
 	public void computeNumpyCallsOnParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
 			TensorTypeAnalysis tensorTypeAnalysis) {

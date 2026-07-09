@@ -532,6 +532,7 @@ public class Util {
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
 	 * @param callGraph The call graph, used to follow user-defined callees.
 	 * @param pointerAnalysis The pointer analysis, used to resolve attribute names and module roots.
+	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness at a numpy-over-shape sink.
 	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
 	 */
 	public static boolean appliesNumpyToParameters(CGNode node, boolean method, CallGraph callGraph,
