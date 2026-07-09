@@ -13,6 +13,10 @@ def reduce_top(x, w):
     return tf.matmul(flat, w)
 
 
+# NOTE: this line is the test's ⊤-shape source. Ariadne types
+# tf.constant(np.array(<nested-list literal>)) as full-⊤ (wala/ML#539). If
+# #539 is fixed to infer the literal's shape, `opaque` stops being ⊤ and this
+# fixture must switch to another deterministic ⊤ source.
 opaque = tf.constant(np.array([[1.0, 2.0], [3.0, 4.0]]))
 w = tf.ones((2, 5))
 reduce_top(opaque, w)
