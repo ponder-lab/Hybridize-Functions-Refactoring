@@ -777,9 +777,12 @@ public class Util {
 						continue;
 					}
 
-					// A Python `x[a:b:c]` subscript is modeled as `slice(x, a, b, c)`. When the sliced value is a shape vector, the result
-					// covers the sliced dimensions of the same source tensor: narrow the descriptor.
-					if (invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1 && invoke.getUse(1) == valueNumber) {
+					// A Python `x[a:b:c]` subscript is modeled as `slice(x, a, b, c)`. Only a slice of a shape-tainted vector stays shape
+					// metadata (covering the sliced dimensions); slicing a tensor VALUE yields a sub-tensor value (e.g. `boxes1[..., :2]`),
+					// which must remain value-tainted so numpy over it is still a sink. Guard on the receiver being shape-, not value-,
+					// tainted.
+					if (!valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+							&& invoke.getUse(1) == valueNumber) {
 						ShapeDescriptor base = shapeDescriptors.get(valueNumber);
 						ShapeDescriptor narrowed = base == null ? null
 								: narrowBySlice(base, invoke, node, defUse, pointerAnalysis, tensorTypeAnalysis);
