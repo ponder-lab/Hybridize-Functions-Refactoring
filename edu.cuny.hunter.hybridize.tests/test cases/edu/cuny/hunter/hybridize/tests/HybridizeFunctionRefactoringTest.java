@@ -9460,6 +9460,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`reduce_tail`'s numpy touches only a statically-known trailing shape dimension.",
 				reduce.getHasNumpyCallsOnParameters());
 		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+
+		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), so the numpy check is gated off (it fails on the literal
+		// regardless) and never runs: its result is left undetermined.
+		Function einsum = getFunction("einsum_via_matmul");
+		assertNull("`einsum_via_matmul`'s numpy check is gated off by its primitive parameter.", einsum.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins that numpy over a slice of a tensor <em>value</em> (not a shape vector) is still a sink
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code clip_slice} applies {@code np.maximum} to
+	 * {@code boxes[:2]}, a sub-tensor value. The shape-aware verdict must not mistake the value slice for a shape slice and permit it - the
+	 * regression that RPN's {@code compute_iou} ({@code np.maximum(boxes1[..., :2], ...)}) exposed on the full-corpus regen. So the
+	 * function is declined.
+	 */
+	@Test
+	public void testNumpyOnSlicedTensorValue() throws Exception {
+		Function clip = getFunction("clip_slice");
+		assertTrue("`clip_slice`'s numpy operates on a slice of a tensor value, which remains a sink.",
+				clip.getHasNumpyCallsOnParameters());
+		assertNull("`clip_slice` must not pass a precondition.", clip.getPassingPrecondition());
+		assertNotNull("`clip_slice` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				clip.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 	}
 
 	/**

@@ -437,6 +437,15 @@ public class Util {
 	 */
 	private static final String SHAPE_MEMBER_NAME = "shape";
 
+	/** The built-in {@code slice} constructor, into which a Python {@code x[a:b:c]} subscript is lowered. */
+	private static final String SLICE_BUILTIN_NAME = "slice";
+
+	/**
+	 * The unary-negation operator, matched by name: the operator enum ({@code IUnaryOpInstruction.Operator}) lives in a non-exported WALA
+	 * package, so its type cannot be referenced here, but its {@code toString()} is stable.
+	 */
+	private static final String NEGATION_OPERATOR_NAME = "neg";
+
 	/**
 	 * True iff {@code node}, transitively over its call-graph successors, invokes an eager-only API (e.g. {@code Tensor.numpy()}), which
 	 * raises under {@code tf.function} tracing. Detection is by callee attribute name rather than receiver typing: the receiver's tensor
@@ -635,8 +644,8 @@ public class Util {
 
 		SSAInstruction def = defUse.getDef(value);
 
-		// A unary negation (the `-k` in a `[-k:]` slice). The opcode enum lives in a non-exported WALA package, so match by name.
-		if (def instanceof SSAUnaryOpInstruction unary && "neg".equalsIgnoreCase(String.valueOf(unary.getOpcode()))) {
+		// A unary negation (the `-k` in a `[-k:]` slice); matched by name since the operator enum's type cannot be referenced here.
+		if (def instanceof SSAUnaryOpInstruction unary && NEGATION_OPERATOR_NAME.equalsIgnoreCase(String.valueOf(unary.getOpcode()))) {
 			Integer operand = resolveIntConstant(node, unary.getUse(0), defUse, pointerAnalysis);
 			return operand == null ? null : -operand;
 		}
@@ -681,7 +690,7 @@ public class Util {
 	/** True iff {@code invoke} calls the built-in {@code slice} constructor (how a Python {@code x[a:b:c]} subscript is modeled). */
 	private static boolean invokesSliceBuiltin(PythonInvokeInstruction invoke, DefUse defUse) {
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-		return def instanceof AstLexicalRead lexical && "slice".equals(lexical.getAccess(0).variableName());
+		return def instanceof AstLexicalRead lexical && SLICE_BUILTIN_NAME.equals(lexical.getAccess(0).variableName());
 	}
 
 	/** The result of a two-color taint scan: whether numpy hit a value-tainted argument, and whether a value taint escaped this node. */
