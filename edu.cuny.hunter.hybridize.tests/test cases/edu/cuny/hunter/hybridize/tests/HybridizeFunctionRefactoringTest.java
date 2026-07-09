@@ -9516,6 +9516,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins numpy over a <em>provably-dynamic</em> shape dimension
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code head_over_dynamic} applies {@code np.prod} to the
+	 * leading dimension of {@code x}, which is fed a {@code tf.reshape(<⊤ tensor>, [-1, 5])} value - a dynamic leading dimension over a
+	 * static trailing one. The source tensor's per-dimension {@link com.ibm.wala.cast.python.ml.types.TensorType} shows that leading
+	 * dimension non-numeric, so the precondition declines (numpy over it would crash under tracing). Exercises the sound decline path
+	 * regardless of the ⊤-permit policy.
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeDim() throws Exception {
+		Function head = getFunction("head_over_dynamic");
+		assertTrue("`head_over_dynamic`'s numpy is over a provably-dynamic leading dimension.", head.getHasNumpyCallsOnParameters());
+		assertNull("`head_over_dynamic` must not pass a precondition.", head.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
