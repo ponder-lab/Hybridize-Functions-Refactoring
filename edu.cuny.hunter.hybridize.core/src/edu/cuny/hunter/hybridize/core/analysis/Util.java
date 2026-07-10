@@ -1006,12 +1006,18 @@ public class Util {
 		ShapeDescriptor existing = shapeDescriptors.get(value);
 
 		// Poison on conflicting provenance (two shape sources merged into this value); an already-poisoned value stays poisoned.
-		if (existing != null && existing != AMBIGUOUS_DESCRIPTOR && !existing.equals(descriptor))
-			shapeDescriptors.put(value, AMBIGUOUS_DESCRIPTOR);
-		else if (existing != AMBIGUOUS_DESCRIPTOR)
-			shapeDescriptors.put(value, descriptor);
+		ShapeDescriptor updated = existing == AMBIGUOUS_DESCRIPTOR || existing != null && !existing.equals(descriptor)
+				? AMBIGUOUS_DESCRIPTOR
+				: descriptor;
 
-		if (shapeTainted.add(value))
+		shapeDescriptors.put(value, updated);
+
+		// Re-enqueue on a first taint OR a descriptor change, so a value already popped is re-scanned with the new (possibly poisoned)
+		// descriptor rather than leaving a sink decided on the stale one. Descriptors are monotone (unset -> concrete -> ambiguous), so
+		// this terminates.
+		boolean newlyTainted = shapeTainted.add(value);
+
+		if (newlyTainted || !updated.equals(existing))
 			worklist.push(value);
 	}
 
