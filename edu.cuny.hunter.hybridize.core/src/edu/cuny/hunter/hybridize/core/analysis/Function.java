@@ -1505,9 +1505,11 @@ public class Function {
 		}
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It applies numpy to its parameters if
-		// any of them does; sampling a single node can miss the flow at an imprecise context.
+		// any of them does; sampling a single node can miss the flow at an imprecise context. Index the tensor-type analysis once and
+		// reuse it across the nodes rather than rebuilding it per node.
+		Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex = Util.indexTensorTypes(tensorTypeAnalysis);
 		boolean numpyOnParameters = nodes.stream()
-				.anyMatch(cgNode -> Util.appliesNumpyToParameters(cgNode, this.isMethod(), callGraph, pointerAnalysis, tensorTypeAnalysis));
+				.anyMatch(cgNode -> Util.appliesNumpyToParameters(cgNode, this.isMethod(), callGraph, pointerAnalysis, tensorTypeIndex));
 
 		this.hasNumpyCallsOnParameters = numpyOnParameters;
 

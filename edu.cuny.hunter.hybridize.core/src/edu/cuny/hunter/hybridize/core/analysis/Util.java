@@ -532,11 +532,12 @@ public class Util {
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
 	 * @param callGraph The call graph, used to follow user-defined callees.
 	 * @param pointerAnalysis The pointer analysis, used to resolve attribute names and module roots.
-	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness at a numpy-over-shape sink.
+	 * @param tensorTypeIndex The (node, value number) index of the tensor-type analysis ({@link #indexTensorTypes}), consulted for the
+	 *        per-dimension shape staticness at a numpy-over-shape sink.
 	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
 	 */
 	public static boolean appliesNumpyToParameters(CGNode node, boolean method, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
 		IR ir = node.getIR();
 
 		if (ir == null)
@@ -553,15 +554,16 @@ public class Util {
 		if (sources.isEmpty())
 			return false;
 
-		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, indexTensorTypes(tensorTypeAnalysis),
-				new HashMap<>()).sink();
+		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, tensorTypeIndex, new HashMap<>())
+				.sink();
 	}
 
 	/**
 	 * Indexes {@code tensorTypeAnalysis}'s local pointer keys by (node, value number) once, so per-value lookups
-	 * ({@link #lookupTensorTypes}) are constant-time rather than a full linear scan of the analysis per call.
+	 * ({@link #lookupTensorTypes}) are constant-time rather than a full linear scan of the analysis per call. Build this once per function
+	 * (or project) and reuse it across the function's call-graph nodes rather than rebuilding per node.
 	 */
-	private static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
+	public static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -984,16 +986,30 @@ public class Util {
 	}
 
 	/**
+	 * A poisoned shape descriptor: recorded when a value receives shape provenance from two conflicting sources (e.g. a phi merge), so the
+	 * scan cannot rely on a single source's staticness. Its {@code null} source node makes {@link #numpyOverShapeStaticness} report
+	 * {@link ShapeStaticness#TOP} (unprovable), the conservative outcome.
+	 */
+	private static final ShapeDescriptor AMBIGUOUS_DESCRIPTOR = new ShapeDescriptor(null, -1, null);
+
+	/**
 	 * Colors {@code value} with the shape taint and records the {@code descriptor} of the tensor dimensions it covers, so a downstream
 	 * numpy sink can consult the source tensor's per-dim {@link TensorType}. Unless {@code value} is already value-tainted (value
-	 * dominates).
+	 * dominates). If {@code value} already carries a different descriptor, its provenance is ambiguous (two shape sources merged into it),
+	 * so it is poisoned to {@link #AMBIGUOUS_DESCRIPTOR} rather than letting the last writer win.
 	 */
 	private static void colorShapeFrom(int value, ShapeDescriptor descriptor, Set<Integer> valueTainted, Set<Integer> shapeTainted,
 			Map<Integer, ShapeDescriptor> shapeDescriptors, Deque<Integer> worklist) {
 		if (valueTainted.contains(value))
 			return;
 
-		shapeDescriptors.put(value, descriptor);
+		ShapeDescriptor existing = shapeDescriptors.get(value);
+
+		// Poison on conflicting provenance (two shape sources merged into this value); an already-poisoned value stays poisoned.
+		if (existing != null && existing != AMBIGUOUS_DESCRIPTOR && !existing.equals(descriptor))
+			shapeDescriptors.put(value, AMBIGUOUS_DESCRIPTOR);
+		else if (existing != AMBIGUOUS_DESCRIPTOR)
+			shapeDescriptors.put(value, descriptor);
 
 		if (shapeTainted.add(value))
 			worklist.push(value);
