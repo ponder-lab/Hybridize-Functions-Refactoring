@@ -1133,12 +1133,19 @@ public class Util {
 	}
 
 	/**
+	 * The maximum number of dimensions a rank-free slice may cover. Tensor ranks are tiny in practice; without a rank to clamp against, a
+	 * pathologically large resolved bound would otherwise enumerate an index per unit of the bound, so anything beyond this cap is treated
+	 * as unresolvable instead.
+	 */
+	private static final int MAX_RANK_FREE_SLICE_EXTENT = 32;
+
+	/**
 	 * The dimension indices selected by a Python slice {@code [start:stop:step]} of a shape vector whose rank is statically unresolvable,
-	 * or {@code null} if the slice's coverage depends on the rank. Only two rank-independent forms exist: a pure prefix {@code [:k]}
-	 * ({@code k >= 0}; {@code [:0]} covers nothing) covers the absolute indices {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the
-	 * last {@code k} dimensions, encoded as the negative indices {@code -k..-1} that {@link #numpyOverShapeStaticness} resolves against
-	 * each context's own rank. An index beyond a context's rank contributes no element there and is ignored by the verdict, mirroring
-	 * Python's slice clamping.
+	 * or {@code null} if the slice's coverage depends on the rank (or exceeds {@link #MAX_RANK_FREE_SLICE_EXTENT}). Only two
+	 * rank-independent forms exist: a pure prefix {@code [:k]} ({@code k >= 0}; {@code [:0]} covers nothing) covers the absolute indices
+	 * {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the last {@code k} dimensions, encoded as the negative indices {@code -k..-1}
+	 * that {@link #numpyOverShapeStaticness} resolves against each context's own rank. An index beyond a context's rank contributes no
+	 * element there and is ignored by the verdict, mirroring Python's slice clamping.
 	 */
 	private static Set<Integer> resolveRankFreeSliceDims(Integer start, Integer stop, Integer step) {
 		if (step != null && step != 1)
@@ -1147,7 +1154,7 @@ public class Util {
 		Set<Integer> dims = new TreeSet<>();
 
 		// A pure prefix [:k]: absolute indices 0..k-1 (none for [:0]), no rank needed.
-		if ((start == null || start == 0) && stop != null && stop >= 0) {
+		if ((start == null || start == 0) && stop != null && stop >= 0 && stop <= MAX_RANK_FREE_SLICE_EXTENT) {
 			for (int i = 0; i < stop; i++)
 				dims.add(i);
 
@@ -1155,7 +1162,7 @@ public class Util {
 		}
 
 		// A pure suffix [-k:]: the last k dimensions, encoded as negative indices resolved per-context at the sink.
-		if (start != null && start < 0 && stop == null) {
+		if (start != null && start < 0 && start >= -MAX_RANK_FREE_SLICE_EXTENT && stop == null) {
 			for (int i = start; i < 0; i++)
 				dims.add(i);
 
