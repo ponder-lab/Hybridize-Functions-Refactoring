@@ -1112,6 +1112,11 @@ public class Util {
 		Integer start = invoke.getNumberOfUses() > 2 ? resolveIntConstant(node, invoke.getUse(2), defUse, pointerAnalysis) : null;
 		Integer stop = invoke.getNumberOfUses() > 3 ? resolveIntConstant(node, invoke.getUse(3), defUse, pointerAnalysis) : null;
 		Integer step = invoke.getNumberOfUses() > 4 ? resolveIntConstant(node, invoke.getUse(4), defUse, pointerAnalysis) : null;
+
+		// A no-op slice ([:], the Python copy idiom) covers every dimension regardless of rank: preserve the base descriptor.
+		if ((start == null || start == 0) && stop == null && (step == null || step == 1))
+			return base;
+
 		int rank = sourceRank(base, tensorTypeIndex);
 		Set<Integer> dims = rank < 0 ? resolveRankFreeSliceDims(start, stop, step) : resolveSliceDims(start, stop, step, rank);
 
@@ -1121,9 +1126,9 @@ public class Util {
 	/**
 	 * The dimension indices selected by a Python slice {@code [start:stop:step]} of a shape vector whose rank is statically unresolvable,
 	 * or {@code null} if the slice's coverage depends on the rank. Only two rank-independent forms exist: a pure prefix {@code [:k]}
-	 * ({@code k > 0}) covers the absolute indices {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the last {@code k} dimensions,
-	 * encoded as the negative indices {@code -k..-1} that {@link #numpyOverShapeStaticness} resolves against each context's own rank. An
-	 * index beyond a context's rank surfaces there as unprovable, mirroring Python's slice clamping.
+	 * ({@code k >= 0}; {@code [:0]} covers nothing) covers the absolute indices {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the
+	 * last {@code k} dimensions, encoded as the negative indices {@code -k..-1} that {@link #numpyOverShapeStaticness} resolves against
+	 * each context's own rank. An index beyond a context's rank surfaces there as unprovable, mirroring Python's slice clamping.
 	 */
 	private static Set<Integer> resolveRankFreeSliceDims(Integer start, Integer stop, Integer step) {
 		if (step != null && step != 1)
@@ -1131,8 +1136,8 @@ public class Util {
 
 		Set<Integer> dims = new TreeSet<>();
 
-		// A pure prefix [:k]: absolute indices 0..k-1, no rank needed.
-		if ((start == null || start == 0) && stop != null && stop > 0) {
+		// A pure prefix [:k]: absolute indices 0..k-1 (none for [:0]), no rank needed.
+		if ((start == null || start == 0) && stop != null && stop >= 0) {
 			for (int i = 0; i < stop; i++)
 				dims.add(i);
 

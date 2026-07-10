@@ -9536,21 +9536,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the rank-independent tracking of a suffix shape slice
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): {@code tail_prod} applies {@code np.prod} to
-	 * {@code get_shape(x)[-1:]}, and {@code x} is fed tensors of two different ranks, so the shape vector's rank is statically unresolvable
-	 * and an absolute dimension set cannot be computed. A pure suffix slice covers "the last {@code k} dimensions" regardless of rank, so
-	 * the descriptor records the covered dimensions as negative indices resolved per-{@link com.ibm.wala.cast.python.ml.types.TensorType}
-	 * at the sink; the rank-2 feed's trailing dimension is provably dynamic, so the function is declined. Without the relative form the
-	 * descriptor is dropped at the slice and the crasher is permitted precision-favoringly, the mechanism that leaves the corpus
-	 * {@code einsum_via_matmul} sink descriptorless.
+	 * Pins the rank-independent tracking of shape slices (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): each
+	 * function's tensor parameter is fed tensors of two different ranks, so the shape vector's rank is statically unresolvable and an
+	 * absolute dimension set cannot be computed, yet the slices' coverage does not depend on the rank. {@code tail_prod}'s suffix slice
+	 * covers the last dimension, recorded as a negative index resolved per-{@link com.ibm.wala.cast.python.ml.types.TensorType} at the
+	 * sink; {@code head_prod}'s prefix slice covers the first; and {@code copy_prod}'s no-op copy slice ({@code [:]}) preserves the
+	 * all-dimensions descriptor. In each case the rank-2 feed makes a covered dimension provably dynamic, so all three are declined.
+	 * Without the rank-free forms the descriptor is dropped at the slice and the crashers are permitted precision-favoringly, the mechanism
+	 * that leaves the corpus {@code einsum_via_matmul} sink descriptorless.
 	 */
 	@Test
-	public void testNumpyOnDynamicTailAcrossRanks() throws Exception {
+	public void testNumpyOnDynamicShapeSliceAcrossRanks() throws Exception {
 		Function tail = getFunction("tail_prod");
 		assertTrue("`tail_prod`'s numpy covers the trailing dimension, provably dynamic in the rank-2 feed.",
 				tail.getHasNumpyCallsOnParameters());
 		assertNull("`tail_prod` must not pass a precondition.", tail.getPassingPrecondition());
+
+		Function head = getFunction("head_prod");
+		assertTrue("`head_prod`'s numpy covers the leading dimension, provably dynamic in the rank-2 feed.",
+				head.getHasNumpyCallsOnParameters());
+		assertNull("`head_prod` must not pass a precondition.", head.getPassingPrecondition());
+
+		Function copy = getFunction("copy_prod");
+		assertTrue("`copy_prod`'s numpy covers every dimension through the copy slice, and the rank-2 feed has a dynamic one.",
+				copy.getHasNumpyCallsOnParameters());
+		assertNull("`copy_prod` must not pass a precondition.", copy.getPassingPrecondition());
 	}
 
 	/**
