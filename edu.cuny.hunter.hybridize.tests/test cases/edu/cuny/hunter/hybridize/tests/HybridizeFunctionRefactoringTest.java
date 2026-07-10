@@ -9427,6 +9427,113 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the interprocedural shape-extractor recovery of the parameter-flow numpy precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code reduce_via_shape} applies {@code np.prod} to the
+	 * result of a helper ({@code get_shape}) that consumes its tensor parameter only through {@code .shape.as_list()}. Because the helper
+	 * is a shape extractor, its result is shape metadata, so numpy over it is graph-compatible and the function still hybridizes — the
+	 * conservative call-site taint would have wrongly declined it. Distills NLPGNN's {@code DenseLayer3d.call} / {@code einsum_via_matmul}
+	 * / {@code get_shape_list}.
+	 */
+	@Test
+	public void testNumpyOnShapeThroughHelper() throws Exception {
+		Function reduce = getFunction("reduce_via_shape");
+		assertFalse("`reduce_via_shape`'s numpy operates on a shape extracted by `get_shape`, which is trace-time metadata.",
+				reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_via_shape` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+
+		Function getShape = getFunction("get_shape");
+		assertFalse("`get_shape` applies no numpy; it only reads `.shape`.", getShape.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins the shape-aware (per-dimension) numpy precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747):
+	 * {@code reduce_tail} calls {@code einsum_via_matmul(x, w, 1)}, which applies {@code np.prod} to
+	 * {@code get_shape(input_tensor)[-num_inner_dims:]} - a slice covering only the trailing (statically-known) dimension. The precondition
+	 * consults the source tensor's per-dimension {@link com.ibm.wala.cast.python.ml.types.TensorType} across the interprocedural
+	 * {@code get_shape} extractor and the {@code slice} builtin (with {@code num_inner_dims} resolved to {@code 1} via the pointer
+	 * analysis), proves the covered dimension static, and does not flag the function, so it still hybridizes. Distills NLPGNN's
+	 * {@code DenseLayer3d.call} / {@code einsum_via_matmul} / {@code get_shape_list}.
+	 */
+	@Test
+	public void testNumpyOnStaticShapeSlice() throws Exception {
+		Function reduce = getFunction("reduce_tail");
+		assertFalse("`reduce_tail`'s numpy touches only a statically-known trailing shape dimension.",
+				reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+
+		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), so the numpy check is gated off (it fails on the literal
+		// regardless) and never runs: its result is left undetermined.
+		Function einsum = getFunction("einsum_via_matmul");
+		assertNull("`einsum_via_matmul`'s numpy check is gated off by its primitive parameter.", einsum.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins that numpy over a slice of a tensor <em>value</em> (not a shape vector) is still a sink
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code clip_slice} applies {@code np.maximum} to
+	 * {@code boxes[:2]}, a sub-tensor value. The shape-aware verdict must not mistake the value slice for a shape slice and permit it - the
+	 * regression that RPN's {@code compute_iou} ({@code np.maximum(boxes1[..., :2], ...)}) exposed on the full-corpus regen. So the
+	 * function is declined.
+	 */
+	@Test
+	public void testNumpyOnSlicedTensorValue() throws Exception {
+		Function clip = getFunction("clip_slice");
+		assertTrue("`clip_slice`'s numpy operates on a slice of a tensor value, which remains a sink.",
+				clip.getHasNumpyCallsOnParameters());
+		assertNull("`clip_slice` must not pass a precondition.", clip.getPassingPrecondition());
+		assertNotNull("`clip_slice` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				clip.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the handling of shape metadata passed <em>as an argument</em> into a callee
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code via_arg} passes {@code get_shape(x)} to
+	 * {@code prod_of}, which applies {@code np.prod} to it. The shape descriptor is not propagated across the call boundary, so the callee
+	 * cannot prove the covered dimensions static; being precision-favoring on an unprovable shape, the precondition permits and the
+	 * function still hybridizes. TODO: with the sound policy this declines
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751); an alternative recovery is interprocedural descriptor
+	 * propagation, which would prove the shape static and permit soundly.
+	 */
+	@Test
+	public void testNumpyOnShapeArgumentToCallee() throws Exception {
+		Function viaArg = getFunction("via_arg");
+		assertFalse("`via_arg` passes shape metadata into a callee; without cross-boundary provenance the shape is unprovable and permitted"
+				+ " precision-favoringly.", viaArg.getHasNumpyCallsOnParameters());
+		assertEquals("`via_arg` still hybridizes (P1).", P1, viaArg.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins numpy over a shape derived from a tensor whose shape Ariadne cannot resolve (⊤): {@code reduce_top} applies {@code np.prod} to
+	 * the trailing dimension of {@code x}, but {@code x} is fed a {@code tf.constant(np.array(...))} value whose shape is ⊤
+	 * (https://github.com/wala/ML/issues/539). The precondition is precision-favoring on an unprovable shape, so it does not flag the
+	 * function and it still hybridizes - the unit reproduction of the corpus {@code DenseLayer3d.call} scenario, where {@code input_tensor}
+	 * is likewise typed ⊤ (https://github.com/wala/ML/issues/704) and is recovered. TODO: with the sound policy this ⊤ case declines;
+	 * invert when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751 lands (blocked on
+	 * https://github.com/wala/ML/issues/704).
+	 */
+	@Test
+	public void testNumpyOnTopShape() throws Exception {
+		Function reduceTop = getFunction("reduce_top");
+		assertFalse("`reduce_top`'s numpy is over an unprovable (⊤) shape, permitted precision-favoringly.",
+				reduceTop.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_top` still hybridizes (P1).", P1, reduceTop.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins numpy over a <em>provably-dynamic</em> shape dimension
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code head_over_dynamic} applies {@code np.prod} to the
+	 * leading dimension of {@code x}, which is fed a {@code tf.reshape(<⊤ tensor>, [-1, 5])} value - a dynamic leading dimension over a
+	 * static trailing one. The source tensor's per-dimension {@link com.ibm.wala.cast.python.ml.types.TensorType} shows that leading
+	 * dimension non-numeric, so the precondition declines (numpy over it would crash under tracing). Exercises the sound decline path
+	 * regardless of the ⊤-permit policy.
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeDim() throws Exception {
+		Function head = getFunction("head_over_dynamic");
+		assertTrue("`head_over_dynamic`'s numpy is over a provably-dynamic leading dimension.", head.getHasNumpyCallsOnParameters());
+		assertNull("`head_over_dynamic` must not pass a precondition.", head.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
