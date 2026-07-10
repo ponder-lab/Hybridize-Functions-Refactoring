@@ -9601,6 +9601,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy precondition on numpy over a generator-unpacked tensor parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/755): {@code compute_loss} applies
+	 * {@code np.abs}/{@code np.sum} to a parameter obtained via {@code next()}, mixed with tensor computation. numpy over a parameter value
+	 * crashes under {@code tf.function} tracing, so the function must not hybridize. The parameter is typed as a tensor only when the
+	 * generator dataflow is modeled (wala/ML#696); a regression that dropped that typing would leave the function without a tensor
+	 * parameter and fail this pin. Distills an object-detection {@code compute_loss} idiom.
+	 */
+	@Test
+	public void testNumpyOnGeneratorUnpackedParam() throws Exception {
+		Function loss = getFunction("compute_loss");
+		assertTrue("`compute_loss` applies numpy to a generator-unpacked tensor parameter.", loss.getHasNumpyCallsOnParameters());
+		assertNull("`compute_loss` must not pass a precondition.", loss.getPassingPrecondition());
+		assertNotNull("`compute_loss` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				loss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
 	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
 	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation

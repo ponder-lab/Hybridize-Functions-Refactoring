@@ -746,10 +746,9 @@ public class Util {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): a shape-tainted argument seeds its descriptor onto the
 	 * callee's parameter ({@code shapeDescriptorSeed}), and a callee returning a tracked shape carries its (possibly slice-narrowed)
 	 * descriptor back to the call-site result, so staticness resolves in whichever frame the sink sits. An unprovable shape - a ⊤ type or
-	 * untracked/ambiguous provenance - is permitted here (precision-favoring), which recovers the corpus DenseLayer idiom whose input
-	 * tensor Ariadne types ⊤; the sound variant (decline the unprovable) is a one-line change tracked by
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751 (blocked on https://github.com/wala/ML/issues/704). The
-	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * untracked/ambiguous provenance - is permitted, favoring precision. The sound decline-unless-provably-static variant is tracked on
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751; see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747 for the per-dimension shape-aware verdict.
 	 * <p>
 	 * Call sites are tainted conservatively (a value argument taints the call-site result), which follows a comprehension's
 	 * element-through-container flow (NLPGNN's {@code TUDataset.cat}, issue 745). The result is colored SHAPE only when the callee is a
@@ -819,18 +818,9 @@ public class Util {
 
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (invokesNumpyApi(node, invoke, defUse, pointerAnalysis)) {
-						// numpy over a value-tainted argument always raises under tracing (its content is never trace-time-static); it is
-						// also a value escape, so record that even though `sink`, once set, already dominates the decision. numpy over a
-						// shape-derived argument raises only when a covered dimension is dynamic: consult the source tensor's per-dim shape
-						// and decline only on a provably-dynamic dimension
-						// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747). A proven-static shape is safe; an
-						// unprovable shape - a ⊤ type, or untracked/ambiguous provenance - is PERMITTED here
-						// (precision-favoring),
-						// which recovers the corpus DenseLayer3d.call idiom whose input tensor Ariadne currently types ⊤
-						// (https://github.com/wala/ML/issues/704). This is unsound on a ⊤ that is really dynamic; the sound variant
-						// declines.
-						// TODO: flip to decline-unless-provably-static (`descriptor == null || staticness(...) != STATIC`) once
-						// https://github.com/wala/ML/issues/704 lands and DenseLayer's shape resolves - a one-line change tracked by
+						// A value-tainted argument is a sink (a value escape). A shape-derived argument is a sink only on a
+						// provably-dynamic covered dimension; an unprovable shape (⊤ or untracked/ambiguous provenance) is permitted,
+						// favoring precision. The sound decline-unless-provably-static variant is tracked on
 						// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751.
 						if (valueColored) {
 							sink = true;
