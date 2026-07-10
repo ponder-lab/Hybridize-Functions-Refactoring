@@ -9519,6 +9519,84 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins descriptor propagation through the BERT-style {@code get_shape_list} idiom
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): the helper reads {@code tensor.shape.as_list()} into a
+	 * Python list, returns it early when every dimension is static, and otherwise patches the dynamic entries element-wise with
+	 * {@code tf.shape(tensor)[index]} before returning - in-callee extraction, list mutation, and dual returns, the three features that
+	 * defeat the descriptor. {@code head_via_list} applies {@code np.prod} to {@code get_shape_list(x)[:1]}, a slice covering only the
+	 * provably-dynamic leading dimension, so with the descriptor tracked through the idiom the function is declined. Distills NLPGNN's
+	 * {@code get_shape_list}/{@code einsum_via_matmul} (nlpgnn/tools.py, nlpgnn/layers/dense.py).
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeThroughShapeList() throws Exception {
+		Function head = getFunction("head_via_list");
+		assertTrue("`head_via_list`'s numpy is over the provably-dynamic leading dimension extracted by `get_shape_list`.",
+				head.getHasNumpyCallsOnParameters());
+		assertNull("`head_via_list` must not pass a precondition.", head.getPassingPrecondition());
+		assertNotNull("`head_via_list` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				head.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the rank-independent tracking of shape slices (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): each
+	 * function's tensor parameter is fed tensors of two different ranks, so the shape vector's rank is statically unresolvable and an
+	 * absolute dimension set cannot be computed, yet the slices' coverage does not depend on the rank. {@code tail_prod}'s suffix slice
+	 * covers the last dimension, recorded as a negative index resolved per-{@link com.ibm.wala.cast.python.ml.types.TensorType} at the
+	 * sink; {@code head_prod}'s prefix slice covers the first; {@code copy_prod}'s no-op copy slice ({@code [:]}) preserves the
+	 * all-dimensions descriptor; and {@code pair_prod}'s {@code [-3:]} clamps past the rank-2 feed's extent, covering whatever exists. In
+	 * each case the rank-2 feed makes a covered dimension provably dynamic, so all four are declined; without the rank-free forms the
+	 * descriptor is dropped at the slice and the crashers are permitted precision-favoringly, the mechanism that leaves the corpus
+	 * {@code einsum_via_matmul} sink descriptorless. The remaining forms stay permitted: {@code nil_prod}'s empty slice ({@code [:0]})
+	 * covers nothing, so numpy over it is vacuously safe, while {@code stride_prod}'s strided and {@code rest_prod}'s mid-start slices have
+	 * rank-dependent coverage, so their provenance is untracked and unprovable (permitted precision-favoringly; they invert under the sound
+	 * policy of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751, unlike {@code nil_prod}, whose vacuous proof
+	 * holds under either).
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeSliceAcrossRanks() throws Exception {
+		Function tail = getFunction("tail_prod");
+		assertTrue("`tail_prod`'s numpy covers the trailing dimension, provably dynamic in the rank-2 feed.",
+				tail.getHasNumpyCallsOnParameters());
+		assertNull("`tail_prod` must not pass a precondition.", tail.getPassingPrecondition());
+		assertNotNull("`tail_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				tail.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function head = getFunction("head_prod");
+		assertTrue("`head_prod`'s numpy covers the leading dimension, provably dynamic in the rank-2 feed.",
+				head.getHasNumpyCallsOnParameters());
+		assertNull("`head_prod` must not pass a precondition.", head.getPassingPrecondition());
+		assertNotNull("`head_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				head.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function copy = getFunction("copy_prod");
+		assertTrue("`copy_prod`'s numpy covers every dimension through the copy slice, and the rank-2 feed has a dynamic one.",
+				copy.getHasNumpyCallsOnParameters());
+		assertNull("`copy_prod` must not pass a precondition.", copy.getPassingPrecondition());
+		assertNotNull("`copy_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				copy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function pair = getFunction("pair_prod");
+		assertTrue("`pair_prod`'s clamped suffix still covers the rank-2 feed's dynamic dimension.", pair.getHasNumpyCallsOnParameters());
+		assertNull("`pair_prod` must not pass a precondition.", pair.getPassingPrecondition());
+		assertNotNull("`pair_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				pair.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function nil = getFunction("nil_prod");
+		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
+		assertEquals("`nil_prod` still hybridizes (P1).", P1, nil.getPassingPrecondition());
+
+		Function stride = getFunction("stride_prod");
+		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
+				stride.getHasNumpyCallsOnParameters());
+		assertEquals("`stride_prod` still hybridizes (P1).", P1, stride.getPassingPrecondition());
+
+		Function rest = getFunction("rest_prod");
+		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
+				rest.getHasNumpyCallsOnParameters());
+		assertEquals("`rest_prod` still hybridizes (P1).", P1, rest.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the return side of interprocedural shape-descriptor propagation
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code tail_dims} returns {@code get_shape(tensor)[-1:]},
 	 * a shape slice covering only the statically-known trailing dimension, and {@code reduce_returned_tail} applies {@code np.prod} to the
