@@ -726,9 +726,10 @@ public class Util {
 
 	/**
 	 * The result of a two-color taint scan: whether numpy hit a value-tainted argument, whether a value taint escaped this node, and the
-	 * {@link ShapeDescriptor} the node's returns carry when every return of a tracked shape agrees on one ({@code null} when nothing
-	 * tracked is returned), so a caller keeps resolving staticness across the return boundary
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756).
+	 * {@link ShapeDescriptor} the node's returns carry, so a caller keeps resolving staticness across the return boundary
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). The descriptor is {@code null} when no shape-tainted
+	 * value is returned <em>or</em> any returned shape lacks a descriptor (provenance is dropped rather than partially trusted);
+	 * conflicting tracked returns merge to the ambiguous descriptor instead.
 	 */
 	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor) {
 	}
@@ -891,7 +892,9 @@ public class Util {
 					boolean calleeValueEscapes = false;
 					boolean analyzedCallee = false;
 					// The descriptor the callees' returns carry to this call site: all analyzed targets must agree on a tracked one; a
-					// target returning an untracked shape (or none) drops it, and disagreeing targets poison it.
+					// target returning an untracked shape (or none) drops it, and disagreeing targets poison it. Dropping forfeits only
+					// the return-flow descriptor: a shape-extractor call site still falls back to the all-dimensions seed anchored to
+					// the argument tensor (below), which over-approximates any shape metadata the extractor derives from that tensor.
 					ShapeDescriptor calleeReturnDescriptor = null;
 					boolean calleeReturnDescriptorDropped = false;
 
