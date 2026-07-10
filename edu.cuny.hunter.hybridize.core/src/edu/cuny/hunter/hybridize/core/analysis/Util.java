@@ -563,7 +563,7 @@ public class Util {
 	 * ({@link #lookupTensorTypes}) are constant-time rather than a full linear scan of the analysis per call. Build this once per function
 	 * (or project) and reuse it across the function's call-graph nodes rather than rebuilding per node.
 	 */
-	public static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
+	static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
