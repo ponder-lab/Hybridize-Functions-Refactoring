@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import org.eclipse.core.runtime.ILog;
@@ -524,9 +525,11 @@ public class Util {
 	 * precisely to hold while upstream modeling is in motion. A {@code dtype} read launders taint (the element type is a trace-time
 	 * constant); a {@code shape} read (or {@code tf.shape}/{@code get_shape_list}) yields shape metadata, over which numpy is declined only
 	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (the
-	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747). Known narrowings,
-	 * each documented on the issue: positional arguments only cross call sites, field-mediated and subscript-store flows are not tracked,
-	 * and a method's receiver is never a source. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747), with the shape's
+	 * provenance propagated across call boundaries so staticness resolves interprocedurally
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). Known narrowings, each documented on the issue:
+	 * positional arguments only cross call sites, field-mediated and subscript-store flows are not tracked, and a method's receiver is
+	 * never a source. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
@@ -554,8 +557,8 @@ public class Util {
 		if (sources.isEmpty())
 			return false;
 
-		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), callGraph, pointerAnalysis, tensorTypeIndex, new HashMap<>())
-				.sink();
+		return scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>(), callGraph, pointerAnalysis, tensorTypeIndex,
+				new HashMap<>()).sink();
 	}
 
 	/**
@@ -588,7 +591,10 @@ public class Util {
 	 * A shape-derived value tracked by the scan: the tensor whose shape it came from ({@code sourceTensor}, a value number in
 	 * {@code sourceNode}) and which of that tensor's dimensions it covers ({@code dims}; {@code null} means all dimensions). numpy over
 	 * such a value is safe iff the covered dimensions are statically known; the descriptor lets the sink consult the source tensor's
-	 * per-dim {@link TensorType}. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * per-dim {@link TensorType}. The source frame need not be the frame the sink sits in: the descriptor crosses call boundaries with the
+	 * shape taint (argument seeding and return flow, https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756), and the
+	 * (node, value number) lookup stays valid because the tensor-type index is global. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private record ShapeDescriptor(CGNode sourceNode, int sourceTensor, Set<Integer> dims) {
 	}
@@ -718,8 +724,14 @@ public class Util {
 		return accesses.length > 0 && SLICE_BUILTIN_NAME.equals(accesses[0].getName().fst);
 	}
 
-	/** The result of a two-color taint scan: whether numpy hit a value-tainted argument, and whether a value taint escaped this node. */
-	private record NumpyScanResult(boolean sink, boolean valueEscapes) {
+	/**
+	 * The result of a two-color taint scan: whether numpy hit a value-tainted argument, whether a value taint escaped this node, and the
+	 * {@link ShapeDescriptor} the node's returns carry, so a caller keeps resolving staticness across the return boundary
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). The descriptor is {@code null} when no shape-tainted
+	 * value is returned <em>or</em> any returned shape lacks a descriptor (provenance is dropped rather than partially trusted);
+	 * conflicting tracked returns merge to the ambiguous descriptor instead.
+	 */
+	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor) {
 	}
 
 	/**
@@ -729,9 +741,13 @@ public class Util {
 	 * user-defined shape extractor such as {@code get_shape_list}); it carries a {@link ShapeDescriptor} identifying the source tensor and
 	 * the dimensions it covers, narrowed as the shape vector is sliced ({@code [-k:]}, with the bound resolved via the pointer analysis).
 	 * numpy over a shape-tainted argument is declined only when a covered dimension is provably dynamic in the source tensor's
-	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and an unprovable shape - a ⊤ type or a
-	 * descriptor lost across a call boundary - is permitted, favoring precision. The sound decline-unless-provably-static variant is
-	 * tracked on https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751; see
+	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and only a provably-dynamic covered dimension
+	 * is a sink. The descriptor crosses call boundaries with the taint
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): a shape-tainted argument seeds its descriptor onto the
+	 * callee's parameter ({@code shapeDescriptorSeed}), and a callee returning a tracked shape carries its (possibly slice-narrowed)
+	 * descriptor back to the call-site result, so staticness resolves in whichever frame the sink sits. An unprovable shape - a ⊤ type or
+	 * untracked/ambiguous provenance - is permitted, favoring precision. The sound decline-unless-provably-static variant is tracked on
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751; see
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747 for the per-dimension shape-aware verdict.
 	 * <p>
 	 * Call sites are tainted conservatively (a value argument taints the call-site result), which follows a comprehension's
@@ -739,36 +755,43 @@ public class Util {
 	 * pure <em>shape extractor</em> — its value-tainted arguments are consumed solely by shape operations and never escape (e.g.
 	 * {@code get_shape_list}), whose result then describes the tensor argument's shape — otherwise the result is value-tainted. A callee's
 	 * {@code valueEscapes} bit records whether any value taint reached a non-shape use inside it, and is what distinguishes a shape
-	 * extractor from a value carrier. A {@code dtype} read launders taint entirely. Memoized on (node, value seed, shape seed) with an
-	 * optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * extractor from a value carrier. A {@code dtype} read launders taint entirely. Memoized on (node, value seed, shape seed, shape
+	 * descriptor seed) with an optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private static NumpyScanResult scanForTaintedNumpySinks(CGNode node, Set<Integer> valueSeed, Set<Integer> shapeSeed,
-			CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex,
-			Map<String, NumpyScanResult> memo) {
-		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed);
+			Map<Integer, ShapeDescriptor> shapeDescriptorSeed, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex, Map<String, NumpyScanResult> memo) {
+		Map<Integer, String> descriptorKey = new TreeMap<>();
+		shapeDescriptorSeed.forEach((value, descriptor) -> descriptorKey.put(value, renderDescriptorForMemoKey(descriptor, callGraph)));
+		String key = callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed) + ":" + descriptorKey;
 		NumpyScanResult cached = memo.get(key);
 
 		if (cached != null)
 			return cached;
 
 		// Optimistic cycle guard: a recursive revisit contributes nothing new.
-		memo.put(key, new NumpyScanResult(false, false));
+		memo.put(key, new NumpyScanResult(false, false, null));
 
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new NumpyScanResult(false, false);
+			return new NumpyScanResult(false, false, null);
 
 		DefUse defUse = node.getDU();
 		Set<Integer> valueTainted = new HashSet<>(valueSeed);
 		Set<Integer> shapeTainted = new HashSet<>(shapeSeed);
-		// For each shape-tainted value, the tensor+dimensions its shape came from (absent = shape-derived but provenance lost).
-		Map<Integer, ShapeDescriptor> shapeDescriptors = new HashMap<>();
+		// For each shape-tainted value, the tensor+dimensions its shape came from (absent = shape-derived but provenance lost). Seeded
+		// interprocedurally: a shape-tainted argument's descriptor arrives on the corresponding parameter (issue 756).
+		Map<Integer, ShapeDescriptor> shapeDescriptors = new HashMap<>(shapeDescriptorSeed);
 		Deque<Integer> worklist = new ArrayDeque<>();
 		worklist.addAll(valueSeed);
 		worklist.addAll(shapeSeed);
 		boolean sink = false;
 		boolean valueEscapes = false;
+		// The descriptor this node's returns carry back to the caller: set while all tracked-shape returns agree, poisoned to
+		// AMBIGUOUS_DESCRIPTOR on a conflict, and dropped entirely (null) when an untracked shape is returned.
+		ShapeDescriptor returnDescriptor = null;
+		boolean returnedUntrackedShape = false;
 
 		while (!worklist.isEmpty()) {
 			int valueNumber = worklist.pop();
@@ -796,8 +819,8 @@ public class Util {
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (invokesNumpyApi(node, invoke, defUse, pointerAnalysis)) {
 						// A value-tainted argument is a sink (a value escape). A shape-derived argument is a sink only on a
-						// provably-dynamic covered dimension; an unprovable shape (⊤ or a lost descriptor) is permitted, favoring
-						// precision. The sound decline-unless-provably-static variant is tracked on
+						// provably-dynamic covered dimension; an unprovable shape (⊤ or untracked/ambiguous provenance) is permitted,
+						// favoring precision. The sound decline-unless-provably-static variant is tracked on
 						// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751.
 						if (valueColored) {
 							sink = true;
@@ -858,6 +881,12 @@ public class Util {
 
 					boolean calleeValueEscapes = false;
 					boolean analyzedCallee = false;
+					// The descriptor the callees' returns carry to this call site: all analyzed targets must agree on a tracked one; a
+					// target returning an untracked shape (or none) drops it, and disagreeing targets poison it. Dropping forfeits only
+					// the return-flow descriptor: a shape-extractor call site still falls back to the all-dimensions seed anchored to
+					// the argument tensor (below), which over-approximates any shape metadata the extractor derives from that tensor.
+					ShapeDescriptor calleeReturnDescriptor = null;
+					boolean calleeReturnDescriptorDropped = false;
 
 					if (!valueSlots.isEmpty() || !shapeSlots.isEmpty())
 						for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
@@ -872,28 +901,47 @@ public class Util {
 							int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
 							Set<Integer> targetValueSeed = new HashSet<>();
 							Set<Integer> targetShapeSeed = new HashSet<>();
+							Map<Integer, ShapeDescriptor> targetDescriptorSeed = new HashMap<>();
 
 							for (int slot : valueSlots)
 								if (slot < targetParameters.length)
 									targetValueSeed.add(targetParameters[slot]);
 
 							for (int slot : shapeSlots)
-								if (slot < targetParameters.length)
+								if (slot < targetParameters.length) {
 									targetShapeSeed.add(targetParameters[slot]);
+
+									// Thread the argument's shape provenance into the callee's frame, so a numpy sink there still
+									// resolves staticness against the source tensor (issue 756).
+									ShapeDescriptor argumentDescriptor = shapeDescriptors.get(invoke.getUse(slot));
+
+									if (argumentDescriptor != null)
+										targetDescriptorSeed.put(targetParameters[slot], argumentDescriptor);
+								}
 
 							if (targetValueSeed.isEmpty() && targetShapeSeed.isEmpty())
 								continue;
 
 							analyzedCallee = true;
 
-							NumpyScanResult r = scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed, callGraph,
-									pointerAnalysis, tensorTypeIndex, memo);
+							NumpyScanResult r = scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed, targetDescriptorSeed,
+									callGraph, pointerAnalysis, tensorTypeIndex, memo);
 
 							if (r.sink())
 								sink = true;
 							if (r.valueEscapes())
 								calleeValueEscapes = true;
+
+							if (r.returnDescriptor() == null)
+								calleeReturnDescriptorDropped = true;
+							else if (calleeReturnDescriptor == null)
+								calleeReturnDescriptor = r.returnDescriptor();
+							else if (!calleeReturnDescriptor.equals(r.returnDescriptor()))
+								calleeReturnDescriptor = AMBIGUOUS_DESCRIPTOR;
 						}
+
+					if (calleeReturnDescriptorDropped)
+						calleeReturnDescriptor = null;
 
 					// A callee is a shape extractor iff it was analyzed and no value taint escaped inside it: then its result is shape
 					// metadata (SHAPE). Otherwise the call-site result is conservatively value-tainted (a value argument reached a
@@ -907,11 +955,15 @@ public class Util {
 						valueEscapes = true;
 
 					// A shape-extractor result (e.g. `get_shape_list(t)`) is the shape vector of the tensor argument it consumed, covering
-					// all of that tensor's dimensions: seed the descriptor from the (first) value-tainted argument.
+					// all of that tensor's dimensions: seed the descriptor from the (first) value-tainted argument. A descriptor carried
+					// by the callee's return is preferred over that all-dimensions seed - it reflects any slice narrowing inside the
+					// callee (issue 756).
 					ShapeDescriptor extractorDescriptor = null;
 
 					if (resultShape && shapeExtractor && !valueSlots.isEmpty())
 						extractorDescriptor = new ShapeDescriptor(node, invoke.getUse(valueSlots.iterator().next()), null);
+
+					ShapeDescriptor resultDescriptor = calleeReturnDescriptor != null ? calleeReturnDescriptor : extractorDescriptor;
 
 					for (int d = 0; d < invoke.getNumberOfDefs(); d++) {
 						int def = invoke.getDef(d);
@@ -919,8 +971,8 @@ public class Util {
 						if (resultValue)
 							colorValue(def, valueTainted, shapeTainted, worklist);
 						else if (resultShape)
-							if (extractorDescriptor != null)
-								colorShapeFrom(def, extractorDescriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							if (resultDescriptor != null)
+								colorShapeFrom(def, resultDescriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
 							else
 								colorShape(def, valueTainted, shapeTainted, worklist);
 					}
@@ -931,6 +983,19 @@ public class Util {
 				if (use instanceof SSAReturnInstruction) {
 					if (valueColored)
 						valueEscapes = true;
+					else {
+						// A returned shape-tainted value carries its descriptor back to the caller (issue 756). Conflicting descriptors
+						// across returns (or a re-scan after poisoning) merge to AMBIGUOUS; an untracked shape return drops the
+						// descriptor entirely.
+						ShapeDescriptor descriptor = shapeDescriptors.get(valueNumber);
+
+						if (descriptor == null)
+							returnedUntrackedShape = true;
+						else if (returnDescriptor == null)
+							returnDescriptor = descriptor;
+						else if (!returnDescriptor.equals(descriptor))
+							returnDescriptor = AMBIGUOUS_DESCRIPTOR;
+					}
 					continue;
 				}
 
@@ -950,9 +1015,21 @@ public class Util {
 			}
 		}
 
-		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes);
+		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor);
 		memo.put(key, result);
 		return result;
+	}
+
+	/**
+	 * A stable rendering of {@code descriptor} for the scan's memo key: the source node's call-graph number, the source tensor's value
+	 * number, and the covered dimensions ({@code *} = all dimensions; {@code !} = ambiguous provenance).
+	 */
+	private static String renderDescriptorForMemoKey(ShapeDescriptor descriptor, CallGraph callGraph) {
+		if (descriptor.sourceNode() == null)
+			return "!";
+
+		return callGraph.getNumber(descriptor.sourceNode()) + "@" + descriptor.sourceTensor()
+				+ (descriptor.dims() == null ? ":*" : ":" + new TreeSet<>(descriptor.dims()));
 	}
 
 	/** Colors {@code value} with the value taint (which dominates any shape taint) and enqueues it when newly tainted. */
