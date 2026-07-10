@@ -523,10 +523,10 @@ public class Util {
 	 * points-to-keyed gate silently passes a crasher under any modeling gap that empties a points-to set, and this precondition exists
 	 * precisely to hold while upstream modeling is in motion. A {@code dtype} read launders taint (the element type is a trace-time
 	 * constant); a {@code shape} read (or {@code tf.shape}/{@code get_shape_list}) yields shape metadata, over which numpy is declined only
-	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (#747, the
-	 * per-dimension shape-aware verdict). Known narrowings, each documented on the issue: positional arguments only cross call sites,
-	 * field-mediated and subscript-store flows are not tracked, and a method's receiver is never a source. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (the
+	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747). Known narrowings,
+	 * each documented on the issue: positional arguments only cross call sites, field-mediated and subscript-store flows are not tracked,
+	 * and a method's receiver is never a source. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
@@ -730,7 +730,9 @@ public class Util {
 	 * {@link TensorType} ({@link #numpyOverShapeStaticness}); a proven-static shape is safe, and only a provably-dynamic covered dimension
 	 * is a sink. An unprovable shape - a ⊤ type or a descriptor lost across a call boundary - is permitted here (precision-favoring), which
 	 * recovers the corpus DenseLayer idiom whose input tensor Ariadne types ⊤; the sound variant (decline the unprovable) is a one-line
-	 * change tracked by #751 (blocked on wala/ML#704). The per-dimension shape-aware verdict of #747.
+	 * change tracked by https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751 (blocked on
+	 * https://github.com/wala/ML/issues/704). The per-dimension shape-aware verdict of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 * <p>
 	 * Call sites are tainted conservatively (a value argument taints the call-site result), which follows a comprehension's
 	 * element-through-container flow (NLPGNN's {@code TUDataset.cat}, issue 745). The result is colored SHAPE only when the callee is a
@@ -796,12 +798,16 @@ public class Util {
 						// numpy over a value-tainted argument always raises under tracing (its content is never trace-time-static); it is
 						// also a value escape, so record that even though `sink`, once set, already dominates the decision. numpy over a
 						// shape-derived argument raises only when a covered dimension is dynamic: consult the source tensor's per-dim shape
-						// and decline only on a provably-dynamic dimension (#747). A proven-static shape is safe; an unprovable shape - a ⊤
-						// type, or a descriptor lost across a call boundary - is PERMITTED here (precision-favoring), which recovers the
-						// corpus DenseLayer3d.call idiom whose input tensor Ariadne currently types ⊤ (wala/ML#704). This is unsound on a ⊤
-						// that is really dynamic; the sound variant declines instead.
-						// TODO: flip to decline-unless-provably-static (`descriptor == null || staticness(...) != STATIC`) once wala/ML#704
-						// lands and DenseLayer's shape resolves - a one-line change (#751).
+						// and decline only on a provably-dynamic dimension
+						// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747). A proven-static shape is safe; an
+						// unprovable shape - a ⊤ type, or a descriptor lost across a call boundary - is PERMITTED here
+						// (precision-favoring),
+						// which recovers the corpus DenseLayer3d.call idiom whose input tensor Ariadne currently types ⊤
+						// (https://github.com/wala/ML/issues/704). This is unsound on a ⊤ that is really dynamic; the sound variant
+						// declines.
+						// TODO: flip to decline-unless-provably-static (`descriptor == null || staticness(...) != STATIC`) once
+						// https://github.com/wala/ML/issues/704 lands and DenseLayer's shape resolves - a one-line change tracked by
+						// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751.
 						if (valueColored) {
 							sink = true;
 							valueEscapes = true;

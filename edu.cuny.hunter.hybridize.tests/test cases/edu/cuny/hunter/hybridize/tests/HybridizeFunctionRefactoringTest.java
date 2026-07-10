@@ -9489,7 +9489,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code via_arg} passes {@code get_shape(x)} to
 	 * {@code prod_of}, which applies {@code np.prod} to it. The shape descriptor is not propagated across the call boundary, so the callee
 	 * cannot prove the covered dimensions static; being precision-favoring on an unprovable shape, the precondition permits and the
-	 * function still hybridizes. TODO: with the sound policy this declines (#751); an alternative recovery is interprocedural descriptor
+	 * function still hybridizes. TODO: with the sound policy this declines
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751); an alternative recovery is interprocedural descriptor
 	 * propagation, which would prove the shape static and permit soundly.
 	 */
 	@Test
@@ -9502,10 +9503,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins numpy over a shape derived from a tensor whose shape Ariadne cannot resolve (⊤): {@code reduce_top} applies {@code np.prod} to
-	 * the trailing dimension of {@code x}, but {@code x} is fed a {@code tf.constant(np.array(...))} value whose shape is ⊤ (wala/ML#539).
-	 * The precondition is precision-favoring on an unprovable shape, so it does not flag the function and it still hybridizes - the unit
-	 * reproduction of the corpus {@code DenseLayer3d.call} scenario, where {@code input_tensor} is likewise typed ⊤ (wala/ML#704) and is
-	 * recovered. TODO: with the sound policy this ⊤ case declines; invert when #751 lands (blocked on wala/ML#704).
+	 * the trailing dimension of {@code x}, but {@code x} is fed a {@code tf.constant(np.array(...))} value whose shape is ⊤
+	 * (https://github.com/wala/ML/issues/539). The precondition is precision-favoring on an unprovable shape, so it does not flag the
+	 * function and it still hybridizes - the unit reproduction of the corpus {@code DenseLayer3d.call} scenario, where {@code input_tensor}
+	 * is likewise typed ⊤ (https://github.com/wala/ML/issues/704) and is recovered. TODO: with the sound policy this ⊤ case declines;
+	 * invert when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751 lands (blocked on
+	 * https://github.com/wala/ML/issues/704).
 	 */
 	@Test
 	public void testNumpyOnTopShape() throws Exception {
