@@ -9538,16 +9538,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins the conflict handling of interprocedural shape-descriptor propagation
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). {@code head_or_tail} returns differently-sliced shape
 	 * vectors from its two branches, so its tracked returns disagree and merge to the ambiguous descriptor, which then seeds
-	 * {@code prod_of}'s parameter across the call boundary; ambiguous provenance is unprovable, so the sink permits it conservatively.
-	 * {@code tail_of_pair} returns a nested shape slice, whose narrowing is not composed, so it returns an untracked shape and the call
-	 * site falls back to the all-dimensions extractor seed, which proves the statically-shaped source safe. Both numpy applications are
-	 * benign, so the function still hybridizes.
+	 * {@code prod_of}'s parameter across the call boundary; ambiguous provenance is unprovable, so the sink permits it
+	 * precision-favoringly. {@code tail_of_pair} returns a nested shape slice, whose narrowing is not composed, so it returns an untracked
+	 * shape and the call site falls back to the all-dimensions extractor seed, which proves the statically-shaped source safe. The function
+	 * still hybridizes. TODO: with the sound policy the ambiguous sink declines; invert when
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751 lands.
 	 */
 	@Test
 	public void testNumpyOnAmbiguousShapeReturn() throws Exception {
 		Function reduce = getFunction("reduce_merged");
-		assertFalse("`reduce_merged`'s numpy consumes an ambiguously-merged shape and an untracked nested slice, both permitted"
-				+ " conservatively.", reduce.getHasNumpyCallsOnParameters());
+		assertFalse("`reduce_merged`'s numpy consumes an ambiguously-merged shape, permitted precision-favoringly, and an untracked"
+				+ " nested slice recovered by the extractor seed.", reduce.getHasNumpyCallsOnParameters());
 		assertEquals("`reduce_merged` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
 	}
 
