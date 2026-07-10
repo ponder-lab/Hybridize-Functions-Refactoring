@@ -589,12 +589,14 @@ public class Util {
 
 	/**
 	 * A shape-derived value tracked by the scan: the tensor whose shape it came from ({@code sourceTensor}, a value number in
-	 * {@code sourceNode}) and which of that tensor's dimensions it covers ({@code dims}; {@code null} means all dimensions). numpy over
-	 * such a value is safe iff the covered dimensions are statically known; the descriptor lets the sink consult the source tensor's
-	 * per-dim {@link TensorType}. The source frame need not be the frame the sink sits in: the descriptor crosses call boundaries with the
-	 * shape taint (argument seeding and return flow, https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756), and the
-	 * (node, value number) lookup stays valid because the tensor-type index is global. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * {@code sourceNode}) and which of that tensor's dimensions it covers ({@code dims}; {@code null} means all dimensions). A non-negative
+	 * index is absolute; a negative index counts from the end (Python semantics), resolved against each {@link TensorType}'s own rank at
+	 * the sink ({@link #numpyOverShapeStaticness}), so a suffix slice stays tracked even when the source's rank is statically unresolvable
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761). numpy over such a value is safe iff the covered
+	 * dimensions are statically known; the descriptor lets the sink consult the source tensor's per-dim {@link TensorType}. The source
+	 * frame need not be the frame the sink sits in: the descriptor crosses call boundaries with the shape taint (argument seeding and
+	 * return flow, https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756), and the (node, value number) lookup stays
+	 * valid because the tensor-type index is global. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
 	 */
 	private record ShapeDescriptor(CGNode sourceNode, int sourceTensor, Set<Integer> dims) {
 	}
@@ -609,7 +611,8 @@ public class Util {
 	 * {@link TensorType} across all its analysis contexts: {@link ShapeStaticness#DYNAMIC} if any covered dimension is non-numeric in any
 	 * context (numpy would crash under tracing); {@link ShapeStaticness#STATIC} if every covered dimension is a {@link NumericDim} in every
 	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (staticness
-	 * cannot be proven either way).
+	 * cannot be proven either way). A negative covered index counts from the end of each context's own rank, so a suffix slice resolves
+	 * per-context without a statically-known rank (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761).
 	 */
 	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor,
 			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
@@ -637,11 +640,14 @@ public class Util {
 					covered.add(i);
 			}
 
-			for (int i : covered)
-				if (i < 0 || i >= typeDims.size())
+			for (int i : covered) {
+				int index = i < 0 ? typeDims.size() + i : i;
+
+				if (index < 0 || index >= typeDims.size())
 					top = true; // rank disagreement: can't prove staticness of this dimension.
-				else if (!(typeDims.get(i) instanceof NumericDim))
+				else if (!(typeDims.get(index) instanceof NumericDim))
 					return ShapeStaticness.DYNAMIC; // a non-numeric (dynamic/symbolic/ragged) covered dim crashes numpy.
+			}
 		}
 
 		return top ? ShapeStaticness.TOP : ShapeStaticness.STATIC;
@@ -1089,9 +1095,13 @@ public class Util {
 
 	/**
 	 * Narrows {@code base} (a shape vector covering {@code base}'s dimensions) by the slice {@code slice(x, start, stop, step)} in
-	 * {@code invoke}, resolving the bounds to integer constants and applying Python slice semantics against the source tensor's rank.
-	 * Returns {@code null} when the source rank or a bound cannot be resolved, or when {@code base} already covers a proper subset (nested
-	 * slicing is not composed), so the caller falls back to an untracked shape taint.
+	 * {@code invoke}, resolving the bounds to integer constants and applying Python slice semantics against the source tensor's rank. When
+	 * the rank is statically unresolvable (a ⊤ context or contexts of disagreeing rank), a pure prefix ({@code [:k]}) or suffix
+	 * ({@code [-k:]}) slice is still narrowed rank-independently ({@link #resolveRankFreeSliceDims}), deferring resolution to the sink's
+	 * per-context verdict - the recovery https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761 needs, since the corpus
+	 * {@code einsum_via_matmul} suffix slice otherwise drops the descriptor. Returns {@code null} when a bound cannot be resolved, the rank
+	 * is needed but unresolvable, or {@code base} already covers a proper subset (nested slicing is not composed), so the caller falls back
+	 * to an untracked shape taint.
 	 */
 	private static ShapeDescriptor narrowBySlice(ShapeDescriptor base, PythonInvokeInstruction invoke, CGNode node, DefUse defUse,
 			PointerAnalysis<InstanceKey> pointerAnalysis, Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
@@ -1099,17 +1109,45 @@ public class Util {
 			return null; // only slices of a full shape vector are modeled; nested slicing drops the descriptor (unprovable, so permitted
 							// under the current precision-favoring policy).
 
-		int rank = sourceRank(base, tensorTypeIndex);
-
-		if (rank < 0)
-			return null;
-
 		Integer start = invoke.getNumberOfUses() > 2 ? resolveIntConstant(node, invoke.getUse(2), defUse, pointerAnalysis) : null;
 		Integer stop = invoke.getNumberOfUses() > 3 ? resolveIntConstant(node, invoke.getUse(3), defUse, pointerAnalysis) : null;
 		Integer step = invoke.getNumberOfUses() > 4 ? resolveIntConstant(node, invoke.getUse(4), defUse, pointerAnalysis) : null;
-		Set<Integer> dims = resolveSliceDims(start, stop, step, rank);
+		int rank = sourceRank(base, tensorTypeIndex);
+		Set<Integer> dims = rank < 0 ? resolveRankFreeSliceDims(start, stop, step) : resolveSliceDims(start, stop, step, rank);
 
 		return dims == null ? null : new ShapeDescriptor(base.sourceNode(), base.sourceTensor(), dims);
+	}
+
+	/**
+	 * The dimension indices selected by a Python slice {@code [start:stop:step]} of a shape vector whose rank is statically unresolvable,
+	 * or {@code null} if the slice's coverage depends on the rank. Only two rank-independent forms exist: a pure prefix {@code [:k]}
+	 * ({@code k > 0}) covers the absolute indices {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the last {@code k} dimensions,
+	 * encoded as the negative indices {@code -k..-1} that {@link #numpyOverShapeStaticness} resolves against each context's own rank. An
+	 * index beyond a context's rank surfaces there as unprovable, mirroring Python's slice clamping.
+	 */
+	private static Set<Integer> resolveRankFreeSliceDims(Integer start, Integer stop, Integer step) {
+		if (step != null && step != 1)
+			return null; // only unit-stride slices are modeled precisely.
+
+		Set<Integer> dims = new TreeSet<>();
+
+		// A pure prefix [:k]: absolute indices 0..k-1, no rank needed.
+		if ((start == null || start == 0) && stop != null && stop > 0) {
+			for (int i = 0; i < stop; i++)
+				dims.add(i);
+
+			return dims;
+		}
+
+		// A pure suffix [-k:]: the last k dimensions, encoded as negative indices resolved per-context at the sink.
+		if (start != null && start < 0 && stop == null) {
+			for (int i = start; i < 0; i++)
+				dims.add(i);
+
+			return dims;
+		}
+
+		return null;
 	}
 
 	/**

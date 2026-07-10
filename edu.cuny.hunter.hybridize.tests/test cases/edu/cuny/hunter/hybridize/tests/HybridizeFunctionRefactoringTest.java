@@ -9519,6 +9519,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins descriptor propagation through the BERT-style {@code get_shape_list} idiom
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): the helper reads {@code tensor.shape.as_list()} into a
+	 * Python list, returns it early when every dimension is static, and otherwise patches the dynamic entries element-wise with
+	 * {@code tf.shape(tensor)[index]} before returning - in-callee extraction, list mutation, and dual returns, the three features that
+	 * defeat the descriptor. {@code head_via_list} applies {@code np.prod} to {@code get_shape_list(x)[:1]}, a slice covering only the
+	 * provably-dynamic leading dimension, so with the descriptor tracked through the idiom the function is declined. Distills NLPGNN's
+	 * {@code get_shape_list}/{@code einsum_via_matmul} (nlpgnn/tools.py, nlpgnn/layers/dense.py).
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeThroughShapeList() throws Exception {
+		Function head = getFunction("head_via_list");
+		assertTrue("`head_via_list`'s numpy is over the provably-dynamic leading dimension extracted by `get_shape_list`.",
+				head.getHasNumpyCallsOnParameters());
+		assertNull("`head_via_list` must not pass a precondition.", head.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the rank-independent tracking of a suffix shape slice
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761): {@code tail_prod} applies {@code np.prod} to
+	 * {@code get_shape(x)[-1:]}, and {@code x} is fed tensors of two different ranks, so the shape vector's rank is statically unresolvable
+	 * and an absolute dimension set cannot be computed. A pure suffix slice covers "the last {@code k} dimensions" regardless of rank, so
+	 * the descriptor records the covered dimensions as negative indices resolved per-{@link com.ibm.wala.cast.python.ml.types.TensorType}
+	 * at the sink; the rank-2 feed's trailing dimension is provably dynamic, so the function is declined. Without the relative form the
+	 * descriptor is dropped at the slice and the crasher is permitted precision-favoringly, the mechanism that leaves the corpus
+	 * {@code einsum_via_matmul} sink descriptorless.
+	 */
+	@Test
+	public void testNumpyOnDynamicTailAcrossRanks() throws Exception {
+		Function tail = getFunction("tail_prod");
+		assertTrue("`tail_prod`'s numpy covers the trailing dimension, provably dynamic in the rank-2 feed.",
+				tail.getHasNumpyCallsOnParameters());
+		assertNull("`tail_prod` must not pass a precondition.", tail.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the return side of interprocedural shape-descriptor propagation
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code tail_dims} returns {@code get_shape(tensor)[-1:]},
 	 * a shape slice covering only the statically-known trailing dimension, and {@code reduce_returned_tail} applies {@code np.prod} to the
