@@ -9535,6 +9535,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the conflict handling of interprocedural shape-descriptor propagation
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). {@code head_or_tail} returns differently-sliced shape
+	 * vectors from its two branches, so its tracked returns disagree and merge to the ambiguous descriptor, which then seeds
+	 * {@code prod_of}'s parameter across the call boundary; ambiguous provenance is unprovable, so the sink permits it conservatively.
+	 * {@code tail_of_pair} returns a nested shape slice, whose narrowing is not composed, so it returns an untracked shape and the call
+	 * site falls back to the all-dimensions extractor seed, which proves the statically-shaped source safe. Both numpy applications are
+	 * benign, so the function still hybridizes.
+	 */
+	@Test
+	public void testNumpyOnAmbiguousShapeReturn() throws Exception {
+		Function reduce = getFunction("reduce_merged");
+		assertFalse("`reduce_merged`'s numpy consumes an ambiguously-merged shape and an untracked nested slice, both permitted"
+				+ " conservatively.", reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_merged` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins numpy over a shape derived from a tensor whose shape Ariadne cannot resolve (⊤): {@code reduce_top} applies {@code np.prod} to
 	 * the trailing dimension of {@code x}, but {@code x} is fed a {@code tf.constant(np.array(...))} value whose shape is ⊤
 	 * (https://github.com/wala/ML/issues/539). The precondition is precision-favoring on an unprovable shape, so it does not flag the
