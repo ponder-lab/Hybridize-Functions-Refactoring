@@ -617,6 +617,11 @@ public class Util {
 	 */
 	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor,
 			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
+		// An empty covered set (an empty slice such as `[:0]`) consumes no dimension values: vacuously static, even for an untyped
+		// source.
+		if (descriptor.dims() != null && descriptor.dims().isEmpty())
+			return ShapeStaticness.STATIC;
+
 		Set<TensorType> types = lookupTensorTypes(descriptor.sourceNode(), descriptor.sourceTensor(), tensorTypeIndex);
 
 		if (types.isEmpty())
