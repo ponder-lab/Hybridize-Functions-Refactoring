@@ -9533,6 +9533,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`head_via_list`'s numpy is over the provably-dynamic leading dimension extracted by `get_shape_list`.",
 				head.getHasNumpyCallsOnParameters());
 		assertNull("`head_via_list` must not pass a precondition.", head.getPassingPrecondition());
+		assertNotNull("`head_via_list` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				head.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 	}
 
 	/**
@@ -9551,16 +9553,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`tail_prod`'s numpy covers the trailing dimension, provably dynamic in the rank-2 feed.",
 				tail.getHasNumpyCallsOnParameters());
 		assertNull("`tail_prod` must not pass a precondition.", tail.getPassingPrecondition());
+		assertNotNull("`tail_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				tail.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 
 		Function head = getFunction("head_prod");
 		assertTrue("`head_prod`'s numpy covers the leading dimension, provably dynamic in the rank-2 feed.",
 				head.getHasNumpyCallsOnParameters());
 		assertNull("`head_prod` must not pass a precondition.", head.getPassingPrecondition());
+		assertNotNull("`head_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				head.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 
 		Function copy = getFunction("copy_prod");
 		assertTrue("`copy_prod`'s numpy covers every dimension through the copy slice, and the rank-2 feed has a dynamic one.",
 				copy.getHasNumpyCallsOnParameters());
 		assertNull("`copy_prod` must not pass a precondition.", copy.getPassingPrecondition());
+		assertNotNull("`copy_prod` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				copy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 	}
 
 	/**

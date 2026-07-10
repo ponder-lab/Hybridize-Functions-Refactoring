@@ -1132,7 +1132,8 @@ public class Util {
 	 * or {@code null} if the slice's coverage depends on the rank. Only two rank-independent forms exist: a pure prefix {@code [:k]}
 	 * ({@code k >= 0}; {@code [:0]} covers nothing) covers the absolute indices {@code 0..k-1}, and a pure suffix {@code [-k:]} covers the
 	 * last {@code k} dimensions, encoded as the negative indices {@code -k..-1} that {@link #numpyOverShapeStaticness} resolves against
-	 * each context's own rank. An index beyond a context's rank surfaces there as unprovable, mirroring Python's slice clamping.
+	 * each context's own rank. An index beyond a context's rank contributes no element there and is ignored by the verdict, mirroring
+	 * Python's slice clamping.
 	 */
 	private static Set<Integer> resolveRankFreeSliceDims(Integer start, Integer stop, Integer step) {
 		if (step != null && step != 1)
