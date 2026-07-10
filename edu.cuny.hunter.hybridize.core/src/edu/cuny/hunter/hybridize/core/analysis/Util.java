@@ -610,9 +610,10 @@ public class Util {
 	 * The verdict for numpy applied to the shape-derived value described by {@code descriptor}. Consults the source tensor's per-dim
 	 * {@link TensorType} across all its analysis contexts: {@link ShapeStaticness#DYNAMIC} if any covered dimension is non-numeric in any
 	 * context (numpy would crash under tracing); {@link ShapeStaticness#STATIC} if every covered dimension is a {@link NumericDim} in every
-	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped, its shape is ⊤, or a covered index is out of range (staticness
-	 * cannot be proven either way). A negative covered index counts from the end of each context's own rank, so a suffix slice resolves
-	 * per-context without a statically-known rank (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761).
+	 * context (safe); {@link ShapeStaticness#TOP} if the source is untyped or its shape is ⊤ (staticness cannot be proven either way). A
+	 * negative covered index counts from the end of each context's own rank, so a suffix slice resolves per-context without a
+	 * statically-known rank (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/761); a covered index beyond a context's
+	 * rank contributes no element there (Python clamps a slice to the vector's extent) and is ignored for that context.
 	 */
 	private static ShapeStaticness numpyOverShapeStaticness(ShapeDescriptor descriptor,
 			Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex) {
@@ -643,9 +644,12 @@ public class Util {
 			for (int i : covered) {
 				int index = i < 0 ? typeDims.size() + i : i;
 
+				// Covered dimensions come from slices, and Python clamps a slice to the vector's extent: an index beyond this
+				// context's rank contributes no element here, so it is ignored rather than degrading the verdict.
 				if (index < 0 || index >= typeDims.size())
-					top = true; // rank disagreement: can't prove staticness of this dimension.
-				else if (!(typeDims.get(index) instanceof NumericDim))
+					continue;
+
+				if (!(typeDims.get(index) instanceof NumericDim))
 					return ShapeStaticness.DYNAMIC; // a non-numeric (dynamic/symbolic/ragged) covered dim crashes numpy.
 			}
 		}
