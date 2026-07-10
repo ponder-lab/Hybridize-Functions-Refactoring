@@ -9485,20 +9485,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the handling of shape metadata passed <em>as an argument</em> into a callee
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code via_arg} passes {@code get_shape(x)} to
-	 * {@code prod_of}, which applies {@code np.prod} to it. The shape descriptor is not propagated across the call boundary, so the callee
-	 * cannot prove the covered dimensions static; being precision-favoring on an unprovable shape, the precondition permits and the
-	 * function still hybridizes. TODO: with the sound policy this declines
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751); an alternative recovery is interprocedural descriptor
-	 * propagation, which would prove the shape static and permit soundly.
+	 * Pins the argument side of interprocedural shape-descriptor propagation
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code via_arg} passes {@code get_shape(x)} to
+	 * {@code prod_of}, which applies {@code np.prod} to it. The descriptor (source tensor plus covered dimensions) is seeded onto the
+	 * callee's parameter, so the sink resolves the covered dimensions against {@code x}'s statically-known shape and proves them static:
+	 * the function is permitted soundly (not by the precision-favoring unprovable-shape fallback) and still hybridizes, under either policy
+	 * of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751.
 	 */
 	@Test
 	public void testNumpyOnShapeArgumentToCallee() throws Exception {
 		Function viaArg = getFunction("via_arg");
-		assertFalse("`via_arg` passes shape metadata into a callee; without cross-boundary provenance the shape is unprovable and permitted"
-				+ " precision-favoringly.", viaArg.getHasNumpyCallsOnParameters());
+		assertFalse("`via_arg` passes shape metadata into a callee; the propagated descriptor proves the covered dimensions static.",
+				viaArg.getHasNumpyCallsOnParameters());
 		assertEquals("`via_arg` still hybridizes (P1).", P1, viaArg.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the decline side of interprocedural shape-descriptor propagation
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code head_via_arg} passes {@code get_shape(x)[:1]} - a
+	 * slice covering only the provably-dynamic leading dimension - into {@code prod_of}, whose {@code np.prod} is the sink. The
+	 * slice-narrowed descriptor crosses the call boundary with the shape taint, so the callee's sink resolves the covered dimension dynamic
+	 * and the function is declined; without the propagation the descriptor is null at the sink and this crasher is permitted
+	 * precision-favoringly.
+	 */
+	@Test
+	public void testNumpyOnDynamicShapeArgumentToCallee() throws Exception {
+		Function head = getFunction("head_via_arg");
+		assertTrue("`head_via_arg` passes a provably-dynamic shape dimension into `prod_of`'s numpy sink.",
+				head.getHasNumpyCallsOnParameters());
+		assertNull("`head_via_arg` must not pass a precondition.", head.getPassingPrecondition());
+		assertNotNull("`head_via_arg` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				head.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the return side of interprocedural shape-descriptor propagation
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code tail_dims} returns {@code get_shape(tensor)[-1:]},
+	 * a shape slice covering only the statically-known trailing dimension, and {@code reduce_returned_tail} applies {@code np.prod} to the
+	 * returned value. The slice-narrowed descriptor is carried back across the return boundary, preferred over the all-dimensions extractor
+	 * seed - which would cover the provably-dynamic leading dimension and wrongly decline - so the sink proves the covered dimension static
+	 * and the function still hybridizes.
+	 */
+	@Test
+	public void testNumpyOnShapeReturnedFromCallee() throws Exception {
+		Function reduce = getFunction("reduce_returned_tail");
+		assertFalse("`reduce_returned_tail`'s numpy touches only the statically-known trailing dimension returned by `tail_dims`.",
+				reduce.getHasNumpyCallsOnParameters());
+		assertEquals("`reduce_returned_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
 	}
 
 	/**
