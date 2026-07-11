@@ -9705,8 +9705,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testRedefinedFunction() throws Exception {
-		Set<Function> computes = this.getFunctions().stream().filter(f -> f.getIdentifier().equals("compute"))
-				.collect(java.util.stream.Collectors.toSet());
+		Set<Function> computes = this.getFunctions().stream().filter(f -> f.getIdentifier().equals("compute")).collect(Collectors.toSet());
 		assertEquals("Both definitions of `compute` are extracted.", 2, computes.size());
 
 		long typed = computes.stream().filter(f -> Boolean.TRUE.equals(f.getHasTensorParameter())).count();
