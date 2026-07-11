@@ -9696,6 +9696,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the asymmetric tensor-parameter typing of a redefined module-global function
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/766): the module defines {@code compute} twice, calls the first
+	 * definition with a tensor, redefines it, and calls the second definition with a tensor, so both physical definitions are live and
+	 * tensor-fed. Both are extracted, yet only one is typed as having a tensor parameter, so the other is a missed hybridization. The
+	 * unit-scale reproduction shows the asymmetry is intrinsic to the analysis rather than corpus-conditional. TODO: both definitions
+	 * should be typed; strengthen the count to two when the issue is fixed.
+	 */
+	@Test
+	public void testRedefinedFunction() throws Exception {
+		Set<Function> computes = this.getFunctions().stream().filter(f -> f.getIdentifier().equals("compute"))
+				.collect(java.util.stream.Collectors.toSet());
+		assertEquals("Both definitions of `compute` are extracted.", 2, computes.size());
+
+		long typed = computes.stream().filter(f -> Boolean.TRUE.equals(f.getHasTensorParameter())).count();
+		assertEquals("Only one of the two live, tensor-fed definitions of `compute` is typed as having a tensor parameter.", 1, typed);
+	}
+
+	/**
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/714. {@code dist_train_step}'s only statement is
 	 * {@code strategy.run(train_step, args=(...))}: neither body criterion fires (the run summary's result is not tensor-typed, and the
 	 * callee is a property read off the strategy object with no module chain to root), while the tensor computation
