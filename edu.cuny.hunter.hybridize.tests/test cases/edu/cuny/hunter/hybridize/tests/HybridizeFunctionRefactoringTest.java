@@ -9712,6 +9712,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the precision of the Python side-effect precondition across the {@code strategy.run} boundary, the diagnosis of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/768, distilling MusicTransformer's
+	 * {@code __dist_train_step}/{@code __train_step}. {@code Trainer.train_step} assigns {@code self.loss_value} and {@code self.grad},
+	 * genuine Python instance-field writes, so it and its {@code strategy.run} forwarder report Python side effects, charged transitively
+	 * through the summary's call-graph edge (the #714 machinery). {@code LocalTrainer} is the control: its training step keeps the loss and
+	 * gradients in locals, so the only mutations in its reached path are TensorFlow-operation state ({@code apply_gradients} on
+	 * {@code tf.Variable}s), and neither it nor its forwarder is charged. Together they localize the corpus declines to the genuine
+	 * {@code self} writes and refute the TensorFlow-operation-charging hypothesis.
+	 */
+	@Test
+	public void testPythonSideEffectsThroughStrategyRun() throws Exception {
+		Function trainStep = getFunction("Trainer.train_step");
+		assertTrue("`Trainer.train_step` assigns `self.loss_value` and `self.grad`: genuine Python side effects.",
+				Boolean.TRUE.equals(trainStep.getHasPythonSideEffects()));
+
+		Function distTrainStep = getFunction("Trainer.dist_train_step");
+		assertTrue("`Trainer.dist_train_step` reaches the `self` writes transitively through `strategy.run`.",
+				Boolean.TRUE.equals(distTrainStep.getHasPythonSideEffects()));
+
+		Function localTrainStep = getFunction("LocalTrainer.train_step");
+		assertFalse(
+				"`LocalTrainer.train_step` keeps its state local; `apply_gradients`' variable updates are TensorFlow-operation" + " state.",
+				Boolean.TRUE.equals(localTrainStep.getHasPythonSideEffects()));
+
+		Function localDistTrainStep = getFunction("LocalTrainer.dist_train_step");
+		assertFalse("`LocalTrainer.dist_train_step` reaches no Python heap write.",
+				Boolean.TRUE.equals(localDistTrainStep.getHasPythonSideEffects()));
+	}
+
+	/**
 	 * Barren counterpart of {@link #testSpeculativeAnalysis4}: the same keras {@code Model} with the original empty {@code call} body. The
 	 * parameter still types speculatively, but the function performs no tensor computation, so it fails with
 	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709).
