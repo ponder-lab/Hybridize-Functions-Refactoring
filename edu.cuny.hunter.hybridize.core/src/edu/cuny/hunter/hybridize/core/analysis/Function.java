@@ -388,7 +388,7 @@ public class Function {
 		 * <li>{@code hasInputSignatureParam() == false}: no {@code input_signature} was supplied. Inference may synthesize one and write
 		 * it.
 		 * <li>{@code hasInputSignatureParam() == true} and the result is <em>present</em>: a signature was supplied <em>and</em> fully
-		 * modeled. A validate-then-overwrite decision can compare it against the inferred signature.
+		 * modeled. A replace-existing-signature decision can compare it against the inferred signature.
 		 * <li>{@code hasInputSignatureParam() == true} and the result is <em>empty</em>: a signature was supplied but could not be fully
 		 * modeled (an unsupported {@code TensorSpec} subtype such as {@code RaggedTensorSpec}/{@code SparseTensorSpec}—tracked by #524 and
 		 * #533—or malformed content). It must be left as-is, never overwritten.
@@ -438,7 +438,7 @@ public class Function {
 		 * be a list or tuple of {@code tf.TensorSpec(...)} calls; each element is reduced to a {@link TensorType} via
 		 * {@link #parseTensorSpec}. The parse is all-or-nothing: if any element cannot be fully modeled (an unsupported subtype, a
 		 * non-{@code TensorSpec} call, or malformed content), the whole signature is dropped to {@link Optional#empty} rather than
-		 * producing a partial signature that downstream validate-then-overwrite logic could not trust. A well-formed empty list/tuple
+		 * producing a partial signature that downstream replace-existing-signature logic could not trust. A well-formed empty list/tuple
 		 * ({@code input_signature=[]}, a no-arg function) is itself fully modeled and parses to a present, empty {@link InputSignature}.
 		 *
 		 * @param value The expression bound to {@code input_signature}, whether by keyword or by position.
