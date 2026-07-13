@@ -2,13 +2,9 @@ import numpy as np
 import tensorflow as tf
 
 
-class _Opaque:
-    pass
-
-
 def f(t):
     pass
 
 
-x = tf.constant(np.array(_Opaque()))
+x = tf.constant(np.array([1.0, 2.0, 3.0]))
 f(x)

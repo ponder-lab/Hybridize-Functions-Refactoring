@@ -9087,20 +9087,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Regression test for #491 (full-⊤). Pins the full-⊤ marker {@code TensorType(UNKNOWN, null)}—both axes simultaneously unknown—on a
-	 * decorated parameter, end-to-end through Ariadne. The source is {@code tf.constant(numpy.array([...]))} with no {@code dtype=}
-	 * argument and a list-literal first argument:
+	 * decorated parameter, end-to-end through Ariadne. The source is {@code tf.constant(numpy.array(x))} with no {@code dtype=} argument
+	 * and a first argument {@code x} that numpy cannot promote: an instance of a plain user class, which numpy would materialize as a
+	 * {@code dtype=object} 0-d array with no TensorFlow equivalent, so ⊤ is the permanent sound floor:
 	 * <ul>
-	 * <li><em>dtype-⊤.</em> {@code NpArray.getDefaultDTypes} returns {@code EnumSet.of(DType.UNKNOWN)} whenever the {@code dtype} argument
-	 * is absent (numpy infers the dtype from the data at runtime, which a static points-to analysis does not model), per the wala/ML
-	 * lattice contract; {@code tf.constant} propagates it (wala/ML#539).</li>
-	 * <li><em>shape-⊤.</em> {@code NpArray.getDefaultShapes} returns the shape of arg 0, and a bare Python list literal's shape is not
-	 * modeled, so it falls through to {@code null}.</li>
+	 * <li><em>dtype-⊤.</em> {@code NpArray.getDefaultDTypes} walks the argument's literal leaves for numpy's promotion rules (wala/ML#626);
+	 * an argument whose points-to target is not a {@code list}/{@code tuple}/scalar literal (here, an object instance) floors to
+	 * {@code EnumSet.of(DType.UNKNOWN)}; {@code tf.constant} propagates it (wala/ML#539).</li>
+	 * <li><em>shape-⊤.</em> {@code NpArray.getDefaultShapes} returns the shape of arg 0, and an object instance has no modeled shape, so it
+	 * falls through to {@code null}.</li>
 	 * </ul>
 	 * The {@code tf.constant} wrap is load-bearing: a bare {@code numpy.array(...)} does not classify the parameter as tensor-typed (an
 	 * un-wrapped ndarray's {@code TensorType} does not propagate to the callee parameter, wala/ML#598), so the {@code tf.constant}
 	 * TensorFlow tensor is what carries the ⊤ type to {@code t}. This is a durable full-⊤ source—both axes are unknown by construction
 	 * rather than by defeating a specific Ariadne model—unlike the {@code json.loads} shape-⊤ source in
-	 * {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against wala/ML#536.
+	 * {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against wala/ML#536. The earlier list-literal source
+	 * ({@code numpy.array([1.0, 2.0, 3.0])}) was recovered to a concrete type once wala/ML#626 modeled literal-leaf promotion; that
+	 * recovery is pinned by {@link #testInferredTensorTypesNpArrayLiteralDtype()}.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
 	 */
@@ -9128,6 +9131,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		TensorType only = inferred.iterator().next();
 		assertEquals("Expected dtype-⊤ marker (UNKNOWN). Got: " + only, DType.UNKNOWN, only.getDType());
 		assertNull("Expected shape-⊤ marker (null dims) for full-⊤. Got: " + only, only.getDims());
+	}
+
+	/**
+	 * Pins the literal-leaf recovery that wala/ML#626 added to {@code NpArray}: {@code tf.constant(numpy.array([1.0, 2.0, 3.0]))}, with no
+	 * {@code dtype=} argument, now infers a concrete type rather than the full-⊤ marker the same source produced before the change (see
+	 * {@link #testInferredTensorTypesDtypeTop()}, whose fixture moved to a non-promotable argument to retain the ⊤ guard).
+	 * {@code NpArray.getDefaultDTypes} walks the list literal's leaf scalars and promotes them by numpy's rules—a float leaf yields
+	 * {@code float64} (numpy's promotion, not the {@code float32} TensorFlow-literal convention)—while {@code getDefaultShapes} reads the
+	 * three-element literal's length, so the inferred type is {@code {[D:Constant,3] of float64}}.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/626">wala/ML#626</a>
+	 */
+	@Test
+	public void testInferredTensorTypesNpArrayLiteralDtype() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue("The `tf.constant(np.array(...))` source should classify parameter `t` as tensor-typed.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertEquals("Expected numpy-promoted dtype float64 from the float list literal. Got: " + only, DType.FLOAT64, only.getDType());
+		assertEquals("Expected the literal's length as a concrete shape. Got: " + only, List.of(new NumericDim(3)), only.getDims());
 	}
 
 	/**
