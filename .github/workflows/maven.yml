@@ -71,9 +71,18 @@ jobs:
         git clone --depth=50 --branch=pydev_9_3 https://github.com/ponder-lab/Pydev.git
         popd
     - name: Test with Maven
+      run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco
+    # Coverage upload is informational and never gates the build, but the report must actually reach Coveralls, so a transient Coveralls
+    # API error (the recurring HTTP 504 gateway timeouts, #622) is retried rather than swallowed. Skipped when no token is available
+    # (Dependabot and fork PRs do not receive repository secrets).
+    - name: Submit coverage to Coveralls
+      if: ${{ secrets.COVERALLS_REPO_TOKEN != '' }}
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      # Skip the Coveralls upload when no token is available (Dependabot and fork PRs do not receive repository secrets), so coverage
-      # reporting stays best-effort and a token-less run does not fail the build. Runs with the token (including Dependabot once the token
-      # is also added as a Dependabot secret) still upload.
-      run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report -Dcoveralls.skip=${{ secrets.COVERALLS_REPO_TOKEN == '' }}
+      run: |
+        for attempt in 1 2 3 4 5; do
+          ./mvnw -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -DtrimStackTrace=true -B -Pjacoco coveralls:report && exit 0
+          echo "::notice::Coveralls submission attempt ${attempt} failed; retrying in $((attempt * 30))s"
+          sleep $((attempt * 30))
+        done
+        echo "::warning::Coveralls submission failed after 5 attempts; coverage not uploaded this run (Coveralls API outage, #622)"
