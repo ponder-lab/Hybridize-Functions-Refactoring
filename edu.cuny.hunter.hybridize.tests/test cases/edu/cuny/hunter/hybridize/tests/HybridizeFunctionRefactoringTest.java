@@ -9696,6 +9696,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the option-D permit-⊤ arm of the numpy-over-shape precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/772, wala/ML#721): numpy over an {@code UnresolvedDim}
+	 * dimension is permitted, unlike the {@code DynamicDim} feeds in {@link #testNumpyOnDynamicShapeDim} which decline.
+	 * {@code head_over_unresolved} applies {@code np.prod} to the leading dimension of {@code x}, whose leading axis is an
+	 * environment-sourced fixed size the analysis cannot compute, so it types
+	 * {@link com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim} (a fixed run-time size with no run-time-{@code None} evidence).
+	 * Its staticness is unprovable, so it is treated like ⊤ and permitted under the precision-favoring policy (declined under the sound
+	 * policy, #751). This is the {@code DenseLayer3d.call} config-dimension case option D recovers, exercised at unit level; the corpus
+	 * regression check covers it end to end.
+	 */
+	@Test
+	public void testNumpyOnUnresolvedShapeDim() throws Exception {
+		Function head = getFunction("head_over_unresolved");
+		assertFalse("`head_over_unresolved`'s numpy is over an `UnresolvedDim` leading dimension, permitted under permit-⊤.",
+				head.getHasNumpyCallsOnParameters());
+		assertEquals("`head_over_unresolved` still hybridizes (P1).", P1, head.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
