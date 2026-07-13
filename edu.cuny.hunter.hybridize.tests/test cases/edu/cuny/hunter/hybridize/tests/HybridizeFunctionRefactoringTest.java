@@ -138,6 +138,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -9255,9 +9256,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword forwarding,
 	 * ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed layer-method
 	 * trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the rank-2
-	 * hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
-	 * {@code vocab_size=10}), the all-symbolic rank-3 form, and a rank-unknown {@code float32} member (the dtype survives the re-keying;
-	 * the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
+	 * hidden-state shape were context-merging products and disappear. As of Ariadne 0.52.26/0.52.27 (the wala/ML#721 marker split and its
+	 * wala/ML#722 {@code tf.shape}-arm follow-up), the logits' leading two dims — {@code tf.shape(x)[0]/[1]} on a keras-call result whose
+	 * batch/sequence axes carry no run-time-{@code None} evidence — reclassify from {@code DynamicDim} to {@code UnresolvedDim} (a
+	 * fixed-but-uncomputable size; evidence-based per the wala/ML#721 caveat, confirmed not over-capture by wala/ML#722), and the
+	 * all-symbolic rank-3 form (a less-precise cross-context form of the same reshape) drops, leaving the logits shape
+	 * ({@code (Unresolved, Unresolved, 10)}, with {@code vocab_size=10}) and a rank-unknown {@code float32} member (the dtype survives the
+	 * re-keying; the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
 	 * (ponder-lab/ML#514's wala/ML#672 triage).
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
@@ -9271,9 +9276,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
 		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
-		assertEquals("`get_loss`'s `pred` types via the keras call result; cross-context artifacts dropped in Ariadne 0.52.16.",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
-						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
+		assertEquals(
+				"`get_loss`'s `pred` types via the keras call result; leading dims `Unresolved` (evidence-free `tf.shape` axes, wala/ML#721/#722).",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
