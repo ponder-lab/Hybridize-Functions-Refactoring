@@ -9724,12 +9724,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the asymmetric tensor-parameter typing of a redefined module-global function
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/766): the module defines {@code compute} twice, calls the first
-	 * definition with a tensor, redefines it, and calls the second definition with a tensor, so both physical definitions are live and
-	 * tensor-fed. Both are extracted, yet only one is typed as having a tensor parameter, so the other is a missed hybridization. The
-	 * unit-scale reproduction shows the asymmetry is intrinsic to the analysis rather than corpus-conditional. TODO: both definitions
-	 * should be typed; strengthen the count to two when the issue is fixed.
+	 * Pins tensor-parameter typing of a redefined module-global function
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/766, fixed upstream by https://github.com/wala/ML/issues/719):
+	 * the module defines {@code compute} twice, calls the first definition with a tensor, redefines it, and calls the second definition
+	 * with a tensor, so both physical definitions are live and tensor-fed. Both are extracted, and each call binds to the definition in
+	 * scope with its own argument types, so both are typed as having a tensor parameter.
 	 */
 	@Test
 	public void testRedefinedFunction() throws Exception {
@@ -9737,7 +9736,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Both definitions of `compute` are extracted.", 2, computes.size());
 
 		long typed = computes.stream().filter(f -> Boolean.TRUE.equals(f.getHasTensorParameter())).count();
-		assertEquals("Only one of the two live, tensor-fed definitions of `compute` is typed as having a tensor parameter.", 1, typed);
+		assertEquals("Both live, tensor-fed definitions of `compute` are typed as having a tensor parameter.", 2, typed);
 	}
 
 	/**
