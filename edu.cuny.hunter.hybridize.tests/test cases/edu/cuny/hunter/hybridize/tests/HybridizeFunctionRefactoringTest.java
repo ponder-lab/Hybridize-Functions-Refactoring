@@ -138,6 +138,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -9086,20 +9087,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Regression test for #491 (full-⊤). Pins the full-⊤ marker {@code TensorType(UNKNOWN, null)}—both axes simultaneously unknown—on a
-	 * decorated parameter, end-to-end through Ariadne. The source is {@code tf.constant(numpy.array([...]))} with no {@code dtype=}
-	 * argument and a list-literal first argument:
+	 * decorated parameter, end-to-end through Ariadne. The source is {@code tf.constant(numpy.array(x))} with no {@code dtype=} argument
+	 * and a first argument {@code x} that numpy cannot promote: an instance of a plain user class, which numpy would materialize as a
+	 * {@code dtype=object} 0-d array with no TensorFlow equivalent, so ⊤ is the permanent sound floor:
 	 * <ul>
-	 * <li><em>dtype-⊤.</em> {@code NpArray.getDefaultDTypes} returns {@code EnumSet.of(DType.UNKNOWN)} whenever the {@code dtype} argument
-	 * is absent (numpy infers the dtype from the data at runtime, which a static points-to analysis does not model), per the wala/ML
-	 * lattice contract; {@code tf.constant} propagates it (wala/ML#539).</li>
-	 * <li><em>shape-⊤.</em> {@code NpArray.getDefaultShapes} returns the shape of arg 0, and a bare Python list literal's shape is not
-	 * modeled, so it falls through to {@code null}.</li>
+	 * <li><em>dtype-⊤.</em> {@code NpArray.getDefaultDTypes} walks the argument's literal leaves for numpy's promotion rules (wala/ML#626);
+	 * an argument whose points-to target is not a {@code list}/{@code tuple}/scalar literal (here, an object instance) floors to
+	 * {@code EnumSet.of(DType.UNKNOWN)}; {@code tf.constant} propagates it (wala/ML#539).</li>
+	 * <li><em>shape-⊤.</em> {@code NpArray.getDefaultShapes} returns the shape of arg 0, and an object instance has no modeled shape, so it
+	 * falls through to {@code null}.</li>
 	 * </ul>
 	 * The {@code tf.constant} wrap is load-bearing: a bare {@code numpy.array(...)} does not classify the parameter as tensor-typed (an
 	 * un-wrapped ndarray's {@code TensorType} does not propagate to the callee parameter, wala/ML#598), so the {@code tf.constant}
 	 * TensorFlow tensor is what carries the ⊤ type to {@code t}. This is a durable full-⊤ source—both axes are unknown by construction
 	 * rather than by defeating a specific Ariadne model—unlike the {@code json.loads} shape-⊤ source in
-	 * {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against wala/ML#536.
+	 * {@link #testInferredTensorTypesUnknownShapeTop()}, which is fragile against wala/ML#536. The earlier list-literal source
+	 * ({@code numpy.array([1.0, 2.0, 3.0])}) was recovered to a concrete type once wala/ML#626 modeled literal-leaf promotion; that
+	 * recovery is pinned by {@link #testInferredTensorTypesNpArrayLiteralDtype()}.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/491">Issue 491</a>
 	 */
@@ -9127,6 +9131,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		TensorType only = inferred.iterator().next();
 		assertEquals("Expected dtype-⊤ marker (UNKNOWN). Got: " + only, DType.UNKNOWN, only.getDType());
 		assertNull("Expected shape-⊤ marker (null dims) for full-⊤. Got: " + only, only.getDims());
+	}
+
+	/**
+	 * Pins the literal-leaf recovery that wala/ML#626 added to {@code NpArray}: {@code tf.constant(numpy.array([1.0, 2.0, 3.0]))}, with no
+	 * {@code dtype=} argument, now infers a concrete type rather than the full-⊤ marker the same source produced before the change (see
+	 * {@link #testInferredTensorTypesDtypeTop()}, whose fixture moved to a non-promotable argument to retain the ⊤ guard).
+	 * {@code NpArray.getDefaultDTypes} walks the list literal's leaf scalars and promotes them by numpy's rules—a float leaf yields
+	 * {@code float64} (numpy's promotion, not the {@code float32} TensorFlow-literal convention)—while {@code getDefaultShapes} reads the
+	 * three-element literal's length, so the inferred type is {@code {[D:Constant,3] of float64}}.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/626">wala/ML#626</a>
+	 */
+	@Test
+	public void testInferredTensorTypesNpArrayLiteralDtype() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertNotNull(functions);
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertNotNull(function);
+		assertFalse(function.isHybrid());
+		assertTrue("The `tf.constant(np.array(...))` source should classify parameter `t` as tensor-typed.",
+				function.getHasTensorParameter());
+
+		List<Parameter> parameters = function.getParameters();
+		assertNotNull(parameters);
+		assertEquals(1, parameters.size());
+
+		Parameter t = parameters.get(0);
+		assertEquals("t", t.getName());
+
+		Set<TensorType> inferred = t.getTensorTypes();
+		assertNotNull(inferred);
+		assertEquals("Expected exactly one TensorType for parameter `t`.", 1, inferred.size());
+		TensorType only = inferred.iterator().next();
+		assertEquals("Expected numpy-promoted dtype float64 from the float list literal. Got: " + only, DType.FLOAT64, only.getDType());
+		assertEquals("Expected the literal's length as a concrete shape. Got: " + only, List.of(new NumericDim(3)), only.getDims());
 	}
 
 	/**
@@ -9255,9 +9295,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * closing the reach half of wala/ML#618. As of Ariadne 0.52.14 (the weight walk and constructor-keyword forwarding,
 	 * ponder-lab/ML#510/#511), the model-config constants surface in the trailing dims. As of Ariadne 0.52.16 (receiver-keyed layer-method
 	 * trampolines, ponder-lab/ML#520), the cross-context artifacts drop out of the union: the rank-3 position-dim form and the rank-2
-	 * hidden-state shape were context-merging products and disappear, leaving the true logits shape ({@code (?, ?, 10)}, with
-	 * {@code vocab_size=10}), the all-symbolic rank-3 form, and a rank-unknown {@code float32} member (the dtype survives the re-keying;
-	 * the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
+	 * hidden-state shape were context-merging products and disappear. As of Ariadne 0.52.26/0.52.27 (the wala/ML#721 marker split and its
+	 * wala/ML#722 {@code tf.shape}-arm follow-up), the logits' leading two dims — {@code tf.shape(x)[0]/[1]} on a keras-call result whose
+	 * batch/sequence axes carry no run-time-{@code None} evidence — reclassify from {@code DynamicDim} to {@code UnresolvedDim} (a
+	 * fixed-but-uncomputable size; evidence-based per the wala/ML#721 caveat, confirmed not over-capture by wala/ML#722), and the
+	 * all-symbolic rank-3 form (a less-precise cross-context form of the same reshape) drops, leaving the logits shape
+	 * ({@code (Unresolved, Unresolved, 10)}, with {@code vocab_size=10}) and a rank-unknown {@code float32} member (the dtype survives the
+	 * re-keying; the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
 	 * (ponder-lab/ML#514's wala/ML#672 triage).
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
@@ -9271,9 +9315,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
 		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
-		assertEquals("`get_loss`'s `pred` types via the keras call result; cross-context artifacts dropped in Ariadne 0.52.16.",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new SymbolicDim("?"))),
-						new TensorType(DType.UNKNOWN, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
+		assertEquals(
+				"`get_loss`'s `pred` types via the keras call result; leading dims `Unresolved` (evidence-free `tf.shape` axes, wala/ML#721/#722).",
+				Set.of(new TensorType(DType.UNKNOWN, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
@@ -9691,6 +9735,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the option-D permit-⊤ arm of the numpy-over-shape precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/772, wala/ML#721): numpy over an {@code UnresolvedDim}
+	 * dimension is permitted, unlike the {@code DynamicDim} feeds in {@link #testNumpyOnDynamicShapeDim} which decline.
+	 * {@code head_over_unresolved} applies {@code np.prod} to the leading dimension of {@code x}, whose leading axis is an
+	 * environment-sourced fixed size the analysis cannot compute, so it types
+	 * {@link com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim} (a fixed run-time size with no run-time-{@code None} evidence).
+	 * Its staticness is unprovable, so it is treated like ⊤ and permitted under the precision-favoring policy (declined under the sound
+	 * policy, #751). This is the {@code DenseLayer3d.call} config-dimension case option D recovers, exercised at unit level; the corpus
+	 * regression check covers it end to end.
+	 */
+	@Test
+	public void testNumpyOnUnresolvedShapeDim() throws Exception {
+		Function head = getFunction("head_over_unresolved");
+		assertFalse("`head_over_unresolved`'s numpy is over an `UnresolvedDim` leading dimension, permitted under permit-⊤.",
+				head.getHasNumpyCallsOnParameters());
+		assertEquals("`head_over_unresolved` still hybridizes (P1).", P1, head.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through list comprehensions
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/745): a comprehension over a tainted parameter compiles to a
 	 * synthetic callee whose returned container is a fresh allocation, so precise return-taint severs the flow and the downstream
@@ -9724,12 +9787,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the asymmetric tensor-parameter typing of a redefined module-global function
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/766): the module defines {@code compute} twice, calls the first
-	 * definition with a tensor, redefines it, and calls the second definition with a tensor, so both physical definitions are live and
-	 * tensor-fed. Both are extracted, yet only one is typed as having a tensor parameter, so the other is a missed hybridization. The
-	 * unit-scale reproduction shows the asymmetry is intrinsic to the analysis rather than corpus-conditional. TODO: both definitions
-	 * should be typed; strengthen the count to two when the issue is fixed.
+	 * Pins tensor-parameter typing of a redefined module-global function
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/766, fixed upstream by https://github.com/wala/ML/issues/719):
+	 * the module defines {@code compute} twice, calls the first definition with a tensor, redefines it, and calls the second definition
+	 * with a tensor, so both physical definitions are live and tensor-fed. Both are extracted, and each call binds to the definition in
+	 * scope with its own argument types, so both are typed as having a tensor parameter.
 	 */
 	@Test
 	public void testRedefinedFunction() throws Exception {
@@ -9737,7 +9799,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Both definitions of `compute` are extracted.", 2, computes.size());
 
 		long typed = computes.stream().filter(f -> Boolean.TRUE.equals(f.getHasTensorParameter())).count();
-		assertEquals("Only one of the two live, tensor-fed definitions of `compute` is typed as having a tensor parameter.", 1, typed);
+		assertEquals("Both live, tensor-fed definitions of `compute` are typed as having a tensor parameter.", 2, typed);
 	}
 
 	/**

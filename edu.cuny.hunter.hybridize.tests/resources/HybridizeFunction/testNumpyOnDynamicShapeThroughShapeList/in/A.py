@@ -25,13 +25,10 @@ def head_via_list(x, w):
     return tf.matmul(flat, w)
 
 
-# Reshaping a ⊤-shaped tensor with an explicit trailing extent yields a dynamic
-# leading dimension and a static trailing one, so numpy over the leading
-# dimension extracted through the BERT-style `get_shape_list` consumes a
-# provably-dynamic dimension.
-dyn = tf.reshape(
-    tf.constant(np.array([[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0]])),
-    [-1, 5],
-)
+# `x`'s leading axis is graph-time `None` (dynamic evidence via `tf.keras.Input`),
+# so the BERT-style `get_shape_list` patches it with `tf.shape(...)` and numpy over
+# the leading dimension consumes a provably-dynamic dimension. A compile-time-constant
+# source would let Ariadne fold it (wala/ML#722).
+inp = tf.keras.Input(shape=(5,))
 w = tf.ones((2, 3), dtype=tf.float64)
-assert head_via_list(dyn, w).shape == (5, 3)
+head_via_list(inp, w)
