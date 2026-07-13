@@ -320,6 +320,9 @@ public class Util {
 	/** WALA type-name prefix for modeled TensorFlow operations, e.g. {@code Ltensorflow/functions/matmul}. */
 	private static final String TENSORFLOW_FUNCTION_TYPE_NAME_PREFIX = "Ltensorflow/functions/";
 
+	/** WALA type-name prefix for numpy functions, e.g. {@code Lnumpy/array}, {@code Lnumpy/ndarray/reshape}. */
+	private static final String NUMPY_FUNCTION_TYPE_NAME_PREFIX = "Lnumpy/";
+
 	/** The TensorFlow module prefix used to recognize a call as a TensorFlow op from its fully-qualified name. */
 	private static final String TENSORFLOW_FQN_PREFIX = "tensorflow.";
 
@@ -379,8 +382,13 @@ public class Util {
 				DefUse defUse = node.getDU();
 
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
-					// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops).
-					if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys))
+					// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops). A numpy call also defines a
+					// tensor-typed value—a numpy array is tensor-convertible, so the tensor-type analysis types its result—but is not a
+					// TensorFlow computation, so it must not count. See
+					// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774.
+					if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys)
+							&& !(instruction instanceof PythonInvokeInstruction numpyInvoke
+									&& invokesNumpyFunction(node, numpyInvoke, pointerAnalysis)))
 						return true;
 
 					// (b) The instruction invokes an unmodeled `tensorflow.*` op recognized from the IR.
@@ -495,6 +503,23 @@ public class Util {
 		String fqn = resolveCalleeFullyQualifiedName(node, callee, defUse, pointerAnalysis);
 
 		return fqn != null && fqn.startsWith(TENSORFLOW_FQN_PREFIX) && NON_OP_TENSORFLOW_FQN_PREFIXES.stream().noneMatch(fqn::startsWith);
+	}
+
+	/**
+	 * True iff {@code invoke}'s callee is a numpy function (e.g. {@code np.array}, {@code np.zeros}). A numpy call produces a tensor-typed
+	 * value—a numpy array is tensor-convertible, so the tensor-type analysis types its result—but it is not a TensorFlow computation, so
+	 * its tensor-typed def must not be counted as one when detecting whether a function performs a tensor op. Detection is by the callee's
+	 * points-to type, mirroring the modeled-op check in {@link #invokesTensorFlowOp}. Other tensor-convertible libraries (e.g. scipy) would
+	 * be handled analogously, but numpy is the only one the tensor-type analysis models. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774.
+	 *
+	 * @param node The call-graph node containing {@code invoke}.
+	 * @param invoke The invoke instruction.
+	 * @param pointerAnalysis The pointer analysis, used to resolve the callee.
+	 * @return True iff the callee is a numpy function.
+	 */
+	private static boolean invokesNumpyFunction(CGNode node, PythonInvokeInstruction invoke, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return pointsToType(node, invoke.getUse(0), pointerAnalysis, NUMPY_FUNCTION_TYPE_NAME_PREFIX, false);
 	}
 
 	/**

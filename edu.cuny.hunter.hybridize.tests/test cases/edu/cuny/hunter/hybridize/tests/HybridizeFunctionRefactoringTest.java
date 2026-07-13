@@ -9352,6 +9352,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression guard for the tensor-computation false-positive fixed by
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774. {@code numpy_body}'s parameter is fed a numpy array, so the
+	 * tensor-type analysis types it as a tensor (as in the {@code deep_recommenders} Cora data-prep methods), but its body performs only
+	 * numpy operations ({@code np.zeros}, {@code np.array}) and no TensorFlow op. Because a numpy array is tensor-convertible, the analysis
+	 * types the numpy results as tensors too; {@link edu.cuny.hunter.hybridize.core.analysis.Util#performsTensorFlowOp} previously counted
+	 * any tensor-typed def as a tensor op and so misreported the function as computing, letting it hybridize. It now excludes tensor-typed
+	 * defs produced by numpy calls, so the benefit precondition (#709/#712) correctly declines the function as barren.
+	 * <p>
+	 * The {@code tensor_body} control performs a genuine {@code tf.reduce_sum} and must still be detected as computing.
+	 */
+	@Test
+	public void testNumpyBodyTensorComputationFP() throws Exception {
+		Function numpyBody = getFunction("numpy_body");
+		// The parameter is fed a numpy array and is tensor-typed, reproducing the Cora `code 1` inference that admits these to P1.
+		assertTrue("`numpy_body`'s parameter `x`, fed a numpy array, is tensor-typed.", numpyBody.getHasTensorParameter());
+		// A pure-numpy body performs no TensorFlow computation: the numpy results are tensor-typed but their defining calls are not tensor
+		// ops.
+		assertFalse("`numpy_body` performs no TensorFlow computation (pure numpy body).", numpyBody.getHasTensorComputation());
+		// So it is declined as barren rather than hybridized (#774).
+		assertNotNull("`numpy_body` fails with NO_TENSOR_COMPUTATION.",
+				numpyBody.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+
+		// Control: a genuine TensorFlow op is still correctly detected as a tensor computation.
+		Function tensorBody = getFunction("tensor_body");
+		assertTrue("`tensor_body` performs a TensorFlow computation (`tf.reduce_sum`).", tensorBody.getHasTensorComputation());
+	}
+
+	/**
 	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
 	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
 	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The
