@@ -367,6 +367,8 @@
                 </jacocoReports>
                 <repoToken>${env.COVERALLS_REPO_TOKEN}</repoToken>
                 <serviceName>github</serviceName>
+                <!-- Coverage submission is best-effort: a Coveralls API outage (recurring HTTP 504s, #622) must not fail CI. -->
+                <failOnServiceError>false</failOnServiceError>
               </configuration>
               <dependencies>
                 <dependency>
