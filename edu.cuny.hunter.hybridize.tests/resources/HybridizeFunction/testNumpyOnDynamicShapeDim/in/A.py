@@ -13,12 +13,11 @@ def head_over_dynamic(x, w):
     return tf.matmul(flat, w)
 
 
-# Reshaping a ⊤-shaped tensor with an explicit trailing extent yields a dynamic
-# leading dimension and a static trailing one, so numpy over the leading
-# dimension consumes a provably-dynamic dimension.
-dyn = tf.reshape(
-    tf.constant(np.array([[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0]])),
-    [-1, 5],
-)
+# `x`'s leading (batch) axis is graph-time `None` (dynamic evidence via
+# `tf.keras.Input`), so `get_shape(x)[:1]` covers a provably-dynamic dimension
+# and numpy (`np.prod`) over it consumes it. A compile-time-constant source would
+# instead let Ariadne fold the leading extent to a static size (wala/ML#722), so
+# the earlier `tf.reshape(constant, [-1, 5])` feed no longer suffices.
+inp = tf.keras.Input(shape=(5,))
 w = tf.ones((5, 2))
-head_over_dynamic(dyn, w)
+head_over_dynamic(inp, w)
