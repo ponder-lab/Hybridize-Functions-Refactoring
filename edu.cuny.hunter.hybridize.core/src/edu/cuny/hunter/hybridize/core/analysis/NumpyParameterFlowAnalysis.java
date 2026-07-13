@@ -19,6 +19,7 @@ import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -237,8 +238,25 @@ class NumpyParameterFlowAnalysis {
 				if (index < 0 || index >= typeDims.size())
 					continue;
 
-				if (!(typeDims.get(index) instanceof NumericDim))
-					return ShapeStaticness.DYNAMIC; // a non-numeric (dynamic/symbolic/ragged) covered dim crashes numpy.
+				Dimension<?> dim = typeDims.get(index);
+
+				if (dim instanceof NumericDim)
+					continue; // a statically-known size: numpy over it is safe.
+
+				// An UnresolvedDim is a fixed run-time size the analysis could not compute (e.g. a config-sourced dimension,
+				// https://github.com/wala/ML/issues/721): the run-time TensorShape reports a concrete integer, so get_shape_list does
+				// not patch it with tf.shape(...) and numpy stays safe. Its staticness is unprovable, so it is treated like ⊤:
+				// permitted under the precision-favoring policy, declined under the sound policy
+				// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/751). This is optimism, not a soundness
+				// guarantee: for a `tf.shape(x)[i]` extraction whose axis carries no run-time-None evidence either way, Ariadne
+				// classifies UnresolvedDim (wala/ML#722), and permitting it lets numpy (e.g. `np.prod`) run over a dimension that a
+				// TensorShape may patch to None at run time. The sound policy (#751) declines this case.
+				if (dim instanceof UnresolvedDim) {
+					top = true;
+					continue;
+				}
+
+				return ShapeStaticness.DYNAMIC; // a run-time-dynamic covered dim (DynamicDim/symbolic/ragged) crashes numpy.
 			}
 		}
 
