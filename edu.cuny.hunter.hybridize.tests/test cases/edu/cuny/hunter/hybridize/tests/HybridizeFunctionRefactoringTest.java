@@ -9443,6 +9443,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Guards the resolved #774 residual: {@code enumerate} over a numpy-array parameter. The parameter is fed a numpy array and typed as a
+	 * tensor (numpy arrays are tensor-convertible), and before the origin-seeding fix a def derived through {@code enumerate(param)}
+	 * carried a non-{@code NUMPY} origin ({@code PARAMETER} per wala/ML#726), so {@code performsTensorFlowOp} criterion (a) counted it as a
+	 * tensor computation even though the body is pure numpy. This was the construct behind {@code Cora.build_graph} in
+	 * {@code deep_recommenders}. With wala/ML#729 fixed (0.52.31), {@code enumerate_param} reads numpy-only and joins the {@code map} over
+	 * the parameter, the {@code map} of a dict's {@code get}, and the local-numpy operator in declining, so none of the four report a
+	 * tensor computation.
+	 */
+	@Test
+	public void testNumpyParamTensorComputationSources() throws Exception {
+		List<String> computing = new ArrayList<>();
+		for (String name : List.of("enumerate_param", "map_dict_get", "map_builtin", "numpy_local_control"))
+			if (Boolean.TRUE.equals(getFunction(name).getHasTensorComputation()))
+				computing.add(name);
+		assertEquals(
+				"numpy operations on a numpy-array parameter, including `enumerate` over it, report no tensor computation (#774, wala/ML#729).",
+				List.of(), computing);
+	}
+
+	/**
 	 * Vendored {@code deep_recommenders} {@code Cora} data-prep ({@code datasets/cora.py}), the subject whose four pure-numpy methods drove
 	 * #774. Pins the end-to-end contract that the whole-project corpus caught but the synthetic distillations could not: with the
 	 * origin-based detector (#777) and the Ariadne origin-seeding fixes through 0.52.31 (wala/ML#729, wala/ML#730/#728, wala/ML#731,
