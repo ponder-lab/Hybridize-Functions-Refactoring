@@ -9443,6 +9443,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Vendored {@code deep_recommenders} {@code Cora} data-prep ({@code datasets/cora.py}), the subject whose four pure-numpy methods drove
+	 * #774. Pins the end-to-end contract that the whole-project corpus caught but the synthetic distillations could not: with the
+	 * origin-based detector (#777) and the Ariadne origin-seeding fixes through 0.52.31 (wala/ML#729, wala/ML#730/#728, wala/ML#731,
+	 * wala/ML#732), the four numpy/scipy methods ({@code build_graph}, {@code encode_labels}, and the nested {@code _get_labels},
+	 * {@code _sample_mask}) report no tensor computation and decline the barren precondition. The two numpy-on-parameters siblings
+	 * ({@code sample_train_nodes} and the outer {@code split_labels}) do perform a (numpy) computation but are declined by the
+	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
+	 */
+	@Test
+	public void testCoraDataPrepBarren() throws Exception {
+		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",
+				"Cora.split_labels._sample_mask"))
+			assertFalse(barren + " is numpy-only data preparation and must report no tensor computation (#774).",
+					getFunction(barren).getHasTensorComputation());
+
+		for (String sibling : List.of("Cora.sample_train_nodes", "Cora.split_labels"))
+			assertTrue(sibling + " applies numpy to its parameters, so it is declined by the numpy-on-parameters precondition, not barren.",
+					getFunction(sibling).getHasTensorComputation());
+	}
+
+	/**
 	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
 	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
 	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The
