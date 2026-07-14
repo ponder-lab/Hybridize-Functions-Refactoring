@@ -9443,13 +9443,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the residual #774 false positive that the origin-based detector (#777) does not catch: {@code enumerate} over a numpy-array
-	 * parameter. The parameter is fed a numpy array and typed as a tensor (numpy arrays are tensor-convertible), and a def derived through
-	 * {@code enumerate(param)} carries a non-{@code NUMPY} origin ({@code PARAMETER} per wala/ML#726), so {@code performsTensorFlowOp}
-	 * criterion (a) counts it as a tensor computation even though the body is pure numpy. This is the construct behind
-	 * {@code Cora.build_graph} in {@code deep_recommenders}. By contrast a {@code map} over the parameter, a {@code map} of a dict's
-	 * {@code get}, and a local-numpy operator all read numpy-only and decline. The origin-seeding gap is tracked upstream on wala/ML#729;
-	 * when it lands, {@code enumerate_param} joins the declining set and the expected set below inverts to empty.
+	 * Guards the resolved #774 residual: {@code enumerate} over a numpy-array parameter. The parameter is fed a numpy array and typed as a
+	 * tensor (numpy arrays are tensor-convertible), and before the origin-seeding fix a def derived through {@code enumerate(param)}
+	 * carried a non-{@code NUMPY} origin ({@code PARAMETER} per wala/ML#726), so {@code performsTensorFlowOp} criterion (a) counted it as a
+	 * tensor computation even though the body is pure numpy. This was the construct behind {@code Cora.build_graph} in
+	 * {@code deep_recommenders}. With wala/ML#729 fixed (0.52.31), {@code enumerate_param} reads numpy-only and joins the {@code map} over
+	 * the parameter, the {@code map} of a dict's {@code get}, and the local-numpy operator in declining, so none of the four report a
+	 * tensor computation.
 	 */
 	@Test
 	public void testNumpyParamTensorComputationSources() throws Exception {
@@ -9457,10 +9457,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String name : List.of("enumerate_param", "map_dict_get", "map_builtin", "numpy_local_control"))
 			if (Boolean.TRUE.equals(getFunction(name).getHasTensorComputation()))
 				computing.add(name);
-		// TODO(wala/ML#729): once `enumerate` over a numpy-fed parameter reads numpy-only, this inverts to `List.of()`.
 		assertEquals(
-				"`enumerate` over a numpy-array parameter is the residual #774 FP (wala/ML#729); the map and local-numpy controls decline.",
-				List.of("enumerate_param"), computing);
+				"numpy operations on a numpy-array parameter, including `enumerate` over it, report no tensor computation (#774, wala/ML#729).",
+				List.of(), computing);
+	}
+
+	/**
+	 * Vendored {@code deep_recommenders} {@code Cora} data-prep ({@code datasets/cora.py}), the subject whose four pure-numpy methods drove
+	 * #774. Pins the end-to-end contract that the whole-project corpus caught but the synthetic distillations could not: with the
+	 * origin-based detector (#777) and the Ariadne origin-seeding fixes through 0.52.31 (wala/ML#729, wala/ML#730/#728, wala/ML#731,
+	 * wala/ML#732), the four numpy/scipy methods ({@code build_graph}, {@code encode_labels}, and the nested {@code _get_labels},
+	 * {@code _sample_mask}) report no tensor computation and decline the barren precondition. The two numpy-on-parameters siblings
+	 * ({@code sample_train_nodes} and the outer {@code split_labels}) do perform a (numpy) computation but are declined by the
+	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
+	 */
+	@Test
+	public void testCoraDataPrepBarren() throws Exception {
+		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",
+				"Cora.split_labels._sample_mask"))
+			assertFalse(barren + " is numpy-only data preparation and must report no tensor computation (#774).",
+					getFunction(barren).getHasTensorComputation());
+
+		for (String sibling : List.of("Cora.sample_train_nodes", "Cora.split_labels"))
+			assertTrue(sibling + " applies numpy to its parameters, so it is declined by the numpy-on-parameters precondition, not barren.",
+					getFunction(sibling).getHasTensorComputation());
 	}
 
 	/**
