@@ -103,6 +103,7 @@ import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInst
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
+import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
@@ -1394,11 +1395,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
-	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#tensorTypedPointerKeys}), used to
-	 *        identify tensor-op results in the body.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), used to identify tensor-op results in the body.
 	 */
 	public void computeTensorComputation(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<PointerKey> tensorTypedKeys) {
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -1436,7 +1437,7 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), storing the
-	 * result for {@link #getHasEagerOnlyCalls()}. Mirrors {@link #computeTensorComputation(CallGraph, PointerAnalysis, Set)}: when the
+	 * result for {@link #getHasEagerOnlyCalls()}. Mirrors {@link #computeTensorComputation(CallGraph, PointerAnalysis, Map)}: when the
 	 * function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.

@@ -9424,6 +9424,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression guard for the origin-based #774 exclusion. The tensor-type analysis types a numpy array identically to a TensorFlow
+	 * tensor, so a numpy body was misreported as computing when its tensor-typed def carried no numpy free-function callee signal: an
+	 * operator ({@code m + m}), an interprocedural call returning a numpy result, or an ndarray method ({@code m.reshape}). As of the
+	 * origin record (wala/ML#724), the detector excludes a def whose origin is numpy-only, so all these read as non-computing and the
+	 * misreported set is empty. Subscript reads and writes were already correct (a store has no def), as was scipy (unmodeled in this
+	 * harness). {@code tf_control}, a genuine {@code tf.reduce_sum}, must stay computing.
+	 */
+	@Test
+	public void testNumpyBodyTensorComputationSources() throws Exception {
+		List<String> computing = new ArrayList<>();
+		for (String name : List.of("op_body", "subscript_write_body", "subscript_read_body", "interproc_body", "scipy_body",
+				"reshape_method_body"))
+			if (Boolean.TRUE.equals(getFunction(name).getHasTensorComputation()))
+				computing.add(name);
+		assertEquals("numpy bodies must report no tensor computation once origin is numpy-only (#774, wala/ML#724).", List.of(), computing);
+		assertTrue("`tf_control` performs a TensorFlow computation.", getFunction("tf_control").getHasTensorComputation());
+	}
+
+	/**
 	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
 	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
 	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The

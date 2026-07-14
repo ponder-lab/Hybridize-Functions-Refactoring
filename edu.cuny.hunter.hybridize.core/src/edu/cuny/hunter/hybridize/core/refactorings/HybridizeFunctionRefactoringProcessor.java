@@ -46,6 +46,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
+import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -366,8 +367,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			LOG.info("Tensor analysis: " + analysis.toString());
 
-			// The pointer keys the tensor analysis types as tensors, computed once and shared across this project's functions (issue 709).
-			Set<PointerKey> tensorTypedKeys = Util.tensorTypedPointerKeys(analysis);
+			// The tensor-typed pointer keys mapped to their producing-library origins, computed once and shared across this project's
+			// functions (issue 709, wala/ML#724).
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys = Util.computeTensorTypedOrigins(analysis);
 
 			subMonitor.checkCanceled();
 
