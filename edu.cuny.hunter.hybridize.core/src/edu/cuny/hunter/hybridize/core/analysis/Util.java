@@ -4,8 +4,10 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
@@ -37,6 +39,7 @@ import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
@@ -320,9 +323,6 @@ public class Util {
 	/** WALA type-name prefix for modeled TensorFlow operations, e.g. {@code Ltensorflow/functions/matmul}. */
 	private static final String TENSORFLOW_FUNCTION_TYPE_NAME_PREFIX = "Ltensorflow/functions/";
 
-	/** WALA type-name prefix for numpy functions, e.g. {@code Lnumpy/array}, {@code Lnumpy/ndarray/reshape}. */
-	private static final String NUMPY_FUNCTION_TYPE_NAME_PREFIX = "Lnumpy/";
-
 	/** The TensorFlow module prefix used to recognize a call as a TensorFlow op from its fully-qualified name. */
 	private static final String TENSORFLOW_FQN_PREFIX = "tensorflow.";
 
@@ -338,38 +338,42 @@ public class Util {
 	 */
 	private static final Set<String> NON_OP_TENSORFLOW_FQN_PREFIXES = Set.of("tensorflow.train.", "tensorflow.io.");
 
-	/** The set of pointer keys the given {@link TensorTypeAnalysis} types as tensors. */
-	public static Set<PointerKey> tensorTypedPointerKeys(TensorTypeAnalysis tensorAnalysis) {
-		Set<PointerKey> keys = new HashSet<>();
+	/** Maps each pointer key the given {@link TensorTypeAnalysis} types as a tensor to its producing-library origins (wala/ML#724). */
+	public static Map<PointerKey, Set<TensorOrigin>> computeTensorTypedOrigins(TensorTypeAnalysis tensorAnalysis) {
+		Map<PointerKey, Set<TensorOrigin>> origins = new HashMap<>();
 
+		// A pointer key may appear across several (node/edge) tensor variables; union their origins.
 		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis)
-			keys.add(pair.fst);
+			origins.computeIfAbsent(pair.fst, k -> new HashSet<>()).addAll(pair.snd.getOrigins());
 
-		return keys;
+		return origins;
 	}
 
 	/**
 	 * True iff {@code node}, transitively over its call-graph successors, performs a TensorFlow tensor op. A body instruction counts as a
-	 * tensor op when it either (a) defines a value the tensor-type analysis types as a tensor (which covers modeled ops, tensor operators,
-	 * and layer calls, and correctly excludes proto and spec builders whose results are not tensors), or (b) invokes a {@code tensorflow.*}
-	 * op recognized from the IR (which additionally covers ops not modeled by the tensor-type analysis). Only user-defined bodies are
-	 * scanned—a TensorFlow library node's own body is skipped, since its ops are detected at the user call site—but the traversal walks
-	 * through library nodes to their successors, so user callbacks passed to higher-order TensorFlow APIs ({@code strategy.run},
-	 * {@code dataset.map}) are still reached. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 * tensor op when it either (a) defines a tensor-typed value not produced by numpy (a numpy array is tensor-convertible, so the
+	 * tensor-type analysis types it, but it is not a TensorFlow computation; the producing library is read from the analysis's origin
+	 * record, wala/ML#724), which covers modeled ops, tensor operators, and layer calls while excluding numpy operators, ndarray methods,
+	 * and numpy-returning calls, or (b) invokes a {@code tensorflow.*} op recognized from the IR (which additionally covers ops not modeled
+	 * by the tensor-type analysis). Only user-defined bodies are scanned—a TensorFlow library node's own body is skipped, since its ops are
+	 * detected at the user call site—but the traversal walks through library nodes to their successors, so user callbacks passed to
+	 * higher-order TensorFlow APIs ({@code strategy.run}, {@code dataset.map}) are still reached. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709 and #774.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param callGraph The call graph, used to follow callees transitively.
 	 * @param pointerAnalysis The pointer analysis, used to resolve def, callee, and attribute-name pointer keys.
-	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link #tensorTypedPointerKeys}).
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link #computeTensorTypedOrigins}).
 	 * @return True iff a TensorFlow tensor op is reachable from {@code node}.
 	 */
 	public static boolean performsTensorFlowOp(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<PointerKey> tensorTypedKeys) {
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		return performsTensorFlowOp(node, callGraph, pointerAnalysis, tensorTypedKeys, Sets.newHashSet());
 	}
 
 	private static boolean performsTensorFlowOp(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<PointerKey> tensorTypedKeys, Set<CGNode> seen) {
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys, Set<CGNode> seen) {
 		if (!seen.add(node))
 			return false;
 
@@ -382,13 +386,11 @@ public class Util {
 				DefUse defUse = node.getDU();
 
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
-					// (a) The instruction defines a tensor-typed value (operators, layer calls, modeled ops). A numpy call also defines a
-					// tensor-typed value—a numpy array is tensor-convertible, so the tensor-type analysis types its result—but is not a
-					// TensorFlow computation, so it must not count. See
-					// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774.
-					if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys)
-							&& !(instruction instanceof PythonInvokeInstruction numpyInvoke
-									&& invokesNumpyFunction(node, numpyInvoke, pointerAnalysis)))
+					// (a) The instruction defines a tensor-typed value whose origin is not numpy-only (operators, layer calls, modeled
+					// ops).
+					// A numpy operator, ndarray method, or numpy-returning call also defines a tensor-typed value, but its origin is numpy
+					// (a numpy array is tensor-convertible, not a TensorFlow computation), so it does not count. See #774, wala/ML#724.
+					if (definesTensor(node, instruction, pointerAnalysis, tensorTypedKeys))
 						return true;
 
 					// (b) The instruction invokes an unmodeled `tensorflow.*` op recognized from the IR.
@@ -426,7 +428,7 @@ public class Util {
 	 * typing is frequently unavailable (e.g. the result of a user-defined callable), and missing a real {@code .numpy()} call would
 	 * hybridize a function that crashes on first call, while over-matching only declines an optimization. Only user-defined bodies are
 	 * scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks, both mirroring
-	 * {@link #performsTensorFlowOp(CGNode, CallGraph, PointerAnalysis, Set)}. See
+	 * {@link #performsTensorFlowOp(CGNode, CallGraph, PointerAnalysis, Map)}. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
 	 *
 	 * @param node The call-graph node to check.
@@ -478,13 +480,24 @@ public class Util {
 		return false;
 	}
 
-	/** True iff any value defined by {@code instruction} is typed as a tensor (its pointer key is in {@code tensorTypedKeys}). */
+	/** The origin set of a value produced by numpy only: tensor-convertible, but not a TensorFlow computation. */
+	private static final Set<TensorOrigin> NUMPY_ONLY = Set.of(TensorOrigin.NUMPY);
+
+	/**
+	 * True iff {@code instruction} defines a tensor-typed value whose origin is not numpy-only. A def is a TensorFlow computation when it
+	 * is tensor-typed (its pointer key is in {@code tensorTypedKeys}) and its origins are anything other than exactly {@code {NUMPY}}: a
+	 * TensorFlow origin, a parameter origin (a tensor parameter is a symbolic tensor under tracing regardless of its eager feeds,
+	 * wala/ML#726), a mixed set such as {@code {NUMPY, TENSORFLOW}} (a mixed op dispatches to TensorFlow), or origin-free (no evidence
+	 * keeps the pre-provenance reading). A numpy-only def (a numpy operator, ndarray method, or numpy-returning call) is tensor-convertible
+	 * but not a computation. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774, wala/ML#724, and wala/ML#726.
+	 */
 	private static boolean definesTensor(CGNode node, SSAInstruction instruction, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<PointerKey> tensorTypedKeys) {
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		for (int i = 0; i < instruction.getNumberOfDefs(); i++) {
 			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, instruction.getDef(i));
+			Set<TensorOrigin> origins = tensorTypedKeys.get(pointerKey);
 
-			if (tensorTypedKeys.contains(pointerKey))
+			if (origins != null && !origins.equals(NUMPY_ONLY))
 				return true;
 		}
 
@@ -503,23 +516,6 @@ public class Util {
 		String fqn = resolveCalleeFullyQualifiedName(node, callee, defUse, pointerAnalysis);
 
 		return fqn != null && fqn.startsWith(TENSORFLOW_FQN_PREFIX) && NON_OP_TENSORFLOW_FQN_PREFIXES.stream().noneMatch(fqn::startsWith);
-	}
-
-	/**
-	 * True iff {@code invoke}'s callee is a numpy function (e.g. {@code np.array}, {@code np.zeros}). A numpy call produces a tensor-typed
-	 * value—a numpy array is tensor-convertible, so the tensor-type analysis types its result—but it is not a TensorFlow computation, so
-	 * its tensor-typed def must not be counted as one when detecting whether a function performs a tensor op. Detection is by the callee's
-	 * points-to type, mirroring the modeled-op check in {@link #invokesTensorFlowOp}. Other tensor-convertible libraries (e.g. scipy) would
-	 * be handled analogously, but numpy is the only one the tensor-type analysis models. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/774.
-	 *
-	 * @param node The call-graph node containing {@code invoke}.
-	 * @param invoke The invoke instruction.
-	 * @param pointerAnalysis The pointer analysis, used to resolve the callee.
-	 * @return True iff the callee is a numpy function.
-	 */
-	private static boolean invokesNumpyFunction(CGNode node, PythonInvokeInstruction invoke, PointerAnalysis<InstanceKey> pointerAnalysis) {
-		return pointsToType(node, invoke.getUse(0), pointerAnalysis, NUMPY_FUNCTION_TYPE_NAME_PREFIX, false);
 	}
 
 	/**
