@@ -9443,6 +9443,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the residual #774 false positive that the origin-based detector (#777) does not catch: {@code enumerate} over a numpy-array
+	 * parameter. The parameter is fed a numpy array and typed as a tensor (numpy arrays are tensor-convertible), and a def derived through
+	 * {@code enumerate(param)} carries a non-{@code NUMPY} origin ({@code PARAMETER} per wala/ML#726), so {@code performsTensorFlowOp}
+	 * criterion (a) counts it as a tensor computation even though the body is pure numpy. This is the construct behind
+	 * {@code Cora.build_graph} in {@code deep_recommenders}. By contrast a {@code map} over the parameter, a {@code map} of a dict's
+	 * {@code get}, and a local-numpy operator all read numpy-only and decline. The origin-seeding gap is tracked upstream on wala/ML#729;
+	 * when it lands, {@code enumerate_param} joins the declining set and the expected set below inverts to empty.
+	 */
+	@Test
+	public void testNumpyParamTensorComputationSources() throws Exception {
+		List<String> computing = new ArrayList<>();
+		for (String name : List.of("enumerate_param", "map_dict_get", "map_builtin", "numpy_local_control"))
+			if (Boolean.TRUE.equals(getFunction(name).getHasTensorComputation()))
+				computing.add(name);
+		// TODO(wala/ML#729): once `enumerate` over a numpy-fed parameter reads numpy-only, this inverts to `List.of()`.
+		assertEquals(
+				"`enumerate` over a numpy-array parameter is the residual #774 FP (wala/ML#729); the map and local-numpy controls decline.",
+				List.of("enumerate_param"), computing);
+	}
+
+	/**
 	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
 	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
 	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The
