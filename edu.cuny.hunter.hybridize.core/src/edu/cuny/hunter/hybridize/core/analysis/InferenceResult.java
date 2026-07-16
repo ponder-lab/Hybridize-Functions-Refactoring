@@ -30,7 +30,8 @@ public sealed interface InferenceResult {
 
 		/**
 		 * A parameter is classified as tensor-typed (via type hint or container detection) but has no call-site shape/dtype evidence to
-		 * reduce into a concrete spec (#509).
+		 * reduce into a concrete spec. The two sources differ in what is recoverable: a container's element types exist in Ariadne and are
+		 * discarded before reaching the parameter's cache (#781), whereas a type hint carries no dtype for any tool to recover.
 		 */
 		NO_SHAPE_OR_DTYPE_EVIDENCE,
 

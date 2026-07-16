@@ -8508,8 +8508,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
 	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
-	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509
-	 * (the tool-side recovery: extend the `Parameter` API to surface container constituents).
+	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that
+	 * INFO names the container disposition specifically and cites #781, the tool-side recovery: Ariadne holds the constituent tensors'
+	 * types and `getTensorContainers` discards them.
 	 */
 	@Test
 	public void testInputSignatureContainerParameter() throws Exception {
@@ -8534,14 +8535,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
 		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
 		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
-		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+		assertTrue("Status message must name the container disposition, not the type-hint one.",
+				entry.getMessage().contains("container of tensors"));
+		assertTrue("Status message must reference the container recovery tracker (#781).", entry.getMessage().contains("#781"));
 	}
 
 	/**
 	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
 	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
 	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays
-	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509.
+	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that INFO names the type-hint
+	 * disposition and cites no follow-up tracker: a bare annotation carries no dtype for any tool to recover.
 	 */
 	@Test
 	public void testInputSignatureTypeHintOnly() throws Exception {
@@ -8565,7 +8569,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
 		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
 		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
-		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+		assertTrue("Status message must name the type-hint disposition, not the container one.",
+				entry.getMessage().contains("via its type hint"));
+		assertFalse("A type hint carries no recoverable dtype, so the message must cite no follow-up tracker.",
+				entry.getMessage().contains("#781"));
 	}
 
 	/**
