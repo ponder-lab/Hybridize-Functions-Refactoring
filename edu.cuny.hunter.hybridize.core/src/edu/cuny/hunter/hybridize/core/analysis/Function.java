@@ -2278,15 +2278,19 @@ public class Function {
 				 * (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before Phase 3 runs, leaving it null. Phase 3
 				 * cannot leave it FALSE here: a FALSE container check falls through to `tensor = FALSE`, i.e. category (a).
 				 */
-				if (TRUE.equals(param.isTensorContainer()))
+				AbsenceReason reason;
+
+				if (TRUE.equals(param.isTensorContainer())) {
 					// Ariadne holds concrete types for the elements; `getTensorContainers` discards them. Recovery is tool-side and
-					// tracked at #781, which the wizard text deliberately does not cite: a tracker is not actionable to a user, and a
-					// closed one actively misleads (the #509 pointer this replaces).
+					// tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/781, which the wizard text
+					// deliberately does not cite: a tracker is not actionable to a user, and a closed one actively misleads (the pointer
+					// this replaces had gone stale).
 					this.addInfo(INPUT_SIGNATURE_INFERENCE,
 							"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors, but the "
 									+ "constituent tensors' shapes and dtypes are not currently used to infer an input signature; the "
 									+ "signature is dropped.");
-				else
+					reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+				} else {
 					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
 					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
 					this.addInfo(INPUT_SIGNATURE_INFERENCE,
@@ -2294,9 +2298,12 @@ public class Function {
 									+ "type hint carries no dtype and an input signature requires a concrete one; input-signature "
 									+ "inference is dropped. Passing `tf.constant(...)` at the call sites would supply the missing "
 									+ "shape and dtype evidence.");
-				blocking.put(param, AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE);
+					reason = AbsenceReason.TYPE_HINT_WITHOUT_DTYPE;
+				}
+
+				blocking.put(param, reason);
 				if (firstReason == null)
-					firstReason = AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE;
+					firstReason = reason;
 				continue;
 			}
 

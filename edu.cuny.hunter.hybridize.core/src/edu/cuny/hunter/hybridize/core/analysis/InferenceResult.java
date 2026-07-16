@@ -29,11 +29,22 @@ public sealed interface InferenceResult {
 		NON_TENSOR_PARAMETER,
 
 		/**
-		 * A parameter is classified as tensor-typed (via type hint or container detection) but has no call-site shape/dtype evidence to
-		 * reduce into a concrete spec. The two sources differ in what is recoverable: a container's element types exist in Ariadne and are
-		 * discarded before reaching the parameter's cache (#781), whereas a type hint carries no dtype for any tool to recover.
+		 * A parameter is a container of tensors (classified by {@link Parameter#hasTensorContainer}), which no spec is synthesized for
+		 * because the reduction models one leaf {@link com.ibm.wala.cast.python.ml.types.TensorType} per parameter rather than a nested
+		 * structure. Distinct from {@link #TYPE_HINT_WITHOUT_DTYPE} in what is recoverable: Ariadne holds the constituent tensors' concrete
+		 * shapes and dtypes and {@code Parameter.getTensorContainers} discards them, so this is a tool-side gap (#781) rather than absent
+		 * evidence. Retired when #781 lands.
 		 */
-		NO_SHAPE_OR_DTYPE_EVIDENCE,
+		TENSOR_CONTAINER_UNSUPPORTED,
+
+		/**
+		 * A parameter is classified as tensor-typed by its type hint alone (Phase 1), with no call-site evidence. A bare
+		 * {@code x: tf.Tensor} annotation carries no dtype, and {@code tf.function(input_signature=...)} admits no dtype-⊤ (#494), so no
+		 * valid spec exists to synthesize from this signal. Unlike {@link #TENSOR_CONTAINER_UNSUPPORTED} the evidence is genuinely absent
+		 * rather than discarded, so no tool-side recovery is possible; supplying it is a source-side change (pass {@code tf.constant(...)}
+		 * at the call sites).
+		 */
+		TYPE_HINT_WITHOUT_DTYPE,
 
 		/**
 		 * A parameter receives tensors with conflicting dtypes across call sites, so its dtype set has size {@code > 1} ({@code |D| ≠ 1}).

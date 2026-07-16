@@ -8528,8 +8528,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
 				xs.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature().signature();
-		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
+
+		// The reason is the eval-visible value: `input_signatures.csv` reports it per parameter, so the container and type-hint cases must
+		// be distinguishable downstream rather than sharing one reason.
+		assertEquals("A container parameter must report the container-specific absence reason.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED,
+				function.getBlockingParameterReasons().get(xs));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
@@ -8562,8 +8569,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `x` must have an empty `getTensorTypes()` cache (call site supplies a non-tensor).",
 				x.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature().signature();
-		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
+
+		// Distinct from the container case: this parameter's evidence is genuinely absent rather than discarded, and
+		// `input_signatures.csv` must separate the two so the container gap can be sized.
+		assertEquals("A type-hint-only parameter must report the type-hint-specific absence reason.",
+				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE,
+				function.getBlockingParameterReasons().get(x));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
