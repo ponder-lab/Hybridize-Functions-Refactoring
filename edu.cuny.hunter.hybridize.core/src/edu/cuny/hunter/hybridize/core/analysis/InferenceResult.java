@@ -17,10 +17,19 @@ import java.util.Optional;
 public sealed interface InferenceResult {
 
 	/**
-	 * The reason a single input signature could not be inferred for a parameter, in the order the per-parameter dispatch in
-	 * {@link Function#inferInputSignature} encounters them. Each constant corresponds to one blocking branch of that dispatch.
+	 * The reason an input signature could not be inferred. {@link #SPECULATIVE_TENSOR_PARAMETER} blocks the whole function up front; the
+	 * remaining constants each correspond to one blocking branch of the per-parameter dispatch in {@link Function#inferInputSignature}, in
+	 * the order that dispatch encounters them.
 	 */
 	enum AbsenceReason {
+
+		/**
+		 * The function's tensor-parameter classification came from speculative context analysis (its name, and for a functor its
+		 * {@code Model} inheritance) rather than from any parameter. Speculation identifies no particular parameter and carries no
+		 * shape/dtype evidence, so no spec can be synthesized. Blocks the function before the per-parameter dispatch runs, hence no entry
+		 * in {@link Function#getBlockingParameterReasons()} (#783).
+		 */
+		SPECULATIVE_TENSOR_PARAMETER,
 
 		/**
 		 * A parameter is not classified as tensor-typed by any phase, so no {@link com.ibm.wala.cast.python.ml.types.TensorType} is
@@ -62,8 +71,9 @@ public sealed interface InferenceResult {
 	}
 
 	/**
-	 * Inference was blocked. Carries the first {@link AbsenceReason} encountered while dispatching over the function's parameters in
-	 * declaration order; every blocking parameter still emits its own diagnostic INFO during inference.
+	 * Inference was blocked, either at the function level ({@link AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, which emits a single
+	 * function-level diagnostic INFO) or by one or more parameters, in which case this carries the first {@link AbsenceReason} encountered
+	 * while dispatching over them in declaration order and every blocking parameter emits its own diagnostic INFO.
 	 *
 	 * @param reason The first blocking reason; never {@code null}.
 	 */

@@ -8647,6 +8647,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression test for #783: a function whose tensor-parameter verdict came from speculative context analysis must report
+	 * `SPECULATIVE_TENSOR_PARAMETER` rather than dispatching per parameter and reporting each as non-tensor. Speculation fires only when no
+	 * parameter classified, so `config.isTensor()` is FALSE and its `getTensorTypes()` is empty. Before #783 the dispatch reported
+	 * `NON_TENSOR_PARAMETER` and emitted a per-parameter INFO advising a source change, contradicting the `SPECULATIVE_ANALYSIS` INFO the
+	 * same pass emitted.
+	 */
+	@Test
+	public void testInputSignatureSpeculativeContext() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertEquals("train_step", function.getSimpleName());
+
+		assertTrue("Speculative context analysis must supply the function-level tensor-parameter verdict.",
+				function.getHasTensorParameter());
+		assertNotNull("Speculation must have fired, per the SPECULATIVE_ANALYSIS INFO.",
+				function.getStatus().getEntryMatchingCode(PLUGIN_ID, SPECULATIVE_ANALYSIS.getCode()));
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter config = parameters.get(0);
+		assertEquals("config", config.getName());
+		assertFalse("Speculation fires only when no parameter classified, so the parameter itself is not tensor-typed.", config.isTensor());
+		assertTrue("A speculatively classified parameter has no Ariadne shape/dtype evidence.", config.getTensorTypes().isEmpty());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("Context carries no shape/dtype evidence, so no signature is inferred.", result.signature().isPresent());
+		assertEquals("A speculatively classified function must report the speculative absence reason, not `NON_TENSOR_PARAMETER`.",
+				Optional.of(InferenceResult.AbsenceReason.SPECULATIVE_TENSOR_PARAMETER), result.absenceReason());
+
+		assertTrue("No parameter is the blocker when the function is blocked at the function level.",
+				function.getBlockingParameterReasons().isEmpty());
+
+		List<RefactoringStatusEntry> infoEntries = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).collect(Collectors.toList());
+		assertEquals("Expected exactly one function-level INPUT_SIGNATURE_INFERENCE INFO.", 1, infoEntries.size());
+		assertFalse("The INFO must not contradict the speculative classification by calling the parameter non-tensor.",
+				infoEntries.get(0).getMessage().contains("is not classified as tensor-typed"));
+	}
+
+	/**
 	 * Regression test for #497: a tensor-container parameter (reached via a list-of-tensors call site) classifies as tensor-typed via
 	 * {@link Parameter#classifyAsTensor}'s Phase 3 but does not populate the per-Parameter {@link Set} of {@link TensorType}s (the
 	 * container itself is not a tensor in Ariadne's analysis). Pins three relationships:
