@@ -2280,7 +2280,7 @@ public class Function {
 				 */
 				AbsenceReason reason;
 
-				if (TRUE.equals(param.isTensorContainer())) {
+				if (param.isTensorContainer() != null && param.isTensorContainer()) {
 					// Ariadne holds concrete types for the elements; `getTensorContainers` discards them. Recovery is tool-side and
 					// tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/781, which the wizard text
 					// deliberately does not cite: a tracker is not actionable to a user, and a closed one actively misleads (the pointer
