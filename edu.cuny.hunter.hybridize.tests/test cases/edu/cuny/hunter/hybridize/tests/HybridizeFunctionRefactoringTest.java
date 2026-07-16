@@ -8509,8 +8509,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
 	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
 	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that
-	 * INFO names the container disposition specifically and cites #781, the tool-side recovery: Ariadne holds the constituent tensors'
-	 * types and `getTensorContainers` discards them.
+	 * INFO names the container disposition specifically and cites no tracker in its wizard-facing text; the tool-side recovery (Ariadne
+	 * holds the constituent tensors' types and `getTensorContainers` discards them) is tracked at #781.
 	 */
 	@Test
 	public void testInputSignatureContainerParameter() throws Exception {
@@ -8537,7 +8537,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
 		assertTrue("Status message must name the container disposition, not the type-hint one.",
 				entry.getMessage().contains("container of tensors"));
-		assertTrue("Status message must reference the container recovery tracker (#781).", entry.getMessage().contains("#781"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
 	}
 
 	/**
@@ -8571,8 +8571,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
 		assertTrue("Status message must name the type-hint disposition, not the container one.",
 				entry.getMessage().contains("via its type hint"));
-		assertFalse("A type hint carries no recoverable dtype, so the message must cite no follow-up tracker.",
-				entry.getMessage().contains("#781"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
 	}
 
 	/**

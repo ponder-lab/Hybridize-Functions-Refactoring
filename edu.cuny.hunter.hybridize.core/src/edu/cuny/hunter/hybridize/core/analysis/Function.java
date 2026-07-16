@@ -2280,11 +2280,12 @@ public class Function {
 				 */
 				if (TRUE.equals(param.isTensorContainer()))
 					// Ariadne holds concrete types for the elements; `getTensorContainers` discards them. Recovery is tool-side and
-					// tracked at #781.
+					// tracked at #781, which the wizard text deliberately does not cite: a tracker is not actionable to a user, and a
+					// closed one actively misleads (the #509 pointer this replaces).
 					this.addInfo(INPUT_SIGNATURE_INFERENCE,
 							"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors, but the "
-									+ "constituent tensors' shapes and dtypes are not surfaced for inference; input-signature inference "
-									+ "is dropped. Synthesizing a nested TensorSpec from this signal is tracked at #781.");
+									+ "constituent tensors' shapes and dtypes are not currently used to infer an input signature; the "
+									+ "signature is dropped.");
 				else
 					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
 					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
