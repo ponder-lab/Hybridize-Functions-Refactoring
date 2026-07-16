@@ -922,9 +922,10 @@ public class Function {
 
 	/**
 	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
-	 * inference produced a signature or was never run. Where {@link #getInferredInputSignatureAbsenceReason()} reports only the first
-	 * blocking reason for the whole function, this retains every blocking parameter's reason for read-only per-parameter reporting (e.g.
-	 * the evaluator); see {@link #getBlockingParameterReasons()}.
+	 * inference produced a signature, was never run, or was blocked at the function level by
+	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
+	 * {@link #getInferredInputSignatureAbsenceReason()} reports only the first blocking reason for the whole function, this retains every
+	 * blocking parameter's reason for read-only per-parameter reporting (e.g. the evaluator); see {@link #getBlockingParameterReasons()}.
 	 */
 	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
 
@@ -992,6 +993,14 @@ public class Function {
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private Boolean hasTensorParameter;
+
+	/**
+	 * True iff {@link #hasTensorParameter} was set by {@link #inferTensorParameters}'s speculative context analysis rather than by any
+	 * {@link Parameter}'s own classification. Speculation fires only when no parameter classified, so it leaves every {@link Parameter}'s
+	 * {@link Parameter#isTensor()} at {@code FALSE} and its {@link Parameter#getTensorTypes()} empty; {@link #computeInputSignature()}
+	 * reads this to report the honest blocking reason instead of dispatching per parameter and reporting each as non-tensor (#783).
+	 */
+	private boolean tensorParameterFromSpeculation;
 
 	private PreconditionSuccess passingPrecondition;
 
@@ -2143,6 +2152,7 @@ public class Function {
 			// check a special case where we consider context.
 			if (this.getUseSpeculativeAnalysis() && this.hasTensorContext()) {
 				this.hasTensorParameter = TRUE;
+				this.tensorParameterFromSpeculation = true;
 				LOG.info(this + " likely has a tensor parameter due to context.");
 				this.addInfo(SPECULATIVE_ANALYSIS, "Used function context to infer parameter tensor types.");
 			} else if (nodes.isEmpty())
@@ -2161,8 +2171,13 @@ public class Function {
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
 	 * tensor-type analysis associated with at least one tensor type. Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the
 	 * values are computed during {@link #inferTensorParameters} (which caches per-parameter tensor types on each {@link Parameter}), and
-	 * this method reads those cached values. For each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()}
-	 * into three categories:
+	 * this method reads those cached values.
+	 * <p>
+	 * A function whose tensor-parameter verdict came from speculative context analysis is blocked up front with
+	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} and a single function-level INFO, before the per-parameter
+	 * dispatch runs: context names no particular parameter and carries no shape or dtype evidence (#783).
+	 * <p>
+	 * Otherwise, for each non-{@code self} parameter, this method dispatches on {@link Parameter#isTensor()} into three categories:
 	 * <ul>
 	 * <li>Truly non-tensor ({@code isTensor() != TRUE}): drop the signature and emit a per-parameter INFO suggesting the source-side
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
@@ -2223,7 +2238,8 @@ public class Function {
 	 * Returns the blocking {@link InferenceResult.AbsenceReason} for each parameter that prevented input-signature inference, in parameter
 	 * declaration order, from the memoized result without triggering inference. Where {@link #getInferredInputSignatureAbsenceReason()}
 	 * collapses the function to its first blocking reason, this surfaces every blocking parameter so a consumer can report per-parameter
-	 * attribution (#654). Empty both when inference was never run and when it produced a signature.
+	 * attribution (#654). Empty when inference was never run, when it produced a signature, and when it was blocked at the function level
+	 * by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, since no parameter is the blocker in that case.
 	 *
 	 * @return An unmodifiable map from each blocking {@link Parameter} to its {@link InferenceResult.AbsenceReason}, in declaration order.
 	 */
@@ -2232,14 +2248,29 @@ public class Function {
 	}
 
 	/**
-	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the per-parameter
-	 * recovery INFOs as a side effect. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking
-	 * {@link InferenceResult.AbsenceReason} encountered, but the loop still runs to completion so every blocking parameter surfaces its
-	 * INFO in one pass.
+	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the recovery
+	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per blocking parameter. The
+	 * {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason} encountered, but the
+	 * loop still runs to completion so every blocking parameter surfaces its INFO in one pass.
 	 *
 	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-non-self-parameter throw.
 	 */
 	private InferenceResult computeInputSignature() {
+		/*
+		 * The function-level tensor-parameter verdict came from context, not from any parameter. Speculation fires only when no parameter
+		 * classified, so every parameter's `isTensor()` is FALSE with an empty `getTensorTypes()`, and the dispatch below would report
+		 * NON_TENSOR_PARAMETER for each one. That contradicts the SPECULATIVE_ANALYSIS INFO this same pass emitted, and its recovery advice
+		 * points at code the tool just judged tensor-typed by context. Speculation fires precisely because Ariadne could not type the
+		 * parameter, so the likely cause is analysis incompleteness rather than a genuinely non-tensor parameter. Report the honest reason
+		 * once instead. Verdict-neutral: the dispatch is already guaranteed to return `Absent` here (#783).
+		 */
+		if (this.tensorParameterFromSpeculation) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` is classified as having a tensor parameter from its context rather than from any particular parameter, "
+							+ "so no shape or dtype evidence is available and input-signature inference is dropped.");
+			return new InferenceResult.Absent(AbsenceReason.SPECULATIVE_TENSOR_PARAMETER);
+		}
+
 		List<TensorType> specs = new ArrayList<>();
 		AbsenceReason firstReason = null;
 		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
