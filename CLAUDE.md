@@ -35,7 +35,9 @@ Python formatting in CI uses `black --fast --check --extend-exclude \/out .` (`r
 
 ### Running tests
 
-Tests live in `edu.cuny.hunter.hybridize.tests/` under a non-standard Eclipse-PDE source folder named **`test cases/`** (note the space). The single test class is `HybridizeFunctionRefactoringTest` (~8000 lines, hundreds of `testXxx` methods).
+Tests live in `edu.cuny.hunter.hybridize.tests/` under a non-standard Eclipse-PDE source folder named **`test cases/`** (note the space). The bulk is `HybridizeFunctionRefactoringTest` (~10k lines, hundreds of `testXxx` methods, each backed by a fixture directory); `InputSignatureTest`, `InferSpecTest`, and `HybridizeFunctionRefactoringProcessorTest` are smaller unit classes that exercise their targets directly, without a fixture or a call graph. `FunctionUnderTest` is a helper, not a test class.
+
+Method-level selection does not work: the module runs under `<providerHint>junit4</providerHint>`, whose provider honors `-Dtest=<Class>` but silently drops a `#method` suffix, running the whole class. Note that `-Dtest=<Class>` also *excludes the other test classes*, so a filtered run's total is not the suite total. Migrating to the junit-platform provider is [#749](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/749).
 
 CI requires our PyDev fork to be cloned at `$HOME/git/Pydev` (branch `pydev_9_3`) before running tests — `TestDependent` resolves Python lib paths relative to that checkout. Reproduce locally:
 
