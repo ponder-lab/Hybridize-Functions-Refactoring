@@ -9362,8 +9362,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * fixed-but-uncomputable size; evidence-based per the wala/ML#721 caveat, confirmed not over-capture by wala/ML#722), and the
 	 * all-symbolic rank-3 form (a less-precise cross-context form of the same reshape) drops, leaving the logits shape
 	 * ({@code (Unresolved, Unresolved, 10)}, with {@code vocab_size=10}) and a rank-unknown {@code float32} member (the dtype survives the
-	 * re-keying; the shape does not). Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path
-	 * (ponder-lab/ML#514's wala/ML#672 triage).
+	 * re-keying; the shape does not). As of Ariadne 0.52.33 (wala/ML#736, feeding a pure-⊤ seed's dtype from its operand's dataflow state),
+	 * the logits shape also appears carrying {@code float32}, which is the form the wala/ML#677 residual asks for; its
+	 * {@code unknown}-dtype twin persists alongside it, so the residual is narrowed rather than closed. Bisected to 0.52.33: the gain is
+	 * the dtype feed, not 0.52.34's wala/ML#682 type-feed composition or its wala/ML#740 trampoline re-keying, neither of which moves this
+	 * subject. Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path (ponder-lab/ML#514's
+	 * wala/ML#672 triage).
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
@@ -9375,10 +9379,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> fns = this.getFunctions();
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#677): the rank-3 model output should carry `float32` once the residual dtype imprecision is fixed.
+		// TODO(wala/ML#677): the `unknown`-dtype rank-3 form should drop once the residual dtype imprecision is fully fixed, leaving only
+		// its `float32` counterpart. Ariadne 0.52.33 got the `float32` form to appear; both now coexist.
 		assertEquals(
 				"`get_loss`'s `pred` types via the keras call result; leading dims `Unresolved` (evidence-free `tf.shape` axes, wala/ML#721/#722).",
 				Set.of(new TensorType(DType.UNKNOWN, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, null)),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
