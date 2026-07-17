@@ -8508,8 +8508,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
 	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
-	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509
-	 * (the tool-side recovery: extend the `Parameter` API to surface container constituents).
+	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that
+	 * INFO names the container disposition specifically and cites no tracker in its wizard-facing text; the tool-side recovery (Ariadne
+	 * holds the constituent tensors' types and `getTensorContainers` discards them) is tracked at #781.
 	 */
 	@Test
 	public void testInputSignatureContainerParameter() throws Exception {
@@ -8527,21 +8528,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
 				xs.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature().signature();
-		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
+
+		// The reason is the eval-visible value: `input_signatures.csv` reports it per parameter, so the container and type-hint cases must
+		// be distinguishable downstream rather than sharing one reason.
+		assertEquals("A container parameter must report the container-specific absence reason.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED,
+				function.getBlockingParameterReasons().get(xs));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
 		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
 		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
-		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+		assertTrue("Status message must name the container disposition, not the type-hint one.",
+				entry.getMessage().contains("container of tensors"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
 	}
 
 	/**
 	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
 	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
 	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays
-	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO referencing #509.
+	 * empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that INFO names the type-hint
+	 * disposition and cites no follow-up tracker: a bare annotation carries no dtype for any tool to recover.
 	 */
 	@Test
 	public void testInputSignatureTypeHintOnly() throws Exception {
@@ -8558,14 +8569,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `x` must have an empty `getTensorTypes()` cache (call site supplies a non-tensor).",
 				x.getTensorTypes().isEmpty());
 
-		Optional<InputSignature> signature = function.inferInputSignature().signature();
-		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", signature.isPresent());
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
+
+		// Distinct from the container case: this parameter's evidence is genuinely absent rather than discarded, and
+		// `input_signatures.csv` must separate the two so the container gap can be sized.
+		assertEquals("A type-hint-only parameter must report the type-hint-specific absence reason.",
+				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE,
+				function.getBlockingParameterReasons().get(x));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
 		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
 		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
-		assertTrue("Status message must reference the tool-side recovery tracker (#509).", entry.getMessage().contains("#509"));
+		assertTrue("Status message must name the type-hint disposition, not the container one.",
+				entry.getMessage().contains("via its type hint"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
 	}
 
 	/**

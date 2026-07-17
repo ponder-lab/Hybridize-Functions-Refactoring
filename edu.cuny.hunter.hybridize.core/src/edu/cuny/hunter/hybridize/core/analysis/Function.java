@@ -2184,8 +2184,10 @@ public class Function {
 	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
 	 * flow over the parameter.
 	 * <li>Tensor-classified by type hint or container detection but no concrete shape/dtype evidence
-	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): drop the signature and emit a per-parameter INFO noting that the
-	 * tool-side recovery (extending the {@link Parameter} API to expose this signal) is tracked at #509.
+	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): drop the signature and emit a per-parameter INFO. The two ways to land
+	 * here differ, so the INFO differs: a container ({@link Parameter#isTensorContainer()} {@code == TRUE}) has concrete element types that
+	 * Ariadne holds and {@code getTensorContainers} discards, whose recovery is tracked at #781; a type hint carries no dtype at all, and
+	 * since an input signature admits no dtype-⊤ (#494), there is nothing to synthesize and no follow-up to cite.
 	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
 	 * reduced spec to the signature.
 	 * </ul>
@@ -2301,16 +2303,38 @@ public class Function {
 
 			Set<TensorType> contexts = param.getTensorTypes();
 			if (contexts.isEmpty()) {
-				// Category (b): tensor-classified by Phase 1 (type hint) or Phase 3 (container) but no Phase 2 (Ariadne call-site)
-				// shape/dtype evidence. Recovery is tool-side (extend the Parameter API to surface what Ariadne already knows for
-				// containers, or extract dtype information from typed annotations), tracked at #509.
-				this.addInfo(INPUT_SIGNATURE_INFERENCE,
-						"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via type hint or "
-								+ "container detection but has no concrete shape/dtype evidence; input-signature inference is "
-								+ "dropped. Synthesizing a TensorSpec from this signal is tracked at #509.");
-				blocking.put(param, AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE);
+				/*
+				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence. The two ways to land here have
+				 * opposite evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
+				 * (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before Phase 3 runs, leaving it null. Phase 3
+				 * cannot leave it FALSE here: a FALSE container check falls through to `tensor = FALSE`, i.e. category (a).
+				 */
+				AbsenceReason reason;
+
+				if (param.isTensorContainer() != null && param.isTensorContainer()) {
+					// Ariadne holds concrete types for the elements; `getTensorContainers` discards them. Recovery is tool-side and
+					// tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/781, which the wizard text
+					// deliberately does not cite: a tracker is not actionable to a user, and a closed one actively misleads (the pointer
+					// this replaces had gone stale).
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors, but the "
+									+ "constituent tensors' shapes and dtypes are not currently used to infer an input signature; the "
+									+ "signature is dropped.");
+					reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+				} else {
+					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
+					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Parameter `" + param.getName() + "` of `" + this + "` is classified as tensor-typed via its type hint, but a "
+									+ "type hint carries no dtype and an input signature requires a concrete one; input-signature "
+									+ "inference is dropped. Passing `tf.constant(...)` at the call sites would supply the missing "
+									+ "shape and dtype evidence.");
+					reason = AbsenceReason.TYPE_HINT_WITHOUT_DTYPE;
+				}
+
+				blocking.put(param, reason);
 				if (firstReason == null)
-					firstReason = AbsenceReason.NO_SHAPE_OR_DTYPE_EVIDENCE;
+					firstReason = reason;
 				continue;
 			}
 
