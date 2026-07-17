@@ -8620,6 +8620,63 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The per-element bottom of the sequence reduction (#781): `xs` receives a singleton list at both call sites, but the element is
+	 * {@code float32} at one and {@code int32} at the other, so the container form is modeled (arity 1 everywhere) and the reduction
+	 * bottoms at the element position with a heterogeneous dtype union, exactly as a flat parameter's would. The diagnostic cites the
+	 * element rather than the parameter alone.
+	 */
+	@Test
+	public void testInputSignatureContainerElementDtypeConflict() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("The form is modeled, so element types surface.", xs.getContainerElementTypes());
+		assertEquals("One element position.", 1, xs.getContainerElementTypes().size());
+		assertTrue("The position unions both call sites' dtypes.", xs.getContainerElementTypes().get(0).size() >= 2);
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A heterogeneous element dtype reduces to bottom.", result.signature().isPresent());
+		assertEquals("The reason mirrors the flat dtype bottom.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the element position.", entry.getMessage().contains("Element 0 of parameter `xs`"));
+	}
+
+	/**
+	 * The sequence reduction (#781) over a tuple: `xs` receives a singleton tuple of one concrete tensor. Tuples are positionally-indexed
+	 * sequences like lists, and TF 2.9.3 does not distinguish list from tuple in {@code input_signature} structure matching (probed: a
+	 * list-shaped spec accepts a tuple argument and vice versa), so the tuple reduces to the same nested rendering a list would.
+	 */
+	@Test
+	public void testInputSignatureTupleParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the tuple parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("A tuple's element types surface like a list's.", xs.getContainerElementTypes());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A singleton tuple of one concrete tensor reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("The rendering matches the list form.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
 	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
 	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays
