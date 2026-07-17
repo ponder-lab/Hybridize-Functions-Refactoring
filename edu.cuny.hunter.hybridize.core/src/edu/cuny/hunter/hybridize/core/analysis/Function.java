@@ -2186,10 +2186,12 @@ public class Function {
 	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
 	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
 	 * the arity is preserved at the forwarded invoke and no second hop is needed.
-	 * <li><b>Shared trampolines.</b> Trampolines are cached per {@code (receiver, total argument count)}, which sums positional and keyword
-	 * arguments, so {@code f(x, False)} and {@code f(x, training=False)} can share one body shaped by whichever was seen first
-	 * (wala/ML#740). That costs precision, not correctness, here: both shapes mean an argument beyond the minimum was supplied, so the
-	 * check reports "supplied" either way and can only over-block.
+	 * <li><b>Shared trampolines.</b> Through Ariadne 0.52.33, trampolines were cached per {@code (receiver, total argument count)}, summing
+	 * positional and keyword arguments, so {@code f(x, False)} and {@code f(x, training=False)} could share one body shaped by whichever
+	 * was seen first (wala/ML#740, fixed in 0.52.34 by keying on the receiver, the positional count, and the keyword-name set). The bundled
+	 * version predates the fix, and the collision costs precision rather than correctness here either way: both colliding shapes mean an
+	 * argument beyond the minimum was supplied, so the check reports "supplied" for both and can only over-block. The fix changes nothing
+	 * this relies on; it makes the keyword names exact.
 	 * </ul>
 	 * Ignorance is recorded as {@code null} rather than {@code FALSE}: no call-graph node, an unresolvable predecessor, or a non-Python
 	 * invoke all leave the parameter un-omittable, matching how every other axis of the reduction treats absent evidence.
