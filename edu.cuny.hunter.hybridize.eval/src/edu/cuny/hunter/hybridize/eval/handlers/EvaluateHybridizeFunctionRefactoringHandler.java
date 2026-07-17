@@ -609,7 +609,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
 	 */
 	private static void printInputSignatures(CSVPrinter printer, Function function) throws IOException {
-		// The non-self parameters in declaration order, aligned position-wise with InputSignature.parameterSpecs().
+		// The non-self parameters in declaration order, aligned position-wise with InputSignature.getParameterSpecs().
 		List<Parameter> parameters = function.getParameters().stream().filter(p -> !p.isSelf()).toList();
 
 		if (function.getInferredInputSignature().isPresent())
