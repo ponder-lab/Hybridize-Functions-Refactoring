@@ -80,6 +80,7 @@ import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
+import edu.cuny.hunter.hybridize.core.analysis.Parameter.TensorTypeDimensionRow;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -118,6 +119,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
 
 	private static final String INPUT_SIGNATURES_CSV_FILENAME = "input_signatures.csv";
+
+	private static final String PARAMETERS_CSV_FILENAME = "parameters.csv";
 
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
@@ -242,7 +245,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "absence reason"));
 				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
-						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));) {
+						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));
+				CSVPrinter parametersPrinter = createCSVPrinter(PARAMETERS_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
+								"dim index", "dim class", "dtype", "dtype top"));) {
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -302,6 +308,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						printFunction(functionsPrinter, func);
 						printBlockedParameters(blockedParametersPrinter, func);
 						printInputSignatures(inputSignaturesPrinter, func);
+						printParameters(parametersPrinter, func);
 					}
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
@@ -643,6 +650,29 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		for (int i = 0; i < specs.size(); i++) {
 			Integer index = i < parameters.size() ? parameters.get(i).getIndex() : null;
 			printer.printRecord(buildAttributeColumnValues(function, index, source, null, specs.get(i).dtype(), specs.get(i).shape()));
+		}
+	}
+
+	/**
+	 * Emits the raw inferred tensor lattice at per-parameter, per-dimension granularity into {@code parameters.csv} (#780), so a wildcard
+	 * dimension's cause (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a FINE-level
+	 * provenance run. There is one row per dimension of each inferred {@link Parameter}'s {@code TensorType}s; a parameter carrying no
+	 * inferred tensor type produces no rows. Reads the cached analysis without recomputing, so it leaves the function's status untouched.
+	 *
+	 * @param printer The {@code parameters.csv} printer.
+	 * @param function The function whose parameters' tensor lattice to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/780">Issue 780</a>
+	 */
+	private static void printParameters(CSVPrinter printer, Function function) throws IOException {
+		for (Parameter parameter : function.getParameters()) {
+			if (parameter.isSelf())
+				continue;
+
+			for (TensorTypeDimensionRow row : parameter.getTensorTypeDiagnostics())
+				printer.printRecord(buildAttributeColumnValues(function, parameter.getIndex(), parameter.getName(),
+						parameter.isTensorContainer(), row.containerPosition(), row.typeOrdinal(), row.rank(), row.dimIndex(),
+						row.dimClass(), row.dtype(), row.dtypeTop()));
 		}
 	}
 
