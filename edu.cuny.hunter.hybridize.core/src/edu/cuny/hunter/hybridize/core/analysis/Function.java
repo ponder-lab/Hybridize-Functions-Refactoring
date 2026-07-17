@@ -468,7 +468,7 @@ public class Function {
 					parameterTypes.add(tensorType.get());
 				}
 
-			return Optional.of(new InputSignature(parameterTypes));
+			return Optional.of(InputSignature.ofSingles(parameterTypes));
 		}
 
 		/**
@@ -2291,13 +2291,15 @@ public class Function {
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
 	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
 	 * flow over the parameter.
-	 * <li>Tensor-classified by type hint or container detection but no concrete shape/dtype evidence
-	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): drop the signature and emit a per-parameter INFO. The two ways to land
-	 * here differ, so the INFO differs: a container ({@link Parameter#isTensorContainer()} {@code == TRUE}) has concrete element types that
-	 * Ariadne holds and {@code getTensorContainers} discards, whose recovery is tracked at #781; a type hint carries no dtype at all, and
-	 * since an input signature admits no dtype-⊤ (#494), there is nothing to synthesize and no follow-up to cite.
-	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
-	 * reduced spec to the signature.
+	 * <li>Tensor-classified by type hint or container detection but no Phase 2 entry ({@code isTensor() && getTensorTypes().isEmpty()}):
+	 * the two ways to land here now diverge (#781). A container ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types
+	 * were surfaced ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
+	 * {@link InputSignature.Sequence} entry; a container of an unmodeled form blocks with
+	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, and disagreeing sequence lengths block with
+	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
+	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
+	 * <li>Phase-2 hit ({@code isTensor() && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the reduced
+	 * spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -2384,7 +2386,7 @@ public class Function {
 		List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
 
 		// Keyed by parameter rather than a bare list: the suffix rule below needs each spec's declaration position.
-		Map<Parameter, TensorType> specByParameter = new LinkedHashMap<>();
+		Map<Parameter, InputSignature.SpecEntry> specByParameter = new LinkedHashMap<>();
 		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
 
 		// Defaulted, non-tensor, and supplied by no call site, so omittable from the signature entirely. Provisional until the suffix rule
@@ -2447,15 +2449,49 @@ public class Function {
 				AbsenceReason reason;
 
 				if (param.isTensorContainer() != null && param.isTensorContainer()) {
-					// Ariadne holds concrete types for the elements; `getTensorContainers` discards them. Recovery is tool-side and
-					// tracked at https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/781, which the wizard text
-					// deliberately does not cite: a tracker is not actionable to a user, and a closed one actively misleads (the pointer
-					// this replaces had gone stale).
-					this.addInfo(INPUT_SIGNATURE_INFERENCE,
-							"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors, but the "
-									+ "constituent tensors' shapes and dtypes are not currently used to infer an input signature; the "
-									+ "signature is dropped.");
-					reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+					// The sequence reduction (#781): a list or tuple of tensors with a modeled element structure reduces each element
+					// position independently through `inferSpec`, and the parameter contributes a nested entry rather than blocking.
+					List<Set<TensorType>> elements = param.getContainerElementTypes();
+
+					if (elements != null) {
+						List<TensorType> reduced = new ArrayList<>(elements.size());
+						AbsenceReason elementReason = null;
+
+						for (int j = 0; j < elements.size() && elementReason == null; j++) {
+							Optional<TensorType> elementSpec = inferSpec(elements.get(j));
+
+							if (elementSpec.isPresent())
+								reduced.add(elementSpec.get());
+							else
+								elementReason = this.reportElementDrop(param, j, elements.get(j));
+						}
+
+						if (elementReason == null) {
+							specByParameter.put(param, new InputSignature.Sequence(reduced));
+							continue;
+						}
+
+						blocking.put(param, elementReason);
+						continue;
+					}
+
+					if (param.getContainerAritiesDisagree() != null && param.getContainerAritiesDisagree()) {
+						// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
+						// exists, so no single signature admits call sites passing lists of disagreeing lengths.
+						this.addInfo(INPUT_SIGNATURE_INFERENCE,
+								"Parameter `" + param.getName() + "` of `" + this + "` receives lists of tensors whose lengths disagree "
+										+ "across call sites; an input signature fixes the length, so no single signature admits them "
+										+ "all and input-signature inference is dropped.");
+						reason = AbsenceReason.HETEROGENEOUS_ARITY;
+					} else {
+						// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
+						// enumerate, a nested container, a position without tensor evidence, or container and non-container values
+						// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
+						this.addInfo(INPUT_SIGNATURE_INFERENCE,
+								"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
+										+ "form not currently reduced to an input signature; the signature is dropped.");
+						reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+					}
 				} else {
 					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
 					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
@@ -2502,7 +2538,7 @@ public class Function {
 				continue;
 			}
 
-			specByParameter.put(param, spec.get());
+			specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
 		/*
@@ -2551,6 +2587,37 @@ public class Function {
 					+ " omittable). Refactoring call sites are gated on `getHasTensorParameter()`.");
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
+	}
+
+	/**
+	 * Classifies and reports one element position of a sequence-container parameter whose {@link #inferSpec} reduced to bottom, mirroring
+	 * the flat parameter's drop classification (dtype disagreement, dtype-⊤, then mixed sparseness, in {@link #inferSpec}'s own precedence
+	 * order) with the element position named in the diagnostic (#781).
+	 *
+	 * @param param The sequence-container parameter.
+	 * @param element The zero-based element position that did not reduce.
+	 * @param contexts The element position's {@link TensorType}s across call contexts.
+	 * @return The blocking {@link AbsenceReason} for the parameter.
+	 */
+	private AbsenceReason reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
+		boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
+		boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
+
+		if (heterogeneousDtype) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
+					+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
+			return AbsenceReason.HETEROGENEOUS_DTYPE;
+		}
+
+		if (unknownDtype) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
+					+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
+			return AbsenceReason.UNKNOWN_DTYPE;
+		}
+
+		this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
+				+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
+		return AbsenceReason.HETEROGENEOUS_SPARSITY;
 	}
 
 	/**

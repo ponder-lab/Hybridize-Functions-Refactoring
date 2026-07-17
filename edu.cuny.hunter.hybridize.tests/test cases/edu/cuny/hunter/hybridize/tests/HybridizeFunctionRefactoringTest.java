@@ -980,7 +980,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().parameterTypes());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().singleTypes());
 	}
 
 	/**
@@ -997,7 +997,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().parameterTypes());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2)))), signature.get().singleTypes());
 	}
 
 	/**
@@ -1012,7 +1012,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().parameterTypes());
+		assertEquals(List.of(new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().singleTypes());
 	}
 
 	/**
@@ -1028,7 +1028,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
 		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(3))),
-				new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().parameterTypes());
+				new TensorType(INT32, List.of(new NumericDim(5)))), signature.get().singleTypes());
 	}
 
 	/**
@@ -1043,7 +1043,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(), signature.get().parameterTypes());
+		assertEquals(List.of(), signature.get().singleTypes());
 	}
 
 	/**
@@ -1058,7 +1058,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(32)))), signature.get().parameterTypes());
+		assertEquals(List.of(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(32)))), signature.get().singleTypes());
 	}
 
 	/**
@@ -1073,7 +1073,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(new TensorType(INT32, List.of())), signature.get().parameterTypes());
+		assertEquals(List.of(new TensorType(INT32, List.of())), signature.get().singleTypes());
 	}
 
 	/**
@@ -1088,8 +1088,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = args.getSuppliedInputSignature();
 		assertTrue(signature.isPresent());
-		assertEquals(1, signature.get().parameterTypes().size());
-		TensorType tensorType = signature.get().parameterTypes().get(0);
+		assertEquals(1, signature.get().singleTypes().size());
+		TensorType tensorType = signature.get().singleTypes().get(0);
 		assertEquals(FLOAT32, tensorType.getDType());
 		assertNull(tensorType.getDims());
 	}
@@ -2765,8 +2765,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// parameter.
 		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Multi-context rank-disagreement emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
-		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
-		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().singleTypes().size());
+		TensorType spec = signature.get().singleTypes().get(0);
 		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNull("Spec dims must be null (shape-⊤ from rank disagreement).", spec.getDims());
 
@@ -3067,7 +3067,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(dlSig.isPresent());
 		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
 				new TensorType(FLOAT32, List.of(new NumericDim(2), new NumericDim(2))),
-				new TensorType(FLOAT32, List.of(new NumericDim(2)))), dlSig.get().parameterTypes());
+				new TensorType(FLOAT32, List.of(new NumericDim(2)))), dlSig.get().singleTypes());
 
 		Function addFunc = nameToFunctions.get("add").iterator().next();
 		List<Parameter> addParams = addFunc.getParameters();
@@ -3076,7 +3076,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Optional<InputSignature> addSig = addFunc.inferInputSignature().signature();
 		assertTrue(addSig.isPresent());
 		assertEquals(List.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
-				new TensorType(FLOAT32, List.of(new NumericDim(2)))), addSig.get().parameterTypes());
+				new TensorType(FLOAT32, List.of(new NumericDim(2)))), addSig.get().singleTypes());
 	}
 
 	/**
@@ -3130,7 +3130,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Set.of(expectedImage), image.getTensorTypes());
 		Optional<InputSignature> convFnSig = convFn.inferInputSignature().signature();
 		assertTrue(convFnSig.isPresent());
-		assertEquals(List.of(expectedImage), convFnSig.get().parameterTypes());
+		assertEquals(List.of(expectedImage), convFnSig.get().singleTypes());
 	}
 
 	/**
@@ -3228,7 +3228,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(Set.of(expected), x.getTensorTypes());
 		Optional<InputSignature> sig = f.inferInputSignature().signature();
 		assertTrue(sig.isPresent());
-		assertEquals(List.of(expected), sig.get().parameterTypes());
+		assertEquals(List.of(expected), sig.get().singleTypes());
 	}
 
 	/**
@@ -3713,15 +3713,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
 	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}.
 	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}.
-	 * @param expectedSignature The expected per-parameter {@link TensorType} list in {@code (a, b)} order; must be non-{@code null}. For
-	 *        fixtures expecting the inferred signature to be dropped, use
-	 *        {@link #testHasLikelyTensorParameterHelperExpectingDrop(boolean, boolean, Set, Set)} instead.
+	 * @param expectedSignature The expected per-parameter {@link TensorType} list in {@code (a, b)} order; must be non-{@code null}. A
+	 *        fixture expecting the inferred signature to be dropped (or to carry a nested entry, #781) asserts its outcome directly instead
+	 *        of through this flat-signature helper.
 	 * @throws Exception If the underlying analysis fails.
 	 */
 	private void testHasLikelyTensorParameterHelper(boolean expectingHybridFunction, boolean expectingTensorParameter,
 			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes, List<TensorType> expectedSignature) throws Exception {
-		assertNotNull("Helper contract: expectedSignature must be non-null;"
-				+ " for an expected dropped signature, call testHasLikelyTensorParameterHelperExpectingDrop.", expectedSignature);
+		assertNotNull("Helper contract: expectedSignature must be non-null; a fixture expecting a dropped or nested signature"
+				+ " asserts its outcome directly.", expectedSignature);
 		assertNotNull("Helper contract: aTensorTypes must be non-null.", aTensorTypes);
 		assertNotNull("Helper contract: bTensorTypes must be non-null.", bTensorTypes);
 
@@ -3743,45 +3743,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
 		assertEquals(aTensorTypes, a.getTensorTypes());
 		assertEquals(bTensorTypes, b.getTensorTypes());
-		assertEquals(Optional.of(expectedSignature), function.inferInputSignature().signature().map(InputSignature::parameterTypes));
-	}
-
-	/**
-	 * Precision-audit helper for the canonical two-parameter fixture shape where the inferred input signature is expected to be dropped.
-	 * The signature drop typically reflects a {@code inferSpec} short-circuit (e.g., no tensor parameter, dtype disagreement) where the
-	 * per-parameter Ariadne data is still asserted but the overall signature cannot be inferred. Structural and per-parameter assertions
-	 * match {@link #testHasLikelyTensorParameterHelper(boolean, boolean, Set, Set, List)}; only the final signature comparison differs.
-	 *
-	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the loaded function.
-	 * @param expectingTensorParameter The expected value of {@link Function#getHasTensorParameter()} for the loaded function.
-	 * @param aTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code a}.
-	 * @param bTensorTypes The expected {@link Parameter#getTensorTypes()} set for parameter {@code b}.
-	 * @throws Exception If the underlying analysis fails.
-	 */
-	private void testHasLikelyTensorParameterHelperExpectingDrop(boolean expectingHybridFunction, boolean expectingTensorParameter,
-			Set<TensorType> aTensorTypes, Set<TensorType> bTensorTypes) throws Exception {
-		assertNotNull("Helper contract: aTensorTypes must be non-null.", aTensorTypes);
-		assertNotNull("Helper contract: bTensorTypes must be non-null.", bTensorTypes);
-
-		Set<Function> functions = this.getFunctions();
-		assertNotNull(functions);
-		assertEquals(1, functions.size());
-		Function function = functions.iterator().next();
-		assertNotNull(function);
-		assertEquals(expectingHybridFunction, function.isHybrid());
-
-		List<Parameter> params = function.getParameters();
-		assertEquals(2, params.size());
-		Parameter a = params.get(0);
-		Parameter b = params.get(1);
-		assertNotNull(a);
-		assertNotNull(b);
-		assertEquals("a", a.getName());
-		assertEquals("b", b.getName());
-		assertEquals(expectingTensorParameter, function.getHasTensorParameter());
-		assertEquals(aTensorTypes, a.getTensorTypes());
-		assertEquals(bTensorTypes, b.getTensorTypes());
-		assertEquals(Optional.empty(), function.inferInputSignature().signature().map(InputSignature::parameterTypes));
+		assertEquals(Optional.of(expectedSignature), function.inferInputSignature().signature().map(InputSignature::singleTypes));
 	}
 
 	/**
@@ -3858,7 +3820,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * structural shape (single parameter named {@code t}), {@link Function#isHybrid()}, that the target has a tensor parameter, the
 	 * per-parameter {@link Parameter#getTensorTypes()}, and {@link Function#inferInputSignature()}. This helper covers the
 	 * tensor-parameter-present case only; if a future fixture needs to assert a signature drop or absent tensor parameter, add a sibling
-	 * helper (analogous to {@link #testHasLikelyTensorParameterHelperExpectingDrop(boolean, boolean, Set, Set)}).
+	 * helper.
 	 *
 	 * @param targetFunctionSimpleName The simple name of the function under test (one of the two functions in the fixture).
 	 * @param expectingHybridFunction The expected value of {@link Function#isHybrid()} for the target function.
@@ -3886,7 +3848,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue(target.getHasTensorParameter());
 		assertEquals(Set.of(expectedParameterTensorType), t.getTensorTypes());
 		assertEquals(Optional.of(List.of(expectedSignatureTensorType)),
-				target.inferInputSignature().signature().map(InputSignature::parameterTypes));
+				target.inferInputSignature().signature().map(InputSignature::singleTypes));
 	}
 
 	/**
@@ -4692,13 +4654,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Test lists. {@code add(list, list)} where {@code list = [tf.ones([1, 2]), tf.ones([2, 2])]}—both parameters bind to a Python list
 	 * literal containing tensors. Phase-3 container detection classifies each parameter as tensor-bearing (so
-	 * {@link Function#getHasTensorParameter()} is {@code true}), but the parameter binds to the list itself, not to a tensor; per-parameter
-	 * {@link Parameter#getTensorTypes()} is empty. Without a concrete per-parameter tensor type, {@code inferSpec} cannot produce a
-	 * {@code TensorSpec}, so the inferred signature drops.
+	 * {@link Function#getHasTensorParameter()} is {@code true}), while the parameter binds to the list itself, not to a tensor;
+	 * per-parameter {@link Parameter#getTensorTypes()} is empty. Since #781, the two-element sequence reduces per position, so the inferred
+	 * signature carries a two-element {@code InputSignature.Sequence} per parameter, the arity-2 form of the reduction, rather than
+	 * dropping as it did before the elements' types were surfaced.
 	 */
 	@Test
 	public void testHasLikelyTensorParameter146() throws Exception {
-		testHasLikelyTensorParameterHelperExpectingDrop(false, true, Set.of(), Set.of());
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertFalse(function.isHybrid());
+		assertEquals(TRUE, function.getHasTensorParameter());
+
+		List<Parameter> params = function.getParameters();
+		assertEquals(2, params.size());
+
+		for (Parameter p : params) {
+			assertTrue("The parameter binds to the list itself, not a tensor.", p.getTensorTypes().isEmpty());
+			assertEquals("Phase 3 classifies each parameter as a container.", TRUE, p.isTensorContainer());
+			assertNotNull("The two-element sequence's element types are surfaced (#781).", p.getContainerElementTypes());
+			assertEquals("Both element positions carry evidence.", 2, p.getContainerElementTypes().size());
+		}
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A two-element list of concrete tensors reduces per position (#781).", result.signature().isPresent());
+		assertEquals("Each parameter renders as a two-element nested spec, positions in order.",
+				"[[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)], "
+						+ "[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
 	}
 
 	/**
@@ -8384,7 +8368,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(expected), signature.get().parameterTypes());
+		assertEquals(List.of(expected), signature.get().singleTypes());
 	}
 
 	/**
@@ -8406,7 +8390,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue(signature.isPresent());
-		assertEquals(List.of(expected), signature.get().parameterTypes());
+		assertEquals(List.of(expected), signature.get().singleTypes());
 	}
 
 	/**
@@ -8432,8 +8416,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Singleton with null dims emits a coarse `TensorType(FLOAT32, null)` signature.", signature.isPresent());
-		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
-		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().singleTypes().size());
+		TensorType spec = signature.get().singleTypes().get(0);
 		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNull("Spec dims must be null (shape-⊤).", spec.getDims());
 	}
@@ -8461,8 +8445,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Optional<InputSignature> signature = function.inferInputSignature().signature();
 		assertTrue("Per-dim disagreement emits a wildcard-shape signature.", signature.isPresent());
-		assertEquals("Expected a single-parameter signature.", 1, signature.get().parameterTypes().size());
-		TensorType spec = signature.get().parameterTypes().get(0);
+		assertEquals("Expected a single-parameter signature.", 1, signature.get().singleTypes().size());
+		TensorType spec = signature.get().singleTypes().get(0);
 		assertEquals("Spec dtype must be FLOAT32.", FLOAT32, spec.getDType());
 		assertNotNull("Spec dims must be non-null (rank consensus).", spec.getDims());
 		assertEquals("Spec must be rank 1.", 1, spec.getDims().size());
@@ -8507,11 +8491,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Regression test for #508 category (b) (Phase-3 container path). A parameter classified as tensor-typed via Phase 3
-	 * (`hasTensorContainer`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: `xs.isTensor()` is TRUE while
-	 * `xs.getTensorTypes()` is empty. Per #508, `inferInputSignature` drops the signature and emits a per-parameter INFO. Per #782, that
-	 * INFO names the container disposition specifically and cites no tracker in its wizard-facing text; the tool-side recovery (Ariadne
-	 * holds the constituent tensors' types and `getTensorContainers` discards them) is tracked at #781.
+	 * The sequence reduction (#781) on a container parameter: `xs` receives a singleton list of one concrete tensor, classifies as
+	 * tensor-typed via Phase 3 with no Phase 2 entry (the parameter itself is a list, not a tensor), and contributes a nested entry rather
+	 * than blocking. Inverted from the #497/#508-era pin that expected `TENSOR_CONTAINER_UNSUPPORTED` here: the elements' types are now
+	 * surfaced by `Parameter.getContainerElementTypes()` and reduced per position through `inferSpec`.
 	 */
 	@Test
 	public void testInputSignatureContainerParameter() throws Exception {
@@ -8529,23 +8512,168 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Parameter `xs` must have an empty `getTensorTypes()` cache (no Phase 2 evidence for the container itself).",
 				xs.getTensorTypes().isEmpty());
 
-		InferenceResult result = function.inferInputSignature();
-		assertFalse("Container-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
+		assertNotNull("The container's element types must be surfaced for the reduction (#781).", xs.getContainerElementTypes());
+		assertEquals("A singleton list has one element position.", 1, xs.getContainerElementTypes().size());
 
-		// The reason is the eval-visible value: `input_signatures.csv` reports it per parameter, so the container and type-hint cases must
-		// be distinguishable downstream rather than sharing one reason.
-		assertEquals("A container parameter must report the container-specific absence reason.",
-				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED,
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A singleton list of one concrete tensor reduces to a nested entry (#781).", result.signature().isPresent());
+		assertEquals("The nested rendering wraps the element spec in its own list.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
+
+		assertTrue("A reduced container parameter is not a blocking parameter.", function.getBlockingParameterReasons().isEmpty());
+		assertNull("No drop INFO when the signature is inferred.",
+				function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode()));
+	}
+
+	/**
+	 * The arity bottom of the sequence reduction (#781): `xs` receives a singleton list at one call site and a two-element list at the
+	 * other. TensorFlow rejects a sequence of a different length than the signature declares and no wildcard length exists, so no single
+	 * nested spec admits both call sites; the parameter blocks as `HETEROGENEOUS_ARITY`, the `|X| != 1` discipline the dtype and sparseness
+	 * axes already use.
+	 */
+	@Test
+	public void testInputSignatureContainerArityMismatch() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNull("Disagreeing arities must not surface element types.", xs.getContainerElementTypes());
+		assertEquals("The extraction must record the arity disagreement.", TRUE, xs.getContainerAritiesDisagree());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("No single nested spec admits lists of disagreeing lengths.", result.signature().isPresent());
+		assertEquals("The reason must name the arity disagreement, not an unsupported form.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY,
 				function.getBlockingParameterReasons().get(xs));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
-		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status for category (b).", entry);
-		assertEquals("Status entry must be INFO severity.", INFO, entry.getSeverity());
-		assertTrue("Status message must cite parameter `xs`.", entry.getMessage().contains("`xs`"));
-		assertTrue("Status message must name the container disposition, not the type-hint one.",
-				entry.getMessage().contains("container of tensors"));
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("Status message must cite the length disagreement.", entry.getMessage().contains("lengths disagree"));
 		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
+	 * The sequence reduction (#781) on the corpus shape, reduced from NLPGNN's `Planetoid.load` to `GATLayer` chain: a loader builds a
+	 * singleton list holding one edge-index tensor and returns it in a tuple; a Keras model method receives it through the model-call
+	 * trampoline alongside a dense tensor and iterates it. The signature carries a `Single` and a `Sequence` entry side by side, and the
+	 * nested rendering matches what TensorFlow 2.9.3 accepts and enforces for a list-valued parameter.
+	 */
+	@Test
+	public void testInputSignatureLoaderList() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function call = findFunction(functions, "Model.call");
+
+		List<Parameter> parameters = call.getParameters();
+		assertEquals(3, parameters.size());
+		Parameter adjacencyLists = parameters.get(2);
+		assertEquals("adjacency_lists", adjacencyLists.getName());
+
+		assertEquals("The list-valued parameter classifies as a container.", TRUE, adjacencyLists.isTensorContainer());
+		assertNotNull("Its element types must be surfaced.", adjacencyLists.getContainerElementTypes());
+
+		InferenceResult result = call.inferInputSignature();
+		assertTrue("Both parameters reduce, so the function gains a signature.", result.signature().isPresent());
+		assertEquals("A `Single` and a `Sequence` entry render side by side.",
+				"[tf.TensorSpec(shape=(2, 1), dtype=tf.float32), [tf.TensorSpec(shape=(2, 2), dtype=tf.int32)]]",
+				result.signature().get().toTensorSpecList("tf."));
+
+		assertEquals("The nested element needs no spec type beyond `TensorSpec`.", Set.of("TensorSpec"),
+				result.signature().get().requiredSpecTypeNames());
+		assertEquals("Both leaves' dtype constants are required for emission.", Set.of("float32", "int32"),
+				result.signature().get().requiredDTypeNames());
+	}
+
+	/**
+	 * The designed unsupported form of the sequence reduction (#781): `xs` receives a list grown by an append loop, so its object catalog
+	 * is not a contiguous run of constant indices the extraction can enumerate. Phase 3 still classifies the parameter as a container, no
+	 * element structure is extractable, and the signature drops with `TENSOR_CONTAINER_UNSUPPORTED` rather than `HETEROGENEOUS_ARITY`.
+	 */
+	@Test
+	public void testInputSignatureContainerAppendLoop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNull("An append-built list has no extractable element structure.", xs.getContainerElementTypes());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("An unextractable container blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form, not an arity disagreement.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
+	 * The per-element bottom of the sequence reduction (#781): `xs` receives a singleton list at both call sites, but the element is
+	 * {@code float32} at one and {@code int32} at the other, so the container form is modeled (arity 1 everywhere) and the reduction
+	 * bottoms at the element position with a heterogeneous dtype union, exactly as a flat parameter's would. The diagnostic cites the
+	 * element rather than the parameter alone.
+	 */
+	@Test
+	public void testInputSignatureContainerElementDtypeConflict() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("The form is modeled, so element types surface.", xs.getContainerElementTypes());
+		assertEquals("One element position.", 1, xs.getContainerElementTypes().size());
+		assertTrue("The position unions both call sites' dtypes.", xs.getContainerElementTypes().get(0).size() >= 2);
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A heterogeneous element dtype reduces to bottom.", result.signature().isPresent());
+		assertEquals("The reason mirrors the flat dtype bottom.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the element position.", entry.getMessage().contains("Element 0 of parameter `xs`"));
+	}
+
+	/**
+	 * The sequence reduction (#781) over a tuple: `xs` receives a singleton tuple of one concrete tensor. Tuples are positionally-indexed
+	 * sequences like lists, and TF 2.9.3 does not distinguish list from tuple in {@code input_signature} structure matching (probed: a
+	 * list-shaped spec accepts a tuple argument and vice versa), so the tuple reduces to the same nested rendering a list would.
+	 */
+	@Test
+	public void testInputSignatureTupleParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the tuple parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("A tuple's element types surface like a list's.", xs.getContainerElementTypes());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A singleton tuple of one concrete tensor reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("The rendering matches the list form.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
 	}
 
 	/**
@@ -9223,7 +9351,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.orElseThrow(() -> new AssertionError("Expected an inferred signature for the ragged parameter."));
 
 		// The ragged marker survives reduction (not collapsed to a symbolic wildcard).
-		List<TensorType.Dimension<?>> dims = signature.parameterTypes().get(0).getDims();
+		List<TensorType.Dimension<?>> dims = signature.singleTypes().get(0).getDims();
 		assertTrue("Inference should preserve the `RaggedDim` marker.", dims.get(dims.size() - 1) instanceof TensorType.RaggedDim);
 
 		// ...and the emission is a `RaggedTensorSpec`, with the ragged position rendered as `None`.

@@ -595,6 +595,18 @@ public class Util {
 				|| reference.equals(PythonTypes.set) || reference.equals(PythonTypes.tuple);
 	}
 
+	/**
+	 * Returns true iff the given type is a positionally-indexed Python sequence: a list or tuple. The subset of
+	 * {@link #isContainerType(TypeReference)} whose elements the nested-spec reduction can model positionally; dicts, sets, and
+	 * {@code enumerate} objects are containers but not sequences (#781).
+	 *
+	 * @param reference The type in question.
+	 * @return True iff the type is {@code list} or {@code tuple}.
+	 */
+	public static boolean isSequenceType(TypeReference reference) {
+		return reference.equals(PythonTypes.list) || reference.equals(PythonTypes.tuple);
+	}
+
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static void addEntryPoints(Collection target, Iterable source) {
 		for (Object entryPoint : source)

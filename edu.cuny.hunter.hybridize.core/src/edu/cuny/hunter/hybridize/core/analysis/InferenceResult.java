@@ -56,13 +56,22 @@ public sealed interface InferenceResult {
 		DEFAULTED_PARAMETER_PRECEDES_SPEC,
 
 		/**
-		 * A parameter is a container of tensors (classified by {@link Parameter#hasTensorContainer}), which no spec is synthesized for
-		 * because the reduction models one leaf {@link com.ibm.wala.cast.python.ml.types.TensorType} per parameter rather than a nested
-		 * structure. Distinct from {@link #TYPE_HINT_WITHOUT_DTYPE} in what is recoverable: Ariadne holds the constituent tensors' concrete
-		 * shapes and dtypes and {@code Parameter.getTensorContainers} discards them, so this is a tool-side gap (#781) rather than absent
-		 * evidence. Retired when #781 lands.
+		 * A parameter is a container of tensors (classified by {@link Parameter#hasTensorContainer}) of a form the sequence reduction does
+		 * not model (#781 models a list or tuple of tensors with a constant element structure): a dict or set, a container whose element
+		 * structure is not a contiguous run of constant indices (e.g. built by an append loop the analysis cannot enumerate), an element
+		 * that is itself a container, an element position with no tensor evidence, or a parameter whose call sites mix container and
+		 * non-container values. Distinct from {@link #TYPE_HINT_WITHOUT_DTYPE} in what is recoverable: the analysis may hold more about the
+		 * elements than the reduction consumes, so this can narrow further as more forms are modeled.
 		 */
 		TENSOR_CONTAINER_UNSUPPORTED,
+
+		/**
+		 * A sequence-of-tensors parameter whose element count disagrees across the container values reaching it, so its arity set has size
+		 * {@code > 1}. No single nested spec admits both: TensorFlow enforces the declared structure, raising {@code ValueError} for a
+		 * sequence of a different length, and no wildcard arity exists—the same {@code |X| ≠ 1 ⇒ ⊥} discipline the dtype and sparseness
+		 * axes use (#781).
+		 */
+		HETEROGENEOUS_ARITY,
 
 		/**
 		 * A parameter is classified as tensor-typed by its type hint alone (Phase 1), with no call-site evidence. A bare

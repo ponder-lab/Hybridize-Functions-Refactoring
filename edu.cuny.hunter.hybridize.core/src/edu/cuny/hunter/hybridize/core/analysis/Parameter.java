@@ -14,7 +14,11 @@ import static org.python.pydev.parser.visitors.NodeUtils.getRepresentationString
 import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFromAST;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -52,6 +56,7 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -148,6 +153,23 @@ public final class Parameter {
 	private Boolean tensor;
 
 	/**
+	 * Cached per-position element types of a sequence-container parameter, populated by {@link #extractContainerElements} when Phase 3
+	 * classifies this parameter as a tensor container and the container form is one the nested-spec reduction models: every value reaching
+	 * the parameter is a list or tuple known to the tensor analysis, every container's element structure is a contiguous run of constant
+	 * indices with the same arity, and every position carries tensor evidence (#781). Position {@code j} holds the union of the element
+	 * types at index {@code j} across the reaching containers. {@code null} when extraction did not run or the form is unsupported;
+	 * distinguish the arity-disagreement case via {@link #getContainerAritiesDisagree()}.
+	 */
+	private List<Set<TensorType>> containerElementTypes;
+
+	/**
+	 * {@code TRUE} iff Phase 3 found sequence containers reaching this parameter whose element counts disagree, which is its own blocking
+	 * reason (no wildcard arity exists; TensorFlow enforces the declared length) rather than an unsupported form (#781). {@code null} when
+	 * extraction did not run or did not reach the arity check.
+	 */
+	private Boolean containerAritiesDisagree;
+
+	/**
 	 * Cached answer to whether any call site supplies an argument for this parameter, positionally or by keyword. Populated by
 	 * {@link Function#inferSuppliedParameters}. {@code null} until that runs, and deliberately left {@code null} when the answer cannot be
 	 * established (no call-graph node for the owning function, an unresolvable predecessor, or a non-Python invoke), so that
@@ -162,11 +184,13 @@ public final class Parameter {
 	private final Function function;
 
 	/**
-	 * Cache of tensor-container instance keys for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
-	 * discarded when the analysis is re-run and a new object is returned. Each value is a set of instance keys that the analysis associates
-	 * with containers of tensors (e.g. lists/tuples/dicts whose elements are tensors).
+	 * Cache of tensor-container element evidence for each tensor type analysis. Keyed by the analysis object to ensure that cached results
+	 * are discarded when the analysis is re-run and a new object is returned. Each value maps a container instance key (a list/tuple/dict
+	 * whose elements the analysis associates with tensors) to its per-field element types: field name (the stringified catalog constant,
+	 * e.g. {@code "0"}) to the {@link TensorType}s of the {@link InstanceFieldPointerKey} for that field. The key set alone answers the
+	 * boolean container question (Phase 3 of {@link #classifyAsTensor}); the field map is what the nested-spec reduction consumes (#781).
 	 */
-	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
+	private static Map<TensorTypeAnalysis, Map<InstanceKey, Map<String, Set<TensorType>>>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -292,6 +316,29 @@ public final class Parameter {
 	 */
 	public Boolean isTensorContainer() {
 		return this.tensorContainer;
+	}
+
+	/**
+	 * Returns the per-position element types of this sequence-container parameter, or {@code null} when the container form is not one the
+	 * nested-spec reduction models (see {@link #getContainerAritiesDisagree()} for the arity-disagreement case) or classification did not
+	 * reach the extraction. Position {@code j} holds the union of the element types at index {@code j} across the container values reaching
+	 * the parameter; the reduction reduces each position independently (#781).
+	 *
+	 * @return One {@link TensorType} set per element position, or {@code null}.
+	 */
+	public List<Set<TensorType>> getContainerElementTypes() {
+		return this.containerElementTypes;
+	}
+
+	/**
+	 * Returns whether the sequence containers reaching this parameter disagree on element count. {@code TRUE} is its own blocking reason
+	 * (no wildcard arity exists; TensorFlow rejects a sequence of a different length than declared), distinct from the unsupported-form
+	 * case where {@link #getContainerElementTypes()} is {@code null} with this {@code null} too (#781).
+	 *
+	 * @return {@code TRUE} on arity disagreement, {@code FALSE} when extraction succeeded, or {@code null} otherwise.
+	 */
+	public Boolean getContainerAritiesDisagree() {
+		return this.containerAritiesDisagree;
 	}
 
 	/**
@@ -465,17 +512,20 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * Returns, for each container of tensors the given analysis knows, its per-field element types: field name (the stringified catalog
+	 * constant, e.g. {@code "0"}) to the {@link TensorType}s the analysis associates with that field's {@link InstanceFieldPointerKey}. The
+	 * key set answers the boolean container question; the field maps feed the nested-spec reduction (#781).
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param monitor Progress.
-	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @return Container instance keys mapped to their per-field element {@link TensorType}s.
 	 */
-	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
+	private static Map<InstanceKey, Map<String, Set<TensorType>>> getTensorContainerElements(TensorTypeAnalysis tensorAnalysis,
+			IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
 
-		Set<InstanceKey> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
-			Set<InstanceKey> tensorContainers = new HashSet<>();
+		Map<InstanceKey, Map<String, Set<TensorType>>> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
+			Map<InstanceKey, Map<String, Set<TensorType>>> tensorContainers = new HashMap<>();
 
 			for (Pair<PointerKey, TensorVariable> pair : k) {
 				PointerKey pointerKey = pair.fst;
@@ -489,7 +539,13 @@ public final class Parameter {
 						// We have a match.
 						// check the existence of the tensor variable.
 						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-						tensorContainers.add(instanceKey);
+						Map<String, Set<TensorType>> fields = tensorContainers.computeIfAbsent(instanceKey, x -> new HashMap<>());
+
+						// The field name lives on the concrete key; other implementors still register the container for the boolean
+						// question, only without element evidence, which the reduction reports as an unsupported form.
+						if (ifpk instanceof InstanceFieldKey fieldKey)
+							fields.computeIfAbsent(fieldKey.getField().getName().toString(), x -> new HashSet<>())
+									.addAll(pair.snd.getTypes());
 					}
 				}
 
@@ -501,6 +557,17 @@ public final class Parameter {
 
 		progress.done();
 		return result;
+	}
+
+	/**
+	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 *
+	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
+	 * @param monitor Progress.
+	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 */
+	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
+		return getTensorContainerElements(tensorAnalysis, monitor).keySet();
 	}
 
 	/**
@@ -566,6 +633,113 @@ public final class Parameter {
 	boolean hasTensorContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) {
 		return tensorAnalysisIncludesParameterContainer(tensorAnalysis, this.getIndex(), nodes, builder, monitor);
+	}
+
+	/**
+	 * Extracts the per-position element types of this parameter's sequence containers, populating {@link #getContainerElementTypes()} (and
+	 * {@link #getContainerAritiesDisagree()} for the arity-disagreement case). Runs only after Phase 3 classified this parameter as a
+	 * tensor container. The form is modeled iff every instance key the parameter points to is a list or tuple the tensor analysis knows as
+	 * a container of tensors, every such container's object catalog is a set of constant indices forming a contiguous run {@code 0..n-1},
+	 * the containers agree on {@code n}, and every position carries tensor evidence. Anything else leaves
+	 * {@link #getContainerElementTypes()} {@code null}, which the reduction reports as an unsupported container form (#781).
+	 *
+	 * @param tensorAnalysis Ariadne's analysis result.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 */
+	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
+		Map<InstanceKey, Map<String, Set<TensorType>>> containers = getTensorContainerElements(tensorAnalysis, monitor);
+
+		// The container values reaching this parameter, matched by key identity exactly as the boolean Phase 3 matches them.
+		Set<InstanceKey> reaching = new LinkedHashSet<>();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int paramInx = this.getIndex() + 1; // the first argument is the function being invoked.
+
+			if (paramInx >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(paramInx));
+
+			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
+				TypeReference reference = getTypeReference(instanceKey);
+
+				if (reference == null || !Util.isSequenceType(reference) || !containers.containsKey(instanceKey)) {
+					// A non-sequence value, or a sequence the analysis has no element evidence for, reaches the parameter alongside the
+					// containers. TensorFlow enforces the declared nesting, so a nested spec would reject that value; the form is
+					// unsupported.
+					LOG.info("Parameter " + this + " mixes containers with unmodeled values; not reducing: " + instanceKey + ".");
+					return;
+				}
+
+				reaching.add(instanceKey);
+			}
+		}
+
+		if (reaching.isEmpty())
+			return;
+
+		// Arity per container, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported.
+		int arity = -1;
+
+		for (InstanceKey container : reaching) {
+			Set<String> fieldNames = new HashSet<>();
+			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory()).getPointerKeyForObjectCatalog(container);
+
+			for (InstanceKey catalogInstanceKey : builder.getPointerAnalysis().getPointsToSet(catalogPointerKey)) {
+				if (!(catalogInstanceKey instanceof ConstantKey<?> constantKey) || constantKey.getValue() == null) {
+					// E.g. a list grown by an append loop the analysis cannot enumerate.
+					LOG.info("Parameter " + this + " has a container with a non-constant element structure; not reducing: " + container
+							+ ".");
+					return;
+				}
+
+				fieldNames.add(constantKey.getValue().toString());
+			}
+
+			for (int j = 0; j < fieldNames.size(); j++)
+				if (!fieldNames.contains(String.valueOf(j))) {
+					LOG.info("Parameter " + this + " has a container with non-contiguous indices; not reducing: " + container + ".");
+					return;
+				}
+
+			if (arity == -1)
+				arity = fieldNames.size();
+			else if (arity != fieldNames.size()) {
+				LOG.info("Parameter " + this + " receives sequences of disagreeing arities (" + arity + " vs " + fieldNames.size() + ").");
+				this.containerAritiesDisagree = TRUE;
+				return;
+			}
+		}
+
+		if (arity <= 0)
+			return;
+
+		// Union the element types per position across the reaching containers; a position with no evidence leaves the form unsupported.
+		List<Set<TensorType>> elements = new ArrayList<>(arity);
+
+		for (int j = 0; j < arity; j++) {
+			Set<TensorType> union = new HashSet<>();
+
+			for (InstanceKey container : reaching) {
+				Set<TensorType> types = containers.get(container).get(String.valueOf(j));
+
+				if (types == null || types.isEmpty()) {
+					LOG.info("Parameter " + this + " has no tensor evidence for element " + j + " of: " + container + "; not reducing.");
+					return;
+				}
+
+				union.addAll(types);
+			}
+
+			elements.add(unmodifiableSet(union));
+		}
+
+		this.containerAritiesDisagree = FALSE;
+		this.containerElementTypes = elements;
 	}
 
 	/**
@@ -686,7 +860,7 @@ public final class Parameter {
 	 */
 	boolean classifyAsTensor(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder,
 			IProgressMonitor monitor) throws Exception {
-		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 3);
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Checking if parameter: " + this + " is tensor-typed...", 4);
 
 		try {
 			// don't consider `self` as a tensor.
@@ -743,6 +917,9 @@ public final class Parameter {
 				boolean isContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 				this.tensorContainer = isContainer;
 				if (isContainer) {
+					// Surface the elements' types for the nested-spec reduction (#781); the boolean verdict stands regardless of whether
+					// the container form is one the reduction models.
+					this.extractContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");

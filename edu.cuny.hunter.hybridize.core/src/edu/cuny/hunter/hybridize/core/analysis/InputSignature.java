@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -13,14 +14,18 @@ import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 
 /**
- * The inferred input signature of a hybridizable function: an ordered tuple of {@link TensorType}s in declaration order, one per
- * non-{@code self} parameter. Produced by {@link Function#inferInputSignature}. `InputSignature` is total over the function's
- * non-{@code self} parameters: every non-{@code self} parameter contributes a {@link TensorType}, or {@link Function#inferInputSignature}
- * returns {@link java.util.Optional#empty} instead of producing a partial signature. The per-parameter dispatch
- * (tensor-classified-with-evidence vs tensor-classified-without-evidence vs truly non-tensor) and its diagnostics live in
- * {@link Function#inferInputSignature}; see that method's Javadoc and #508 for the rules.
+ * The inferred input signature of a hybridizable function: an ordered tuple of {@link SpecEntry}s in declaration order, one per
+ * non-{@code self} parameter. Produced by {@link Function#inferInputSignature}. An entry is either a {@link Single} (the parameter is one
+ * tensor, rendering as one {@code TensorSpec}) or a {@link Sequence} (the parameter is a Python list or tuple of tensors, rendering as a
+ * nested spec list, which {@code tf.function} accepts and enforces structurally; #781). {@code InputSignature} is total over the function's
+ * non-{@code self} parameters: every non-{@code self} parameter contributes an entry, or {@link Function#inferInputSignature} returns an
+ * absent result instead of producing a partial signature. The per-parameter dispatch (tensor-classified-with-evidence vs
+ * tensor-classified-without-evidence vs truly non-tensor) and its diagnostics live in {@link Function#inferInputSignature}; see that
+ * method's Javadoc and #508 for the rules.
+ *
+ * @param entries The per-parameter spec entries, in declaration order.
  */
-public record InputSignature(List<TensorType> parameterTypes) {
+public record InputSignature(List<SpecEntry> entries) {
 
 	/** The {@code tf.TensorSpec} constructor name, emitted for a dense tensor parameter. */
 	private static final String TENSOR_SPEC = "TensorSpec";
@@ -32,12 +37,80 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	private static final String SPARSE_TENSOR_SPEC = "SparseTensorSpec";
 
 	/**
+	 * One parameter's contribution to an {@link InputSignature}: a {@link Single} tensor spec or a {@link Sequence} of them. Sealed so the
+	 * dispatch sites (rendering, name collection, {@link InputSignature#relate}) stay exhaustive as forms are added (a mapping form for
+	 * dict-valued parameters is a candidate future member; see #781).
+	 */
+	public sealed interface SpecEntry permits Single, Sequence {
+	}
+
+	/**
+	 * A parameter that is one tensor, rendering as one {@code TensorSpec} (or its ragged/sparse variant).
+	 *
+	 * @param type The parameter's reduced {@link TensorType}.
+	 */
+	public record Single(TensorType type) implements SpecEntry {
+	}
+
+	/**
+	 * A parameter that is a Python list or tuple of tensors, rendering as a spec list nested inside the outer {@code input_signature} list
+	 * (e.g. {@code [tf.TensorSpec(shape=(2, 2), dtype=tf.int32)]}). TensorFlow enforces the structure: a caller passing a bare tensor where
+	 * a sequence is declared raises {@code TypeError}, and a sequence of a different length raises {@code ValueError}, so this entry is
+	 * only sound for a parameter whose every call-site value is a sequence of exactly this arity (#781).
+	 *
+	 * @param elementTypes The reduced {@link TensorType} of each element, in positional order; one per element of the sequence.
+	 */
+	public record Sequence(List<TensorType> elementTypes) implements SpecEntry {
+	}
+
+	/**
+	 * Wraps a flat list of per-parameter {@link TensorType}s into an all-{@link Single} signature: the pre-#781 shape, still what the
+	 * supplied-signature parser produces (it models flat signatures only) and what most reductions yield. A named factory rather than a
+	 * constructor overload because {@code List<TensorType>} and {@code List<SpecEntry>} erase to the same signature.
+	 *
+	 * @param parameterTypes One {@link TensorType} per non-{@code self} parameter, in declaration order.
+	 * @return The signature with each type wrapped as a {@link Single}.
+	 */
+	public static InputSignature ofSingles(List<TensorType> parameterTypes) {
+		return new InputSignature(parameterTypes.stream().<SpecEntry>map(Single::new).toList());
+	}
+
+	/**
+	 * The flat projection of an all-{@link Single} signature: one {@link TensorType} per parameter. The inverse of {@link #ofSingles} for
+	 * signatures with no {@link Sequence} entry, serving consumers and assertions that predate nesting.
+	 *
+	 * @return The per-parameter {@link TensorType}s.
+	 * @throws IllegalStateException If any entry is a {@link Sequence}; a nested signature has no flat projection.
+	 */
+	public List<TensorType> singleTypes() {
+		return entries.stream().map(e -> switch (e) {
+		case Single s -> s.type();
+		case Sequence q -> throw new IllegalStateException("A nested signature has no flat projection: " + q + ".");
+		}).toList();
+	}
+
+	/**
+	 * Every {@link TensorType} this signature references, across {@link Single} entries and {@link Sequence} elements alike. The traversal
+	 * behind {@link #requiredSpecTypeNames()} and {@link #requiredDTypeNames()}: a nested ragged element needs {@code RaggedTensorSpec} in
+	 * scope exactly as a top-level one does.
+	 *
+	 * @return The leaf tensor types, in entry order.
+	 */
+	private Stream<TensorType> leaves() {
+		return entries.stream().flatMap(e -> switch (e) {
+		case Single s -> Stream.of(s.type());
+		case Sequence q -> q.elementTypes().stream();
+		});
+	}
+
+	/**
 	 * Format this signature as a Python source-code expression suitable for the {@code input_signature=} keyword argument of
-	 * {@code @tf.function(...)}. Each parameter's {@link TensorType} renders as {@code tfPrefix + "<SpecType>(shape=(...), dtype=" +
-	 * tfPrefix + "<dtype>)"}, where {@code <SpecType>} is {@code SparseTensorSpec} for a sparse parameter, {@code RaggedTensorSpec} for a
-	 * parameter with a ragged dimension, and {@code TensorSpec} otherwise ({@link #specTypeName}); shape dims render as concrete integers
-	 * for {@link NumericDim} and {@code None} for every other {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way
-	 * on the spec surface). The whole thing is wrapped in {@code [...]} so it can drop straight into
+	 * {@code @tf.function(...)}. A {@link Single} renders as {@code tfPrefix + "<SpecType>(shape=(...), dtype=" + tfPrefix + "<dtype>)"},
+	 * where {@code <SpecType>} is {@code SparseTensorSpec} for a sparse parameter, {@code RaggedTensorSpec} for a parameter with a ragged
+	 * dimension, and {@code TensorSpec} otherwise ({@link #specTypeName}); shape dims render as concrete integers for {@link NumericDim}
+	 * and {@code None} for every other {@link Dimension} subtype (dynamic, ragged, symbolic—all encoded the same way on the spec surface).
+	 * A {@link Sequence} renders its element specs inside a further {@code [...]}, the nested form {@code tf.function} accepts for a
+	 * list-valued parameter. The whole thing is wrapped in {@code [...]} so it can drop straight into
 	 * {@code @tf.function(input_signature=...)}.
 	 * <p>
 	 * Examples (with {@code tfPrefix = "tf."}):
@@ -45,6 +118,7 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	 * <li>Single rank-2 tensor {@code (FLOAT32, [DynamicDim, NumericDim(32)])} → {@code [tf.TensorSpec(shape=(None, 32),
 	 * dtype=tf.float32)]}
 	 * <li>Two tensors → {@code [tf.TensorSpec(...), tf.TensorSpec(...)]}
+	 * <li>A tensor and a singleton list of tensors → {@code [tf.TensorSpec(...), [tf.TensorSpec(shape=(2, 2), dtype=tf.int32)]]}
 	 * <li>Scalar tensor (empty dims) → {@code [tf.TensorSpec(shape=(), dtype=tf.int32)]}
 	 * </ul>
 	 * <p>
@@ -58,18 +132,37 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	public String toTensorSpecList(String tfPrefix) {
 		StringJoiner specs = new StringJoiner(", ", "[", "]");
 
-		for (TensorType t : parameterTypes)
-			specs.add(tfPrefix + specTypeName(t) + "(shape=" + shapeString(t) + ", dtype=" + tfPrefix + dtypeName(t) + ")");
+		for (SpecEntry e : entries)
+			switch (e) {
+			case Single s -> specs.add(renderSpec(s.type(), tfPrefix));
+			case Sequence q -> {
+				StringJoiner inner = new StringJoiner(", ", "[", "]");
+				for (TensorType t : q.elementTypes())
+					inner.add(renderSpec(t, tfPrefix));
+				specs.add(inner.toString());
+			}
+			}
 
 		return specs.toString();
 	}
 
 	/**
-	 * The raw shape rendering for a parameter's {@link TensorType}: {@code "None"} when the rank is unknown (null dims—shape-⊤, which
+	 * One {@code TensorSpec}-constructor call as Python source.
+	 *
+	 * @param t The tensor type to render.
+	 * @param tfPrefix The TensorFlow module prefix, including the trailing dot; may be empty.
+	 * @return E.g. {@code "tf.TensorSpec(shape=(None, 32), dtype=tf.float32)"}.
+	 */
+	private static String renderSpec(TensorType t, String tfPrefix) {
+		return tfPrefix + specTypeName(t) + "(shape=" + shapeString(t) + ", dtype=" + tfPrefix + dtypeName(t) + ")";
+	}
+
+	/**
+	 * The raw shape rendering for a {@link TensorType}: {@code "None"} when the rank is unknown (null dims—shape-⊤, which
 	 * {@code tf.TensorSpec(shape=None, ...)} accepts at runtime), otherwise a tuple of the per-dimension renderings, the concrete size for
 	 * a {@link NumericDim} and {@code "None"} for every other {@link Dimension} subtype (dynamic, ragged, symbolic).
 	 *
-	 * @param t The parameter's tensor type.
+	 * @param t The tensor type.
 	 * @return The raw shape rendering (e.g. {@code "(None, 128)"}, {@code "(20,)"}, {@code "()"}, or {@code "None"}).
 	 */
 	private static String shapeString(TensorType t) {
@@ -86,13 +179,22 @@ public record InputSignature(List<TensorType> parameterTypes) {
 
 	/**
 	 * This signature's per-parameter characteristics in declaration order (one {@link ParameterSpec} per non-{@code self} parameter), so
-	 * downstream analysis reads each parameter's dtype and shape as columns rather than parsing {@link #toTensorSpecList(String)}.
+	 * downstream analysis reads each parameter's dtype and shape as columns rather than parsing {@link #toTensorSpecList(String)}. A
+	 * {@link Sequence} entry stays one row—the row-to-parameter pairing is positional in the consumer—rendering its shape as the bracketed
+	 * element shapes (e.g. {@code "[(2, 2)]"}) and its dtype as the distinct element dtypes joined with {@code "|"} (a single name for the
+	 * common singleton case).
 	 *
 	 * @return The per-parameter (dtype, shape) rows.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/786">Issue 786</a>
 	 */
-	public List<ParameterSpec> parameterSpecs() {
-		return parameterTypes.stream().map(t -> new ParameterSpec(dtypeName(t), shapeString(t))).toList();
+	public List<ParameterSpec> getParameterSpecs() {
+		return entries.stream().map(e -> switch (e) {
+		case Single s -> new ParameterSpec(dtypeName(s.type()), shapeString(s.type()));
+		case Sequence q -> new ParameterSpec(
+				q.elementTypes().stream().map(InputSignature::dtypeName).distinct().collect(Collectors.joining("|")),
+				q.elementTypes().stream().map(InputSignature::shapeString).collect(Collectors.joining(", ", "[", "]")));
+		}).toList();
 	}
 
 	/**
@@ -100,17 +202,17 @@ public record InputSignature(List<TensorType> parameterTypes) {
 	 * rendering this signature emits, without the spec-type wrapping of {@link #toTensorSpecList(String)}.
 	 *
 	 * @param dtype The bare dtype constant name (e.g. {@code "float32"}).
-	 * @param shape The raw shape rendering (e.g. {@code "(None, 128)"} or {@code "None"}).
+	 * @param shape The raw shape rendering (e.g. {@code "(None, 128)"}, {@code "None"}, or {@code "[(2, 2)]"} for a sequence parameter).
 	 */
 	public record ParameterSpec(String dtype, String shape) {
 	}
 
 	/**
-	 * The TensorFlow spec-type constructor for a parameter: {@code SparseTensorSpec} when the parameter is sparse (it is a
-	 * {@code tf.SparseTensor}, #533), {@code RaggedTensorSpec} when it has a ragged dimension (it is a {@code tf.RaggedTensor}, #524),
-	 * otherwise {@code TensorSpec}. The bare name without any module prefix.
+	 * The TensorFlow spec-type constructor for a tensor type: {@code SparseTensorSpec} when it is sparse (a {@code tf.SparseTensor}, #533),
+	 * {@code RaggedTensorSpec} when it has a ragged dimension (a {@code tf.RaggedTensor}, #524), otherwise {@code TensorSpec}. The bare
+	 * name without any module prefix.
 	 *
-	 * @param t The parameter's {@link TensorType}.
+	 * @param t The {@link TensorType}.
 	 * @return {@code "SparseTensorSpec"}, {@code "RaggedTensorSpec"}, or {@code "TensorSpec"}.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/533">Issue 533</a>
@@ -126,31 +228,32 @@ public record InputSignature(List<TensorType> parameterTypes) {
 
 	/**
 	 * The set of spec-type constructor names this signature references (e.g., {@code "TensorSpec"}, {@code "RaggedTensorSpec"},
-	 * {@code "SparseTensorSpec"}), as the bare Python identifiers emitted by {@link #toTensorSpecList(String)} (without any module prefix).
-	 * The source-write verifies each is reachable under the chosen import prefix before emitting an unqualified signature: on the
-	 * {@code from tensorflow import ...} named-import path a signature with a sparse or ragged parameter needs {@code SparseTensorSpec} or
-	 * {@code RaggedTensorSpec} in scope, which {@code TensorSpec} being imported does not imply, so an unguarded emission would produce a
-	 * {@code NameError}-raising decorator.
+	 * {@code "SparseTensorSpec"}), as the bare Python identifiers emitted by {@link #toTensorSpecList(String)} (without any module prefix),
+	 * collected across {@link Single} entries and {@link Sequence} elements alike. The source-write verifies each is reachable under the
+	 * chosen import prefix before emitting an unqualified signature: on the {@code from tensorflow import ...} named-import path a
+	 * signature with a sparse or ragged parameter needs {@code SparseTensorSpec} or {@code RaggedTensorSpec} in scope, which
+	 * {@code TensorSpec} being imported does not imply, so an unguarded emission would produce a {@code NameError}-raising decorator.
 	 *
 	 * @return The referenced spec-type constructor names.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/524">Issue 524</a>
 	 */
 	public Set<String> requiredSpecTypeNames() {
-		return parameterTypes.stream().map(InputSignature::specTypeName).collect(Collectors.toUnmodifiableSet());
+		return leaves().map(InputSignature::specTypeName).collect(Collectors.toUnmodifiableSet());
 	}
 
 	/**
 	 * The set of dtype constant names this signature references (e.g., {@code "float32"}, {@code "int32"}), as the bare Python identifiers
-	 * emitted by {@link #toTensorSpecList(String)} (without any module prefix). The source-write uses this to verify each required dtype
-	 * constant is reachable under the chosen import prefix before emitting an unqualified signature: on the
-	 * {@code from tensorflow import ...} named-import path, {@code TensorSpec} being in scope does not imply the dtype constants are too,
-	 * so an unguarded emission would produce a {@code NameError}-raising decorator.
+	 * emitted by {@link #toTensorSpecList(String)} (without any module prefix), collected across {@link Single} entries and
+	 * {@link Sequence} elements alike. The source-write uses this to verify each required dtype constant is reachable under the chosen
+	 * import prefix before emitting an unqualified signature: on the {@code from tensorflow import ...} named-import path,
+	 * {@code TensorSpec} being in scope does not imply the dtype constants are too, so an unguarded emission would produce a
+	 * {@code NameError}-raising decorator.
 	 *
 	 * @return The referenced dtype constant names.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/585">Issue 585</a>
 	 */
 	public Set<String> requiredDTypeNames() {
-		return parameterTypes.stream().map(InputSignature::dtypeName).collect(Collectors.toUnmodifiableSet());
+		return leaves().map(InputSignature::dtypeName).collect(Collectors.toUnmodifiableSet());
 	}
 
 	/**
@@ -178,23 +281,26 @@ public record InputSignature(List<TensorType> parameterTypes) {
 
 		/**
 		 * The supplied and inferred signatures are incomparable—each is more specific than the other on some axis (or they differ in shape
-		 * rank, parameter count, or concrete dtype). The inferred signature should replace it.
+		 * rank, parameter count, entry structure, or concrete dtype). The inferred signature should replace it.
 		 */
 		INCOMPARABLE
 	}
 
 	/**
 	 * Relates this signature, taken as the developer-supplied one, to {@code inferred}, the signature derived from call-site evidence by
-	 * {@link Function#inferInputSignature}. See {@link Relation} for the partial order. Used by {@link Function#check()} to decide whether
-	 * an existing {@code input_signature} should be overwritten ({@link Relation#SUPPLIED_TIGHTER}, {@link Relation#INCOMPARABLE}),
-	 * preserved ({@link Relation#SUPPLIED_BROADER}), or left untouched ({@link Relation#AGREEMENT}).
+	 * {@link Function#inferInputSignature}. See {@link Relation} for the partial order. A {@link Single} against a {@link Sequence} (in
+	 * either direction) is {@link Relation#INCOMPARABLE}: the two admit disjoint call structures, since TensorFlow enforces the declared
+	 * nesting. Two {@link Sequence}s of different arity are likewise incomparable (no wildcard arity exists); at equal arity they relate by
+	 * folding the element relations. Used by {@link Function#check()} to decide whether an existing {@code input_signature} should be
+	 * overwritten ({@link Relation#SUPPLIED_TIGHTER}, {@link Relation#INCOMPARABLE}), preserved ({@link Relation#SUPPLIED_BROADER}), or
+	 * left untouched ({@link Relation#AGREEMENT}).
 	 *
 	 * @param inferred The signature inferred from call-site evidence.
 	 * @return How this (supplied) signature relates to {@code inferred}.
 	 */
 	public Relation relate(InputSignature inferred) {
-		List<TensorType> supplied = this.parameterTypes();
-		List<TensorType> evidence = inferred.parameterTypes();
+		List<SpecEntry> supplied = this.entries();
+		List<SpecEntry> evidence = inferred.entries();
 
 		// A parameter-count mismatch has no meaningful per-parameter order; treat it as incomparable so the inferred signature wins.
 		if (supplied.size() != evidence.size())
@@ -205,6 +311,31 @@ public record InputSignature(List<TensorType> parameterTypes) {
 			result = combine(result, relate(supplied.get(i), evidence.get(i)));
 
 		return result;
+	}
+
+	/**
+	 * Relates one supplied {@link SpecEntry} to one inferred entry: matching structures relate by their contents; mismatched structures are
+	 * incomparable.
+	 *
+	 * @param supplied The developer-supplied entry.
+	 * @param inferred The inferred entry.
+	 * @return How the supplied entry relates to the inferred one.
+	 */
+	private static Relation relate(SpecEntry supplied, SpecEntry inferred) {
+		if (supplied instanceof Single s && inferred instanceof Single i)
+			return relate(s.type(), i.type());
+
+		if (supplied instanceof Sequence s && inferred instanceof Sequence i) {
+			if (s.elementTypes().size() != i.elementTypes().size())
+				return Relation.INCOMPARABLE; // no wildcard arity exists; TensorFlow enforces the length.
+
+			Relation result = Relation.AGREEMENT;
+			for (int j = 0; j < s.elementTypes().size(); j++)
+				result = combine(result, relate(s.elementTypes().get(j), i.elementTypes().get(j)));
+			return result;
+		}
+
+		return Relation.INCOMPARABLE; // a tensor where a sequence is declared (or vice versa) admits a disjoint call structure.
 	}
 
 	/**
