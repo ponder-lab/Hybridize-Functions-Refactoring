@@ -1209,6 +1209,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * #791 marker for the trampoline keyword-name collision fixed upstream in wala/ML#740 (released in Ariadne 0.52.34). `M.check` is
+	 * reached from two call sites that collide on total arity and differ only by keyword (`step` vs `mode`); before the fix the second
+	 * call's keyword did not reach its parameter. This asserts the current, corrected behavior: both supplied keywords bind, so `check` has
+	 * its primitive parameter.
+	 * <p>
+	 * This is a marker, not the coverage #791 asks for, and #791 stays open. A test that discriminates 0.52.33 from 0.52.34 is what closes
+	 * it, and this one passes on both: `getHasPrimitiveParameter()` is a function-level disjunction, and even under the collision one
+	 * keyword still binds, so the verdict is TRUE either way. The discriminating assertion is per-parameter, that the colliding keyword's
+	 * value reached its parameter (an empty points-to set on 0.52.33 becoming non-empty on 0.52.34), which the model does not expose today.
+	 * That is the same "did a value reach this parameter" observable wala/ML#751 surfaced via a points-to dump. TODO(#791): Replace the
+	 * function-level assertion below with the per-parameter reachability check once it exists, so this fails on 0.52.33 and passes on
+	 * 0.52.34.
+	 */
+	@Test
+	public void testKeywordCollisionCurrentBehavior() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function check = findFunction(functions, "M.check");
+		assertEquals("Post-wala/ML#740, both colliding keywords bind, so `check` has its primitive parameter.", TRUE,
+				check.getHasPrimitiveParameter());
+	}
+
+	/**
 	 * Test for #30. This simply tests whether we can parse the tf.function argument experimental_autograph_options
 	 */
 	@Test
