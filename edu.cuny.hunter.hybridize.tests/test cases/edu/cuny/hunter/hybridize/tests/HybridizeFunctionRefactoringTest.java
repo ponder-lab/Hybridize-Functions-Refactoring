@@ -9864,6 +9864,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				m.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 	}
 
+	/**
+	 * #795 known limitation, pinned. A defaulted primitive supplied positionally after a {@code *args} unpack is read as unsupplied,
+	 * because the unpack fills more than one parameter yet occupies a single invoke slot, so the trailing positional argument lands short
+	 * of the defaulted parameter's expected slot and {@link Function#isSuppliedAtAnyCallSite} (a positional-count test) misaligns. Here
+	 * {@code combine}'s {@code scale} is supplied by the trailing {@code i} (a varying loop index) and should decline the function, but it
+	 * is read as unsupplied, wrongly exempted, and {@code combine} is wrongly optimizable. This mirrors the corpus {@code compute_loss}
+	 * case ({@code compute_loss(pred, conv, *target[i], i)}). The root cause is upstream:
+	 * {@link com.ibm.wala.cast.python.ssa.PythonInvokeInstruction} exposes no star-argument marker, so the misalignment is not
+	 * client-detectable (wala/ML#751). When Ariadne surfaces star-argument presence and the supplied-parameter analysis degrades to
+	 * {@code null} (undetermined) in its presence, {@code scale} becomes supplied, {@code combine} declines, and this test inverts.
+	 */
+	@Test
+	public void testStarArgUnpackHidesSuppliedPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function combine = findFunction(functions, "combine");
+
+		Parameter scale = combine.getParameters().get(3);
+		assertEquals("scale", scale.getName());
+		assertTrue("`scale` declares a default.", scale.hasDefault());
+
+		// TODO(wala/ML#751): The trailing `i` supplies `scale`, so the correct value is TRUE. It reads FALSE because the `*rest` unpack
+		// collapses two parameters into one invoke slot, hiding the trailing argument from the positional-count test. Invert once Ariadne
+		// exposes star-argument presence on the invoke and the analysis returns null in its presence.
+		assertEquals("Currently read as unsupplied due to the star-argument positional miscount (pinned).", FALSE,
+				scale.isSuppliedAtCallSite());
+
+		// TODO: With the miscount corrected, `scale` is a supplied, varying primitive and `combine` declines for HAS_PRIMITIVE_PARAMETERS.
+		assertNotEquals("Currently wrongly exempted because `scale` reads as unsupplied (pinned).", TRUE,
+				combine.getHasPrimitiveParameter());
+		assertTrue("Currently wrongly optimizable (pinned).", combine.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testCoraDataPrepBarren() throws Exception {
 		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",
