@@ -9807,6 +9807,63 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code sample_train_nodes} and the outer {@code split_labels}) do perform a (numpy) computation but are declined by the
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
+	/**
+	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
+	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
+	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
+	 * declines). Directly exercises the exemption on the current release.
+	 */
+	@Test
+	public void testExemptDefaultedUnsuppliedPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function f = findFunction(functions, "f");
+
+		Parameter flag = f.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertTrue("`flag` declares a default.", flag.hasDefault());
+		assertEquals("No call site supplies `flag`.", FALSE, flag.isSuppliedAtCallSite());
+
+		assertNotEquals("A defaulted, unsupplied primitive must not make the function primitive-declining (#795).", TRUE,
+				f.getHasPrimitiveParameter());
+		assertTrue("With the primitive exemption and a tensor `x`, `f` is optimizable.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 negative: a defaulted primitive parameter that a call site supplies with a varying value is a retrace key, so the exemption must
+	 * not apply. `g` is called both with `flag` defaulted and with `flag=5`, so `g` stays declined by `HAS_PRIMITIVE_PARAMETERS`.
+	 */
+	@Test
+	public void testDefaultedSuppliedPrimitiveStillDeclines() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function g = findFunction(functions, "g");
+
+		Parameter flag = g.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertEquals("A call site supplies `flag`, so it is not exempt.", TRUE, flag.isSuppliedAtCallSite());
+
+		assertEquals("A supplied defaulted primitive still declines the function.", TRUE, g.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 tripwire for the wala/ML#743 regression that lands with the Ariadne 0.52.35 bump. `C.m`'s `flag` is a defaulted primitive no
+	 * caller supplies. On the current release the trampolined method default is not materialized, so `flag` has an empty points-to set and
+	 * `HAS_PRIMITIVE_PARAMETERS` never fires (this test passes via that path). At 0.52.35, wala/ML#743 materializes the default and `flag`
+	 * becomes a detected primitive; without the #795 exemption this test flips red as `m` declines, and the exemption restores it. It is
+	 * the unit guard the corpus regression check surfaced by hand (the `LayerNormalization.call` decline).
+	 */
+	@Test
+	public void testDefaultedPrimitiveMethodTripwire() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function m = findFunction(functions, "C.m");
+
+		assertNotEquals("A defaulted, unsupplied primitive method parameter must not make the method primitive-declining (#795).", TRUE,
+				m.getHasPrimitiveParameter());
+		assertTrue("`m` is optimizable with a tensor `x` and the exempt `flag`.",
+				m.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testCoraDataPrepBarren() throws Exception {
 		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",

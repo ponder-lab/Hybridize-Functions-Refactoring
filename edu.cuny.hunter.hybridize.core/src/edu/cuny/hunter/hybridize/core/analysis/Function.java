@@ -2042,7 +2042,7 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -2058,6 +2058,34 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the positional parameter at the given IR parameter index is a defaulted parameter that no call site supplies, and so
+	 * is exempt from {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS}. A defaulted parameter no caller supplies is always the default,
+	 * a single constant value, so it induces no retracing and is not the retrace risk the precondition guards against. This is the
+	 * supplied-parameter analysis of {@link #inferSuppliedParameters} (#788) applied on the primitive-parameter axis rather than the
+	 * input-signature axis (#795). Conservative on ignorance: only {@link Parameter#isSuppliedAtCallSite()} {@code == FALSE} (definitely
+	 * not supplied) exempts; {@code null} (undetermined) does not.
+	 * <p>
+	 * The IR parameter index maps to the positional {@link Parameter} at {@link Parameter#getIndex()} {@code == irParamIndex - 1} (IR slot
+	 * 0 is the callable, so slot 1 is the first declared parameter, {@code self} for a method). Keyword-only parameters share the
+	 * positional index space and are excluded via {@link Parameter#isKeywordOnly()}; a parameter that cannot be mapped is not exempt.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @return True iff that parameter is a defaulted, definitely-unsupplied positional parameter.
+	 */
+	private boolean isDefaultedUnsuppliedPrimitive(int irParamIndex) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		return !parameter.isKeywordOnly() && !parameter.isSelf() && parameter.getIndex() == declarationIndex && parameter.hasDefault()
+				&& FALSE.equals(parameter.isSuppliedAtCallSite());
 	}
 
 	/**
