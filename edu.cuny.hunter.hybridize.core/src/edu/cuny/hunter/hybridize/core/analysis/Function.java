@@ -2291,16 +2291,15 @@ public class Function {
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
 	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
 	 * flow over the parameter.
-	 * <li>Tensor-classified by type hint or container detection but no Phase 2 entry
-	 * ({@code isTensor() == TRUE && getTensorTypes().isEmpty()}): the two ways to land here now diverge (#781). A container
-	 * ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types were surfaced
-	 * ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
+	 * <li>Tensor-classified by type hint or container detection but no Phase 2 entry ({@code isTensor() && getTensorTypes().isEmpty()}):
+	 * the two ways to land here now diverge (#781). A container ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types
+	 * were surfaced ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
 	 * {@link InputSignature.Sequence} entry; a container of an unmodeled form blocks with
 	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, and disagreeing sequence lengths block with
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
-	 * <li>Phase-2 hit ({@code isTensor() == TRUE && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the
-	 * reduced spec to the signature.
+	 * <li>Phase-2 hit ({@code isTensor() && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the reduced
+	 * spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending

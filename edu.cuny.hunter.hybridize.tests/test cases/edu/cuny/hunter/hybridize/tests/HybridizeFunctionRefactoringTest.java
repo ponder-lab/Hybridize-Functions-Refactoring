@@ -8591,6 +8591,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The designed unsupported form of the sequence reduction (#781): `xs` receives a list grown by an append loop, so its object catalog
+	 * is not a contiguous run of constant indices the extraction can enumerate. Phase 3 still classifies the parameter as a container, no
+	 * element structure is extractable, and the signature drops with `TENSOR_CONTAINER_UNSUPPORTED` rather than `HETEROGENEOUS_ARITY`.
+	 */
+	@Test
+	public void testInputSignatureContainerAppendLoop() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(1, parameters.size());
+		Parameter xs = parameters.get(0);
+		assertEquals("xs", xs.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNull("An append-built list has no extractable element structure.", xs.getContainerElementTypes());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("An unextractable container blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form, not an arity disagreement.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
 	 * Regression test for #508 category (b) (Phase-1 type-hint path). A parameter classified as tensor-typed via Phase 1
 	 * (`hasTensorTypeHint`) but with no Phase 2 (Ariadne call-site) shape/dtype evidence: the parameter `x` has a `tf.Tensor` type-hint
 	 * annotation, classifying it as tensor-typed, while the call site supplies a non-tensor (`int`), so Ariadne's per-parameter cache stays

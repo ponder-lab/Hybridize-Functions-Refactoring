@@ -252,6 +252,24 @@ public class InputSignatureTest {
 	}
 
 	/**
+	 * A nested signature has no flat projection: {@link InputSignature#singleTypes()} throws rather than silently flattening (#781).
+	 */
+	@Test(expected = IllegalStateException.class)
+	public void testSingleTypesRejectsNested() {
+		new InputSignature(List.of(new Sequence(List.of(new TensorType(FLOAT32, List.of(new NumericDim(2))))))).singleTypes();
+	}
+
+	/**
+	 * A multi-dtype {@link Sequence} joins its distinct element dtype names in the per-parameter row (#781, #786).
+	 */
+	@Test
+	public void testParameterSpecsSequenceMultiDtype() {
+		InputSignature sig = new InputSignature(List.of(new Sequence(
+				List.of(new TensorType(INT32, List.of(new NumericDim(2))), new TensorType(FLOAT32, List.of(new NumericDim(3)))))));
+		assertEquals(List.of(new ParameterSpec("int32|float32", "[(2,), (3,)]")), sig.getParameterSpecs());
+	}
+
+	/**
 	 * A flat entry against a nested one is incomparable in either direction: TensorFlow enforces the declared structure, so the two admit
 	 * disjoint call shapes (#781).
 	 */
