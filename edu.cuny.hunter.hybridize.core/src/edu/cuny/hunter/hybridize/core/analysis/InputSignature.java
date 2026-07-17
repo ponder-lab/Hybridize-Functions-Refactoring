@@ -134,11 +134,11 @@ public record InputSignature(List<SpecEntry> entries) {
 
 		for (SpecEntry e : entries)
 			switch (e) {
-			case Single s -> specs.add(specString(s.type(), tfPrefix));
+			case Single s -> specs.add(renderSpec(s.type(), tfPrefix));
 			case Sequence q -> {
 				StringJoiner inner = new StringJoiner(", ", "[", "]");
 				for (TensorType t : q.elementTypes())
-					inner.add(specString(t, tfPrefix));
+					inner.add(renderSpec(t, tfPrefix));
 				specs.add(inner.toString());
 			}
 			}
@@ -153,7 +153,7 @@ public record InputSignature(List<SpecEntry> entries) {
 	 * @param tfPrefix The TensorFlow module prefix, including the trailing dot; may be empty.
 	 * @return E.g. {@code "tf.TensorSpec(shape=(None, 32), dtype=tf.float32)"}.
 	 */
-	private static String specString(TensorType t, String tfPrefix) {
+	private static String renderSpec(TensorType t, String tfPrefix) {
 		return tfPrefix + specTypeName(t) + "(shape=" + shapeString(t) + ", dtype=" + tfPrefix + dtypeName(t) + ")";
 	}
 
