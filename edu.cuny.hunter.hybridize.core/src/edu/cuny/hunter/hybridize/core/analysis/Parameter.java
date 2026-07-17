@@ -148,6 +148,15 @@ public final class Parameter {
 	private Boolean tensor;
 
 	/**
+	 * Cached answer to whether any call site supplies an argument for this parameter, positionally or by keyword. Populated by
+	 * {@link Function#inferSuppliedParameters}. {@code null} until that runs, and deliberately left {@code null} when the answer cannot be
+	 * established (no call-graph node for the owning function, an unresolvable predecessor, or a non-Python invoke), so that
+	 * {@link Function#inferInputSignature()} treats ignorance as "supplied" rather than as "not supplied" (#787). Meaningful only for a
+	 * parameter with a default: one without a default must always be covered by the signature regardless.
+	 */
+	private Boolean suppliedAtCallSite;
+
+	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
@@ -219,6 +228,22 @@ public final class Parameter {
 	 */
 	public boolean isSelf() {
 		return !this.keywordOnly && this.getIndex() == 0 && SELF_PARAMETER_NAME.equals(this.getName());
+	}
+
+	/**
+	 * Returns true iff this parameter declares a default value (e.g. the {@code training} of {@code def call(self, x, training=True)}).
+	 * <p>
+	 * PyDev's {@link argumentsType#defaults} is parallel to {@link argumentsType#args} with a {@code null} at each position lacking a
+	 * default, rather than the shorter trailing list CPython's {@code ast} uses: the grammar's tree builder appends {@code node.value} for
+	 * every regular parameter, and that value is {@code null} when none was written. {@link argumentsType#kw_defaults} is parallel to
+	 * {@link argumentsType#kwonlyargs} the same way. This mirrors {@link argumentsType#annotation}, which {@link #getTypeInfo()} already
+	 * indexes positionally.
+	 *
+	 * @return True iff a default value is declared for this parameter.
+	 */
+	public boolean hasDefault() {
+		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
+		return defaults != null && this.index < defaults.length && defaults[this.index] != null;
 	}
 
 	/**
@@ -739,6 +764,20 @@ public final class Parameter {
 	 */
 	public Boolean isTensor() {
 		return this.tensor;
+	}
+
+	/**
+	 * Returns whether any call site supplies an argument for this parameter, as computed by {@link Function#inferSuppliedParameters}.
+	 *
+	 * @return {@code TRUE} if some call site supplies it, {@code FALSE} if none does, or {@code null} if the question was not asked or
+	 *         could not be answered. Callers must treat {@code null} as "cannot omit this parameter"; see the field's documentation.
+	 */
+	public Boolean isSuppliedAtCallSite() {
+		return this.suppliedAtCallSite;
+	}
+
+	void setSuppliedAtCallSite(Boolean suppliedAtCallSite) {
+		this.suppliedAtCallSite = suppliedAtCallSite;
 	}
 
 	@Override

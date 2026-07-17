@@ -400,6 +400,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new RuntimeException("Could not infer tensor parameters for: " + func + ".", e);
 				}
 
+				// Which defaulted parameters no caller supplies, and so may be left out of an inferred input signature (#787). Cheap
+				// enough to run unconditionally: it exits immediately for a function with no defaulted parameter, and
+				// `computeInputSignature` reads only the cache it populates.
+				try {
+					func.inferSuppliedParameters(callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
+				} catch (CoreException e) {
+					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
+					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);
+				}
+
 				try {
 					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (CantInferPrimitiveParametersException e) {

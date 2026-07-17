@@ -32,10 +32,28 @@ public sealed interface InferenceResult {
 		SPECULATIVE_TENSOR_PARAMETER,
 
 		/**
-		 * A parameter is not classified as tensor-typed by any phase, so no {@link com.ibm.wala.cast.python.ml.types.TensorType} is
-		 * synthesized for it (#508).
+		 * A parameter is not classified as tensor-typed by any phase and declares no default, so it is a <em>required</em> argument for
+		 * which {@code tf.function(input_signature=...)} demands a {@code TensorSpec} that cannot be synthesized (#508). A non-tensor
+		 * parameter that declares a default is not this case: TensorFlow requires a spec per required argument only, so it may be omittable
+		 * instead ({@link #DEFAULTED_PARAMETER_SUPPLIED}, {@link #DEFAULTED_PARAMETER_PRECEDES_SPEC}, #787).
 		 */
 		NON_TENSOR_PARAMETER,
+
+		/**
+		 * A parameter declares a default and is not tensor-typed, so it could be omitted from the signature, except that some call site
+		 * supplies an argument for it. Omitting it would drop the hybridized function's arity below what that call site passes, raising a
+		 * {@code TypeError} there, so the parameter must be covered and no spec exists for it. Also reported when the call sites cannot be
+		 * examined at all, since ignorance must not be read as evidence of absence (#787).
+		 */
+		DEFAULTED_PARAMETER_SUPPLIED,
+
+		/**
+		 * A parameter declares a default, is not tensor-typed, and no call site supplies it, yet it still cannot be omitted because a later
+		 * parameter contributes a spec. {@code input_signature} covers a prefix of the parameter list positionally, so dropping this one
+		 * would bind the later parameter's spec to this position. Arises for the {@code def call(self, x, training=False, mask=None)}
+		 * shape, where {@code mask} is tensor-typed (#787).
+		 */
+		DEFAULTED_PARAMETER_PRECEDES_SPEC,
 
 		/**
 		 * A parameter is a container of tensors (classified by {@link Parameter#hasTensorContainer}), which no spec is synthesized for

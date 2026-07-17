@@ -110,8 +110,10 @@ import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.types.AstMethodReference;
+import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
@@ -130,6 +132,7 @@ import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
@@ -2168,6 +2171,109 @@ public class Function {
 	}
 
 	/**
+	 * Determines, for each defaulted parameter, whether any call site supplies an argument for it, caching the answer on the
+	 * {@link Parameter} for {@link #computeInputSignature()} to read (#787).
+	 * <p>
+	 * A defaulted non-tensor parameter can be omitted from an inferred {@code input_signature}, because TensorFlow requires a
+	 * {@code TensorSpec} per <em>required</em> argument rather than per argument. Omitting it changes the hybridized function's arity,
+	 * though: the function then accepts exactly the arguments the signature names, so a call site that supplied the parameter would start
+	 * raising a {@code TypeError}. The omission is therefore behavior-preserving only when no call site supplies it, which is a
+	 * whole-program question rather than a syntactic one.
+	 * <p>
+	 * This is the only analysis in the plug-in that walks the call graph in the caller direction; the others ask what a function's body
+	 * reaches. Two wrinkles follow from that:
+	 * <ul>
+	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
+	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
+	 * the arity is preserved at the forwarded invoke and no second hop is needed.
+	 * <li><b>Shared trampolines.</b> Trampolines are cached per {@code (receiver, total argument count)}, which sums positional and keyword
+	 * arguments, so {@code f(x, False)} and {@code f(x, training=False)} can share one body shaped by whichever was seen first
+	 * (wala/ML#740). That costs precision, not correctness, here: both shapes mean an argument beyond the minimum was supplied, so the
+	 * check reports "supplied" either way and can only over-block.
+	 * </ul>
+	 * Ignorance is recorded as {@code null} rather than {@code FALSE}: no call-graph node, an unresolvable predecessor, or a non-Python
+	 * invoke all leave the parameter un-omittable, matching how every other axis of the reduction treats absent evidence.
+	 *
+	 * @param callGraph The call graph to query for this function's callers.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @throws CoreException If the call-graph node lookup fails.
+	 */
+	public void inferSuppliedParameters(CallGraph callGraph, IProgressMonitor monitor) throws CoreException {
+		List<Parameter> parameters = this.getParameters();
+		SubMonitor subMonitor = SubMonitor.convert(monitor, "Inferring supplied parameters...", parameters.size());
+
+		// Only a defaulted parameter can ever be omitted, so only it needs the question asked.
+		List<Parameter> defaulted = parameters.stream().filter(p -> !p.isSelf()).filter(Parameter::hasDefault).toList();
+
+		if (defaulted.isEmpty()) {
+			subMonitor.done();
+			return;
+		}
+
+		Set<CGNode> nodes = this.getNodes(callGraph);
+
+		if (nodes.isEmpty()) {
+			// No node means no observable call site, which is ignorance rather than evidence of absence. Leave the cache null.
+			LOG.info("Can't determine supplied parameters for " + this + " without a call graph node.");
+			subMonitor.done();
+			return;
+		}
+
+		for (Parameter parameter : defaulted) {
+			parameter.setSuppliedAtCallSite(this.isSuppliedAtAnyCallSite(parameter, nodes, callGraph));
+			LOG.info("Parameter " + parameter + " supplied at a call site: " + parameter.isSuppliedAtCallSite() + ".");
+			subMonitor.worked(1);
+		}
+
+		subMonitor.done();
+	}
+
+	/**
+	 * Returns whether any call site of this function supplies an argument for the given parameter.
+	 *
+	 * @param parameter The parameter in question; assumed non-{@code self}.
+	 * @param nodes The call-graph nodes of this function.
+	 * @param callGraph The call graph.
+	 * @return {@code TRUE} if some call site supplies it, {@code FALSE} if every reachable call site omits it, or {@code null} if any call
+	 *         site could not be examined. See {@link #inferSuppliedParameters} for why ignorance is {@code null}.
+	 */
+	private Boolean isSuppliedAtAnyCallSite(Parameter parameter, Set<CGNode> nodes, CallGraph callGraph) {
+		String name = parameter.getName();
+
+		// The callee occupies positional slot 0 of the invoke, so the parameter at declaration index i (self at 0) is the invoke's
+		// positional argument i + 1. This is the same off-by-one `tensorAnalysisIncludesParameterContainer` applies as `paramInx + 1`.
+		int positionalSlot = parameter.getIndex() + 1;
+
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null) {
+					LOG.warn("No IR for predecessor: " + predecessor + " of: " + this + ".");
+					return null;
+				}
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke)) {
+							LOG.warn("Not expecting a non-Python invoke: " + instruction + " calling: " + this + ".");
+							return null;
+						}
+
+						sawCallSite = true;
+
+						if (invoke.getNumberOfPositionalParameters() > positionalSlot || invoke.getKeywords().contains(name))
+							return TRUE;
+					}
+			}
+
+		// Every reachable call site omits it. Having no call site at all is ignorance, not absence.
+		return sawCallSite ? FALSE : null;
+	}
+
+	/**
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
 	 * tensor-type analysis associated with at least one tensor type. Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the
 	 * values are computed during {@link #inferTensorParameters} (which caches per-parameter tensor types on each {@link Parameter}), and
@@ -2273,18 +2379,47 @@ public class Function {
 			return new InferenceResult.Absent(AbsenceReason.SPECULATIVE_TENSOR_PARAMETER);
 		}
 
-		List<TensorType> specs = new ArrayList<>();
-		AbsenceReason firstReason = null;
+		List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+		// Keyed by parameter rather than a bare list: the suffix rule below needs each spec's declaration position.
+		Map<Parameter, TensorType> specByParameter = new LinkedHashMap<>();
 		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
 
-		for (Parameter param : this.getParameters()) {
-			// `self` is excluded from the signature.
-			if (param.isSelf())
-				continue;
+		// Defaulted, non-tensor, and supplied by no call site, so omittable from the signature entirely. Provisional until the suffix rule
+		// runs: a parameter is only genuinely omittable if nothing after it needs a spec.
+		Set<Parameter> omittable = new LinkedHashSet<>();
 
+		for (Parameter param : nonSelfParameters) {
 			Boolean classified = param.isTensor();
 			if (classified == null || !classified) {
-				// Category (a): truly non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
+				/*
+				 * Category (a): not tensor-typed. TensorFlow requires a `TensorSpec` per *required* argument rather than per argument, so a
+				 * parameter declaring a default may be omittable instead of blocking (#787). Ask that first; only a required parameter is
+				 * unconditionally fatal.
+				 */
+				if (param.hasDefault()) {
+					Boolean supplied = param.isSuppliedAtCallSite();
+
+					if (supplied != null && !supplied) {
+						// Provisionally omittable. No INFO yet: the suffix rule may still block it, and only one of the two outcomes
+						// should reach the user.
+						omittable.add(param);
+						continue;
+					}
+
+					// Supplied somewhere, or the call sites could not be examined. Omitting it would cut the hybridized function's arity
+					// below what a caller passes, so it must be covered, and no spec exists for it. `null` lands here deliberately:
+					// ignorance is not evidence of absence.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Parameter `" + param.getName() + "` of `" + this + "` has a default value but is passed explicitly by at "
+									+ "least one caller, so it cannot be left out of an input signature, and being non-tensor it has no "
+									+ "spec; input-signature inference is dropped. Removing the argument from those call sites, so the "
+									+ "default always applies, would let the parameter be omitted.");
+					blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+					continue;
+				}
+
+				// Required and non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
 				// problem. Emit a source-side recovery suggestion. The tool does not synthesize a TensorType here because wrapping
 				// a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the parameter (`range(n)`
 				// becomes problematic, `if n > 0` becomes `tf.cond`, etc.). See #508 for the design decision. Continue the loop so
@@ -2296,8 +2431,6 @@ public class Function {
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
 				blocking.put(param, AbsenceReason.NON_TENSOR_PARAMETER);
-				if (firstReason == null)
-					firstReason = AbsenceReason.NON_TENSOR_PARAMETER;
 				continue;
 			}
 
@@ -2333,8 +2466,6 @@ public class Function {
 				}
 
 				blocking.put(param, reason);
-				if (firstReason == null)
-					firstReason = reason;
 				continue;
 			}
 
@@ -2366,29 +2497,58 @@ public class Function {
 					reason = AbsenceReason.HETEROGENEOUS_SPARSITY;
 				}
 				blocking.put(param, reason);
-				if (firstReason == null)
-					firstReason = reason;
 				continue;
 			}
 
-			specs.add(spec.get());
+			specByParameter.put(param, spec.get());
 		}
 
-		this.blockingParameterReasons = blocking;
+		/*
+		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
+		 * omitted when nothing after it contributes a spec: dropping one that precedes a spec would bind that spec to the dropped
+		 * parameter's position. Python's grammar already forces defaults to trail the non-defaulted parameters, but it permits a defaulted
+		 * tensor parameter after a defaulted non-tensor one, which is the `def call(self, x, training=False, mask=None)` shape (#787).
+		 */
+		int lastSpecPosition = -1;
+		for (int i = 0; i < nonSelfParameters.size(); i++)
+			if (specByParameter.containsKey(nonSelfParameters.get(i)))
+				lastSpecPosition = i;
+
+		for (int i = 0; i < lastSpecPosition; i++) {
+			Parameter param = nonSelfParameters.get(i);
+
+			if (omittable.remove(param)) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + param.getName() + "` of `" + this + "` has a default value and no caller passes it, but a later "
+								+ "parameter needs a spec, and an input signature covers parameters by position; leaving it out would "
+								+ "apply the later parameter's spec to it. Input-signature inference is dropped.");
+				blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
+			}
+		}
+
+		// Report per-parameter reasons in declaration order. The suffix rule can block a parameter that precedes one already blocked in
+		// the first pass, so insertion order is not declaration order.
+		Map<Parameter, AbsenceReason> orderedBlocking = new LinkedHashMap<>();
+		for (Parameter param : nonSelfParameters)
+			if (blocking.containsKey(param))
+				orderedBlocking.put(param, blocking.get(param));
+
+		this.blockingParameterReasons = orderedBlocking;
 
 		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
-		// reduced.
-		if (firstReason != null)
-			return new InferenceResult.Absent(firstReason);
+		// reduced. The reason carried is the first in declaration order.
+		if (!orderedBlocking.isEmpty())
+			return new InferenceResult.Absent(orderedBlocking.values().iterator().next());
 
-		// Degenerate case: no non-`self` parameter contributed a spec and none blocked, i.e. there are no non-`self` parameters at all.
-		// Every refactoring call site is gated on `getHasTensorParameter()`, so this cannot arise there; it signals a direct, unguarded
-		// call on a parameterless (or `self`-only) function, which is a programmer error.
-		if (specs.isEmpty())
-			throw new IllegalStateException("Cannot infer an input signature for `" + this
-					+ "`: it has no non-self parameters. Refactoring call sites are gated on `getHasTensorParameter()`.");
+		// Degenerate case: nothing blocked, yet no parameter contributed a spec, so there is nothing to describe. Either the function has
+		// no non-`self` parameter at all, or every one of them was omittable, which means none is a tensor. Both are unreachable from the
+		// refactoring, whose call sites are gated on `getHasTensorParameter()`; reaching here signals a direct, unguarded call.
+		if (specByParameter.isEmpty())
+			throw new IllegalStateException("Cannot infer an input signature for `" + this + "`: no non-self parameter contributes a spec ("
+					+ nonSelfParameters.size() + " non-self parameter(s), " + omittable.size()
+					+ " omittable). Refactoring call sites are gated on `getHasTensorParameter()`.");
 
-		return new InferenceResult.Inferred(new InputSignature(specs));
+		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
 	}
 
 	/**
