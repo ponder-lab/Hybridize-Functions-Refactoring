@@ -25,6 +25,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRI
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_EAGER;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
+import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static java.lang.Integer.MAX_VALUE;
 import static java.lang.System.getProperty;
@@ -8585,6 +8586,146 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Status message must cite parameter `x`.", entry.getMessage().contains("`x`"));
 		assertTrue("Status message must name the type-hint disposition, not the container one.",
 				entry.getMessage().contains("via its type hint"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
+	 * Regression test for #787: a defaulted non-tensor parameter that no call site supplies is omitted from the signature rather than
+	 * blocking it. TensorFlow requires a `TensorSpec` per *required* argument, not per argument, so
+	 * `@tf.function(input_signature=[tf.TensorSpec(shape=[2], dtype=tf.float32)])` on `def f(x, training=True)` is accepted (verified on TF
+	 * 2.9.3). Before #787, `training` reported `NON_TENSOR_PARAMETER` and dropped the whole signature.
+	 */
+	@Test
+	public void testInputSignatureDefaultedParameterOmitted() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter x = parameters.get(0);
+		Parameter training = parameters.get(1);
+		assertEquals("x", x.getName());
+		assertEquals("training", training.getName());
+
+		assertFalse("`x` declares no default.", x.hasDefault());
+		assertTrue("`training` declares a default.", training.hasDefault());
+		assertFalse("`training` is not tensor-typed.", training.isTensor());
+		assertEquals("No call site passes `training`.", FALSE, training.isSuppliedAtCallSite());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("An omittable defaulted parameter must not block the signature.", result.signature().isPresent());
+		assertEquals("The signature covers `x` alone; `training` is omitted rather than specced.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", result.signature().get().toTensorSpecList("tf."));
+
+		assertTrue("An omitted parameter is not a blocking parameter.", function.getBlockingParameterReasons().isEmpty());
+		assertNull("No drop INFO when the signature is inferred.",
+				function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode()));
+	}
+
+	/**
+	 * Regression test for #787 over the trampoline path, which {@link #testInputSignatureDefaultedParameterOmitted} does not reach: its
+	 * fixture is a module-level function, whereas Ariadne interposes a synthesized trampoline between a caller and an *instance method* to
+	 * bind `self`. The method's call-graph predecessor is therefore the trampoline rather than the calling module code, and the supply
+	 * check reads the arity off the forwarded invoke. This is the shape that matters in practice: `call(self, x, training=True)` is the
+	 * Keras idiom and a defaulted `training` is the most common non-tensor parameter in real model code.
+	 */
+	@Test
+	public void testInputSignatureDefaultedParameterOmittedMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+		assertEquals("call", function.getSimpleName());
+		assertTrue("The fixture's `call` must be seen as a method, so dispatch is trampolined.", function.isMethod());
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(3, parameters.size());
+		Parameter self = parameters.get(0);
+		Parameter training = parameters.get(2);
+		assertTrue("Parameter 0 is `self`.", self.isSelf());
+		assertEquals("training", training.getName());
+
+		assertTrue("`training` declares a default.", training.hasDefault());
+		assertFalse("`training` is not tensor-typed.", training.isTensor());
+
+		// The load-bearing assertion: the trampoline forwards the originating call's arguments, so the arity survives the interposition
+		// and the check still sees that nobody passes `training`.
+		assertEquals("The supply check must see through the trampoline to the real call's arity.", FALSE, training.isSuppliedAtCallSite());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("An omittable defaulted parameter must not block a method's signature either.", result.signature().isPresent());
+		assertEquals("The signature covers `x` alone; `self` and `training` are both excluded.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", result.signature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Regression test for #787: a defaulted non-tensor parameter that a call site passes explicitly cannot be omitted, because doing so
+	 * would cut the hybridized function's arity below what that caller passes (`TypeError: f(x, training) specifies 1 positional arguments,
+	 * but got 2`, verified on TF 2.9.3). It blocks as `DEFAULTED_PARAMETER_SUPPLIED` rather than `NON_TENSOR_PARAMETER`: the remedy is to
+	 * stop passing it, not to make it a tensor.
+	 */
+	@Test
+	public void testInputSignatureDefaultedParameterSupplied() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter training = parameters.get(1);
+		assertEquals("training", training.getName());
+
+		assertTrue("`training` declares a default.", training.hasDefault());
+		assertEquals("The second call site passes `training` positionally.", TRUE, training.isSuppliedAtCallSite());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A supplied defaulted parameter blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason must name the supply, not the non-tensor classification.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED,
+				function.getBlockingParameterReasons().get(training));
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("Status message must cite parameter `training`.", entry.getMessage().contains("`training`"));
+		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
+	 * Regression test for #787's suffix rule. `training` is defaulted, non-tensor, and supplied by nobody, so it looks omittable, but
+	 * `mask` follows it and contributes a spec. An input signature covers parameters positionally, so omitting `training` would apply
+	 * mask's spec to it. The parameter blocks as `DEFAULTED_PARAMETER_PRECEDES_SPEC`, which is distinct from being supplied: no call-site
+	 * change fixes it.
+	 */
+	@Test
+	public void testInputSignatureDefaultedParameterPrecedesSpec() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(3, parameters.size());
+		Parameter training = parameters.get(1);
+		Parameter mask = parameters.get(2);
+		assertEquals("training", training.getName());
+		assertEquals("mask", mask.getName());
+
+		// The precondition for the suffix rule: `training` would otherwise be omittable.
+		assertTrue("`training` declares a default.", training.hasDefault());
+		assertFalse("`training` is not tensor-typed.", training.isTensor());
+		assertEquals("`mask` is passed by keyword, so nobody passes `training`.", FALSE, training.isSuppliedAtCallSite());
+		assertTrue("`mask` is tensor-typed, so it contributes a spec and follows `training`.", mask.isTensor());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A parameter preceding a spec cannot be omitted, so the signature drops.", result.signature().isPresent());
+		assertEquals("The reason must name the positional conflict, not the supply.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC), result.absenceReason());
+		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC,
+				function.getBlockingParameterReasons().get(training));
+
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("Status message must cite parameter `training`.", entry.getMessage().contains("`training`"));
 		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
 	}
 
