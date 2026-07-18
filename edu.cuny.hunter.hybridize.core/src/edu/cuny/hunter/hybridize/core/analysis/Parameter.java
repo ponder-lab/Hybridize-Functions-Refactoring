@@ -15,6 +15,7 @@ import static org.python.pydev.parser.visitors.NodeUtils.getTypeForParameterFrom
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -45,7 +47,15 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ml.types.TensorType.CompoundDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
+import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
@@ -255,6 +265,17 @@ public final class Parameter {
 	}
 
 	/**
+	 * Returns true iff this parameter is keyword-only (declared after a bare {@code *}), indexing into {@code kwonlyargs} rather than
+	 * {@code args}. Distinguishes a keyword-only parameter from a positional one that happens to share the same {@link #getIndex()}, which
+	 * a positional-index-to-parameter mapping needs (#607, #795).
+	 *
+	 * @return True iff this parameter is keyword-only.
+	 */
+	public boolean isKeywordOnly() {
+		return this.keywordOnly;
+	}
+
+	/**
 	 * Returns true iff this parameter declares a default value (e.g. the {@code training} of {@code def call(self, x, training=True)}).
 	 * <p>
 	 * PyDev's {@link argumentsType#defaults} is parallel to {@link argumentsType#args} with a {@code null} at each position lacking a
@@ -339,6 +360,190 @@ public final class Parameter {
 	 */
 	public Boolean getContainerAritiesDisagree() {
 		return this.containerAritiesDisagree;
+	}
+
+	/**
+	 * One diagnostic row of the raw inferred tensor lattice for a parameter, at per-dimension granularity (#780). Where an
+	 * {@link InputSignature} entry collapses every non-constant dimension to a single wildcard, this preserves the underlying
+	 * {@link Dimension} class so a wildcard that is a static constant or an unresolved-but-fixed size is separable from a genuinely dynamic
+	 * one. There is one row per dimension of each inferred {@link TensorType}; a shape-⊤ type (unknown rank) and a scalar (rank zero) each
+	 * contribute a single summary row with a {@code null} {@code dimIndex}.
+	 *
+	 * @param containerPosition The element position for a sequence-container parameter, or {@code null} for a direct tensor parameter.
+	 * @param typeOrdinal The index of the {@link TensorType} within the parameter's (sorted) type set, disambiguating multi-context types.
+	 * @param rank The rank as a string: the dimension count, {@code "TOP"} for a shape-⊤ type, or {@code "0"} for a scalar.
+	 * @param dimIndex The zero-based dimension position, or {@code null} for the shape-⊤ and scalar summary rows.
+	 * @param dimClass The {@link Dimension} class: {@code "Constant,<n>"}, {@code "Symbolic,<name>"}, {@code "Unresolved"},
+	 *        {@code "Dynamic"}, {@code "Ragged"}, {@code "Compound"}, {@code "TOP"} (shape-⊤), or {@code "scalar"} (rank zero).
+	 * @param dtype The dtype name (e.g. {@code "FLOAT32"}, {@code "UNKNOWN"}).
+	 * @param dtypeTop True iff the dtype is ⊤ ({@link DType#UNKNOWN}).
+	 */
+	public record TensorTypeDimensionRow(Integer containerPosition, int typeOrdinal, String rank, Integer dimIndex, String dimClass,
+			String dtype, boolean dtypeTop) {
+	}
+
+	/**
+	 * Returns the raw inferred tensor lattice for this parameter as diagnostic rows at per-dimension granularity (#780), reading the cached
+	 * {@link #getTensorTypes()} and {@link #getContainerElementTypes()} without recomputing anything. Empty when the parameter carries no
+	 * inferred {@link TensorType} (e.g. a non-tensor parameter, or one classified only by type hint or bare container detection).
+	 *
+	 * @return The per-dimension diagnostic rows, in declaration order (direct types first, then container positions).
+	 */
+	public List<TensorTypeDimensionRow> getTensorTypeDiagnostics() {
+		return computeTensorTypeDiagnostics(this.getTensorTypes(), this.getContainerElementTypes());
+	}
+
+	/**
+	 * Computes the per-dimension diagnostic rows (#780) for a parameter's direct tensor types and, when present, its sequence-container
+	 * element types. Package-visible and static so it can be exercised directly on synthesized {@link TensorType}s, mirroring
+	 * {@link Function#inferSpec}.
+	 *
+	 * @param directTypes The parameter's direct inferred {@link TensorType}s ({@link #getTensorTypes()}), possibly {@code null} or empty.
+	 * @param containerElementTypes The per-position element types ({@link #getContainerElementTypes()}), or {@code null} when not a modeled
+	 *        container.
+	 * @return The diagnostic rows: direct types (with a {@code null} container position) followed by each container position.
+	 */
+	public static List<TensorTypeDimensionRow> computeTensorTypeDiagnostics(Set<TensorType> directTypes,
+			List<Set<TensorType>> containerElementTypes) {
+		List<TensorTypeDimensionRow> rows = new ArrayList<>();
+		addDimensionRows(rows, directTypes, null);
+
+		if (containerElementTypes != null)
+			for (int position = 0; position < containerElementTypes.size(); position++)
+				addDimensionRows(rows, containerElementTypes.get(position), position);
+
+		return rows;
+	}
+
+	private static void addDimensionRows(List<TensorTypeDimensionRow> rows, Set<TensorType> types, Integer containerPosition) {
+		if (types == null)
+			return;
+
+		// The type set is unordered; sort by rendering so the type ordinal (and the CSV) is reproducible across runs.
+		List<TensorType> sorted = types.stream().sorted(Comparator.comparing(Object::toString)).toList();
+
+		for (int typeOrdinal = 0; typeOrdinal < sorted.size(); typeOrdinal++) {
+			TensorType type = sorted.get(typeOrdinal);
+			String dtype = type.getDType().name();
+			boolean dtypeTop = type.getDType() == DType.UNKNOWN;
+			List<Dimension<?>> dims = type.getDims();
+
+			if (dims == null)
+				rows.add(new TensorTypeDimensionRow(containerPosition, typeOrdinal, "TOP", null, "TOP", dtype, dtypeTop));
+			else if (dims.isEmpty())
+				rows.add(new TensorTypeDimensionRow(containerPosition, typeOrdinal, "0", null, "scalar", dtype, dtypeTop));
+			else
+				for (int dimIndex = 0; dimIndex < dims.size(); dimIndex++)
+					rows.add(new TensorTypeDimensionRow(containerPosition, typeOrdinal, Integer.toString(dims.size()), dimIndex,
+							renderDimensionClass(dims.get(dimIndex)), dtype, dtypeTop));
+		}
+	}
+
+	/**
+	 * Renders this parameter's directly inferred tensor types (#780) as a single value: the raw {@link TensorType}s from
+	 * {@link #getTensorTypes()}, each preserving its per-dimension {@link Dimension} class rather than collapsing wildcards the way an
+	 * {@link InputSignature} entry does. This is the parameter-grained view emitted in {@code parameters.csv}; the same information at
+	 * one-row-per-dimension grain is {@link #getTensorTypeDiagnostics()} ({@code parameter_dimensions.csv}). Empty when the parameter
+	 * carries no directly inferred type. Reads the cached analysis without recomputing.
+	 *
+	 * @return The rendered direct tensor types (e.g. {@code "FLOAT32[Constant,1; Constant,6; Constant,256]"}), or {@code ""} if none.
+	 */
+	public String getRenderedTensorTypes() {
+		return renderTensorTypes(this.getTensorTypes());
+	}
+
+	/**
+	 * Renders this parameter's per-position sequence-container element types (#780), or {@code ""} when it is not a modeled container.
+	 * Position {@code j} is rendered as {@code "j: <element types>"} and positions are joined by {@code "; "}. Reads the cached analysis
+	 * without recomputing.
+	 *
+	 * @return The rendered container element types (e.g. {@code "0: FLOAT32[Constant,2]; 1: FLOAT32[Constant,4]"}), or {@code ""}.
+	 */
+	public String getRenderedContainerElementTypes() {
+		return renderContainerElementTypes(this.getContainerElementTypes());
+	}
+
+	/**
+	 * Renders a set of {@link TensorType}s as a single value, each type sorted for reproducibility and joined by {@code " | "}. Static and
+	 * public so it can be exercised directly on synthesized {@link TensorType}s, mirroring {@link Function#inferSpec}.
+	 *
+	 * @param types The types to render, possibly {@code null} or empty.
+	 * @return The rendered types joined by {@code " | "}, or {@code ""} when there are none.
+	 */
+	public static String renderTensorTypes(Set<TensorType> types) {
+		if (types == null || types.isEmpty())
+			return "";
+
+		return types.stream().map(Parameter::renderTensorType).sorted().collect(Collectors.joining(" | "));
+	}
+
+	/**
+	 * Renders per-position sequence-container element types as {@code "0: <types>; 1: <types>; ..."}, or {@code ""} when {@code positions}
+	 * is {@code null}.
+	 *
+	 * @param positions The per-position element type sets ({@link #getContainerElementTypes()}), or {@code null}.
+	 * @return The rendered per-position element types, or {@code ""}.
+	 */
+	public static String renderContainerElementTypes(List<Set<TensorType>> positions) {
+		if (positions == null)
+			return "";
+
+		StringBuilder builder = new StringBuilder();
+
+		for (int position = 0; position < positions.size(); position++) {
+			if (position > 0)
+				builder.append("; ");
+
+			builder.append(position).append(": ").append(renderTensorTypes(positions.get(position)));
+		}
+
+		return builder.toString();
+	}
+
+	/**
+	 * Renders one {@link TensorType} as {@code "<dtype>[<dim>; <dim>; ...]"} (#780), preserving each dimension's raw {@link Dimension}
+	 * class: {@code "TOP"} for a shape-⊤ type (unknown rank), {@code "scalar"} for rank zero, otherwise the per-dimension classes from
+	 * {@link #renderDimensionClass}. The dtype is its name, so a dtype-⊤ renders as {@code "UNKNOWN[...]"}.
+	 *
+	 * @param type The type to render.
+	 * @return The rendered type (e.g. {@code "FLOAT32[Constant,1; Constant,6; Constant,256]"}, {@code "FLOAT32[TOP]"}).
+	 */
+	public static String renderTensorType(TensorType type) {
+		List<Dimension<?>> dims = type.getDims();
+		String shape;
+
+		if (dims == null)
+			shape = "TOP";
+		else if (dims.isEmpty())
+			shape = "scalar";
+		else
+			shape = dims.stream().map(Parameter::renderDimensionClass).collect(Collectors.joining("; "));
+
+		return type.getDType().name() + "[" + shape + "]";
+	}
+
+	/**
+	 * Renders a single {@link Dimension}'s class for the #780 diagnostic, reading the raw subtype directly rather than through
+	 * {@link Function#inferSpec}, which lossily collapses every non-constant dimension to a wildcard.
+	 *
+	 * @param dimension The dimension to render.
+	 * @return The class string: {@code "Constant,<n>"}, {@code "Symbolic,<name>"}, {@code "Unresolved"}, {@code "Dynamic"},
+	 *         {@code "Ragged"}, or {@code "Compound"}.
+	 */
+	private static String renderDimensionClass(Dimension<?> dimension) {
+		if (dimension instanceof NumericDim numeric)
+			return "Constant," + numeric.value();
+		if (dimension instanceof SymbolicDim symbolic)
+			return "Symbolic," + symbolic.value();
+		if (dimension instanceof UnresolvedDim)
+			return "Unresolved";
+		if (dimension instanceof DynamicDim)
+			return "Dynamic";
+		if (dimension instanceof RaggedDim)
+			return "Ragged";
+		if (dimension instanceof CompoundDim)
+			return "Compound";
+		return dimension.getClass().getSimpleName();
 	}
 
 	/**
