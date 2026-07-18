@@ -122,6 +122,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String PARAMETERS_CSV_FILENAME = "parameters.csv";
 
+	private static final String PARAMETER_DIMENSIONS_CSV_FILENAME = "parameter_dimensions.csv";
+
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
@@ -247,6 +249,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));
 				CSVPrinter parametersPrinter = createCSVPrinter(PARAMETERS_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "param name", "is tensor", "is container", "tensor types",
+								"container element types"));
+				CSVPrinter parameterDimensionsPrinter = createCSVPrinter(PARAMETER_DIMENSIONS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
 								"dim index", "dim class", "dtype", "dtype top"));) {
 			if (BUILD_WORKSPACE) {
@@ -309,6 +314,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						printBlockedParameters(blockedParametersPrinter, func);
 						printInputSignatures(inputSignaturesPrinter, func);
 						printParameters(parametersPrinter, func);
+						printParameterDimensions(parameterDimensionsPrinter, func);
 					}
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
@@ -654,17 +660,42 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	/**
-	 * Emits the raw inferred tensor lattice at per-parameter, per-dimension granularity into {@code parameters.csv} (#780), so a wildcard
-	 * dimension's cause (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a FINE-level
-	 * provenance run. There is one row per dimension of each inferred {@link Parameter}'s {@code TensorType}s; a parameter carrying no
-	 * inferred tensor type produces no rows. Reads the cached analysis without recomputing, so it leaves the function's status untouched.
+	 * Emits one {@code parameters.csv} row per non-{@code self} parameter (#780), carrying its inferred tensor type(s) rendered so each
+	 * dimension's raw class (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a FINE-level
+	 * provenance run, where an {@code input_signature} entry would collapse them to a wildcard. The {@code tensor types} column holds the
+	 * direct types and {@code container element types} the per-position element types of a sequence container. The same information at
+	 * one-row-per-dimension grain is in {@code parameter_dimensions.csv} (see {@link #printParameterDimensions}). Reads the cached analysis
+	 * without recomputing, so it leaves the function's status untouched.
 	 *
 	 * @param printer The {@code parameters.csv} printer.
-	 * @param function The function whose parameters' tensor lattice to emit.
+	 * @param function The function whose parameters to emit.
 	 * @throws IOException If a record cannot be written.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/780">Issue 780</a>
 	 */
 	private static void printParameters(CSVPrinter printer, Function function) throws IOException {
+		for (Parameter parameter : function.getParameters()) {
+			if (parameter.isSelf())
+				continue;
+
+			printer.printRecord(buildAttributeColumnValues(function, parameter.getIndex(), parameter.getName(), parameter.isTensor(),
+					parameter.isTensorContainer(), parameter.getRenderedTensorTypes(), parameter.getRenderedContainerElementTypes()));
+		}
+	}
+
+	/**
+	 * Emits the raw inferred tensor lattice at per-parameter, per-dimension granularity into {@code parameter_dimensions.csv} (#780), so a
+	 * wildcard dimension's cause (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a
+	 * FINE-level provenance run. There is one row per dimension of each inferred {@link Parameter}'s {@code TensorType}s; a parameter
+	 * carrying no inferred tensor type produces no rows. The parameter-grained view (one row per parameter, the type rendered) is in
+	 * {@code parameters.csv} (see {@link #printParameters}). Reads the cached analysis without recomputing, so it leaves the function's
+	 * status untouched.
+	 *
+	 * @param printer The {@code parameter_dimensions.csv} printer.
+	 * @param function The function whose parameters' tensor lattice to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/780">Issue 780</a>
+	 */
+	private static void printParameterDimensions(CSVPrinter printer, Function function) throws IOException {
 		for (Parameter parameter : function.getParameters()) {
 			if (parameter.isSelf())
 				continue;

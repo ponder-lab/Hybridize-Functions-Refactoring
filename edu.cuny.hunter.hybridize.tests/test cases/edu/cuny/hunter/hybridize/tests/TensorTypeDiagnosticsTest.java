@@ -112,4 +112,55 @@ public class TensorTypeDiagnosticsTest {
 		assertTrue("Null direct types yield no rows.", Parameter.computeTensorTypeDiagnostics(null, null).isEmpty());
 		assertTrue("An empty type set yields no rows.", Parameter.computeTensorTypeDiagnostics(Set.of(), null).isEmpty());
 	}
+
+	/**
+	 * The parameter-grained rendering ({@code parameters.csv}): a type renders as {@code dtype[dim; dim; ...]}, each dimension keeping its
+	 * raw class, distinct from the wildcard {@code inferSpec} would collapse them to.
+	 */
+	@Test
+	public void testRenderTypePerDimensionClasses() {
+		TensorType type = new TensorType(FLOAT32,
+				List.of(new NumericDim(3), new SymbolicDim("batch"), UnresolvedDim.INSTANCE, DynamicDim.INSTANCE, RaggedDim.INSTANCE));
+
+		assertEquals("FLOAT32[Constant,3; Symbolic,batch; Unresolved; Dynamic; Ragged]", Parameter.renderTensorType(type));
+	}
+
+	/** A shape-top type renders its shape as {@code TOP}; a scalar as {@code scalar}; the two are distinct. */
+	@Test
+	public void testRenderShapeTopAndScalar() {
+		assertEquals("FLOAT32[TOP]", Parameter.renderTensorType(new TensorType(FLOAT32, null)));
+		assertEquals("FLOAT32[scalar]", Parameter.renderTensorType(new TensorType(FLOAT32, List.of())));
+	}
+
+	/** A dtype-top ({@code UNKNOWN}) type renders {@code UNKNOWN} for the dtype, orthogonal to the shape axis. */
+	@Test
+	public void testRenderDtypeTop() {
+		assertEquals("UNKNOWN[Constant,3]", Parameter.renderTensorType(new TensorType(UNKNOWN, List.of(new NumericDim(3)))));
+	}
+
+	/** A multi-context set renders each type, sorted for reproducibility and joined by {@code " | "}. */
+	@Test
+	public void testRenderTypeSet() {
+		Set<TensorType> types = Set.of(new TensorType(FLOAT32, null),
+				new TensorType(FLOAT32, List.of(new NumericDim(1), new NumericDim(6), new NumericDim(256))));
+
+		assertEquals("FLOAT32[Constant,1; Constant,6; Constant,256] | FLOAT32[TOP]", Parameter.renderTensorTypes(types));
+	}
+
+	/** A null or empty type set renders as the empty string, so a non-tensor parameter's column is blank. */
+	@Test
+	public void testRenderEmptyTypeSet() {
+		assertEquals("", Parameter.renderTensorTypes(null));
+		assertEquals("", Parameter.renderTensorTypes(Set.of()));
+	}
+
+	/** Container element types render per position as {@code "j: <types>"}, joined by {@code "; "}; a non-container renders as blank. */
+	@Test
+	public void testRenderContainerElementTypes() {
+		List<Set<TensorType>> positions = List.of(Set.of(new TensorType(FLOAT32, List.of(new NumericDim(2)))),
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(4)))));
+
+		assertEquals("0: FLOAT32[Constant,2]; 1: FLOAT32[Constant,4]", Parameter.renderContainerElementTypes(positions));
+		assertEquals("", Parameter.renderContainerElementTypes(null));
+	}
 }

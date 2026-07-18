@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
@@ -425,6 +426,89 @@ public final class Parameter {
 					rows.add(new TensorTypeDimensionRow(containerPosition, typeOrdinal, Integer.toString(dims.size()), dimIndex,
 							renderDimensionClass(dims.get(dimIndex)), dtype, dtypeTop));
 		}
+	}
+
+	/**
+	 * Renders this parameter's directly inferred tensor types (#780) as a single value: the raw {@link TensorType}s from
+	 * {@link #getTensorTypes()}, each preserving its per-dimension {@link Dimension} class rather than collapsing wildcards the way an
+	 * {@link InputSignature} entry does. This is the parameter-grained view emitted in {@code parameters.csv}; the same information at
+	 * one-row-per-dimension grain is {@link #getTensorTypeDiagnostics()} ({@code parameter_dimensions.csv}). Empty when the parameter
+	 * carries no directly inferred type. Reads the cached analysis without recomputing.
+	 *
+	 * @return The rendered direct tensor types (e.g. {@code "FLOAT32[Constant,1; Constant,6; Constant,256]"}), or {@code ""} if none.
+	 */
+	public String getRenderedTensorTypes() {
+		return renderTensorTypes(this.getTensorTypes());
+	}
+
+	/**
+	 * Renders this parameter's per-position sequence-container element types (#780), or {@code ""} when it is not a modeled container.
+	 * Position {@code j} is rendered as {@code "j: <element types>"} and positions are joined by {@code "; "}. Reads the cached analysis
+	 * without recomputing.
+	 *
+	 * @return The rendered container element types (e.g. {@code "0: FLOAT32[Constant,2]; 1: FLOAT32[Constant,4]"}), or {@code ""}.
+	 */
+	public String getRenderedContainerElementTypes() {
+		return renderContainerElementTypes(this.getContainerElementTypes());
+	}
+
+	/**
+	 * Renders a set of {@link TensorType}s as a single value, each type sorted for reproducibility and joined by {@code " | "}. Static and
+	 * public so it can be exercised directly on synthesized {@link TensorType}s, mirroring {@link Function#inferSpec}.
+	 *
+	 * @param types The types to render, possibly {@code null} or empty.
+	 * @return The rendered types joined by {@code " | "}, or {@code ""} when there are none.
+	 */
+	public static String renderTensorTypes(Set<TensorType> types) {
+		if (types == null || types.isEmpty())
+			return "";
+
+		return types.stream().map(Parameter::renderTensorType).sorted().collect(Collectors.joining(" | "));
+	}
+
+	/**
+	 * Renders per-position sequence-container element types as {@code "0: <types>; 1: <types>; ..."}, or {@code ""} when {@code positions}
+	 * is {@code null}.
+	 *
+	 * @param positions The per-position element type sets ({@link #getContainerElementTypes()}), or {@code null}.
+	 * @return The rendered per-position element types, or {@code ""}.
+	 */
+	public static String renderContainerElementTypes(List<Set<TensorType>> positions) {
+		if (positions == null)
+			return "";
+
+		StringBuilder builder = new StringBuilder();
+
+		for (int position = 0; position < positions.size(); position++) {
+			if (position > 0)
+				builder.append("; ");
+
+			builder.append(position).append(": ").append(renderTensorTypes(positions.get(position)));
+		}
+
+		return builder.toString();
+	}
+
+	/**
+	 * Renders one {@link TensorType} as {@code "<dtype>[<dim>; <dim>; ...]"} (#780), preserving each dimension's raw {@link Dimension}
+	 * class: {@code "TOP"} for a shape-⊤ type (unknown rank), {@code "scalar"} for rank zero, otherwise the per-dimension classes from
+	 * {@link #renderDimensionClass}. The dtype is its name, so a dtype-⊤ renders as {@code "UNKNOWN[...]"}.
+	 *
+	 * @param type The type to render.
+	 * @return The rendered type (e.g. {@code "FLOAT32[Constant,1; Constant,6; Constant,256]"}, {@code "FLOAT32[TOP]"}).
+	 */
+	public static String renderTensorType(TensorType type) {
+		List<Dimension<?>> dims = type.getDims();
+		String shape;
+
+		if (dims == null)
+			shape = "TOP";
+		else if (dims.isEmpty())
+			shape = "scalar";
+		else
+			shape = dims.stream().map(Parameter::renderDimensionClass).collect(Collectors.joining("; "));
+
+		return type.getDType().name() + "[" + shape + "]";
 	}
 
 	/**
