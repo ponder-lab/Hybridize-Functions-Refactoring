@@ -2265,7 +2265,8 @@ public class Function {
 	 * @param nodes The call-graph nodes of this function.
 	 * @param callGraph The call graph.
 	 * @return {@code TRUE} if some call site supplies it, {@code FALSE} if every reachable call site omits it, or {@code null} if any call
-	 *         site could not be examined. See {@link #inferSuppliedParameters} for why ignorance is {@code null}.
+	 *         site could not be examined or an unpacked positional argument made its alignment undetermined (wala/ML#751). See
+	 *         {@link #inferSuppliedParameters} for why ignorance is {@code null}.
 	 */
 	private Boolean isSuppliedAtAnyCallSite(Parameter parameter, Set<CGNode> nodes, CallGraph callGraph) {
 		String name = parameter.getName();
@@ -2275,6 +2276,7 @@ public class Function {
 		int positionalSlot = parameter.getIndex() + 1;
 
 		boolean sawCallSite = false;
+		boolean sawIndeterminate = false;
 
 		for (CGNode node : nodes)
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
@@ -2294,13 +2296,50 @@ public class Function {
 
 						sawCallSite = true;
 
-						if (invoke.getNumberOfPositionalParameters() > positionalSlot || invoke.getKeywords().contains(name))
+						// A keyword argument supplies the parameter regardless of positional layout.
+						if (invoke.getKeywords().contains(name))
+							return TRUE;
+
+						// A starred (unpacked) positional argument at or before the parameter's slot collapses a
+						// statically-unknown number of arguments into one slot, so the positional alignment past it is unreliable:
+						// the parameter may or may not be supplied by the unpack (wala/ML#751). Treat this call site as undetermined
+						// rather than concluding it omits the parameter.
+						if (hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
+							sawIndeterminate = true;
+							continue;
+						}
+
+						// No unpack precedes the slot, so the positional count is exact: the parameter is supplied iff a positional
+						// argument occupies its slot.
+						if (invoke.getNumberOfPositionalParameters() > positionalSlot)
 							return TRUE;
 					}
 			}
 
-		// Every reachable call site omits it. Having no call site at all is ignorance, not absence.
-		return sawCallSite ? FALSE : null;
+		// TRUE (returned above) means some call site definitely supplies it. Absent that, a call site whose alignment an unpack made
+		// unreliable leaves the answer undetermined; every reachable call site definitely omitting it is FALSE; and no call site at all
+		// is ignorance, not absence.
+		if (!sawCallSite || sawIndeterminate)
+			return null;
+
+		return FALSE;
+	}
+
+	/**
+	 * Returns whether {@code invoke} has a starred (unpacked) positional argument at or before {@code positionalSlot}, past which the
+	 * positional-to-parameter alignment is unreliable because an unpack collapses a statically-unknown number of arguments into one slot
+	 * (wala/ML#751).
+	 *
+	 * @param invoke The call.
+	 * @param positionalSlot The invoke positional slot of the parameter in question.
+	 * @return True iff a starred positional argument occupies a slot at or before {@code positionalSlot}.
+	 */
+	private static boolean hasStarredArgumentAtOrBefore(PythonInvokeInstruction invoke, int positionalSlot) {
+		for (int starredPosition : invoke.getStarredPositions())
+			if (starredPosition <= positionalSlot)
+				return true;
+
+		return false;
 	}
 
 	/**
