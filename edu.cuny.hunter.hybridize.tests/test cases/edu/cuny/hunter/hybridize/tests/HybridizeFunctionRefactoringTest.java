@@ -9915,6 +9915,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression guard for the MusicTransformer {@code _divide_note} false positive. The vendored {@code midi_processor/processor.py}
+	 * contains no TensorFlow at all: {@code _divide_note} sorts a Python list of {@code SplitNote} instances and builds another via the
+	 * list concatenation {@code result_array += [on, off]}. Ariadne 0.52.35 wrongly typed that list concatenation as a tensor with
+	 * TensorFlow origin (https://github.com/wala/ML/issues/750), enabled by its list of {@code SplitNote} being mis-typed as a tensor in
+	 * the first place (https://github.com/wala/ML/issues/752), which flipped the function to a tensor computation. Ariadne 0.52.36 stops
+	 * typing loop-carried list concatenation as a tensor, so the function is once again barren. Asserting no tensor computation here fails
+	 * if a future release reintroduces the mis-typing, catching at unit scale a change that otherwise only surfaces in the corpus.
+	 */
+	@Test
+	public void testDivideNoteBarren() throws Exception {
+		// Tolerate a null verdict (not just false): under the full suite `getHasTensorComputation()` can be null for
+		// `_divide_note` via the tc-null transient (#799, on the #798 cache-retention substrate), which `assertFalse`
+		// would NPE on. The guard is against the value becoming TRUE (the wala/ML#750 false positive), so `!= TRUE` is
+		// the correct, transient-robust assertion, matching the barren-pin rationale.
+		assertNotEquals(
+				"`_divide_note` builds a plain Python list of `SplitNote` and performs no tensor computation (guards the wala/ML#750 list-concatenation false positive fixed in Ariadne 0.52.36).",
+				Boolean.TRUE, getFunction("_divide_note").getHasTensorComputation());
+	}
+
+	/**
 	 * Pins the eager-only-call safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363): a function
 	 * that (transitively) calls {@code Tensor.numpy()} must not hybridize, since the call raises under {@code tf.function} tracing (it
 	 * fails with {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}), while a computing sibling without the call still passes P1. The
