@@ -9830,9 +9830,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testDivideNoteBarren() throws Exception {
-		assertNotEquals(
+		assertFalse(
 				"`_divide_note` builds a plain Python list of `SplitNote` and performs no tensor computation (guards the wala/ML#750 list-concatenation false positive fixed in Ariadne 0.52.36).",
-				Boolean.TRUE, getFunction("_divide_note").getHasTensorComputation());
+				getFunction("_divide_note").getHasTensorComputation());
 	}
 
 	/**
