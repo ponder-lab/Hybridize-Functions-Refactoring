@@ -9636,7 +9636,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code unknown}-dtype twin persists alongside it, so the residual is narrowed rather than closed. Bisected to 0.52.33: the gain is
 	 * the dtype feed, not 0.52.34's wala/ML#682 type-feed composition or its wala/ML#740 trampoline re-keying, neither of which moves this
 	 * subject. Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path (ponder-lab/ML#514's
-	 * wala/ML#672 triage).
+	 * wala/ML#672 triage). As of Ariadne 0.52.36 (the 0.52.35 shape-recovery work, wala/ML#739's deeper decoder-stack operand walk and
+	 * wider generator shape walks, accumulated since this pin's 0.52.34 baseline), the residual closes and the shape sharpens: the
+	 * {@code unknown}-dtype form drops, so {@code pred} is {@code float32} throughout (wala/ML#677 closed); the batch and sequence axes,
+	 * evidence-free and hence {@code Unresolved} at 0.52.26/27, become {@code Dynamic}, the deeper walk having reached the model's static
+	 * shape and confirmed the runtime {@code None} (the wala/ML#721 evidence criterion, so the sharper classification, not a regression);
+	 * and the rank-unknown {@code float32} form resolves to a rank-4 {@code (Dynamic, Dynamic, 8, 8)}.
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
@@ -9648,13 +9653,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> fns = this.getFunctions();
 		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
 				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#677): the `unknown`-dtype rank-3 form should drop once the residual dtype imprecision is fully fixed, leaving only
-		// its `float32` counterpart. Ariadne 0.52.33 got the `float32` form to appear; both now coexist.
+		// The `unknown`-dtype form the wala/ML#677 TODO tracked dropped at the Ariadne 0.52.36 bump (its 0.52.35 shape-recovery work):
+		// `pred`
+		// is `float32` throughout, and the batch/sequence axes are now the evidence-based `Dynamic` rather than the conservative
+		// `Unresolved`.
 		assertEquals(
-				"`get_loss`'s `pred` types via the keras call result; leading dims `Unresolved` (evidence-free `tf.shape` axes, wala/ML#721/#722).",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
+				"`get_loss`'s `pred` types via the keras call result; batch/sequence axes `Dynamic` (evidence-based runtime `None`, wala/ML#739/#721).",
+				Set.of(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, null)),
+						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(8), new NumericDim(8)))),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
 				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
@@ -9807,16 +9814,104 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code sample_train_nodes} and the outer {@code split_labels}) do perform a (numpy) computation but are declined by the
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
+	/**
+	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
+	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
+	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
+	 * declines). Directly exercises the exemption on the current release.
+	 */
+	@Test
+	public void testExemptDefaultedUnsuppliedPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function f = findFunction(functions, "f");
+
+		Parameter flag = f.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertTrue("`flag` declares a default.", flag.hasDefault());
+		assertEquals("No call site supplies `flag`.", FALSE, flag.isSuppliedAtCallSite());
+
+		assertNotEquals("A defaulted, unsupplied primitive must not make the function primitive-declining (#795).", TRUE,
+				f.getHasPrimitiveParameter());
+		assertTrue("With the primitive exemption and a tensor `x`, `f` is optimizable.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 negative: a defaulted primitive parameter that a call site supplies with a varying value is a retrace key, so the exemption must
+	 * not apply. `g` is called both with `flag` defaulted and with `flag=5`, so `g` stays declined by `HAS_PRIMITIVE_PARAMETERS`.
+	 */
+	@Test
+	public void testDefaultedSuppliedPrimitiveStillDeclines() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function g = findFunction(functions, "g");
+
+		Parameter flag = g.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertEquals("A call site supplies `flag`, so it is not exempt.", TRUE, flag.isSuppliedAtCallSite());
+
+		assertEquals("A supplied defaulted primitive still declines the function.", TRUE, g.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 tripwire for the wala/ML#743 regression that lands with the Ariadne 0.52.35 bump. `C.m`'s `flag` is a defaulted primitive no
+	 * caller supplies. On the current release the trampolined method default is not materialized, so `flag` has an empty points-to set and
+	 * `HAS_PRIMITIVE_PARAMETERS` never fires (this test passes via that path). At 0.52.35, wala/ML#743 materializes the default and `flag`
+	 * becomes a detected primitive; without the #795 exemption this test flips red as `m` declines, and the exemption restores it. It is
+	 * the unit guard the corpus regression check surfaced by hand (the `LayerNormalization.call` decline).
+	 */
+	@Test
+	public void testDefaultedPrimitiveMethodTripwire() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function m = findFunction(functions, "C.m");
+
+		assertNotEquals("A defaulted, unsupplied primitive method parameter must not make the method primitive-declining (#795).", TRUE,
+				m.getHasPrimitiveParameter());
+		assertTrue("`m` is optimizable with a tensor `x` and the exempt `flag`.",
+				m.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 with the wala/ML#751 star-argument fix (Ariadne 0.52.36). {@code combine}'s {@code scale} is a defaulted primitive supplied by
+	 * the trailing {@code i} (a varying loop index) after a {@code *rest} unpack in {@code combine(tf.constant(...), *rest, i)}. The unpack
+	 * collapses a statically-unknown number of arguments into a single invoke slot, so whether the trailing argument reaches {@code scale}
+	 * is undetermined: {@link Function#isSuppliedAtAnyCallSite} consults {@code PythonInvokeInstruction.getStarredPositions()} and reads
+	 * {@code null} rather than {@code FALSE}, so the defaulted-primitive exemption (which requires a definite {@code FALSE}) does not apply
+	 * and {@code combine} declines for {@code HAS_PRIMITIVE_PARAMETERS}. This is the corpus {@code compute_loss(pred, conv, *target[i], i)}
+	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable.
+	 */
+	@Test
+	public void testDefaultedPrimitiveAfterStarUnpackDeclines() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function combine = findFunction(functions, "combine");
+
+		Parameter scale = combine.getParameters().get(3);
+		assertEquals("scale", scale.getName());
+		assertTrue("`scale` declares a default.", scale.hasDefault());
+
+		// The `*rest` unpack makes the trailing `i`'s alignment with `scale` undetermined, so supply is null, not a definite FALSE.
+		assertNull("A defaulted primitive whose supply an unpack made undetermined is not read as unsupplied (wala/ML#751).",
+				scale.isSuppliedAtCallSite());
+
+		// A null (undetermined) supply is not exempt; only a definite FALSE exempts. So the varying primitive `scale` declines `combine`.
+		assertEquals("`combine` declines: `scale` is a primitive whose supply is undetermined, so the exemption does not apply.", TRUE,
+				combine.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.",
+				combine.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testCoraDataPrepBarren() throws Exception {
+		// All six Cora data-prep methods are numpy/list-only and perform no tensor computation. `sample_train_nodes` and `split_labels`
+		// joined this group at the Ariadne 0.52.36 bump: their former tensor-computation flag came from a loop-carried `list` concatenation
+		// wrongly typed as a tensor (wala/ML#750), fixed in 0.52.36 (wala/ML#627), so they are now correctly barren. Asserting "not a
+		// tensor computation" (not strictly `false`) tolerates a `null` verdict, which arises when the method is declined for another
+		// reason
+		// before tensor computation is computed.
 		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",
-				"Cora.split_labels._sample_mask"))
-			assertFalse(barren + " is numpy-only data preparation and must report no tensor computation (#774).",
+				"Cora.split_labels._sample_mask", "Cora.sample_train_nodes", "Cora.split_labels"))
+			assertNotEquals(barren + " is numpy-only data preparation and must not report a tensor computation (#774, wala/ML#750).", TRUE,
 					getFunction(barren).getHasTensorComputation());
-
-		for (String sibling : List.of("Cora.sample_train_nodes", "Cora.split_labels"))
-			assertTrue(sibling + " applies numpy to its parameters, so it is declined by the numpy-on-parameters precondition, not barren.",
-					getFunction(sibling).getHasTensorComputation());
 	}
 
 	/**

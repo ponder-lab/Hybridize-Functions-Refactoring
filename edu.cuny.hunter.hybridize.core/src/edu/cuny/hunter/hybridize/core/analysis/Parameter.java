@@ -255,6 +255,17 @@ public final class Parameter {
 	}
 
 	/**
+	 * Returns true iff this parameter is keyword-only (declared after a bare {@code *}), indexing into {@code kwonlyargs} rather than
+	 * {@code args}. Distinguishes a keyword-only parameter from a positional one that happens to share the same {@link #getIndex()}, which
+	 * a positional-index-to-parameter mapping needs (#607, #795).
+	 *
+	 * @return True iff this parameter is keyword-only.
+	 */
+	public boolean isKeywordOnly() {
+		return this.keywordOnly;
+	}
+
+	/**
 	 * Returns true iff this parameter declares a default value (e.g. the {@code training} of {@code def call(self, x, training=True)}).
 	 * <p>
 	 * PyDev's {@link argumentsType#defaults} is parallel to {@link argumentsType#args} with a {@code null} at each position lacking a
