@@ -40,7 +40,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jacoco-version>0.8.14</jacoco-version>
     <maven-checkstyle-plugin-version>3.6.0</maven-checkstyle-plugin-version>
-    <checkstyle-version>13.7.0</checkstyle-version>
+    <checkstyle-version>13.8.0</checkstyle-version>
     <junit-version>4.13.2</junit-version>
     <eclipse-site>https://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
     <platform-version-name>2026-03</platform-version-name>
