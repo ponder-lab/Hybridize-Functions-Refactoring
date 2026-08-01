@@ -10224,6 +10224,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the symbolic-iteration safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830, distilling
+	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but raises
+	 * {@code OperatorNotAllowedInGraphError} under tracing once the parameter is symbolic, even with AutoGraph converting the loop (it
+	 * fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). {@code range_loop}'s in-body {@code tf.range} iteration is
+	 * AutoGraph-supported, is not parameter-derived, and remains P1.
+	 */
+	@Test
+	public void testTensorParameterIterationBlocksHybridization() throws Exception {
+		Function iterateParam = getFunction("iterate_param");
+		assertTrue("`iterate_param` iterates its tensor parameter with a Python loop.", iterateParam.getHasTensorParameterIteration());
+		assertNull("`iterate_param` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
+				iterateParam.getPassingPrecondition());
+		assertNotNull("`iterate_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", iterateParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		Function rangeLoop = getFunction("range_loop");
+		assertFalse("`range_loop` iterates an in-body `tf.range`, the AutoGraph-supported form.",
+				rangeLoop.getHasTensorParameterIteration());
+		assertEquals("`range_loop` still hybridizes (P1).", P1, rangeLoop.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins phase 1 of the caller-coverage advisory (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767): a function
 	 * whose every known call path is dominated by a hybridized caller is already traced, so hybridizing it may add no benefit. Phase 1 is
 	 * advisory-only: {@code inner} (called only from the hybridized {@code outer}) still converts (P1) and carries the INFO; {@code mixed}

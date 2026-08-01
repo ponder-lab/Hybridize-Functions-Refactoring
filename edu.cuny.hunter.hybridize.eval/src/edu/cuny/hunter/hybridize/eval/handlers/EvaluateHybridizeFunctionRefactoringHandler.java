@@ -163,6 +163,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckStaleVariableReads = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_STALE_VARIABLE_READS.key());
 
+	private boolean alwaysCheckTensorIteration = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_ITERATION.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -226,8 +228,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"numpy calls", "static shape reads", "stale variable reads", "type hints", "parallel", "speculative", "test entrypoints",
-				"infer input signatures", "targeted CFA depth" };
+				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "type hints", "parallel", "speculative",
+				"test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		resultsHeader.add("time (s)");
@@ -296,6 +298,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckNumpyCalls(this.getAlwaysCheckNumpyCalls());
 					processor.setAlwaysCheckStaticShapeReads(this.getAlwaysCheckStaticShapeReads());
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
+					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -402,6 +405,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// stale variable reads.
 					resultsRecord.add(this.getAlwaysCheckStaleVariableReads());
+
+					// tensor iteration.
+					resultsRecord.add(this.getAlwaysCheckTensorIteration());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -862,6 +868,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckStaleVariableReads() {
 		return alwaysCheckStaleVariableReads;
+	}
+
+	public boolean getAlwaysCheckTensorIteration() {
+		return alwaysCheckTensorIteration;
 	}
 
 	public boolean getProcessFunctionsInParallel() {
