@@ -818,7 +818,7 @@ public class Function {
 			else // it's a ConcreteTypeKey.
 				instanceKeyToProcess = instanceKey; // use the original.
 
-			IClass concreteType = instanceKeyToProcess.getConcreteType();
+			IClass concreteType = instanceKeyToProcess.concreteType();
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());

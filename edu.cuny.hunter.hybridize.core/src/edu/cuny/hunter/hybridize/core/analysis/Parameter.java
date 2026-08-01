@@ -672,7 +672,7 @@ public final class Parameter {
 
 		seen.add(instanceKey);
 
-		if (Util.isContainerType(instanceKey.getConcreteType().getReference())) {
+		if (Util.isContainerType(instanceKey.concreteType().getReference())) {
 			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory())
 					.getPointerKeyForObjectCatalog(instanceKey);
 			Iterable<InstanceKey> catalogPointsToSet = builder.getPointerAnalysis().getPointsToSet(catalogPointerKey);
@@ -683,7 +683,7 @@ public final class Parameter {
 					Object value = constantKey.getValue();
 
 					if (value != null) {
-						IClass concreteType = instanceKey.getConcreteType();
+						IClass concreteType = instanceKey.concreteType();
 						IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
 						PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
 						Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
@@ -708,10 +708,10 @@ public final class Parameter {
 	private static TypeReference getTypeReference(InstanceKey instanceKey) {
 		if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
 			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
-			return asin.getConcreteType().getReference();
+			return asin.concreteType().getReference();
 		} else if (instanceKey instanceof ConstantKey<?>) {
 			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			return constantKey.getConcreteType().getReference();
+			return constantKey.concreteType().getReference();
 		} else
 			throw new IllegalStateException("Not expecting: " + instanceKey.getClass());
 	}

@@ -83,7 +83,7 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 							OrdinalSet<T> objectRefPointsToSet = this.pa.getPointsToSet(objectRefPK);
 
 							objectRefPointsToSet.forEach(objectRefIK -> {
-								if (objectRefIK.getConcreteType().getReference().equals(list))
+								if (objectRefIK.concreteType().getReference().equals(list))
 									// it's a list. Add the pointer to the results.
 									this.result.add(objectRefPK);
 							});
@@ -96,7 +96,7 @@ public class PythonModRefWithBuiltinFunctions extends PythonModRef {
 		}
 
 		private TypeReference getTypeReference(T ik) {
-			return ik.getConcreteType().getReference();
+			return ik.concreteType().getReference();
 		}
 	}
 
