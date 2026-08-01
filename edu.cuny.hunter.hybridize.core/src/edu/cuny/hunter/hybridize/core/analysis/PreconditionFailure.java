@@ -77,7 +77,17 @@ public enum PreconditionFailure {
 	 * ({@code tf.shape(x)[i]}) is safe and does not disqualify. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 */
-	HAS_UNRESOLVED_STATICALLY_READ_AXES(18);
+	HAS_UNRESOLVED_STATICALLY_READ_AXES(18),
+
+	/**
+	 * The function snapshots a model's variable collection ({@code trainable_variables}) before the model's first invocation in its body
+	 * and feeds the snapshot to an optimizer or gradient computation. A subclassed Keras model's collection is silently empty before its
+	 * first build, so under tracing the initial trace captures the empty snapshot, the in-trace build engages {@code tf.function}'s
+	 * variable-lifting re-trace, and optimizer slot creation lands on a non-first trace, raising the singleton-variable {@code ValueError}.
+	 * Reading the collection after the forward pass (the pervasive beneficial idiom) is untouched: the ordering is the discriminator. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 */
+	HAS_STALE_VARIABLE_READS(19);
 
 	static {
 		// check that the codes are unique.

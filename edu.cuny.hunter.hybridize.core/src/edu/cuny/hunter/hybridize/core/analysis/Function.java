@@ -951,6 +951,14 @@ public class Function {
 	private Boolean hasUnresolvedStaticallyReadAxes;
 
 	/**
+	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
+	 * feeds the snapshot to an optimizer or gradient computation, which raises under {@code tf.function} tracing when slot creation lands
+	 * on the variable-lifting re-trace. {@code null} when it could not be determined (no call-graph node), in which case the precondition
+	 * does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 */
+	private Boolean hasStaleVariableReads;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1162,6 +1170,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
 										"Can't hybridize this function with the inferred input signature: "
 												+ "its body reads a tensor dimension the signature leaves unspecified.");
+							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
+								// Snapshots a model's variables before the model's first call, which raises under tracing when
+								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
+								// family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_STALE_VARIABLE_READS,
+										"Can't hybridize a function that reads a model's variables before the model has been called; "
+												+ "tracing would create optimizer state after the first trace.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1726,6 +1741,50 @@ public class Function {
 	 */
 	public Boolean getHasUnresolvedStaticallyReadAxes() {
 		return this.hasUnresolvedStaticallyReadAxes;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body
+	 * and feeds the snapshot to an optimizer or gradient computation, storing the result for {@link #getHasStaleVariableReads()}. The
+	 * hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what keeps the refactoring from introducing it;
+	 * reading the collection after the forward pass never fires. When the function has no call-graph node, the result is left undetermined,
+	 * mirroring the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeStaleVariableReads(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " snapshots stale variables.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " snapshots stale variables without a call graph node.");
+			return;
+		}
+
+		boolean stale = new StaleVariableReadAnalysis(pointerAnalysis).hasStaleVariableRead(nodes);
+
+		this.hasStaleVariableReads = stale;
+
+		LOG.info(this + (stale ? " snapshots a model's variables before its first call." : " snapshots no stale variables."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body feeds a pre-build variable-collection snapshot to an optimizer or gradient computation,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a stale variable snapshot reaches a consumer, null if undetermined.
+	 */
+	public Boolean getHasStaleVariableReads() {
+		return this.hasStaleVariableReads;
 	}
 
 	/**
