@@ -959,6 +959,14 @@ public class Function {
 	private Boolean hasStaleVariableReads;
 
 	/**
+	 * True iff every known call path to this {@link Function} is dominated by a hybridized caller, so its computation is already traced and
+	 * hybridizing it may add no benefit. Advisory-only (phase 1 of issue 767): consulted for an INFO on the P1 path and the evaluator's
+	 * measurement column, never for a decision. {@code null} until the processor's project-wide caller-coverage pass assigns it. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767.
+	 */
+	private Boolean callerCovered;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1185,6 +1193,13 @@ public class Function {
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
+
+								if (TRUE.equals(this.getCallerCovered()))
+									// Advisory only (issue 767, phase 1): the conversion still proceeds; the evaluation measures
+									// the flagged population before any enforcement.
+									this.addInfo(Information.CALLER_COVERAGE,
+											"Every known call path to this function comes from hybridized code, so its computation "
+													+ "is already traced; hybridizing it may add no benefit.");
 
 								/*
 								 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
@@ -1785,6 +1800,37 @@ public class Function {
 	 */
 	public Boolean getHasStaleVariableReads() {
 		return this.hasStaleVariableReads;
+	}
+
+	/**
+	 * Computes which of {@code functions} have every known call path dominated by a hybridized caller (issue 767, phase 1), delegating to
+	 * the package-private {@link CallerCoverageAnalysis}. Hybridization must already be computed for every function.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 * @return The covered subset.
+	 */
+	public static Set<Function> computeCallerCoverage(Set<Function> functions, CallGraph callGraph) {
+		return CallerCoverageAnalysis.computeCovered(functions, callGraph);
+	}
+
+	/**
+	 * Sets whether every known call path to this {@link Function} is dominated by a hybridized caller (the processor's project-wide
+	 * caller-coverage pass; issue 767).
+	 *
+	 * @param callerCovered Whether this function is caller-covered.
+	 */
+	public void setCallerCovered(boolean callerCovered) {
+		this.callerCovered = callerCovered;
+	}
+
+	/**
+	 * True iff every known call path to this {@link Function} is dominated by a hybridized caller, {@code null} if not computed.
+	 *
+	 * @return True iff this function is caller-covered, null if not computed.
+	 */
+	public Boolean getCallerCovered() {
+		return this.callerCovered;
 	}
 
 	/**

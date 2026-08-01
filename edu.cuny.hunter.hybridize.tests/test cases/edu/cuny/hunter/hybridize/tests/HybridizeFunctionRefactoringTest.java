@@ -149,6 +149,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
+import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -10184,6 +10185,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function freshRead = getFunction("fresh_read");
 		assertFalse("`fresh_read` reads the collection after the forward pass builds the model.", freshRead.getHasStaleVariableReads());
 		assertEquals("`fresh_read` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins phase 1 of the caller-coverage advisory (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767): a function
+	 * whose every known call path is dominated by a hybridized caller is already traced, so hybridizing it may add no benefit. Phase 1 is
+	 * advisory-only: {@code inner} (called only from the hybridized {@code outer}) still converts (P1) and carries the INFO; {@code mixed}
+	 * is also called at module level, an uncovered path, so it carries no INFO. The least fixpoint, the inverted polarity, and the
+	 * module-caller block are the design settled on the issue.
+	 */
+	@Test
+	public void testCallerCoverageAdvisory() throws Exception {
+		Function inner = getFunction("inner");
+		assertEquals("`inner`'s only caller is the hybridized `outer`, so it is covered.", Boolean.TRUE, inner.getCallerCovered());
+		assertEquals("Phase 1 is advisory-only: `inner` still hybridizes (P1).", P1, inner.getPassingPrecondition());
+		assertNotNull("`inner` carries the caller-coverage INFO.",
+				inner.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+
+		Function mixed = getFunction("mixed");
+		assertEquals("`mixed` is also called at module level, an uncovered path.", Boolean.FALSE, mixed.getCallerCovered());
+		assertEquals("`mixed` still hybridizes (P1).", P1, mixed.getPassingPrecondition());
+		assertNull("`mixed` carries no caller-coverage INFO.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
 	}
 
 	/**

@@ -19,7 +19,14 @@ public enum Information {
 	 * parameter blocks it (e.g., not classified as tensor-typed, or classified by type hint / container detection without concrete
 	 * shape/dtype evidence).
 	 */
-	INPUT_SIGNATURE_INFERENCE(3);
+	INPUT_SIGNATURE_INFERENCE(3),
+
+	/**
+	 * The caller-coverage advisory (issue 767): every known call path is dominated by a hybridized caller, so the function's computation is
+	 * already traced and hybridizing it may add no benefit. Advisory-only in phase 1; see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767.
+	 */
+	CALLER_COVERAGE(4);
 
 	static {
 		// check that the codes are unique.

@@ -598,9 +598,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
 				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
-				"autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
-				"input_signature", "supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature",
-				"input_signature relation", "input_signature absence reason", "refactoring", "passing precondition", "status");
+				"caller covered", "autograph", "experimental_autograph_options", "experimental_follow_type_hints",
+				"experimental_implements", "func", "input_signature", "supplied input_signature", "jit_compile", "reduce_retracing",
+				"inferred input_signature", "input_signature relation", "input_signature absence reason", "refactoring",
+				"passing precondition", "status");
 	}
 
 	/**
@@ -742,7 +743,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
 				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
-				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads());
+				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads(),
+				function.getCallerCovered());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);

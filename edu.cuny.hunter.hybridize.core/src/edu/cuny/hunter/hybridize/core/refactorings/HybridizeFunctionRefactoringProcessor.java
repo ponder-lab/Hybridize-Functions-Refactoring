@@ -387,12 +387,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("Checking " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.CheckingFunctions, allFunctions.size());
 
+			// Hybridization state for every function first: the caller-coverage advisory (issue 767) is a whole-set property,
+			// consulted while checking each individual function, so its base facts must exist before any check runs.
 			this.getStream(projectFunctions).forEach(func -> {
-				LOG.info("Checking function: " + func + ".");
-
-				// Find out if it's hybrid via the tf.function decorator.
 				LOG.info("Discovering if " + func + " is hybrid.");
 				func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+			});
+
+			// Which functions have every known call path dominated by a hybridized caller (issue 767, phase 1): an advisory and a
+			// measurement column, never a decision.
+			Set<Function> callerCovered = Function.computeCallerCoverage(projectFunctions, callGraph);
+			projectFunctions.forEach(func -> func.setCallerCovered(callerCovered.contains(func)));
+
+			this.getStream(projectFunctions).forEach(func -> {
+				LOG.info("Checking function: " + func + ".");
 
 				try {
 					func.inferTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
