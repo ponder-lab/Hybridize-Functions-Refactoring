@@ -585,10 +585,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
-				"numpy calls on parameters", "autograph", "experimental_autograph_options", "experimental_follow_type_hints",
-				"experimental_implements", "func", "input_signature", "supplied input_signature", "jit_compile", "reduce_retracing",
-				"inferred input_signature", "input_signature relation", "input_signature absence reason", "refactoring",
-				"passing precondition", "status");
+				"numpy calls on parameters", "invalid name arguments", "autograph", "experimental_autograph_options",
+				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
+				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
+				"refactoring", "passing precondition", "status");
 	}
 
 	/**
@@ -711,7 +711,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
-				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters());
+				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
+				function.getHasInvalidNameArguments());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
