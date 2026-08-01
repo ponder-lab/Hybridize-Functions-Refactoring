@@ -1198,8 +1198,8 @@ public class Function {
 									// Advisory only (issue 767, phase 1): the conversion still proceeds; the evaluation measures
 									// the flagged population before any enforcement.
 									this.addInfo(Information.CALLER_COVERAGE,
-											"This function is always called from hybridized code, so its computation is already "
-													+ "traced; hybridizing it may add no benefit.");
+											"Every known call path to this function comes from hybridized code, so its computation "
+													+ "is already traced; hybridizing it may add no benefit.");
 
 								/*
 								 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change
@@ -1803,12 +1803,6 @@ public class Function {
 	}
 
 	/**
-	 * Sets whether every known call path to this {@link Function} is dominated by a hybridized caller (the processor's project-wide
-	 * caller-coverage pass; issue 767).
-	 *
-	 * @param callerCovered Whether this function is caller-covered.
-	 */
-	/**
 	 * Computes which of {@code functions} have every known call path dominated by a hybridized caller (issue 767, phase 1), delegating to
 	 * the package-private {@link CallerCoverageAnalysis}. Hybridization must already be computed for every function.
 	 *
@@ -1820,6 +1814,12 @@ public class Function {
 		return CallerCoverageAnalysis.computeCovered(functions, callGraph);
 	}
 
+	/**
+	 * Sets whether every known call path to this {@link Function} is dominated by a hybridized caller (the processor's project-wide
+	 * caller-coverage pass; issue 767).
+	 *
+	 * @param callerCovered Whether this function is caller-covered.
+	 */
 	public void setCallerCovered(boolean callerCovered) {
 		this.callerCovered = callerCovered;
 	}
