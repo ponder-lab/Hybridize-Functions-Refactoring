@@ -39,6 +39,11 @@ def casted(x):
     return tf.cast(x, x.dtype) * 2.0
 
 
+def prefixed(x):
+    dims = x.shape[:1]
+    return tf.reshape(x, [dims[0], -1])
+
+
 a = tf.ones((2, 4))
 b = tf.ones((2, 5))
 
@@ -57,3 +62,5 @@ assert keras_static(a).shape == (4,)
 assert keras_static(b).shape == (5,)
 assert casted(a).shape == (2, 4)
 assert casted(b).shape == (2, 5)
+assert prefixed(a).shape == (2, 4)
+assert prefixed(b).shape == (2, 5)
