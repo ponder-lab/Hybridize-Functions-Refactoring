@@ -85,6 +85,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.text.edits.TextEdit;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -502,6 +503,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		if (ADD_NUMPY_TO_FORCED_BUILTINS)
 			info.addForcedLib("numpy");
+	}
+
+	/**
+	 * Clears the static analysis caches after each test. The caches key on per-test artifacts (call graph nodes, tensor-type analyses), so
+	 * entries written by one test are never read by another; without clearing, every test's call graph is retained for the remainder of the
+	 * suite run. The evaluator clears per project for the same reason; only {@code analyzeAccuracyYPredAtDepth} cleared here, for its own
+	 * within-test reason. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/798.
+	 */
+	@After
+	@SuppressWarnings("static-method") // JUnit 4 requires @After methods to be instance methods.
+	public void clearAnalysisCaches() {
+		Function.clearCaches();
 	}
 
 	@AfterClass
