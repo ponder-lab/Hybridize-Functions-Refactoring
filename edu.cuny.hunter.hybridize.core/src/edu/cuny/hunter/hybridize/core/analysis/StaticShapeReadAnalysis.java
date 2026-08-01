@@ -49,8 +49,9 @@ import com.ibm.wala.types.MethodReference;
  * <p>
  * Sinks are the enumerated consumption sites observed in the corpus (extensible by adding a constant and a membership entry; a new sink is
  * not a new {@link PreconditionFailure}): a weight shape passed to {@code add_weight} in a layer's {@code build}, a
- * {@code tf.reshape}/{@code tf.range} target, and integer arithmetic over a dimension. Element-through-container flow into a reshape target
- * list is followed by coloring the written container ({@link PythonPropertyWrite}).
+ * {@code tf.reshape}/{@code tf.range} target, integer arithmetic over a dimension, and a slice bound (where a wildcard's {@code None}
+ * silently means "to the end" rather than raising). Element-through-container flow into a reshape target list is followed by coloring the
+ * written container ({@link PythonPropertyWrite}).
  * <p>
  * Keras lazy-{@code build} reachability: a layer's own {@code build} is a call-graph <em>sibling</em> of {@code call} (both hang off the
  * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to the
@@ -456,20 +457,30 @@ class StaticShapeReadAnalysis {
 			return true;
 		}
 
-		// A `x[a:b:c]` subscript of a shape vector narrows the covered axes; of a tensor value it yields a sub-tensor (fall through to
-		// the generic invoke handling, which keeps the value color).
-		if (!valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1 && invoke.getUse(1) == valueNumber
-				&& shapeDescriptors.containsKey(valueNumber)) {
-			AxisRead base = shapeDescriptors.get(valueNumber);
-			// Slicing an already-narrowed vector is not composed (mirroring the numpy walk's policy): coverage drops to unknown,
-			// the conservative direction here.
-			Set<Integer> dims = base.axes() == null ? this.resolveSliceAxes(node, invoke, defUse) : null;
-			AxisRead narrowed = new AxisRead(base.parameterOrdinals(), dims);
+		if (!valueColored && invokesSliceBuiltin(invoke, defUse) && shapeDescriptors.containsKey(valueNumber)) {
+			// A `x[a:b:c]` subscript of a shape vector narrows the covered axes; of a tensor value it yields a sub-tensor (the
+			// generic invoke handling keeps the value color).
+			if (invoke.getNumberOfUses() > 1 && invoke.getUse(1) == valueNumber) {
+				AxisRead base = shapeDescriptors.get(valueNumber);
+				// Slicing an already-narrowed vector is not composed (mirroring the numpy walk's policy): coverage drops to
+				// unknown, the conservative direction here.
+				Set<Integer> dims = base.axes() == null ? this.resolveSliceAxes(node, invoke, defUse) : null;
+				AxisRead narrowed = new AxisRead(base.parameterOrdinals(), dims);
 
-			for (int d = 0; d < invoke.getNumberOfDefs(); d++)
-				colorShape(invoke.getDef(d), narrowed, valueProvenance, shapeDescriptors, worklist);
+				for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+					colorShape(invoke.getDef(d), narrowed, valueProvenance, shapeDescriptors, worklist);
 
-			return true;
+				return true;
+			}
+
+			// A statically-read dimension flowing into a slice BOUND is a sink: under a wildcard the bound is None, and `[:None]`
+			// silently means "to the end", the DynamicPositionEmbedding misbehavior of issue 811, so this consumption must decline
+			// even though it never raises.
+			for (int j = 2; j < Math.min(invoke.getNumberOfUses(), 5); j++)
+				if (invoke.getUse(j) == valueNumber) {
+					reads.add(shapeDescriptors.get(valueNumber));
+					return true;
+				}
 		}
 
 		return false;

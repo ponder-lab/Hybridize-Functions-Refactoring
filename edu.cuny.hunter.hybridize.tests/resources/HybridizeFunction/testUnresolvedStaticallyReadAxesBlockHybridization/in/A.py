@@ -44,6 +44,10 @@ def prefixed(x):
     return tf.reshape(x, [dims[0], -1])
 
 
+def bounded(x):
+    return tf.ones((6, 3))[: x.shape[1]]
+
+
 a = tf.ones((2, 4))
 b = tf.ones((2, 5))
 
@@ -64,3 +68,5 @@ assert casted(a).shape == (2, 4)
 assert casted(b).shape == (2, 5)
 assert prefixed(a).shape == (2, 4)
 assert prefixed(b).shape == (2, 5)
+assert bounded(a).shape == (4, 3)
+assert bounded(b).shape == (5, 3)

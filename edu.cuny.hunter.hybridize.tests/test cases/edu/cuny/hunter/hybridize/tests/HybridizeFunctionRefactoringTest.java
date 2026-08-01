@@ -10045,7 +10045,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code sliced} pins the subscript-of-a-narrowed-slice composition ({@code x.shape[-2:]} then {@code dims[1]} is axis -1, not axis 1);
 	 * {@code extracted} pins the read crossing a user-defined shape extractor's return; {@code keras_static} pins {@code K.int_shape} as a
 	 * static read; {@code casted} launders a {@code dtype} read and remains P1; {@code prefixed} reads only axis 0 through a prefix slice,
-	 * which its signature pins, so the per-axis condition admits it beside the wild axis 1.
+	 * which its signature pins, so the per-axis condition admits it beside the wild axis 1; {@code bounded} feeds the wild axis into a
+	 * slice bound, the silent-misbehavior consumption, and is declined.
 	 */
 	@Test
 	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
@@ -10096,6 +10097,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function casted = getFunction("casted");
 		assertFalse("`casted` reads only `x.dtype`, a trace-time constant.", casted.getHasUnresolvedStaticallyReadAxes());
 		assertEquals("`casted` still hybridizes (P1).", P1, casted.getPassingPrecondition());
+
+		Function bounded = getFunction("bounded");
+		assertTrue("`bounded` feeds `x.shape[1]` into a slice bound, where a wildcard's None silently means to-the-end.",
+				bounded.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`bounded` must not pass a precondition.", bounded.getPassingPrecondition());
+		assertNotNull("`bounded` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", bounded.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
 
 		Function prefixed = getFunction("prefixed");
 		assertFalse("`prefixed` reads only axis 0 through `x.shape[:1]`, which its signature pins.",
