@@ -9997,6 +9997,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the invalid-name-argument safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814): a
+	 * function that passes a non-string constant where a TensorFlow API declares its {@code name} parameter must not hybridize, since eager
+	 * execution never validates the name but tracing opens a name scope with it and raises (it fails with
+	 * {@link PreconditionFailure#HAS_INVALID_NAME_ARGUMENTS}). Covers each flagged constant kind across both binding forms: a dtype
+	 * constant positionally ({@code evaluate}, distilling word2vec's {@code evaluate}) and by keyword ({@code annotate}), a numeric literal
+	 * positionally ({@code scale}), and a boolean literal by keyword ({@code toggle}); {@code compute} passes a string name to the same op
+	 * and remains P1.
+	 */
+	@Test
+	public void testInvalidNameArgumentsBlockHybridization() throws Exception {
+		Function evaluate = getFunction("evaluate");
+		assertTrue("`evaluate` passes `tf.float32` positionally where `tf.sqrt` declares `name`.", evaluate.getHasInvalidNameArguments());
+		assertNull("`evaluate` must not pass a precondition; tracing validates its name argument.", evaluate.getPassingPrecondition());
+		assertNotNull("`evaluate` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				evaluate.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function annotate = getFunction("annotate");
+		assertTrue("`annotate` passes `tf.float32` as the `name` keyword argument.", annotate.getHasInvalidNameArguments());
+		assertNull("`annotate` must not pass a precondition; tracing validates its name argument.", annotate.getPassingPrecondition());
+		assertNotNull("`annotate` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				annotate.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function scale = getFunction("scale");
+		assertTrue("`scale` passes a numeric literal positionally where `tf.sqrt` declares `name`.", scale.getHasInvalidNameArguments());
+		assertNotNull("`scale` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				scale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function toggle = getFunction("toggle");
+		assertTrue("`toggle` passes a boolean literal as the `name` keyword argument.", toggle.getHasInvalidNameArguments());
+		assertNotNull("`toggle` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				toggle.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function compute = getFunction("compute");
+		assertFalse("`compute` passes a string name to `tf.sqrt`.", compute.getHasInvalidNameArguments());
+		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the trace-time-availability carve-out of the parameter-flow numpy precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): numpy over a parameter's {@code shape} is benign under
 	 * {@code tf.function} tracing (the shape is an ordinary Python object at trace time), so a {@code shape} read launders the taint and

@@ -60,7 +60,15 @@ public enum PreconditionFailure {
 	 * {@code tf.function} tracing once the parameters become symbolic tensors, so hybridization would not preserve semantics. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 */
-	HAS_NUMPY_CALLS_ON_PARAMETERS(16);
+	HAS_NUMPY_CALLS_ON_PARAMETERS(16),
+
+	/**
+	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
+	 * {@code tf.sqrt(x, tf.float32)}). Eager execution never validates the name, but {@code tf.function} tracing opens a name scope with it
+	 * and raises, so hybridization would not preserve semantics. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 */
+	HAS_INVALID_NAME_ARGUMENTS(17);
 
 	static {
 		// check that the codes are unique.

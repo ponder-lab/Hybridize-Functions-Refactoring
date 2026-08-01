@@ -475,6 +475,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
 					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis(), analysis);
 
+				// Check whether the function passes a non-string constant where a TensorFlow API declares `name` (issue 814). Its
+				// failure is reachable in the same precondition region as the other safety checks, but the scan is purely
+				// syntactic—no call-graph prerequisite and negligible cost—so it runs unconditionally rather than sharing the gate.
+				func.computeInvalidNameArguments();
+
 				// check the function preconditions.
 				func.check();
 
