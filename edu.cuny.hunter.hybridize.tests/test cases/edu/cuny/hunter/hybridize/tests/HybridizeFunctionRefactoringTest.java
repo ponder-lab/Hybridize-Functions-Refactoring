@@ -7081,9 +7081,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} collapsed the contexts into a single, unsound concrete shape, and
 	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} separated them (wala/ML#587). As of Ariadne 0.52.16, layer-method
 	 * trampolines are keyed on the receiver instance (ponder-lab/ML#520), which separates the model-forward contexts at any depth: both
-	 * depths now yield the identical sound set, the concrete training shape plus the wildcard ({@code null}-dims) over-approximation
-	 * covering the test call site. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no longer
-	 * demonstrate depth sensitivity.
+	 * depths yield the identical sound set. Through Ariadne 0.52.36 that set was the concrete training shape plus the wildcard
+	 * ({@code null}-dims) over-approximation covering the test call site; as of 0.52.76 the test call site resolves concretely, so the set
+	 * is the two concrete call-site shapes. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no
+	 * longer demonstrate depth sensitivity.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
@@ -9657,7 +9658,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code unknown}-dtype form drops, so {@code pred} is {@code float32} throughout (wala/ML#677 closed); the batch and sequence axes,
 	 * evidence-free and hence {@code Unresolved} at 0.52.26/27, become {@code Dynamic}, the deeper walk having reached the model's static
 	 * shape and confirmed the runtime {@code None} (the wala/ML#721 evidence criterion, so the sharper classification, not a regression);
-	 * and the rank-unknown {@code float32} form resolves to a rank-4 {@code (Dynamic, Dynamic, 8, 8)}.
+	 * and the rank-unknown {@code float32} form resolved to a rank-4 {@code (Dynamic, Dynamic, 8, 8)}. As of Ariadne 0.52.76, the batch
+	 * axis sharpens further to the concrete extent (symbolic in the one context that does not recover it), matching the
+	 * {@code padded_batch(32)} pipeline, and the rank-4 member (the attention-internal d_model shape that had leaked into the call result)
+	 * no longer appears; the assertions below pin that state.
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
@@ -9675,10 +9679,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Set.of(new TensorType(INT32, List.of(new NumericDim(32), DynamicDim.INSTANCE)),
 						new TensorType(INT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE))),
 				findParameter(fns, "real").getTensorTypes());
-		// The `unknown`-dtype form the wala/ML#677 TODO tracked dropped at the Ariadne 0.52.36 bump (its 0.52.35 shape-recovery work):
-		// `pred`
-		// is `float32` throughout, and the batch/sequence axes are now the evidence-based `Dynamic` rather than the conservative
-		// `Unresolved`.
+		// At the Ariadne 0.52.36 bump (its 0.52.35 shape-recovery work), the `unknown`-dtype form the wala/ML#677 TODO tracked
+		// dropped, `pred` became `float32` throughout, and the batch/sequence axes became the evidence-based `Dynamic`.
 		// The 0.52.76 bump improves `pred` the same way as `real`: the batch axis is the concrete extent (or symbolic where the
 		// context does not recover it) rather than `Dynamic`, and the spurious rank-4 `(Dynamic, Dynamic, 8, 8)` member (the
 		// attention-internal d_model shape leaking into the call result) no longer appears.
