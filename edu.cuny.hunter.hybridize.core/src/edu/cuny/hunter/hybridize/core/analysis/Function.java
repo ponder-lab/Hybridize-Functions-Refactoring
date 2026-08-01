@@ -1604,8 +1604,27 @@ public class Function {
 	 * @param pointerAnalysis The pointer analysis.
 	 */
 	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
-		// Without an emitted signature there is no wildcard to break on: inference off or blocked is determinately safe.
-		if (!this.getInferInputSignatures() || !(this.inferInputSignature() instanceof InferenceResult.Inferred)) {
+		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
+		if (!this.getInferInputSignatures()) {
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		InferenceResult result;
+
+		try {
+			result = this.inferInputSignature();
+		} catch (IllegalStateException _) {
+			// The degenerate no-spec state throws: inference's contract expects tensor-parameter-gated callers, which the
+			// measurement override (alwaysCheckStaticShapeReads) is not. Nothing can be emitted there, so it is the same
+			// determinate pass as a blocked inference.
+			LOG.info("No inferable signature for " + this + "; the statically-read-axis check passes determinately.");
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		// A blocked inference emits nothing either: determinately safe.
+		if (!(result instanceof InferenceResult.Inferred)) {
 			this.hasUnresolvedStaticallyReadAxes = FALSE;
 			return;
 		}
