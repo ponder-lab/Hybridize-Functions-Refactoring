@@ -10174,6 +10174,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`stale_read` fails with HAS_STALE_VARIABLE_READS.",
 				staleRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
 
+		Function compiledStale = getFunction("compiled_stale");
+		assertTrue("`compiled_stale`'s earlier `model.compile` builds nothing, so it must not suppress the stale read.",
+				compiledStale.getHasStaleVariableReads());
+		assertNull("`compiled_stale` must not pass a precondition.", compiledStale.getPassingPrecondition());
+		assertNotNull("`compiled_stale` fails with HAS_STALE_VARIABLE_READS.",
+				compiledStale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
 		Function freshRead = getFunction("fresh_read");
 		assertFalse("`fresh_read` reads the collection after the forward pass builds the model.", freshRead.getHasStaleVariableReads());
 		assertEquals("`fresh_read` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());

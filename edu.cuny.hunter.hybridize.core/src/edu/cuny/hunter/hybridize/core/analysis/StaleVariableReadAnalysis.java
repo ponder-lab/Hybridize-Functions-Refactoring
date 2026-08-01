@@ -56,6 +56,13 @@ class StaleVariableReadAnalysis {
 	private static final Set<String> CONSUMER_MEMBER_NAMES = Set.of("apply_gradients", "minimize", "gradient");
 
 	/**
+	 * Member names whose invocation populates a model's variable collection (the lazy build sites), beside a direct call of the receiver.
+	 * Other member invocations ({@code compile}, {@code summary}, ...) do not build, so they must not register as receiver invocations:
+	 * counting them would suppress a genuinely stale read ordered after them.
+	 */
+	private static final Set<String> BUILDING_MEMBER_NAMES = Set.of("call", "__call__", "build", "fit");
+
+	/**
 	 * True iff {@code node}'s body snapshots a receiver's variable collection before that receiver's first invocation in the body, invokes
 	 * the receiver later (the in-trace build that engages the lifting re-trace), and feeds the snapshot to a consumer.
 	 *
@@ -84,7 +91,7 @@ class StaleVariableReadAnalysis {
 				continue;
 
 			if (instruction instanceof PythonInvokeInstruction invoke) {
-				String root = this.rootToken(node, invoke.getUse(0), defUse);
+				String root = this.receiverInvocationRoot(node, invoke, defUse);
 
 				if (root != null)
 					invocationPositionsByRoot.computeIfAbsent(root, r -> new ArrayList<>()).add(i);
@@ -150,6 +157,22 @@ class StaleVariableReadAnalysis {
 		}
 
 		return false;
+	}
+
+	/**
+	 * The receiver-root token of an invocation that populates the receiver's variable collection: a direct call of the receiver, or a
+	 * building member ({@link #BUILDING_MEMBER_NAMES}). {@code null} for any other member invocation, which builds nothing and therefore
+	 * neither suppresses a later stale read nor counts as the in-trace build.
+	 */
+	private String receiverInvocationRoot(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (def instanceof PythonPropertyRead read) {
+			String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+			return member != null && BUILDING_MEMBER_NAMES.contains(member) ? this.rootToken(node, read.getObjectRef(), defUse) : null;
+		}
+
+		return this.rootToken(node, invoke.getUse(0), defUse);
 	}
 
 	/** True iff {@code invoke}'s callee is a property read of a consumer member name. */

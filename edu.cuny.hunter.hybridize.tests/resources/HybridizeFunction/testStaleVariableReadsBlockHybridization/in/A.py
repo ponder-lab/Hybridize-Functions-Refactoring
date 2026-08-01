@@ -23,6 +23,16 @@ def stale_read(x):
     return loss
 
 
+def compiled_stale(x):
+    model.compile(optimizer="sgd", loss="mse")
+    tv = model.trainable_variables
+    with tf.GradientTape() as g:
+        loss = tf.reduce_sum(model(x))
+    grads = g.gradient(loss, tv)
+    optimizer.apply_gradients(zip(grads, tv))
+    return loss
+
+
 def fresh_read(x):
     with tf.GradientTape() as g:
         loss = tf.reduce_sum(model(x))
@@ -39,3 +49,4 @@ a = tf.ones((2, 3))
 assert stale_read(a).shape == ()
 assert stale_read(a).shape == ()
 assert fresh_read(a).shape == ()
+assert compiled_stale(a).shape == ()

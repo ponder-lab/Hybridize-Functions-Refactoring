@@ -1175,7 +1175,7 @@ public class Function {
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
 								// family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_STALE_VARIABLE_READS,
-										"Can't hybridize a function that reads a model's variables before the model has been called; "
+										"Can't hybridize a function that reads a model's variables before calling the model in its body; "
 												+ "tracing would create optimizer state after the first trace.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
