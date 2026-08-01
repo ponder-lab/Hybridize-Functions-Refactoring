@@ -115,6 +115,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckStaleVariableReads;
 
+	private boolean alwaysCheckTensorIteration;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -503,6 +505,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
 					func.computeStaleVariableReads(callGraph, builder.getPointerAnalysis());
 
+				// Check whether the function iterates a parameter-derived tensor (issue 830). Same reachable region, same gate;
+				// overridable independently via alwaysCheckTensorIteration.
+				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
+					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
+
 				// check the function preconditions.
 				func.check();
 
@@ -835,6 +842,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckStaleVariableReads(boolean alwaysCheckStaleVariableReads) {
 		this.alwaysCheckStaleVariableReads = alwaysCheckStaleVariableReads;
+	}
+
+	public boolean getAlwaysCheckTensorIteration() {
+		return this.alwaysCheckTensorIteration;
+	}
+
+	/**
+	 * Force the tensor-iteration check (issue 830) on every candidate, not only tensor-parameter ones. Off by default; for measurement,
+	 * mirroring {@code alwaysCheckStaleVariableReads}.
+	 *
+	 * @param alwaysCheckTensorIteration Whether to always compute whether a tensor parameter is iterated.
+	 */
+	public void setAlwaysCheckTensorIteration(boolean alwaysCheckTensorIteration) {
+		this.alwaysCheckTensorIteration = alwaysCheckTensorIteration;
 	}
 
 	@Override

@@ -967,6 +967,13 @@ public class Function {
 	private Boolean callerCovered;
 
 	/**
+	 * True iff this {@link Function}'s body iterates a parameter-derived, tensor-typed value, which raises under {@code tf.function}
+	 * tracing once the parameter is symbolic. {@code null} when it could not be determined (no call-graph node), in which case the
+	 * precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 */
+	private Boolean hasTensorParameterIteration;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1185,6 +1192,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_STALE_VARIABLE_READS,
 										"Can't hybridize a function that reads a model's variables before calling the model in its body; "
 												+ "tracing would create optimizer state after the first trace.");
+							else if (this.getHasTensorParameterIteration() != null && this.getHasTensorParameterIteration())
+								// Iterates a parameter-derived tensor, which raises under tracing once the parameter is symbolic
+								// (issue 830). The sixth safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION,
+										"Can't hybridize a function that iterates one of its tensor arguments with a Python loop; "
+												+ "tracing makes the argument symbolic, which cannot be iterated.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1800,6 +1813,52 @@ public class Function {
 	 */
 	public Boolean getHasStaleVariableReads() {
 		return this.hasStaleVariableReads;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
+	 * {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the parameter is symbolic and iterating it
+	 * raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at earlier Ariadne
+	 * versions). When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
+	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
+	 */
+	public void computeTensorParameterIteration(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " iterates a tensor parameter.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " iterates a tensor parameter without a call graph node.");
+			return;
+		}
+
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
+		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
+
+		this.hasTensorParameterIteration = iterates;
+
+		LOG.info(this + (iterates ? " iterates a tensor parameter." : " iterates no tensor parameter."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body iterates a parameter-derived, tensor-typed value, {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter is iterated, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterIteration() {
+		return this.hasTensorParameterIteration;
 	}
 
 	/**
