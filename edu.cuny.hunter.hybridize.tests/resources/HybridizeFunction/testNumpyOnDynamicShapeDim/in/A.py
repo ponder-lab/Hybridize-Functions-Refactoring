@@ -27,6 +27,6 @@ w = tf.ones((5, 2))
 crashed = False
 try:
     head_over_dynamic(inp, w)
-except Exception:
+except TypeError:
     crashed = True
 assert crashed
