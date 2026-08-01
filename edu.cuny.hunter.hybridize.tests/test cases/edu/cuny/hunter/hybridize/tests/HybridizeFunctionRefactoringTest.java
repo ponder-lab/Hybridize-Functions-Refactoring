@@ -10042,6 +10042,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * arithmetic over a directly-read axis ({@code arith}, distilling {@code RelativeGlobalAttention._qe_masking}) and a reshape target fed
 	 * by a derived tensor's static read ({@code reshape_derived}, distilling {@code _skewing}); {@code dynamic_read} consumes
 	 * {@code tf.shape(x)[1]} (safe under a wildcard) and {@code pinned} reads an axis its call sites keep concrete, so both remain P1.
+	 * {@code sliced} pins the subscript-of-a-narrowed-slice composition ({@code x.shape[-2:]} then {@code dims[1]} is axis -1, not axis 1);
+	 * {@code extracted} pins the read crossing a user-defined shape extractor's return; {@code keras_static} pins {@code K.int_shape} as a
+	 * static read; {@code casted} launders a {@code dtype} read and remains P1.
 	 */
 	@Test
 	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
@@ -10069,6 +10072,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`pinned` reads an axis every call site keeps concrete, so the signature pins it.",
 				pinned.getHasUnresolvedStaticallyReadAxes());
 		assertEquals("`pinned` still hybridizes (P1).", P1, pinned.getPassingPrecondition());
+
+		Function sliced = getFunction("sliced");
+		assertTrue("`sliced` subscripts `x.shape[-2:]` at 1, which is axis -1, unresolved in its signature.",
+				sliced.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`sliced` must not pass a precondition.", sliced.getPassingPrecondition());
+		assertNotNull("`sliced` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", sliced.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function extracted = getFunction("extracted");
+		assertTrue("`extracted` reads axis 1 through `dims_of`'s returned shape vector.", extracted.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`extracted` must not pass a precondition.", extracted.getPassingPrecondition());
+		assertNotNull("`extracted` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", extracted.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function kerasStatic = getFunction("keras_static");
+		assertTrue("`keras_static` reads axis 1 statically via `K.int_shape`.", kerasStatic.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`keras_static` must not pass a precondition.", kerasStatic.getPassingPrecondition());
+		assertNotNull("`keras_static` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", kerasStatic.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function casted = getFunction("casted");
+		assertFalse("`casted` reads only `x.dtype`, a trace-time constant.", casted.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`casted` still hybridizes (P1).", P1, casted.getPassingPrecondition());
 	}
 
 	/**

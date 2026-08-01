@@ -1,10 +1,12 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -119,7 +121,10 @@ class StaticShapeReadAnalysis {
 	 */
 	record AxisRead(Set<Integer> parameterOrdinals, Set<Integer> axes) {
 
-		/** The union join of two axis reads; {@code null} (unknown) absorbs. */
+		/**
+		 * The union join of two axis reads. A {@code null} <em>argument</em> is the identity (no prior read to merge with); a {@code null}
+		 * <em>field</em> (unknown provenance or coverage) absorbs, so the union of anything with unknown is unknown.
+		 */
 		static AxisRead join(AxisRead a, AxisRead b) {
 			if (a == null)
 				return b;
@@ -315,12 +320,20 @@ class StaticShapeReadAnalysis {
 					}
 
 					// A constant subscript of a shape vector extracts one dimension: narrow the descriptor to that axis. A negative
-					// index stays negative; the consumer resolves it against the spec's own rank.
+					// index stays negative; the consumer resolves it against the spec's own rank. Subscripting an already-narrowed
+					// vector (the `x.shape[-2:]` then `dims[0]` idiom) composes: the index selects within the covered run, whose
+					// order is ascending, not within the original shape.
 					if (!valueColored && shapeDescriptors.containsKey(valueNumber)) {
 						Integer index = this.resolveIntConstant(node, read.getMemberRef(), defUse);
 						AxisRead base = shapeDescriptors.get(valueNumber);
-						AxisRead narrowed = index == null ? new AxisRead(base.parameterOrdinals(), null)
-								: new AxisRead(base.parameterOrdinals(), Set.of(index));
+						AxisRead narrowed;
+
+						if (index == null)
+							narrowed = new AxisRead(base.parameterOrdinals(), null);
+						else if (base.axes() == null)
+							narrowed = new AxisRead(base.parameterOrdinals(), Set.of(index));
+						else
+							narrowed = new AxisRead(base.parameterOrdinals(), composeSubscript(base.axes(), index));
 
 						for (int d = 0; d < read.getNumberOfDefs(); d++)
 							colorShape(read.getDef(d), narrowed, valueProvenance, shapeDescriptors, worklist);
@@ -448,7 +461,9 @@ class StaticShapeReadAnalysis {
 		if (!valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1 && invoke.getUse(1) == valueNumber
 				&& shapeDescriptors.containsKey(valueNumber)) {
 			AxisRead base = shapeDescriptors.get(valueNumber);
-			Set<Integer> dims = this.resolveSliceAxes(node, invoke, defUse);
+			// Slicing an already-narrowed vector is not composed (mirroring the numpy walk's policy): coverage drops to unknown,
+			// the conservative direction here.
+			Set<Integer> dims = base.axes() == null ? this.resolveSliceAxes(node, invoke, defUse) : null;
 			AxisRead narrowed = new AxisRead(base.parameterOrdinals(), dims);
 
 			for (int d = 0; d < invoke.getNumberOfDefs(); d++)
@@ -661,6 +676,21 @@ class StaticShapeReadAnalysis {
 
 	/** The maximum slice extent modeled precisely; see {@link NumpyParameterFlowAnalysis}'s rationale. */
 	private static final int MAX_SLICE_EXTENT = 32;
+
+	/**
+	 * The axis selected by subscripting a shape vector already narrowed to {@code covered} at {@code index}: the covered run is ordered
+	 * ascending (a slice yields a pure prefix, suffix, or absolute range), and the subscript selects within that run, negative from its
+	 * end. {@code null} (unknown coverage) when the subscript falls outside the run, the conservative direction.
+	 *
+	 * @param covered The covered axes of the narrowed vector.
+	 * @param index The subscript into the narrowed vector.
+	 * @return The selected axis as a singleton set, or {@code null} when the subscript falls outside the covered run.
+	 */
+	private static Set<Integer> composeSubscript(Set<Integer> covered, int index) {
+		List<Integer> ordered = new ArrayList<>(new TreeSet<>(covered));
+		int resolved = index < 0 ? ordered.size() + index : index;
+		return resolved >= 0 && resolved < ordered.size() ? Set.of(ordered.get(resolved)) : null;
+	}
 
 	/**
 	 * Resolves {@code value} in {@code node} to an integer constant, or {@code null} if it cannot be resolved: a symbol-table literal, a
