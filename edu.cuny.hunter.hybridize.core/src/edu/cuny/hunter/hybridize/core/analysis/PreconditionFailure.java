@@ -68,7 +68,16 @@ public enum PreconditionFailure {
 	 * and raises, so hybridization would not preserve semantics. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
-	HAS_INVALID_NAME_ARGUMENTS(17);
+	HAS_INVALID_NAME_ARGUMENTS(17),
+
+	/**
+	 * The inferred input signature leaves unresolved (wildcard) a parameter axis that the function's body (transitively) reads statically
+	 * and consumes where a Python integer is required (a weight shape, a reshape target, or integer arithmetic). Under the emitted
+	 * signature such an axis is {@code None} at trace time, so the consumption raises or silently misbehaves; a dynamic read
+	 * ({@code tf.shape(x)[i]}) is safe and does not disqualify. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 */
+	HAS_UNRESOLVED_STATICALLY_READ_AXES(18);
 
 	static {
 		// check that the codes are unique.

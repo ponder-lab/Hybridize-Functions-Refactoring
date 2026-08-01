@@ -111,6 +111,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckNumpyCalls;
 
+	private boolean alwaysCheckStaticShapeReads;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -480,6 +482,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// syntactic—no call-graph prerequisite and negligible cost—so it runs unconditionally rather than sharing the gate.
 				func.computeInvalidNameArguments();
 
+				// Check whether the inferred input signature leaves unresolved an axis the body reads statically (issue 811). Same
+				// reachable region, same gate; overridable independently via alwaysCheckStaticShapeReads. The compute short-circuits
+				// to a determinate pass when no signature would be emitted.
+				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
+					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -783,6 +791,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckNumpyCalls(boolean alwaysCheckNumpyCalls) {
 		this.alwaysCheckNumpyCalls = alwaysCheckNumpyCalls;
+	}
+
+	public boolean getAlwaysCheckStaticShapeReads() {
+		return this.alwaysCheckStaticShapeReads;
+	}
+
+	/**
+	 * Force the statically-read-axis check (issue 811) on every candidate, not only tensor-parameter ones. Off by default: the check only
+	 * affects a transformation decision when a signature would be emitted for a tensor-parameter candidate, so this is for measurement
+	 * (reporting static shape reads corpus-wide), mirroring {@code alwaysCheckNumpyCalls}.
+	 *
+	 * @param alwaysCheckStaticShapeReads Whether to always compute whether a statically-read axis is unresolved.
+	 */
+	public void setAlwaysCheckStaticShapeReads(boolean alwaysCheckStaticShapeReads) {
+		this.alwaysCheckStaticShapeReads = alwaysCheckStaticShapeReads;
 	}
 
 	@Override
