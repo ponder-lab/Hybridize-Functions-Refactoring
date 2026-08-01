@@ -935,6 +935,22 @@ public class Function {
 	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
 
 	/**
+	 * The per-parameter reduced spec entries from the last successful {@link #computeInputSignature()} run, in declaration order over the
+	 * spec-contributing parameters. Empty until inference produces a signature. Retained so consumers can attribute the reduced spec's
+	 * entries to their {@link Parameter}s (the unresolved statically-read-axis precondition; issue 811).
+	 */
+	private Map<Parameter, InputSignature.SpecEntry> inferredSpecByParameter = Map.of();
+
+	/**
+	 * True iff a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python integer is
+	 * required is left unresolved (wildcard) by the inferred input signature, so emitting that signature would break the function at trace
+	 * time. {@code false} when no signature would be emitted (inference off or absent) or every such axis is concrete; {@code null} when it
+	 * could not be determined (no call-graph node), in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 */
+	private Boolean hasUnresolvedStaticallyReadAxes;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1139,6 +1155,13 @@ public class Function {
 								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
 										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
+							else if (this.getHasUnresolvedStaticallyReadAxes() != null && this.getHasUnresolvedStaticallyReadAxes())
+								// The inferred signature leaves unresolved an axis the body reads statically (issue 811). Emitting it
+								// would break the function at trace time, so the conversion is declined; the fourth safety failure in
+								// the family, also preceding the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+										"Can't hybridize this function with the inferred input signature: "
+												+ "its body reads a tensor dimension the signature leaves unspecified.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1240,9 +1263,14 @@ public class Function {
 						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
 						 * the default precondition matrix unchanged.
 						 */
+						// An unresolved statically-read axis blocks every reconfigure path: writing the inferred signature (adding or
+						// overwriting) would break the function at trace time (issue 811).
+						boolean unresolvedStaticallyReadAxes = this.getHasUnresolvedStaticallyReadAxes() != null
+								&& this.getHasUnresolvedStaticallyReadAxes();
+
 						boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
 								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-								&& this.canEmitInferredInputSignature();
+								&& this.canEmitInferredInputSignature() && !unresolvedStaticallyReadAxes;
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
@@ -1280,6 +1308,13 @@ public class Function {
 									"Functions with no Python literal arguments may benefit from hybridization.");
 							}
 						} else {
+							if (unresolvedStaticallyReadAxes)
+								// Report the honest blocking reason alongside the default terminal failure: the reconfiguration was
+								// declined because writing the inferred signature would break the function (issue 811).
+								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+										"Can't reconfigure this function's input signature: "
+												+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
+
 							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
 
@@ -1553,6 +1588,125 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * Computes whether a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python
+	 * integer is required is left unresolved (wildcard) by the inferred input signature, storing the result for
+	 * {@link #getHasUnresolvedStaticallyReadAxes()}. Under an emitted signature, a wildcard axis is {@code None} at trace time; a static
+	 * read consumed at a weight shape, a reshape target, or integer arithmetic then raises (or silently misbehaves through a
+	 * {@code [:None]} slice). A dynamic read ({@code tf.shape(x)[i]}) is safe and does not disqualify. When no signature would be emitted
+	 * (inference disabled or blocked), the property holds trivially and the result is {@code false}; when the function has no call-graph
+	 * node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		// Without an emitted signature there is no wildcard to break on: inference off or blocked is determinately safe.
+		if (!this.getInferInputSignatures() || !(this.inferInputSignature() instanceof InferenceResult.Inferred)) {
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " statically reads an unresolved axis.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " statically reads an unresolved axis without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
+		// sampling a single node can miss a read at an imprecise context.
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
+
+		for (CGNode node : nodes)
+			reads.addAll(analysis.staticallyReadAxes(node, this.isMethod()));
+
+		boolean unresolved = reads.stream().anyMatch(this::isUnresolvedRead);
+
+		this.hasUnresolvedStaticallyReadAxes = unresolved;
+
+		LOG.info(this + (unresolved ? " statically reads an axis its inferred signature leaves unresolved."
+				: " statically reads no unresolved axis."));
+	}
+
+	/**
+	 * True iff the given axis read is unresolved by the inferred signature: some read axis of some read parameter reduces to a non-concrete
+	 * extent. Lost provenance widens to every spec-contributing parameter and lost coverage to every axis, so the check errs toward
+	 * declining (the conservative default this precondition requires). A parameter without a spec entry was omitted from the signature (a
+	 * defaulted, never-supplied parameter), so its axes come from its concrete default at trace time and are safe.
+	 *
+	 * @param read The axis read to resolve against the inferred signature.
+	 * @return True iff the read consumes an axis the signature leaves unresolved.
+	 */
+	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
+		List<InputSignature.SpecEntry> entries = new ArrayList<>();
+
+		if (read.parameterOrdinals() == null)
+			entries.addAll(this.inferredSpecByParameter.values());
+		else {
+			List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+			for (int ordinal : read.parameterOrdinals())
+				if (ordinal < nonSelfParameters.size()) {
+					InputSignature.SpecEntry entry = this.inferredSpecByParameter.get(nonSelfParameters.get(ordinal));
+
+					if (entry != null)
+						entries.add(entry);
+				}
+		}
+
+		for (InputSignature.SpecEntry entry : entries) {
+			// A container spec's per-element axes are not attributable to the read: conservative.
+			if (!(entry instanceof InputSignature.Single single))
+				return true;
+
+			List<Dimension<?>> dims = single.type().getDims();
+
+			// Shape-⊤ renders `shape=None`: every axis is wild.
+			if (dims == null)
+				return true;
+
+			if (read.axes() == null) {
+				for (Dimension<?> dim : dims)
+					if (!(dim instanceof NumericDim))
+						return true;
+			} else
+				for (int axis : read.axes()) {
+					int index = axis < 0 ? dims.size() + axis : axis;
+
+					// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
+					// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
+					if (index < 0 || index >= dims.size())
+						continue;
+
+					if (!(dims.get(index) instanceof NumericDim))
+						return true;
+				}
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff the inferred input signature leaves a statically-read parameter axis unresolved, {@code null} if undetermined.
+	 *
+	 * @return True iff a statically-read axis is unresolved, null if undetermined.
+	 */
+	public Boolean getHasUnresolvedStaticallyReadAxes() {
+		return this.hasUnresolvedStaticallyReadAxes;
 	}
 
 	/**
@@ -2800,6 +2954,10 @@ public class Function {
 			throw new IllegalStateException("Cannot infer an input signature for `" + this + "`: no non-self parameter contributes a spec ("
 					+ nonSelfParameters.size() + " non-self parameter(s), " + omittable.size()
 					+ " omittable). Refactoring call sites are gated on `getHasTensorParameter()`.");
+
+		// Retain the per-parameter mapping for consumers needing parameter-level attribution of the reduced spec (the unresolved
+		// statically-read-axis precondition resolves its parameter ordinals through it; issue 811).
+		this.inferredSpecByParameter = Collections.unmodifiableMap(specByParameter);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
 	}

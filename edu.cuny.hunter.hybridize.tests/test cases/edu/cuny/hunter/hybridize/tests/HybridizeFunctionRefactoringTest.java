@@ -10035,6 +10035,75 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the unresolved statically-read-axis safety precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when the inferred input signature leaves unresolved an
+	 * axis the body reads statically and consumes where a Python integer is required, emitting it would break the function at trace time,
+	 * so the conversion is declined (it fails with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}). Covers integer
+	 * arithmetic over a directly-read axis ({@code arith}, distilling {@code RelativeGlobalAttention._qe_masking}) and a reshape target fed
+	 * by a derived tensor's static read ({@code reshape_derived}, distilling {@code _skewing}); {@code dynamic_read} consumes
+	 * {@code tf.shape(x)[1]} (safe under a wildcard) and {@code pinned} reads an axis its call sites keep concrete, so both remain P1.
+	 */
+	@Test
+	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function arith = getFunction("arith");
+		assertTrue("`arith` does integer arithmetic over `x.shape[-1]`, which its signature leaves unresolved.",
+				arith.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`arith` must not pass a precondition; the emitted signature would break it.", arith.getPassingPrecondition());
+		assertNotNull("`arith` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", arith.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function reshapeDerived = getFunction("reshape_derived");
+		assertTrue("`reshape_derived` feeds `padded.shape[1]` into a reshape target.", reshapeDerived.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`reshape_derived` must not pass a precondition.", reshapeDerived.getPassingPrecondition());
+		assertNotNull("`reshape_derived` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", reshapeDerived.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function dynamicRead = getFunction("dynamic_read");
+		assertFalse("`dynamic_read` reads its dimension dynamically via `tf.shape`, which a wildcard admits.",
+				dynamicRead.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`dynamic_read` still hybridizes (P1).", P1, dynamicRead.getPassingPrecondition());
+
+		Function pinned = getFunction("pinned");
+		assertFalse("`pinned` reads an axis every call site keeps concrete, so the signature pins it.",
+				pinned.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`pinned` still hybridizes (P1).", P1, pinned.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the Keras lazy-{@code build} reach of the unresolved statically-read-axis precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): a static read need not sit in the decorated function's
+	 * own body. {@code Proj.call} never touches a shape, but its class's {@code build} passes {@code input_shape[-1]} to {@code add_weight}
+	 * (a sibling under the {@code __call__} trampoline, distilling {@code PositionWiseFeedForward}); {@code Outer.call} reaches the same
+	 * read through the sublayer it invokes (distilling {@code Transformer}). {@code Gate.call}'s {@code build} reads {@code input_shape}
+	 * only into an {@code InputSpec}, the negative case that forces the dataflow formulation (distilling {@code WDEmbedding}), and remains
+	 * P1.
+	 */
+	@Test
+	public void testUnresolvedStaticallyReadAxesInKerasBuild() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function projCall = getFunction("Proj.call");
+		assertTrue("`Proj.call`'s own `build` passes `input_shape[-1]` to `add_weight`.", projCall.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`Proj.call` must not pass a precondition.", projCall.getPassingPrecondition());
+		assertNotNull("`Proj.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", projCall.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function outerCall = getFunction("Outer.call");
+		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
+				outerCall.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`Outer.call` must not pass a precondition.", outerCall.getPassingPrecondition());
+		assertNotNull("`Outer.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", outerCall.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function gateCall = getFunction("Gate.call");
+		assertFalse("`Gate.call`'s `build` reads `input_shape` only into an `InputSpec`, which a wildcard admits.",
+				gateCall.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Gate.call` still hybridizes (P1).", P1, gateCall.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the trace-time-availability carve-out of the parameter-flow numpy precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): numpy over a parameter's {@code shape} is benign under
 	 * {@code tf.function} tracing (the shape is an ordinary Python object at trace time), so a {@code shape} read launders the taint and
