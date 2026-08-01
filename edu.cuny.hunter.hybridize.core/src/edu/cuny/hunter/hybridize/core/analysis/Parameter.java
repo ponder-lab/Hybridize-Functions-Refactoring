@@ -902,7 +902,16 @@ public final class Parameter {
 					return;
 				}
 
-				fieldNames.add(constantKey.getValue().toString());
+				String fieldName = constantKey.getValue().toString();
+
+				// wala/ML#773 (Ariadne 0.52.58) stores comprehension elements under the same synthetic channel `append` uses, so a
+				// comprehension-built container's catalog also carries the analysis-internal key alongside its numeric indices. It
+				// is not a program field; filtering it keeps the reduction for containers whose numeric indices are contiguous.
+				// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/807.
+				if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldName))
+					continue;
+
+				fieldNames.add(fieldName);
 			}
 
 			for (int j = 0; j < fieldNames.size(); j++)
