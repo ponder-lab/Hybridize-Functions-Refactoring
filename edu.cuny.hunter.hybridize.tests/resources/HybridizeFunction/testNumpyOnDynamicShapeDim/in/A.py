@@ -20,4 +20,13 @@ def head_over_dynamic(x, w):
 # the earlier `tf.reshape(constant, [-1, 5])` feed no longer suffices.
 inp = tf.keras.Input(shape=(5,))
 w = tf.ones((5, 2))
-head_over_dynamic(inp, w)
+
+# numpy over the dynamic leading axis raises: `get_shape(inp)` is `[None, 5]`, so
+# `np.prod` feeds `None` into the reshape target. The crash is the hazard the
+# analysis pins, so the driver witnesses it rather than exiting nonzero on it.
+crashed = False
+try:
+    head_over_dynamic(inp, w)
+except Exception:
+    crashed = True
+assert crashed
