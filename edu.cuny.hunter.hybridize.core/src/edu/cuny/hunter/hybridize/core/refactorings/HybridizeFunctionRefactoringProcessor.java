@@ -113,6 +113,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckStaticShapeReads;
 
+	private boolean alwaysCheckStaleVariableReads;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -488,6 +490,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
 
+				// Check whether the function snapshots a model's variables before the model's first call (issue 822). Same
+				// reachable region, same gate; overridable independently via alwaysCheckStaleVariableReads.
+				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
+					func.computeStaleVariableReads(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -806,6 +813,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckStaticShapeReads(boolean alwaysCheckStaticShapeReads) {
 		this.alwaysCheckStaticShapeReads = alwaysCheckStaticShapeReads;
+	}
+
+	public boolean getAlwaysCheckStaleVariableReads() {
+		return this.alwaysCheckStaleVariableReads;
+	}
+
+	/**
+	 * Force the stale-variable-read check (issue 822) on every candidate, not only tensor-parameter ones. Off by default; for measurement
+	 * (reporting the stale-snapshot idiom corpus-wide), mirroring {@code alwaysCheckStaticShapeReads}.
+	 *
+	 * @param alwaysCheckStaleVariableReads Whether to always compute whether a stale variable snapshot reaches a consumer.
+	 */
+	public void setAlwaysCheckStaleVariableReads(boolean alwaysCheckStaleVariableReads) {
+		this.alwaysCheckStaleVariableReads = alwaysCheckStaleVariableReads;
 	}
 
 	@Override

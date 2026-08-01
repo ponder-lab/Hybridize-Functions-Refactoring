@@ -10158,6 +10158,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
+	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
+	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
+	 * non-first trace (it fails with {@link PreconditionFailure#HAS_STALE_VARIABLE_READS}). {@code stale_read} distills multigpu_training's
+	 * {@code run_optimization}; {@code fresh_read} reads the collection after the forward pass, the pervasive beneficial idiom, and remains
+	 * P1.
+	 */
+	@Test
+	public void testStaleVariableReadsBlockHybridization() throws Exception {
+		Function staleRead = getFunction("stale_read");
+		assertTrue("`stale_read` snapshots `model.trainable_variables` before `model` is first called.",
+				staleRead.getHasStaleVariableReads());
+		assertNull("`stale_read` must not pass a precondition; tracing would raise on slot creation.", staleRead.getPassingPrecondition());
+		assertNotNull("`stale_read` fails with HAS_STALE_VARIABLE_READS.",
+				staleRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
+		Function compiledStale = getFunction("compiled_stale");
+		assertTrue("`compiled_stale`'s earlier `model.compile` builds nothing, so it must not suppress the stale read.",
+				compiledStale.getHasStaleVariableReads());
+		assertNull("`compiled_stale` must not pass a precondition.", compiledStale.getPassingPrecondition());
+		assertNotNull("`compiled_stale` fails with HAS_STALE_VARIABLE_READS.",
+				compiledStale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
+		Function freshRead = getFunction("fresh_read");
+		assertFalse("`fresh_read` reads the collection after the forward pass builds the model.", freshRead.getHasStaleVariableReads());
+		assertEquals("`fresh_read` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the trace-time-availability carve-out of the parameter-flow numpy precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): numpy over a parameter's {@code shape} is benign under
 	 * {@code tf.function} tracing (the shape is an ordinary Python object at trace time), so a {@code shape} read launders the taint and

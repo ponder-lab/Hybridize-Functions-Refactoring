@@ -161,6 +161,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckStaticShapeReads = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_STATIC_SHAPE_READS.key());
 
+	private boolean alwaysCheckStaleVariableReads = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_STALE_VARIABLE_READS.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -224,8 +226,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"numpy calls", "static shape reads", "type hints", "parallel", "speculative", "test entrypoints", "infer input signatures",
-				"targeted CFA depth" };
+				"numpy calls", "static shape reads", "stale variable reads", "type hints", "parallel", "speculative", "test entrypoints",
+				"infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		resultsHeader.add("time (s)");
@@ -293,6 +295,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckEagerOnlyCalls(this.getAlwaysCheckEagerOnlyCalls());
 					processor.setAlwaysCheckNumpyCalls(this.getAlwaysCheckNumpyCalls());
 					processor.setAlwaysCheckStaticShapeReads(this.getAlwaysCheckStaticShapeReads());
+					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -396,6 +399,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// static shape reads.
 					resultsRecord.add(this.getAlwaysCheckStaticShapeReads());
+
+					// stale variable reads.
+					resultsRecord.add(this.getAlwaysCheckStaleVariableReads());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -591,10 +597,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
-				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "autograph",
-				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
-				"supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation",
-				"input_signature absence reason", "refactoring", "passing precondition", "status");
+				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
+				"autograph", "experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func",
+				"input_signature", "supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature",
+				"input_signature relation", "input_signature absence reason", "refactoring", "passing precondition", "status");
 	}
 
 	/**
@@ -736,7 +742,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
 				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
-				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes());
+				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -850,6 +856,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckStaticShapeReads() {
 		return alwaysCheckStaticShapeReads;
+	}
+
+	public boolean getAlwaysCheckStaleVariableReads() {
+		return alwaysCheckStaleVariableReads;
 	}
 
 	public boolean getProcessFunctionsInParallel() {
