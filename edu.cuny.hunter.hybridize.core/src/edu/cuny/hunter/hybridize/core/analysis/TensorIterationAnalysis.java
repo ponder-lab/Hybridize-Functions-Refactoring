@@ -113,8 +113,11 @@ class TensorIterationAnalysis {
 	}
 
 	/**
-	 * True iff {@code value}'s points-to set includes a container allocation (a list, tuple, dict, or set object): such a value is iterated
-	 * as a Python collection, which tracing unrolls, so it must not fire even though element dataflow gives it tensor typing.
+	 * True iff {@code value}'s points-to set includes a container allocation per {@link Util#isContainerType}, whose set spans the Python
+	 * collections (list, tuple, dict, set) and the {@code enumerate} wrapper: such a value is iterated as a Python collection, which
+	 * tracing unrolls, so it must not fire even though element dataflow gives it tensor typing. Including {@code enumerate} is harmless
+	 * here: an {@code enumerate} result only reaches this exemption after passing the tensor-typed gate, which an enumerate object does
+	 * not.
 	 */
 	private boolean pointsToContainer(CGNode node, int value) {
 		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);

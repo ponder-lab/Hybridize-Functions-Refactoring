@@ -10247,6 +10247,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function listIter = getFunction("list_iter");
 		assertFalse("`list_iter` iterates a Python list of tensors, which tracing unrolls (issue 832).",
 				listIter.getHasTensorParameterIteration());
+		assertEquals("`list_iter` remains convertible (P1), the exemption's whole point.", P1, listIter.getPassingPrecondition());
 
 		Function rangeLoop = getFunction("range_loop");
 		assertFalse("`range_loop` iterates an in-body `tf.range`, the AutoGraph-supported form.",
