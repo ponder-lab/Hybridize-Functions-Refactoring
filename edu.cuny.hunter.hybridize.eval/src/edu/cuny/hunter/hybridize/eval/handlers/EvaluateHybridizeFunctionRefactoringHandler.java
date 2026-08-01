@@ -612,14 +612,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * downstream analysis is a group-by rather than a parse of the joined {@code input_signature} string in {@code functions.csv}. There is
 	 * one row per non-{@code self} parameter of the inferred signature (source {@code "inferred"}) and of the developer-supplied signature
 	 * (source {@code "supplied"}); when inference was blocked, one row per blocking parameter (source {@code "absent"}) carrying its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. The {@code dtype} and {@code shape} columns hold the
-	 * raw per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Every considered function contributes at least one row
+	 * (#816): a function-level absence (no blocking parameter) and inference that never ran are each recorded as a single {@code "absent"}
+	 * row (the latter with reason {@code NOT_ATTEMPTED}), and a supplied signature that could not be fully modeled (e.g., a name reference
+	 * rather than a {@code TensorSpec} list) as a single {@code "supplied"} row with reason {@code UNMODELED}, so a function's absence from
+	 * the transformed set is always explained by something present in the output. The {@code dtype} and {@code shape} columns hold the raw
+	 * per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
 	 * recomputing, so it leaves the function's status untouched.
 	 *
 	 * @param printer The {@code input_signatures.csv} printer.
 	 * @param function The function whose per-parameter signatures to emit.
 	 * @throws IOException If a record cannot be written.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/816">Issue 816</a>
 	 */
 	private static void printInputSignatures(CSVPrinter printer, Function function) throws IOException {
 		// The non-self parameters in declaration order, aligned position-wise with InputSignature.getParameterSpecs().
@@ -627,14 +632,27 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		if (function.getInferredInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), "inferred");
-		else
+		else if (!function.getBlockingParameterReasons().isEmpty())
 			for (var entry : function.getBlockingParameterReasons().entrySet())
 				printer.printRecord(
 						buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue(), null, null));
+		else if (function.getInferredInputSignatureAbsenceReason().isPresent())
+			// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the per-parameter
+			// loop above emits nothing for it.
+			printer.printRecord(buildAttributeColumnValues(function, null, "absent",
+					function.getInferredInputSignatureAbsenceReason().get(), null, null));
+		else
+			// Inference never ran: an earlier precondition stopped the function before any inference call site (whose failure is in
+			// failed_preconditions.csv), or the run had inference disabled.
+			printer.printRecord(buildAttributeColumnValues(function, null, "absent", "NOT_ATTEMPTED", null, null));
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 		if (hybridizationParameters != null && hybridizationParameters.getSuppliedInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), "supplied");
+		else if (hybridizationParameters != null && hybridizationParameters.hasInputSignatureParam())
+			// A signature was supplied but could not be fully modeled; the three-state contract on getSuppliedInputSignature
+			// distinguishes this from "none supplied".
+			printer.printRecord(buildAttributeColumnValues(function, null, "supplied", "UNMODELED", null, null));
 	}
 
 	/**
