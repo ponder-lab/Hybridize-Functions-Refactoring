@@ -992,8 +992,8 @@ public class Function {
 	/**
 	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
 	 * {@code tf.sqrt(x, tf.float32)}), which raises under {@code tf.function} tracing. Unlike the call-graph-based safety checks above,
-	 * this is computed by a syntactic scan of the body, so once {@link #computeInvalidNameArguments()} runs it is never {@code null}. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * this is computed by a syntactic scan of the body. {@code null} when it could not be determined (an AST traversal failure), in which
+	 * case the precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	private Boolean hasInvalidNameArguments;
 
@@ -1577,7 +1577,8 @@ public class Function {
 	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
 	 * parameter, storing the result for {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens
 	 * a name scope with it and raises, so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely
-	 * syntactic scan of the body—no call graph is consulted—so the result is always determined. See
+	 * syntactic scan of the body; no call graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned,
+	 * the result is left {@code null} and the precondition does not block. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	public void computeInvalidNameArguments() {
@@ -1606,7 +1607,9 @@ public class Function {
 				}
 			});
 		} catch (Exception e) {
-			throw new IllegalStateException("Can't scan " + this + " for invalid name arguments.", e);
+			// Undeterminable; leave null so the precondition does not block, mirroring the sibling safety checks.
+			LOG.warn("Can't determine whether " + this + " passes an invalid name argument.", e);
+			return;
 		}
 
 		this.hasInvalidNameArguments = found[0];
@@ -1677,9 +1680,9 @@ public class Function {
 
 	/**
 	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter,
-	 * {@code null} if not yet computed.
+	 * {@code null} if undetermined.
 	 *
-	 * @return True iff this function passes an invalid name argument, null if not yet computed.
+	 * @return True iff this function passes an invalid name argument, null if undetermined.
 	 */
 	public Boolean getHasInvalidNameArguments() {
 		return this.hasInvalidNameArguments;
