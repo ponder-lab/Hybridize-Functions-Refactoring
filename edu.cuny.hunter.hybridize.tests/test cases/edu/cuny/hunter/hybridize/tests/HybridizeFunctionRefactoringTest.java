@@ -8543,6 +8543,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The comprehension-built variant of the sequence reduction (#807): the container's catalog at Ariadne 0.52.58+ carries the
+	 * analysis-internal append-contents key (wala/ML#773 stores comprehension elements under the same channel {@code append} uses)
+	 * alongside its numeric indices. With the synthetic key filtered before the contiguity check, the contiguous singleton reduces exactly
+	 * like the literal-list fixture; without the filter, it declined as non-contiguous.
+	 */
+	@Test
+	public void testInputSignatureContainerComprehension() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 must classify the comprehension-built container.", TRUE, xs.isTensorContainer());
+		assertNotNull("The container's element types must survive the synthetic catalog key (#807).", xs.getContainerElementTypes());
+		assertEquals("A singleton comprehension has one element position.", 1, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("The comprehension-built singleton reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("The nested rendering matches the literal-list fixture's.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * The arity bottom of the sequence reduction (#781): `xs` receives a singleton list at one call site and a two-element list at the
 	 * other. TensorFlow rejects a sequence of a different length than the signature declares and no wildcard length exists, so no single
 	 * nested spec admits both call sites; the parameter blocks as `HETEROGENEOUS_ARITY`, the `|X| != 1` discipline the dtype and sparseness
