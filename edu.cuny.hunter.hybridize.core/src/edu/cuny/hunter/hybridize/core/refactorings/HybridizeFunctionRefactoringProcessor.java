@@ -508,7 +508,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check whether the function iterates a parameter-derived tensor (issue 830). Same reachable region, same gate;
 				// overridable independently via alwaysCheckTensorIteration.
 				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
-					func.computeTensorParameterIteration(callGraph, analysis);
+					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
 
 				// check the function preconditions.
 				func.check();

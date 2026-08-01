@@ -1823,9 +1823,11 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
 	 *
 	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
 	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
 	 */
-	public void computeTensorParameterIteration(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis) {
+	public void computeTensorParameterIteration(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<CGNode> nodes;
 
 		try {
@@ -1842,7 +1844,7 @@ public class Function {
 			return;
 		}
 
-		TensorIterationAnalysis analysis = new TensorIterationAnalysis(tensorTypeAnalysis);
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
 		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
 
 		this.hasTensorParameterIteration = iterates;

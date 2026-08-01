@@ -10239,6 +10239,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`iterate_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", iterateParam.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
+		Function rangeParamBound = getFunction("range_param_bound");
+		assertFalse("`range_param_bound` iterates a `tf.range` whose bound is parameter-derived, the AutoGraph-supported form.",
+				rangeParamBound.getHasTensorParameterIteration());
+		assertEquals("`range_param_bound` still hybridizes (P1).", P1, rangeParamBound.getPassingPrecondition());
+
 		Function rangeLoop = getFunction("range_loop");
 		assertFalse("`range_loop` iterates an in-body `tf.range`, the AutoGraph-supported form.",
 				rangeLoop.getHasTensorParameterIteration());

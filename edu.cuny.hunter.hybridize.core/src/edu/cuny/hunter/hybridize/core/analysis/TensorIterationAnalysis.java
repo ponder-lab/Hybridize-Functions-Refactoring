@@ -12,8 +12,11 @@ import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
@@ -39,7 +42,11 @@ class TensorIterationAnalysis {
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link NumpyParameterFlowAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
 
-	TensorIterationAnalysis(TensorTypeAnalysis tensorTypeAnalysis) {
+	/** The pointer analysis, used to resolve the iterated value's producing callee for the {@code tf.range} exemption. */
+	private final PointerAnalysis<InstanceKey> pointerAnalysis;
+
+	TensorIterationAnalysis(PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+		this.pointerAnalysis = pointerAnalysis;
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -83,8 +90,12 @@ class TensorIterationAnalysis {
 			for (Iterator<SSAInstruction> uses = defUse.getUses(value); uses.hasNext();) {
 				SSAInstruction use = uses.next();
 
+				// The tf.range exemption applies regardless of the bound's provenance: `for i in tf.range(tf.shape(x)[0])` is
+				// AutoGraph-supported (the loop stages to a while loop), so a range result never fires even when its bound is
+				// parameter-derived.
 				if (use instanceof EachElementGetInstruction each && each.getUse(0) == value
-						&& !this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(value, Set.of()).isEmpty())
+						&& !this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(value, Set.of()).isEmpty()
+						&& !this.isRangeResult(node, value, defUse))
 					return true;
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
@@ -97,5 +108,18 @@ class TensorIterationAnalysis {
 		}
 
 		return false;
+	}
+
+	/** The AutoGraph-supported iterable producer: a {@code tf.range} result stages to a while loop rather than raising. */
+	private static final String RANGE_FQN = "tensorflow.range";
+
+	/** True iff {@code value} is defined by a {@code tf.range} invocation. */
+	private boolean isRangeResult(CGNode node, int value, DefUse defUse) {
+		SSAInstruction def = defUse.getDef(value);
+
+		if (!(def instanceof PythonInvokeInstruction invoke))
+			return false;
+
+		return RANGE_FQN.equals(Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis));
 	}
 }

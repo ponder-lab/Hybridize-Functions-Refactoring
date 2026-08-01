@@ -12,6 +12,13 @@ def iterate_param(x):
     return total
 
 
+def range_param_bound(x):
+    acc = tf.reduce_sum(x)
+    for i in tf.range(tf.shape(x)[0]):
+        acc = acc + tf.cast(i, tf.float32)
+    return acc
+
+
 def range_loop(x):
     acc = tf.reduce_sum(x)
     for i in tf.range(2):
@@ -22,3 +29,4 @@ def range_loop(x):
 t = tf.constant([1.0, 2.0, 3.0])
 assert float(iterate_param(t)) == 6.0
 assert float(range_loop(t)) == 7.0
+assert float(range_param_bound(t)) == 9.0
