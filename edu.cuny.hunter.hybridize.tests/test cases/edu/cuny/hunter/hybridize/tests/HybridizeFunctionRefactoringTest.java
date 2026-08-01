@@ -7093,10 +7093,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> deep = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH);
 
 		assertEquals("Receiver-keyed trampolines (Ariadne 0.52.16) make the set depth-invariant.", shallow, deep);
-		assertEquals("The set holds the concrete training shape and the wildcard over-approximation.", 2, deep.size());
-		assertTrue("One member is concrete.", deep.stream().anyMatch(t -> t.getDims() != null));
-		assertTrue("One member is the wildcard (unconstrained-shape) over-approximation.",
-				deep.stream().anyMatch(t -> t.getDims() == null));
+		// As of Ariadne 0.52.76, the test call site resolves concretely: the wildcard (null-dims) over-approximation that covered it
+		// through 0.52.36 is replaced by the concrete test shape, so the sound set is the two concrete call-site shapes.
+		assertEquals("The set holds both concrete call-site shapes; the wildcard over-approximation resolved at Ariadne 0.52.76.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(256), new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(new NumericDim(10000), new NumericDim(10)))),
+				deep);
 	}
 
 	/**
@@ -9665,17 +9667,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
 		Set<Function> fns = this.getFunctions();
-		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
-				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
+		// Through Ariadne 0.52.36, `real` typed as the UNBATCHED dataset element (rank-1; the wala/ML#618-era answer this pin
+		// previously codified). The pipeline pads and batches (`padded_batch(32, ([-1], [-1]))`), so the iterated element is rank-2
+		// `(32, None)` at runtime; as of the 0.52.76 bump the analysis types the batched element, with the batch extent concrete in
+		// one context and symbolic in the other.
+		assertEquals("`get_loss`'s `real` types as the batched dataset element (rank-2, batch 32) as of Ariadne 0.52.76.",
+				Set.of(new TensorType(INT32, List.of(new NumericDim(32), DynamicDim.INSTANCE)),
+						new TensorType(INT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE))),
+				findParameter(fns, "real").getTensorTypes());
 		// The `unknown`-dtype form the wala/ML#677 TODO tracked dropped at the Ariadne 0.52.36 bump (its 0.52.35 shape-recovery work):
 		// `pred`
 		// is `float32` throughout, and the batch/sequence axes are now the evidence-based `Dynamic` rather than the conservative
 		// `Unresolved`.
-		assertEquals(
-				"`get_loss`'s `pred` types via the keras call result; batch/sequence axes `Dynamic` (evidence-based runtime `None`, wala/ML#739/#721).",
-				Set.of(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE, new NumericDim(8), new NumericDim(8)))),
+		// The 0.52.76 bump improves `pred` the same way as `real`: the batch axis is the concrete extent (or symbolic where the
+		// context does not recover it) rather than `Dynamic`, and the spurious rank-4 `(Dynamic, Dynamic, 8, 8)` member (the
+		// attention-internal d_model shape leaking into the call result) no longer appears.
+		assertEquals("`get_loss`'s `pred` types via the keras call result; batch axis concrete as of Ariadne 0.52.76.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(32), DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10)))),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
 				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
