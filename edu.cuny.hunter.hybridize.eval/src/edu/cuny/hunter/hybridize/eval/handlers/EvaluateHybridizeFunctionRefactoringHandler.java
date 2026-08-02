@@ -74,6 +74,7 @@ import com.google.common.collect.Sets.SetView;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
+import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
@@ -123,6 +124,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String PARAMETERS_CSV_FILENAME = "parameters.csv";
 
 	private static final String PARAMETER_DIMENSIONS_CSV_FILENAME = "parameter_dimensions.csv";
+
+	/**
+	 * The per-point export of the depth-limited signal (#670): one row per points-to result the tensor analysis abandoned at the targeted
+	 * CFA depth limit, so an operator can see where raising a project's {@code targetedCfaDepth} may recover precision.
+	 */
+	private static final String DEPTH_LIMITED_CSV_FILENAME = "depth_limited.csv";
 
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
@@ -232,6 +239,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				"test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
+		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
+		resultsHeader.add("depth-limited results");
+
 		resultsHeader.add("time (s)");
 
 		HybridizeFunctionRefactoringProcessor processor = null;
@@ -259,7 +269,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 								"container element types"));
 				CSVPrinter parameterDimensionsPrinter = createCSVPrinter(PARAMETER_DIMENSIONS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
-								"dim index", "dim class", "dtype", "dtype top"));) {
+								"dim index", "dim class", "dtype", "dtype top"));
+				CSVPrinter depthLimitedPrinter = createCSVPrinter(DEPTH_LIMITED_CSV_FILENAME,
+						new String[] { "subject", "method", "value number", "call string length" });) {
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -426,6 +438,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// targeted CFA depth.
 					resultsRecord.add(targetedCfaDepth);
+
+					// The depth-limited signal (#670): count in results.csv, one row per abandoned points-to result in
+					// depth_limited.csv.
+					List<DepthLimitedPoint> depthLimitedPoints = processor.getDepthLimitedPoints().getOrDefault(project, List.of());
+					resultsRecord.add(depthLimitedPoints.size());
+
+					for (DepthLimitedPoint point : depthLimitedPoints)
+						depthLimitedPrinter.printRecord(project.getName(), point.method(), point.valueNumber(), point.callStringLength());
 
 					// actually perform the refactoring if there are no fatal
 					// errors.

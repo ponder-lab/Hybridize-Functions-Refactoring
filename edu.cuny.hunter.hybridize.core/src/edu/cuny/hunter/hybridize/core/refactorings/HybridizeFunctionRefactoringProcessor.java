@@ -7,6 +7,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -66,6 +67,7 @@ import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException
 import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
+import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
@@ -159,6 +161,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * The targeted k-CFA depth forwarded to the analysis engine (#600), defaulting to {@link #DEFAULT_TARGETED_CFA_DEPTH}.
 	 */
 	private int targetedCfaDepth = DEFAULT_TARGETED_CFA_DEPTH;
+
+	/**
+	 * Per project, the points-to results the tensor analysis abandoned at the targeted CFA depth limit (#670), rendered as
+	 * {@link DepthLimitedPoint}s. Populated during {@link #checkFinalConditions}; empty for a project whose analysis stayed within the
+	 * depth. See {@link #getDepthLimitedPoints()}.
+	 */
+	private final Map<IProject, List<DepthLimitedPoint>> depthLimitedPoints = new HashMap<>();
 
 	public HybridizeFunctionRefactoringProcessor() {
 		// Force the use of typeshed. It's an experimental feature of PyDev.
@@ -372,6 +381,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			}
 
 			LOG.info("Tensor analysis: " + analysis.toString());
+
+			// The points-to results the tensor analysis abandoned at the targeted CFA depth limit (#670), rendered WALA-free for
+			// consumers outside this bundle. A non-empty population means raising this project's `targetedCfaDepth` may recover
+			// precision.
+			List<DepthLimitedPoint> depthLimited = engine.getDepthLimitedResults().stream()
+					.map(r -> new DepthLimitedPoint(r.node().getMethod().getDeclaringClass().getName().toString(), r.valueNumber(),
+							r.callStringLength()))
+					.toList();
+			this.depthLimitedPoints.put(project, depthLimited);
+
+			if (!depthLimited.isEmpty())
+				LOG.warn("Tensor analysis for " + project.getName() + " abandoned " + depthLimited.size() + " points-to result"
+						+ (depthLimited.size() > 1 ? "s" : "") + " at the targeted CFA depth limit (currently " + this.getTargetedCfaDepth()
+						+ "); raising targetedCfaDepth may recover precision.");
 
 			// The tensor-typed pointer keys mapped to their producing-library origins, computed once and shared across this project's
 			// functions (issue 709, wala/ML#724).
@@ -746,6 +769,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setTargetedCfaDepth(int targetedCfaDepth) {
 		this.targetedCfaDepth = targetedCfaDepth;
+	}
+
+	/**
+	 * Per project, the points-to results the tensor analysis abandoned at the targeted CFA depth limit (#670). A non-empty population means
+	 * raising that project's {@code targetedCfaDepth} may recover precision. Empty before {@link #checkFinalConditions} runs.
+	 *
+	 * @return The per-project depth-limited points, unmodifiable.
+	 */
+	public Map<IProject, List<DepthLimitedPoint>> getDepthLimitedPoints() {
+		return Collections.unmodifiableMap(this.depthLimitedPoints);
 	}
 
 	public Set<Function> getOptimizableFunctions() {
