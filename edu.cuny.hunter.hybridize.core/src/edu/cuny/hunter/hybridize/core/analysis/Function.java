@@ -82,10 +82,12 @@ import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
 import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Assign;
 import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
@@ -94,7 +96,10 @@ import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
+import org.python.pydev.parser.jython.ast.expr_contextType;
 import org.python.pydev.parser.jython.ast.keywordType;
+import org.python.pydev.parser.jython.ast.name_contextType;
+import org.python.pydev.parser.jython.ast.stmtType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
 import com.google.common.collect.Maps;
@@ -239,9 +244,10 @@ public class Function {
 		private Optional<InputSignature> suppliedInputSignature = Optional.empty();
 
 		/**
-		 * The AST expression node of the supplied {@code input_signature} argument's value (the {@code [tf.TensorSpec(...)]} list/tuple),
-		 * whether supplied by keyword or by position, or {@code null} when none was supplied. Retained so {@link #reconfigure()} can locate
-		 * the existing value's source span to overwrite it. See {@link #getSuppliedInputSignatureNode()}.
+		 * The AST expression node of the supplied {@code input_signature} argument's value—the {@code [tf.TensorSpec(...)]} list/tuple, or
+		 * the bare name referencing one (#834)—whether supplied by keyword or by position, or {@code null} when none was supplied. Always
+		 * the node at the decorator site, never a resolved referent, so {@link #reconfigure()} can locate the existing value's source span
+		 * to overwrite it. See {@link #getSuppliedInputSignatureNode()}.
 		 */
 		private exprType suppliedInputSignatureNode;
 
@@ -284,7 +290,7 @@ public class Function {
 						// keyword, so this and the keyword branch below cannot both set the field for a well-formed decorator.
 						if (INPUT_SIGNATURE.equals(TF_FUNCTION_POSITIONAL_PARAMS[i])) {
 							this.suppliedInputSignatureNode = positionalArgs[i];
-							this.suppliedInputSignature = parseSuppliedInputSignature(positionalArgs[i]);
+							this.suppliedInputSignature = this.modelSuppliedInputSignature(positionalArgs[i]);
 						}
 					}
 				}
@@ -301,7 +307,7 @@ public class Function {
 						// Parse the content of a keyword-form `input_signature=[tf.TensorSpec(...)]`.
 						if (INPUT_SIGNATURE.equals(name.id)) {
 							this.suppliedInputSignatureNode = keyword.value;
-							this.suppliedInputSignature = parseSuppliedInputSignature(keyword.value);
+							this.suppliedInputSignature = this.modelSuppliedInputSignature(keyword.value);
 						}
 					}
 			} // else, tf.function is used without parameters.
@@ -412,8 +418,9 @@ public class Function {
 		}
 
 		/**
-		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple), or
-		 * {@code null} when none was supplied. {@link #reconfigure()} uses it to locate the existing value's source span when overwriting.
+		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple, or the bare
+		 * name referencing one; #834), or {@code null} when none was supplied. Always the node at the decorator site, never a resolved
+		 * referent. {@link #reconfigure()} uses it to locate the existing value's source span when overwriting.
 		 *
 		 * @return The supplied {@code input_signature} value node, or {@code null}.
 		 */
@@ -471,6 +478,91 @@ public class Function {
 				}
 
 			return Optional.of(InputSignature.ofSingles(parameterTypes));
+		}
+
+		/**
+		 * Model the value supplied to {@code input_signature}: parse it directly when it is a literal list/tuple, and otherwise, when it is
+		 * a bare name, resolve the name to the module-level literal it references (#834) and parse that instead. Resolution is single-level
+		 * (a name whose referent is itself a name is not chased) and inherits {@link #parseSuppliedInputSignature}'s all-or-nothing
+		 * contract: a name that does not resolve to a fully modeled literal leaves the signature unmodeled, exactly as before #834.
+		 *
+		 * @param value The expression bound to {@code input_signature}, whether by keyword or by position.
+		 * @return The parsed signature, or {@link Optional#empty} if neither the value nor its unambiguous module-level referent is a fully
+		 *         modeled literal.
+		 */
+		private Optional<InputSignature> modelSuppliedInputSignature(exprType value) {
+			Optional<InputSignature> parsed = parseSuppliedInputSignature(value);
+
+			if (parsed.isPresent() || !(value instanceof Name name))
+				return parsed;
+
+			return this.resolveModuleLevelLiteral(name).flatMap(HybridizationParameters::parseSuppliedInputSignature);
+		}
+
+		/**
+		 * Resolve a bare name supplied as the {@code input_signature} value to the module-level literal it references. The resolution is
+		 * deliberately conservative: it succeeds only when the name's identifier is bound exactly once in the entire containing module, by
+		 * a single-target module-level assignment. Under that sole-binding rule, Python's scoping cannot bind the decorator expression to
+		 * any other value: a decorator evaluates in its enclosing (class-body or module) scope, and with no competing binding anywhere,
+		 * both fall back to the module-level one. Attribute stores (e.g. {@code self.x = ...}) and call-site keyword names are not name
+		 * bindings and do not compete; reassignments, shadowing definitions, imports, loop targets, deletions, and parameters all count as
+		 * competing bindings and decline the resolution.
+		 *
+		 * @param reference The bare name supplied as the {@code input_signature} value.
+		 * @return The value of the module-level assignment the name references, or {@link Optional#empty} when the name does not resolve
+		 *         unambiguously.
+		 */
+		private Optional<exprType> resolveModuleLevelLiteral(Name reference) {
+			SimpleNode root = Function.this.getFunctionDefinition().getContainingModule();
+
+			if (!(root instanceof Module module) || module.body == null)
+				return Optional.empty();
+
+			String identifier = reference.id;
+			int[] bindings = { 0 };
+
+			try {
+				module.accept(new VisitorBase() {
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) {
+						// `Name` bindings cover assignment targets, augmented/named (walrus) stores, deletions, loop and
+						// comprehension targets, and parameters; `NameTok` bindings cover function, class, import, global/nonlocal,
+						// and match-pattern names. Call-site keyword names and attribute names are the two `NameTok` roles that are
+						// not bindings.
+						if (node instanceof Name name && identifier.equals(name.id) && name.ctx != expr_contextType.Load
+								&& name.ctx != expr_contextType.AugLoad)
+							++bindings[0];
+						else if (node instanceof NameTok tok && identifier.equals(tok.id) && tok.ctx != name_contextType.KeywordName
+								&& tok.ctx != name_contextType.Attrib)
+							++bindings[0];
+
+						return null;
+					}
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+				});
+			} catch (Exception e) {
+				LOG.error("Failed to traverse the module containing " + Function.this + " while resolving a name-referenced input"
+						+ " signature.", e);
+				return Optional.empty();
+			}
+
+			if (bindings[0] != 1)
+				return Optional.empty();
+
+			// The sole binding must be a single-target module-level assignment to the identifier; its value is the resolution. If the
+			// one binding sits anywhere else (e.g., inside a function, where it cannot feed the decorator), no such statement exists
+			// and the resolution declines.
+			for (stmtType statement : module.body)
+				if (statement instanceof Assign assign && assign.targets != null && assign.targets.length == 1
+						&& assign.targets[0] instanceof Name target && identifier.equals(target.id))
+					return Optional.ofNullable(assign.value);
+
+			return Optional.empty();
 		}
 
 		/**
@@ -3599,26 +3691,38 @@ public class Function {
 				: this.getHybridizationParameters().getSuppliedInputSignatureNode();
 
 		if (existingValue != null) {
-			// Span the existing value's bracketed list/tuple: from its first opening bracket to the matching close, tracking nesting.
-			int bracket = getOffset(doc, existingValue);
-			while (bracket < doc.getLength() && doc.getChar(bracket) != '[' && doc.getChar(bracket) != '(')
-				++bracket;
+			final int valueOffset;
+			final int valueLength;
 
-			int depth = 0;
-			int end = bracket;
-			for (; end < doc.getLength(); end++) {
-				char c = doc.getChar(end);
-				if (c == '(' || c == '[' || c == '{')
-					++depth;
-				else if (c == ')' || c == ']' || c == '}') {
-					--depth;
-					if (depth == 0)
-						break;
+			if (existingValue instanceof Name name) {
+				// A name-referenced signature (#834): the retained node is the bare reference at the decorator site. Replace exactly
+				// the name's own span—a bracket scan would run past the decorator—leaving the referenced module-level constant intact
+				// for its other users.
+				valueOffset = getOffset(doc, existingValue);
+				valueLength = name.id.length();
+			} else {
+				// Span the existing value's bracketed list/tuple: from its first opening bracket to the matching close, tracking
+				// nesting.
+				int bracket = getOffset(doc, existingValue);
+				while (bracket < doc.getLength() && doc.getChar(bracket) != '[' && doc.getChar(bracket) != '(')
+					++bracket;
+
+				int depth = 0;
+				int end = bracket;
+				for (; end < doc.getLength(); end++) {
+					char c = doc.getChar(end);
+					if (c == '(' || c == '[' || c == '{')
+						++depth;
+					else if (c == ')' || c == ']' || c == '}') {
+						--depth;
+						if (depth == 0)
+							break;
+					}
 				}
-			}
 
-			final int valueOffset = bracket;
-			final int valueLength = end - bracket + 1;
+				valueOffset = bracket;
+				valueLength = end - bracket + 1;
+			}
 			MultiTextEdit replacement = new MultiTextEdit();
 			this.inferInputSignature().signature()
 					.ifPresent(sig -> replacement.addChild(new ReplaceEdit(valueOffset, valueLength, sig.toTensorSpecList(ctx.prefix()))));
