@@ -92,10 +92,12 @@ class TensorIterationAnalysis {
 
 				// The tf.range exemption applies regardless of the bound's provenance: `for i in tf.range(tf.shape(x)[0])` is
 				// AutoGraph-supported (the loop stages to a while loop), so a range result never fires even when its bound is
-				// parameter-derived.
+				// parameter-derived. The container exemption keeps a Python collection of tensors out: its value carries tensor
+				// typing through element dataflow, but iterating a fixed-length collection under tracing is legal (the loop
+				// unrolls), so only a tensor proper fires (issue 832; NLPGNN's adjacency-list iteration).
 				if (use instanceof EachElementGetInstruction each && each.getUse(0) == value
 						&& !this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(value, Set.of()).isEmpty()
-						&& !this.isRangeResult(node, value, defUse))
+						&& !this.isRangeResult(node, value, defUse) && !this.pointsToContainer(node, value))
 					return true;
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
@@ -106,6 +108,23 @@ class TensorIterationAnalysis {
 				}
 			}
 		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code value}'s points-to set includes a container allocation per {@link Util#isContainerType}, whose set spans the Python
+	 * collections (list, tuple, dict, set) and the {@code enumerate} wrapper: such a value is iterated as a Python collection, which
+	 * tracing unrolls, so it must not fire even though element dataflow gives it tensor typing. Including {@code enumerate} is harmless
+	 * here: an {@code enumerate} result only reaches this exemption after passing the tensor-typed gate, which an enumerate object does
+	 * not.
+	 */
+	private boolean pointsToContainer(CGNode node, int value) {
+		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
+
+		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey))
+			if (Util.isContainerType(instanceKey.concreteType().getReference()))
+				return true;
 
 		return false;
 	}

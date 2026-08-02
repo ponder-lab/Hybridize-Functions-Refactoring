@@ -26,7 +26,15 @@ def range_loop(x):
     return acc
 
 
+def list_iter(xs, y):
+    acc = y
+    for t in xs:
+        acc = acc + t
+    return acc
+
+
 t = tf.constant([1.0, 2.0, 3.0])
 assert float(iterate_param(t)) == 6.0
 assert float(range_loop(t)) == 7.0
 assert float(range_param_bound(t)) == 9.0
+assert float(tf.reduce_sum(list_iter([t, t], t))) == 18.0
