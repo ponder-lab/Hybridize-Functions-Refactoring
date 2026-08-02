@@ -57,10 +57,14 @@ class StaleVariableReadAnalysis {
 
 	/**
 	 * Member names whose invocation populates a model's variable collection (the lazy build sites), beside a direct call of the receiver.
-	 * Other member invocations ({@code compile}, {@code summary}, ...) do not build, so they must not register as receiver invocations:
-	 * counting them would suppress a genuinely stale read ordered after them.
+	 * Beyond the core four, the whole Keras training surface triggers the lazy build: {@code predict}, {@code evaluate}, the
+	 * {@code *_on_batch} family, and the deprecated {@code *_generator} wrappers were each runtime-verified to flip {@code built} on the
+	 * pinned TF 2.9.3 (#825), so a variable-collection read ordered after any of them is fresh. Other member invocations ({@code compile},
+	 * {@code summary}, ...) do not build, so they must not register as receiver invocations: counting them would suppress a genuinely stale
+	 * read ordered after them ({@code compile} is pinned in that direction by {@code compiled_stale}).
 	 */
-	private static final Set<String> BUILDING_MEMBER_NAMES = Set.of("call", "__call__", "build", "fit");
+	private static final Set<String> BUILDING_MEMBER_NAMES = Set.of("call", "__call__", "build", "fit", "predict", "evaluate",
+			"train_on_batch", "test_on_batch", "predict_on_batch", "fit_generator", "evaluate_generator", "predict_generator");
 
 	/**
 	 * True iff {@code node}'s body snapshots a receiver's variable collection before that receiver's first invocation in the body, invokes
