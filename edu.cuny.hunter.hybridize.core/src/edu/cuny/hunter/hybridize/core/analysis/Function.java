@@ -1784,11 +1784,17 @@ public class Function {
 		// sampling a single node can miss a read at an imprecise context.
 		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
 		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
+		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
 
-		for (CGNode node : nodes)
-			reads.addAll(analysis.staticallyReadAxes(node, this.isMethod()));
+		for (CGNode node : nodes) {
+			StaticShapeReadAnalysis.StaticShapeReads nodeReads = analysis.staticallyReadAxes(node, this.isMethod());
+			reads.addAll(nodeReads.axisReads());
+			rankReads.addAll(nodeReads.rankReads());
+		}
 
-		boolean unresolved = reads.stream().anyMatch(this::isUnresolvedRead);
+		// An extent-sensitive read blocks on any non-concrete covered axis; a rank-sensitive-only read (`as_list`, `rank`/`ndims`,
+		// `len`; #809) blocks only when the affected spec's rank itself is unknown (`shape=None`), which every such surface breaks on.
+		boolean unresolved = reads.stream().anyMatch(this::isUnresolvedRead) || rankReads.stream().anyMatch(this::isRankUnresolvedRead);
 
 		this.hasUnresolvedStaticallyReadAxes = unresolved;
 
@@ -1806,23 +1812,7 @@ public class Function {
 	 * @return True iff the read consumes an axis the signature leaves unresolved.
 	 */
 	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
-		List<InputSignature.SpecEntry> entries = new ArrayList<>();
-
-		if (read.parameterOrdinals() == null)
-			entries.addAll(this.inferredSpecByParameter.values());
-		else {
-			List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
-
-			for (int ordinal : read.parameterOrdinals())
-				if (ordinal < nonSelfParameters.size()) {
-					InputSignature.SpecEntry entry = this.inferredSpecByParameter.get(nonSelfParameters.get(ordinal));
-
-					if (entry != null)
-						entries.add(entry);
-				}
-		}
-
-		for (InputSignature.SpecEntry entry : entries) {
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
 			// A container spec's per-element axes are not attributable to the read: conservative.
 			if (!(entry instanceof InputSignature.Single single))
 				return true;
@@ -1852,6 +1842,51 @@ public class Function {
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff the given rank-sensitive-only read ({@code as_list}, {@code rank}/{@code ndims}, {@code len}; #809) is unresolved by the
+	 * inferred signature: some affected spec entry has an unknown rank ({@code shape=None}), which every rank-reading surface breaks on. A
+	 * known rank satisfies the read even when axes are dynamic ({@code [None, 3].as_list()} succeeds; {@code rank} is a trace-time
+	 * integer), which is exactly the precision the split from {@link #isUnresolvedRead} buys. A container entry stays conservative.
+	 *
+	 * @param read The rank-sensitive read to resolve against the inferred signature.
+	 * @return True iff the read consumes a rank the signature leaves unknown.
+	 */
+	private boolean isRankUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
+			if (!(entry instanceof InputSignature.Single single) || single.type().getDims() == null)
+				return true;
+
+		return false;
+	}
+
+	/**
+	 * The inferred-spec entries a read's provenance touches: every entry when provenance was lost ({@code null} ordinals), otherwise the
+	 * entries of the named non-{@code self} parameters. A parameter without a spec entry was omitted from the signature (a defaulted,
+	 * never-supplied parameter), so its axes come from its concrete default at trace time and contribute nothing.
+	 *
+	 * @param read The read whose affected entries to collect.
+	 * @return The spec entries the read may constrain.
+	 */
+	private List<InputSignature.SpecEntry> affectedSpecEntries(StaticShapeReadAnalysis.AxisRead read) {
+		List<InputSignature.SpecEntry> entries = new ArrayList<>();
+
+		if (read.parameterOrdinals() == null)
+			entries.addAll(this.inferredSpecByParameter.values());
+		else {
+			List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+			for (int ordinal : read.parameterOrdinals())
+				if (ordinal < nonSelfParameters.size()) {
+					InputSignature.SpecEntry entry = this.inferredSpecByParameter.get(nonSelfParameters.get(ordinal));
+
+					if (entry != null)
+						entries.add(entry);
+				}
+		}
+
+		return entries;
 	}
 
 	/**
