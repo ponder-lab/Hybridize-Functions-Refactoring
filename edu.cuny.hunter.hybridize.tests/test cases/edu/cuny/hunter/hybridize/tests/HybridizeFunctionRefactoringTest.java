@@ -1174,15 +1174,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Test for #834's declines. Name references that must NOT resolve: a name bound twice at module level (reassignment), a name whose sole
-	 * binding's value is a call rather than a literal, and a name shadowed by a class-body binding (which is what the decorator actually
-	 * sees at decoration time; resolving to the module-level literal would model the wrong value). Each leaves the signature unmodeled
-	 * while {@code hasInputSignatureParam()} stays true, preserving the presence-true/parse-empty contract state.
+	 * binding's value is a call rather than a literal, a name shadowed by a class-body binding (which is what the decorator actually sees
+	 * at decoration time; resolving to the module-level literal would model the wrong value), and a name whose sole binding is a loop
+	 * target rather than a plain assignment. Each leaves the signature unmodeled while {@code hasInputSignatureParam()} stays true,
+	 * preserving the presence-true/parse-empty contract state.
 	 */
 	@Test
 	public void testSuppliedInputSignatureNameReferenceControls() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("reassigned", "computed", "Shadowing.shadowed")) {
+		for (String identifier : List.of("reassigned", "computed", "Shadowing.shadowed", "loop_bound")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
 			assertTrue(function.isHybrid());
 
@@ -1943,6 +1944,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureOverwriteTighter() throws Exception {
+		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
+	}
+
+	/**
+	 * Name-referenced variant of {@link #testReconfigureOverwriteTighter()} (#834). The tighter signature is referenced through a
+	 * module-level constant, so the retained decorator node is a bare name. The overwrite must replace exactly the reference's span at the
+	 * decorator site with the inferred literal—a bracket scan from the name would run past the decorator—and leave the module-level
+	 * constant itself intact (it may have other users).
+	 */
+	@Test
+	public void testReconfigureOverwriteNameReference() throws Exception {
 		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
 	}
 
