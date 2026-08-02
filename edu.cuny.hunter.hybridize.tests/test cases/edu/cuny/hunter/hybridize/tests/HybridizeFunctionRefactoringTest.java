@@ -10281,6 +10281,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Completes the building-member set (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/825): beyond
+	 * {@code call}/{@code __call__}/{@code build}/{@code fit}, the whole Keras training surface triggers the lazy build ({@code predict},
+	 * {@code evaluate}, the {@code *_on_batch} family, and the deprecated {@code *_generator} wrappers; each runtime-verified to flip
+	 * {@code built} on TF 2.9.3). A variable-collection read ordered after any of them is fresh and must not be flagged stale. Only the
+	 * stale-read dimension is pinned here: the training-surface members are themselves eager-only under tracing, an unmodeled hazard
+	 * tracked by #836, so passing-precondition assertions are deferred to it.
+	 */
+	@Test
+	public void testStaleVariableReadsBuildingMembers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("fresh_after_predict", "fresh_after_evaluate", "fresh_after_train_on_batch",
+				"fresh_after_test_on_batch", "fresh_after_predict_on_batch", "fresh_after_fit_generator", "fresh_after_evaluate_generator",
+				"fresh_after_predict_generator")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "` reads the collection only after a build-triggering member; the read is fresh.",
+					function.getHasStaleVariableReads());
+		}
+	}
+
+	/**
 	 * Pins the symbolic-iteration safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830, distilling
 	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but raises
 	 * {@code OperatorNotAllowedInGraphError} under tracing once the parameter is symbolic, even with AutoGraph converting the loop (it
