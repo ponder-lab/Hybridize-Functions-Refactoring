@@ -10286,6 +10286,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
+	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
+	 * two call sites with the same total argument count but different keyword-name sets ({@code step=} from the training script,
+	 * {@code mode='d'} from {@code train_on_batch}), plus the sibling {@code MusicTransformer} class with its same-named methods (a minimal
+	 * single-class reduction did not reproduce; see the issue). Through Ariadne 0.52.33, trampoline bodies were cached on (receiver, total
+	 * argument count), so the colliding sites shared one body and a keyword's value never reached its parameter, reporting the method as
+	 * having no primitive parameter; 0.52.34 keys the cache on the keyword-name set as well, and {@code mode}'s default-and-supplied
+	 * strings make the verdict {@code TRUE}.
+	 */
+	@Test
+	public void testSanityCheckKeywordCollisionVendored() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function sanityCheck = findFunction(functions, "MusicTransformerDecoder.sanity_check");
+		assertEquals("`sanity_check` has a primitive parameter (`mode` binds strings; `step` binds an int).", Boolean.TRUE,
+				sanityCheck.getHasPrimitiveParameter());
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
