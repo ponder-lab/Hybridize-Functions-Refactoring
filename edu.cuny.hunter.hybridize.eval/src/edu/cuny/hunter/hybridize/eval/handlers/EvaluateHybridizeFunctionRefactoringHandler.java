@@ -190,6 +190,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean inferInputSignatures = Boolean.getBoolean(EvaluationOption.INFER_INPUT_SIGNATURES.key());
 
 	/**
+	 * True iff the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808). Off by default; set via the {@code edu.cuny.hunter.hybridize.eval.overwriteExistingInputSignatures} system
+	 * property.
+	 */
+	private boolean overwriteExistingInputSignatures = Boolean.getBoolean(EvaluationOption.OVERWRITE_EXISTING_INPUT_SIGNATURES.key());
+
+	/**
 	 * The global targeted k-CFA depth, set via the {@code edu.cuny.hunter.hybridize.eval.targetedCfaDepth} system property and defaulting
 	 * to {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH}. A per-project {@code eval.properties}
 	 * {@code targetedCfaDepth} entry overrides this for that project; see {@link #getTargetedCfaDepth(IProject)}.
@@ -236,7 +243,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
 				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "type hints", "parallel", "speculative",
-				"test entrypoints", "infer input signatures", "targeted CFA depth" };
+				"test entrypoints", "infer input signatures", "overwrite existing input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
@@ -311,6 +318,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckStaticShapeReads(this.getAlwaysCheckStaticShapeReads());
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
+					processor.setOverwriteExistingInputSignatures(this.getOverwriteExistingInputSignatures());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -435,6 +443,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// infer input signatures.
 					resultsRecord.add(this.getInferInputSignatures());
+
+					// overwrite existing input signatures.
+					resultsRecord.add(this.getOverwriteExistingInputSignatures());
 
 					// targeted CFA depth.
 					resultsRecord.add(targetedCfaDepth);
@@ -912,6 +923,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	public boolean getOverwriteExistingInputSignatures() {
+		return this.overwriteExistingInputSignatures;
 	}
 
 	/**

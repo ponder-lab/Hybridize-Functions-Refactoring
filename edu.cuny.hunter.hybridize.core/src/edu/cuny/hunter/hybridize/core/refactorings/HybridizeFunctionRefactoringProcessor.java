@@ -86,6 +86,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private static final String INFER_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.inferInputSignatures";
 
+	private static final String OVERWRITE_EXISTING_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.overwriteExistingInputSignatures";
+
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
 
 	private Set<Function> functions = new LinkedHashSet<>();
@@ -147,6 +149,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
 	 */
 	private boolean inferInputSignatures = Boolean.getBoolean(INFER_INPUT_SIGNATURES_PROPERTY_KEY);
+
+	/**
+	 * True iff the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering ({@code SUPPLIED_TIGHTER} or {@code INCOMPARABLE}; #808). Off by default: such an overwrite changes the inputs the
+	 * function accepts at the trace boundary, so it must be an explicit opt-in. Defaults from the
+	 * {@code edu.cuny.hunter.hybridize.overwriteExistingInputSignatures} system property (for headless runs) and is settable via
+	 * {@link #setOverwriteExistingInputSignatures(boolean)}.
+	 */
+	private boolean overwriteExistingInputSignatures = Boolean.getBoolean(OVERWRITE_EXISTING_INPUT_SIGNATURES_PROPERTY_KEY);
 
 	/**
 	 * The default targeted k-CFA depth: {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH}, the depth at which the model-forward
@@ -239,6 +250,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			for (FunctionDefinition fd : functionDefinitionSet) {
 				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
 						this.useSpeculativeAnalysis, this.inferInputSignatures);
+				function.setOverwriteExistingInputSignatures(this.overwriteExistingInputSignatures);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -306,6 +318,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			for (FunctionDefinition fd : functionDefinitionSet) {
 				Function function = new Function(fd, this.ignoreBooleansInLiteralCheck, this.alwaysFollowTypeHints,
 						this.useSpeculativeAnalysis, this.inferInputSignatures);
+				function.setOverwriteExistingInputSignatures(this.overwriteExistingInputSignatures);
 
 				// Add the Function to the Function set.
 				functionSet.add(function);
@@ -779,6 +792,27 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public Map<IProject, List<DepthLimitedPoint>> getDepthLimitedPoints() {
 		return Collections.unmodifiableMap(this.depthLimitedPoints);
+	}
+
+	/**
+	 * Returns true iff the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808).
+	 *
+	 * @return True iff semantics-altering signature overwrites are enabled.
+	 */
+	public boolean getOverwriteExistingInputSignatures() {
+		return this.overwriteExistingInputSignatures;
+	}
+
+	/**
+	 * Sets whether the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808), propagating to the already-constructed {@link Function}s.
+	 *
+	 * @param overwriteExistingInputSignatures True iff semantics-altering signature overwrites should be enabled.
+	 */
+	public void setOverwriteExistingInputSignatures(boolean overwriteExistingInputSignatures) {
+		this.overwriteExistingInputSignatures = overwriteExistingInputSignatures;
+		this.getFunctions().forEach(f -> f.setOverwriteExistingInputSignatures(overwriteExistingInputSignatures));
 	}
 
 	public Set<Function> getOptimizableFunctions() {

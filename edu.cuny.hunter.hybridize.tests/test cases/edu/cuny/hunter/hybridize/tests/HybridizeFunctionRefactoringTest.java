@@ -563,6 +563,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private int targetedCfaDepth = HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
 
+	/**
+	 * Whether the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering, off by default like the processor's own flag (#808). The overwrite tests opt in via
+	 * {@link #setOverwriteExistingInputSignatures(boolean)}; the gated tests deliberately leave it off.
+	 */
+	private boolean overwriteExistingInputSignatures;
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -636,6 +643,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public void setTargetedCfaDepth(int targetedCfaDepth) {
 		this.targetedCfaDepth = targetedCfaDepth;
+	}
+
+	/**
+	 * Sets whether the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808). Off by default, matching the processor; the overwrite tests opt in explicitly.
+	 *
+	 * @param overwriteExistingInputSignatures True iff semantics-altering signature overwrites should be enabled.
+	 */
+	public void setOverwriteExistingInputSignatures(boolean overwriteExistingInputSignatures) {
+		this.overwriteExistingInputSignatures = overwriteExistingInputSignatures;
 	}
 
 	@Override
@@ -775,6 +792,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 		processor.setTargetedCfaDepth(this.targetedCfaDepth);
+		processor.setOverwriteExistingInputSignatures(this.overwriteExistingInputSignatures);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -1970,6 +1988,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Default-off direction of #808's gate, supplied-tighter case: without the overwrite opt-in, the semantics-altering modify path
+	 * surfaces its finding as a warning, selects no transformation, and terminates in the same failure as the other unmodified-signature
+	 * outcomes. The fixture is {@link #testReconfigureOverwriteTighter()}'s.
+	 */
+	@Test
+	public void testReconfigureOverwriteTighterGated() throws Exception {
+		helperAssertOverwriteGated("narrower than its call sites require");
+	}
+
+	/**
+	 * Default-off direction of #808's gate, incomparable case; the fixture is {@link #testReconfigureOverwriteIncomparable()}'s.
+	 */
+	@Test
+	public void testReconfigureOverwriteIncomparableGated() throws Exception {
+		helperAssertOverwriteGated("disagrees with its call sites");
+	}
+
+	/**
+	 * Asserts the default-off direction of #808's gate on the current test's fixture: inference is enabled but the overwrite opt-in is
+	 * deliberately left at its default (off), so the single hybrid fixture function must select no transformation, set no passing
+	 * precondition, carry a gating warning containing {@code messageFragment}, and terminate in the {@code HAS_NO_PRIMITIVE_PARAMETERS}
+	 * failure like the other unmodified-signature outcomes.
+	 */
+	private void helperAssertOverwriteGated(String messageFragment) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("The gated modify path must not select a transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition when the overwrite is gated.", f.getPassingPrecondition());
+
+		boolean warned = Arrays.stream(f.getStatus().getEntries()).anyMatch(e -> e.isWarning() && e.getMessage().contains(messageFragment));
+		assertTrue("Expected a gating warning containing: " + messageFragment, warned);
+		assertNotNull("The gated function terminates in the no-primitive-parameters failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
 	 * Shared assertion for the modify-path overwrite tests: the single hybrid fixture function selects {@link Transformation#RECONFIGURE}
 	 * with passing precondition {@link PreconditionSuccess#P5}, emits a status of the expected severity (warning for an incomparable
 	 * signature, informational otherwise) containing {@code messageFragment}, and rewrites the decorator to match {@code out/A.py}.
@@ -1979,6 +2037,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private void helperAssertReconfigureOverwrite(boolean expectWarning, String messageFragment) throws Exception {
 		this.setInferInputSignatures(true);
+		// Overwriting a tighter or incomparable supplied signature is semantics-altering and gated off by default (#808); the
+		// overwrite tests opt in explicitly.
+		this.setOverwriteExistingInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());

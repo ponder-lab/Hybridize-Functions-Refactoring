@@ -1011,6 +1011,15 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
+	 * True iff the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering ({@code SUPPLIED_TIGHTER} or {@code INCOMPARABLE}; #808). Off by default: overwriting a narrower or incomparable
+	 * signature broadens or otherwise changes the inputs the function accepts at the trace boundary, so it is not behavior-preserving and
+	 * must be an explicit opt-in. The behavior-preserving paths (adding a signature where none exists, preserving a broader supplied one,
+	 * and the agreement no-op) are not gated.
+	 */
+	private boolean overwriteExistingInputSignatures;
+
+	/**
 	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
@@ -1420,18 +1429,38 @@ public class Function {
 							// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
 							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
 
+							// The tighter and incomparable relations are semantics-altering: overwriting broadens or otherwise changes
+							// the inputs the function accepts at the trace boundary, so applying them is an explicit opt-in (#808).
+							// When the opt-in is off, the finding is surfaced as a diagnostic and the function terminates in the same
+							// failure as the other unmodified-signature outcomes.
 							switch (supplied.relate(inferred)) {
 							case SUPPLIED_TIGHTER -> {
-								this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
-										+ "it can be reconfigured to admit the observed inputs.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
+								if (this.getOverwriteExistingInputSignatures()) {
+									this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
+											+ "it can be reconfigured to admit the observed inputs.");
+									this.addTransformation(RECONFIGURE);
+									this.setPassingPrecondition(P5);
+								} else {
+									this.addWarning("This hybrid function's input signature is narrower than its call sites require; "
+											+ "overwriting it would change the inputs the function accepts, so it is left unchanged "
+											+ "(enable overwriting existing input signatures to reconfigure it).");
+									this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+											"Functions with no Python literal arguments may benefit from hybridization.");
+								}
 							}
 							case INCOMPARABLE -> {
-								this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-										+ "reconfiguring it will change the inputs the function accepts.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
+								if (this.getOverwriteExistingInputSignatures()) {
+									this.addWarning("This hybrid function's input signature disagrees with its call sites; "
+											+ "reconfiguring it will change the inputs the function accepts.");
+									this.addTransformation(RECONFIGURE);
+									this.setPassingPrecondition(P5);
+								} else {
+									this.addWarning("This hybrid function's input signature disagrees with its call sites; "
+											+ "overwriting it would change the inputs the function accepts, so it is left unchanged "
+											+ "(enable overwriting existing input signatures to reconfigure it).");
+									this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+											"Functions with no Python literal arguments may benefit from hybridization.");
+								}
 							}
 							case SUPPLIED_BROADER -> {
 								this.addInfo("This hybrid function's input signature is broader than its call sites require; "
@@ -2319,6 +2348,26 @@ public class Function {
 	 */
 	public boolean getInferInputSignatures() {
 		return this.inferInputSignatures;
+	}
+
+	/**
+	 * Returns true iff the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808).
+	 *
+	 * @return True iff semantics-altering signature overwrites are enabled.
+	 */
+	public boolean getOverwriteExistingInputSignatures() {
+		return this.overwriteExistingInputSignatures;
+	}
+
+	/**
+	 * Sets whether the modify path may overwrite an existing supplied {@code input_signature} whose relation to the inferred one is
+	 * semantics-altering (#808).
+	 *
+	 * @param overwriteExistingInputSignatures True iff semantics-altering signature overwrites should be enabled.
+	 */
+	public void setOverwriteExistingInputSignatures(boolean overwriteExistingInputSignatures) {
+		this.overwriteExistingInputSignatures = overwriteExistingInputSignatures;
 	}
 
 	public IDocument getContainingDocument() {
