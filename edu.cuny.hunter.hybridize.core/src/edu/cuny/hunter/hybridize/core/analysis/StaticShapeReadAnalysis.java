@@ -115,6 +115,21 @@ class StaticShapeReadAnalysis {
 	private static final String NEGATION_OPERATOR_NAME = "neg";
 
 	/**
+	 * Member names on a shape vector whose read is rank-sensitive but extent-insensitive: {@code as_list} raises on an unknown-rank shape,
+	 * and {@code rank}/{@code ndims} yield {@code None} instead of an integer, breaking any downstream use (#809). All three tolerate a
+	 * known-rank shape with dynamic axes, so their reads are recorded separately from axis reads and resolved by rank alone. The
+	 * {@code rank}/{@code ndims} results are trace-time integer constants under a known rank, so the read launders; {@code as_list}'s
+	 * result is the dimension list itself and keeps the shape taint for per-axis consumption.
+	 */
+	private static final Set<String> RANK_SENSITIVE_MEMBER_NAMES = Set.of("as_list", "rank", "ndims");
+
+	/** The {@code as_list} member, whose call result keeps the receiver's shape taint (unlike {@code rank}/{@code ndims}). */
+	private static final String AS_LIST_MEMBER_NAME = "as_list";
+
+	/** The built-in {@code len}, whose application to a shape vector raises on unknown rank (#809). */
+	private static final String LEN_BUILTIN_NAME = "len";
+
+	/**
 	 * A statically-read axis requirement: the parameters whose axes are read ({@code parameterOrdinals}, 0-based among the checked
 	 * function's non-receiver parameters; {@code null} means provenance was lost and <em>any</em> tensor parameter may be the source) and
 	 * the covered axes ({@code axes}; {@code null} means coverage was lost and <em>any</em> axis may be read). A negative axis counts from
@@ -147,18 +162,27 @@ class StaticShapeReadAnalysis {
 	}
 
 	/**
+	 * The two read populations a scan collects: {@code axisReads} are extent-sensitive (an axis read consumed at a sink, resolved
+	 * per-axis), while {@code rankReads} are rank-sensitive only ({@code as_list}, {@code rank}/{@code ndims}, {@code len}; #809), resolved
+	 * solely by whether the affected spec has a known rank.
+	 */
+	record StaticShapeReads(Set<AxisRead> axisReads, Set<AxisRead> rankReads) {
+	}
+
+	/**
 	 * The requirements collected from {@code node} and everything reachable during tracing: for each parameter axis read statically and
-	 * consumed at a sink, one {@link AxisRead}. Empty means no statically-read axis is consumed, so any signature is safe on this account.
+	 * consumed at a sink, one {@link AxisRead}, split into the extent-sensitive and rank-sensitive-only populations (see
+	 * {@link StaticShapeReads}). Both empty means no statically-read shape surface is consumed, so any signature is safe on this account.
 	 *
 	 * @param node The call-graph node of the checked function.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
-	 * @return The axis requirements the emitted signature must satisfy.
+	 * @return The requirements the emitted signature must satisfy.
 	 */
-	Set<AxisRead> staticallyReadAxes(CGNode node, boolean method) {
+	StaticShapeReads staticallyReadAxes(CGNode node, boolean method) {
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return Set.of();
+			return new StaticShapeReads(Set.of(), Set.of());
 
 		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver for an instance method. The ordinal is
 		// the 0-based position among the remaining (non-receiver) parameters, matching the inferred signature's parameter order.
@@ -169,47 +193,47 @@ class StaticShapeReadAnalysis {
 			valueSeed.put(parameters[i], Set.of(i - (method ? 2 : 1)));
 
 		Set<AxisRead> reads = new HashSet<>();
+		Set<AxisRead> rankReads = new HashSet<>();
 
-		if (!valueSeed.isEmpty())
-			reads.addAll(this.scan(node, valueSeed, Map.of()).reads());
+		if (!valueSeed.isEmpty()) {
+			ScanResult result = this.scan(node, valueSeed, Map.of());
+			reads.addAll(result.reads());
+			rankReads.addAll(result.rankReads());
+		}
 
 		// The function's own Keras `build` is a sibling under the `__call__` trampoline, not a successor: seed it by name-based lookup,
 		// anchoring its `input_shape` parameter to this function's first non-receiver parameter (the Keras protocol passes the first
 		// argument's shape).
 		if (method && parameters.length > 2)
-			reads.addAll(this.scanOwnBuild(node));
+			this.scanOwnBuild(node, reads, rankReads);
 
 		// A sublayer's `build` is forward-reachable through the trampoline, but the Keras library frames between `call` and `build` are
 		// summarized, so taint cannot flow through them slot-by-slot: seed every reachable `build`'s `input_shape` with unknown
 		// provenance instead. Where the sublayer's input derives from no parameter, this over-approximates and may over-block; accepted
 		// safety-first, mirroring the numpy precondition's stance.
-		reads.addAll(this.scanReachableBuilds(node));
+		this.scanReachableBuilds(node, reads, rankReads);
 
-		return reads;
+		return new StaticShapeReads(reads, rankReads);
 	}
 
 	/** Scans this function's own class's {@code build} sibling, if any, anchored to the first non-receiver parameter (ordinal 0). */
-	private Set<AxisRead> scanOwnBuild(CGNode node) {
+	private void scanOwnBuild(CGNode node, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		MethodReference reference = node.getMethod().getReference();
 		String declaringClassName = reference.getDeclaringClass().getName().toString();
 		int lastSegment = declaringClassName.lastIndexOf('/');
 
 		if (lastSegment < 0 || declaringClassName.endsWith(BUILD_METHOD_NAME_SUFFIX))
-			return Set.of();
+			return;
 
 		String buildClassName = declaringClassName.substring(0, lastSegment) + BUILD_METHOD_NAME_SUFFIX;
-		Set<AxisRead> reads = new HashSet<>();
 
 		for (CGNode buildNode : this.callGraph)
 			if (buildNode.getMethod().getReference().getDeclaringClass().getName().toString().equals(buildClassName))
-				reads.addAll(this.scanBuild(buildNode, Set.of(0)));
-
-		return reads;
+				this.scanBuild(buildNode, Set.of(0), reads, rankReads);
 	}
 
 	/** Scans every {@code build} method forward-reachable from {@code node} (a sublayer's, via the trampoline), unknown provenance. */
-	private Set<AxisRead> scanReachableBuilds(CGNode node) {
-		Set<AxisRead> reads = new HashSet<>();
+	private void scanReachableBuilds(CGNode node, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		Set<CGNode> seen = new HashSet<>();
 		Deque<CGNode> worklist = new ArrayDeque<>();
 
@@ -221,7 +245,7 @@ class StaticShapeReadAnalysis {
 
 			if (current != node
 					&& current.getMethod().getReference().getDeclaringClass().getName().toString().endsWith(BUILD_METHOD_NAME_SUFFIX))
-				reads.addAll(this.scanBuild(current, null));
+				this.scanBuild(current, null, reads, rankReads);
 
 			for (Iterator<CGNode> successors = this.callGraph.getSuccNodes(current); successors.hasNext();) {
 				CGNode next = successors.next();
@@ -230,35 +254,37 @@ class StaticShapeReadAnalysis {
 					worklist.add(next);
 			}
 		}
-
-		return reads;
 	}
 
 	/**
 	 * Scans a {@code build} method with its {@code input_shape} parameter seeded as shape metadata whose provenance is
-	 * {@code parameterOrdinals} ({@code null} = unknown), covering all axes until narrowed by subscripts inside {@code build}.
+	 * {@code parameterOrdinals} ({@code null} = unknown), covering all axes until narrowed by subscripts inside {@code build}, accumulating
+	 * both read populations into {@code reads} and {@code rankReads}.
 	 */
-	private Set<AxisRead> scanBuild(CGNode buildNode, Set<Integer> parameterOrdinals) {
+	private void scanBuild(CGNode buildNode, Set<Integer> parameterOrdinals, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		IR ir = buildNode.getIR();
 
 		if (ir == null)
-			return Set.of();
+			return;
 
 		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
 
 		// build(self, input_shape): slot 0 is the function object, slot 1 the receiver, slot 2 the shape.
 		if (parameters.length <= 2)
-			return Set.of();
+			return;
 
-		return this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null))).reads();
+		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)));
+		reads.addAll(result.reads());
+		rankReads.addAll(result.rankReads());
 	}
 
 	/**
-	 * The result of a scan: the {@link AxisRead}s whose descriptors reached a sink, whether any value taint escaped (reached a non-shape,
-	 * non-laundering use), and the descriptor this node's returns carry back to the caller ({@code null} when no shape-tainted value is
-	 * returned).
+	 * The result of a scan: the {@link AxisRead}s whose descriptors reached an extent-sensitive sink, the rank-sensitive-only reads
+	 * ({@code as_list}/{@code rank}/{@code ndims}/{@code len}; #809), whether any value taint escaped (reached a non-shape, non-laundering
+	 * use), and the descriptor this node's returns carry back to the caller ({@code null} when no shape-tainted value is returned).
 	 */
-	private record ScanResult(Set<AxisRead> reads, boolean valueEscapes, AxisRead returnDescriptor, Set<Integer> returnProvenance) {
+	private record ScanResult(Set<AxisRead> reads, Set<AxisRead> rankReads, boolean valueEscapes, AxisRead returnDescriptor,
+			Set<Integer> returnProvenance) {
 	}
 
 	/**
@@ -277,12 +303,12 @@ class StaticShapeReadAnalysis {
 			return cached;
 
 		// Optimistic cycle guard: a recursive revisit contributes nothing new.
-		this.memo.put(key, new ScanResult(Set.of(), false, null, null));
+		this.memo.put(key, new ScanResult(Set.of(), Set.of(), false, null, null));
 
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new ScanResult(Set.of(), false, null, null);
+			return new ScanResult(Set.of(), Set.of(), false, null, null);
 
 		DefUse defUse = node.getDU();
 		Map<Integer, Set<Integer>> valueProvenance = new HashMap<>(valueSeed);
@@ -291,6 +317,7 @@ class StaticShapeReadAnalysis {
 		worklist.addAll(valueSeed.keySet());
 		worklist.addAll(shapeSeed.keySet());
 		Set<AxisRead> reads = new HashSet<>();
+		Set<AxisRead> rankReads = new HashSet<>();
 		boolean valueEscapes = false;
 		AxisRead returnDescriptor = null;
 		Set<Integer> returnProvenance = null;
@@ -316,6 +343,22 @@ class StaticShapeReadAnalysis {
 
 						for (int d = 0; d < read.getNumberOfDefs(); d++)
 							colorShape(read.getDef(d), descriptor, valueProvenance, shapeDescriptors, worklist);
+
+						continue;
+					}
+
+					// A rank-sensitive member read on a shape vector (`as_list`, `rank`, `ndims`): record a rank-only requirement
+					// (#809). `rank`/`ndims` yield a trace-time integer constant under a known rank, so their results launder;
+					// `as_list`'s result is the dimension list itself, so it keeps the receiver's taint (here, on the bound-method
+					// value, which the invoke handling forwards to the call result).
+					if (!valueColored && shapeDescriptors.containsKey(valueNumber) && member != null
+							&& RANK_SENSITIVE_MEMBER_NAMES.contains(member)) {
+						AxisRead base = shapeDescriptors.get(valueNumber);
+						rankReads.add(new AxisRead(base.parameterOrdinals(), null));
+
+						if (AS_LIST_MEMBER_NAME.equals(member))
+							for (int d = 0; d < read.getNumberOfDefs(); d++)
+								colorShape(read.getDef(d), base, valueProvenance, shapeDescriptors, worklist);
 
 						continue;
 					}
@@ -352,11 +395,12 @@ class StaticShapeReadAnalysis {
 
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (this.handleInvoke(node, invoke, defUse, valueNumber, valueColored, valueProvenance, shapeDescriptors, worklist,
-							reads))
+							reads, rankReads))
 						continue;
 
 					// Cross into user-defined callees, carrying each tainted argument's color to the corresponding parameter slot.
-					InterproceduralOutcome outcome = this.crossIntoCallees(node, invoke, valueProvenance, shapeDescriptors, reads);
+					InterproceduralOutcome outcome = this.crossIntoCallees(node, invoke, valueProvenance, shapeDescriptors, reads,
+							rankReads);
 
 					if (outcome.valueEscaped())
 						valueEscapes = true;
@@ -416,24 +460,47 @@ class StaticShapeReadAnalysis {
 			}
 		}
 
-		ScanResult result = new ScanResult(reads, valueEscapes, returnDescriptor, returnProvenance);
+		ScanResult result = new ScanResult(reads, rankReads, valueEscapes, returnDescriptor, returnProvenance);
 		this.memo.put(key, result);
 		return result;
 	}
 
 	/**
 	 * Handles the invoke-instruction cases that need no callee descent: laundering ({@code tf.shape}/{@code size}/{@code rank}), slice
-	 * narrowing, static {@code K.int_shape}, and the sink tests ({@code tf.reshape}/{@code tf.range} targets; {@code add_weight}). Returns
-	 * true iff the invoke was fully handled here.
+	 * narrowing, static {@code K.int_shape}, the sink tests ({@code tf.reshape}/{@code tf.range} targets; {@code add_weight}), the
+	 * {@code as_list()} call-result forwarding, and the rank-sensitive {@code len} sink (#809). Returns true iff the invoke was fully
+	 * handled here.
 	 */
 	private boolean handleInvoke(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, int valueNumber, boolean valueColored,
 			Map<Integer, Set<Integer>> valueProvenance, Map<Integer, AxisRead> shapeDescriptors, Deque<Integer> worklist,
-			Set<AxisRead> reads) {
+			Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
 
 		// A dynamic shape read returns a tensor, valid under a wildcard: launder entirely.
 		if (fqn != null && DYNAMIC_SHAPE_OP_FQNS.contains(fqn))
 			return true;
+
+		// Calling a shape-tainted `as_list` bound method: the result is the dimension list itself, inheriting the receiver's
+		// descriptor for per-axis consumption downstream (the rank-only requirement was recorded at the member read).
+		if (!valueColored && invoke.getUse(0) == valueNumber && shapeDescriptors.containsKey(valueNumber)
+				&& defUse.getDef(valueNumber) instanceof PythonPropertyRead calleeRead
+				&& AS_LIST_MEMBER_NAME.equals(Util.resolveStringConstant(node, calleeRead.getMemberRef(), this.pointerAnalysis))) {
+			for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+				colorShape(invoke.getDef(d), shapeDescriptors.get(valueNumber), valueProvenance, shapeDescriptors, worklist);
+
+			return true;
+		}
+
+		// `len(shape)` raises on an unknown-rank shape and is a trace-time integer constant otherwise: a rank-only sink whose
+		// result launders (#809).
+		if (!valueColored && invokesBuiltin(invoke, defUse, LEN_BUILTIN_NAME) && shapeDescriptors.containsKey(valueNumber)) {
+			for (int j = 1; j < invoke.getNumberOfUses(); j++)
+				if (invoke.getUse(j) == valueNumber) {
+					AxisRead descriptor = shapeDescriptors.get(valueNumber);
+					rankReads.add(new AxisRead(descriptor.parameterOrdinals(), null));
+					return true;
+				}
+		}
 
 		// A shape-target op consuming a statically-read dimension (directly or through its target list) is a sink.
 		if (fqn != null && SHAPE_TARGET_OP_FQNS.contains(fqn)) {
@@ -506,7 +573,7 @@ class StaticShapeReadAnalysis {
 	 * library summary), else the callees' returned shape descriptor.
 	 */
 	private InterproceduralOutcome crossIntoCallees(CGNode node, PythonInvokeInstruction invoke, Map<Integer, Set<Integer>> valueProvenance,
-			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads) {
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		Map<Integer, Set<Integer>> valueSlots = new TreeMap<>();
 		Map<Integer, AxisRead> shapeSlots = new TreeMap<>();
 
@@ -558,6 +625,7 @@ class StaticShapeReadAnalysis {
 			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed);
 
 			reads.addAll(result.reads());
+			rankReads.addAll(result.rankReads());
 
 			if (result.valueEscapes())
 				calleeValueEscapes = true;
@@ -642,13 +710,18 @@ class StaticShapeReadAnalysis {
 
 	/** True iff {@code invoke} calls the built-in {@code slice} constructor (how a Python {@code x[a:b:c]} subscript is modeled). */
 	private static boolean invokesSliceBuiltin(PythonInvokeInstruction invoke, DefUse defUse) {
+		return invokesBuiltin(invoke, defUse, SLICE_BUILTIN_NAME);
+	}
+
+	/** True iff {@code invoke} calls the named built-in, resolved through the callee's lexical read. */
+	private static boolean invokesBuiltin(PythonInvokeInstruction invoke, DefUse defUse, String name) {
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
 
 		if (!(def instanceof AstLexicalRead lexical))
 			return false;
 
 		Access[] accesses = lexical.getAccesses();
-		return accesses.length > 0 && SLICE_BUILTIN_NAME.equals(accesses[0].getName().fst);
+		return accesses.length > 0 && name.equals(accesses[0].getName().fst);
 	}
 
 	/**

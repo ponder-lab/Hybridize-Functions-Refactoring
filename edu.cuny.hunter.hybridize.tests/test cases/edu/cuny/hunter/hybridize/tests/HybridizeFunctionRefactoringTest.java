@@ -10252,6 +10252,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
+	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
+	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
+	 * its spec to shape-&#8868;) must fail with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}. Every runtime failure mode
+	 * was verified per sink on TF 2.9.3 ({@code as_list}/{@code len}/{@code ndims} raise {@code ValueError}; {@code rank} arithmetic raises
+	 * {@code TypeError} on the {@code None}). The {@code ranked_*} twins are called at one rank with differing extents, so their specs keep
+	 * a known rank with a dynamic axis, which every rank read tolerates: they must stay P1, pinning the precision split from the
+	 * extent-sensitive verdict (notably {@code ranked_rank}, whose rank arithmetic is a trace-time constant that must not trip the
+	 * arithmetic sink).
+	 */
+	@Test
+	public void testUnresolvedRankReadsBlockHybridization() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_as_list", "wild_len", "wild_rank", "wild_ndims")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue("`" + identifier + "` reads its input's rank surface, which `shape=None` breaks.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		}
+
+		for (String identifier : List.of("ranked_as_list", "ranked_len", "ranked_rank")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "`'s spec keeps a known rank, which every rank read tolerates.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
