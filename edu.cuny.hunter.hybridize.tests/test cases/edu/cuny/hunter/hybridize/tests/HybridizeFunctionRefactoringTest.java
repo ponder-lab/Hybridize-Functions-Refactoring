@@ -10409,6 +10409,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the dead-caller semantics of the coverage fixpoint (#826): an eager call site inside a function that is itself unreachable
+	 * (defined, never referenced) contributes no executed path and no call-graph node, so it must not break coverage. This is the shape the
+	 * corpus evidence surfaced (an eval-only image loader left dead in the subject calling an otherwise-covered function), made a
+	 * deliberate fixture rather than an accident before any blocking behavior ships on the advisory.
+	 */
+	@Test
+	public void testCallerCoverageDeadCaller() throws Exception {
+		Function covered = getFunction("covered");
+		assertEquals("`covered`'s only reachable caller is the hybridized `live_caller`; the dead `dead_caller` has no call-graph node.",
+				Boolean.TRUE, covered.getCallerCovered());
+		assertEquals("The advisory does not block: `covered` still hybridizes (P1).", P1, covered.getPassingPrecondition());
+		assertNotNull("`covered` carries the caller-coverage INFO.",
+				covered.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+	}
+
+	/**
 	 * Pins the trace-time-availability carve-out of the parameter-flow numpy precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): numpy over a parameter's {@code shape} is benign under
 	 * {@code tf.function} tracing (the shape is an ordinary Python object at trace time), so a {@code shape} read launders the taint and
