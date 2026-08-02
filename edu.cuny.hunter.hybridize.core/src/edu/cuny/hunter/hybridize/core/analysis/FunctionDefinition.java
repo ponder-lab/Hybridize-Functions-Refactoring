@@ -7,6 +7,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.IPythonNature;
+import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.visitors.NodeUtils;
 
@@ -23,15 +24,23 @@ public final class FunctionDefinition {
 
 	IDocument containingDocument;
 
+	/**
+	 * The root of the AST that {@link #functionDef} was extracted from (the containing module's {@code Module} node under a successful
+	 * parse). Retained so analyses can resolve module-level name references, e.g. a name-referenced {@code input_signature} constant
+	 * (#834).
+	 */
+	SimpleNode containingModule;
+
 	IPythonNature nature;
 
 	public FunctionDefinition(FunctionDef functionDef, String containingModuleName, File containingFile, IFile containingActualFile,
-			IDocument containingDocument, IPythonNature nature) {
+			IDocument containingDocument, SimpleNode containingModule, IPythonNature nature) {
 		this.functionDef = functionDef;
 		this.containingModuleName = containingModuleName;
 		this.containingFile = containingFile;
 		this.containingActualFile = containingActualFile;
 		this.containingDocument = containingDocument;
+		this.containingModule = containingModule;
 		this.nature = nature;
 	}
 
@@ -97,6 +106,15 @@ public final class FunctionDefinition {
 
 	public FunctionDef getFunctionDef() {
 		return functionDef;
+	}
+
+	/**
+	 * Returns the root of the AST that {@link #getFunctionDef()} was extracted from.
+	 *
+	 * @return The containing module's AST root, or {@code null} when it was not available at construction.
+	 */
+	public SimpleNode getContainingModule() {
+		return this.containingModule;
 	}
 
 	public IPythonNature getNature() {

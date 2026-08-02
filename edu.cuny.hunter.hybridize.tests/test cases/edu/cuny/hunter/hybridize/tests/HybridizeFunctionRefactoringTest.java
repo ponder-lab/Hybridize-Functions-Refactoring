@@ -700,14 +700,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Returns the refactoring available {@link FunctionDef}s found in the test file X.py, where X is fileNameWithoutExtension. The
-	 * {@link IDocument} represents the contents of X.py.
+	 * {@link IDocument} represents the contents of X.py, and the {@link SimpleNode} is the parsed module's AST root the
+	 * {@link FunctionDef}s were extracted from.
 	 *
 	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
-	 * @return The refactoring available {@link FunctionDef}s in X.py, where X is fileNameWithoutExtension, represented by the
-	 *         {@link IDocument}.
+	 * @return The refactoring available {@link FunctionDef}s in X.py, where X is fileNameWithoutExtension, keyed by the module's AST root
+	 *         and the {@link IDocument}.
 	 */
-	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(String fileNameWithoutExtension)
-			throws Exception {
+	private Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(
+			String fileNameWithoutExtension) throws Exception {
 		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile(fileNameWithoutExtension);
 
 		// extract function definitions.
@@ -719,9 +720,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Collection<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toList());
 
-		IDocument document = pythonNodeToDocument.getValue();
-
-		return Map.entry(document, availableFunctionDefinitions);
+		return Map.entry(pythonNodeToDocument, availableFunctionDefinitions);
 	}
 
 	/**
@@ -733,10 +732,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
 		File inputTestFile = this.getInputTestFile(fileNameWithoutExtension);
 
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
 				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
 
-		IDocument document = documentToAvailableFunctionDefs.getKey();
+		SimpleNode moduleRoot = documentToAvailableFunctionDefs.getKey().getKey();
+		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		IFile actualInputTestFile = new FileStub2(fileNameWithoutExtension + ".py") {
@@ -767,8 +767,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		};
 
-		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, nature))
+		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream().map(
+				f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, moduleRoot, nature))
 				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
@@ -1146,6 +1146,51 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(args.hasInputSignatureParam());
 		assertFalse(args.getSuppliedInputSignature().isPresent());
+	}
+
+	/**
+	 * Test for #834. The gpt-2 shape: a module-level constant referenced by name from two decorated methods, alongside a same-named
+	 * attribute store carrying a different literal. The identifier is bound exactly once in the module (the attribute store is not a name
+	 * binding and does not compete), so both signatures resolve to the constant's literal.
+	 */
+	@Test
+	public void testSuppliedInputSignatureNameReference() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Model.train_step", "Model.test_step")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue(function.isHybrid());
+
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
+			assertTrue(args.hasInputSignatureParam());
+
+			Optional<InputSignature> signature = args.getSuppliedInputSignature();
+			assertTrue(signature.isPresent());
+			assertEquals(List.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE)),
+					new TensorType(INT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE))), signature.get().singleTypes());
+		}
+	}
+
+	/**
+	 * Test for #834's declines. Name references that must NOT resolve: a name bound twice at module level (reassignment), a name whose sole
+	 * binding's value is a call rather than a literal, and a name shadowed by a class-body binding (which is what the decorator actually
+	 * sees at decoration time; resolving to the module-level literal would model the wrong value). Each leaves the signature unmodeled
+	 * while {@code hasInputSignatureParam()} stays true, preserving the presence-true/parse-empty contract state.
+	 */
+	@Test
+	public void testSuppliedInputSignatureNameReferenceControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("reassigned", "computed", "Shadowing.shadowed")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue(function.isHybrid());
+
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
+			assertTrue(args.hasInputSignatureParam());
+			assertFalse(args.getSuppliedInputSignature().isPresent());
+		}
 	}
 
 	/**
@@ -2054,7 +2099,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
 				.getDocumentToAvailableFunctionDefinitions("A");
 
 		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
@@ -2079,7 +2124,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		File inputTestFile = this.getInputTestFile("A");
 
-		IDocument document = documentToAvailableFunctionDefinitions.getKey();
+		IDocument document = documentToAvailableFunctionDefinitions.getKey().getValue();
 
 		int offset = NodeUtils.getOffset(document, decoratorFunction);
 		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
