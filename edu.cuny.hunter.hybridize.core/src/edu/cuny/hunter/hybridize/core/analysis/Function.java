@@ -9,7 +9,6 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
-import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -69,7 +68,6 @@ import org.eclipse.text.edits.DeleteEdit;
 import org.eclipse.text.edits.InsertEdit;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
-import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -246,8 +244,9 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} argument's value—the {@code [tf.TensorSpec(...)]} list/tuple, or
 		 * the bare name referencing one (#834)—whether supplied by keyword or by position, or {@code null} when none was supplied. Always
-		 * the node at the decorator site, never a resolved referent, so {@link #reconfigure()} can locate the existing value's source span
-		 * to overwrite it. See {@link #getSuppliedInputSignatureNode()}.
+		 * the node at the decorator site, never a resolved referent. Retained for reporting and for the sanctioned future find-and-fix
+		 * signature rewrite (issue 808); the refactoring itself never edits an existing signature. See
+		 * {@link #getSuppliedInputSignatureNode()}.
 		 */
 		private exprType suppliedInputSignatureNode;
 
@@ -420,7 +419,8 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple, or the bare
 		 * name referencing one; #834), or {@code null} when none was supplied. Always the node at the decorator site, never a resolved
-		 * referent. {@link #reconfigure()} uses it to locate the existing value's source span when overwriting.
+		 * referent. Retained for reporting and for the sanctioned future find-and-fix signature rewrite (issue 808); the refactoring itself
+		 * never edits an existing signature.
 		 *
 		 * @return The supplied {@code input_signature} value node, or {@code null}.
 		 */
@@ -1409,39 +1409,40 @@ public class Function {
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
-							this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
+							this.addInfo("This hybrid function has no input signature and will be reconfigured to add the inferred one.");
 							this.addTransformation(RECONFIGURE);
 							this.setPassingPrecondition(P4);
 						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
 								&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
-							// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
-							// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern
-							// always
-							// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
+							// Adjudication path: an existing, fully-modeled `input_signature` is present. Compare it against the
+							// inferred one and REPORT; no relation rewrites the signature (issue 808). Since the inferred signature is
+							// the join over the observed call sites, the tighter and incomparable relations can only arise when some
+							// observed call violates the existing signature, i.e., the original program raises at that site; rewriting
+							// the signature to admit those calls would repair rather than refactor, with zero retracing benefit (a
+							// present signature already pins one trace). The rewrite is a sanctioned future find-and-fix
+							// transformation, not this refactoring. `canReconfigure` implies inference succeeded (it gates on
+							// `canEmitInferredInputSignature`), so the pattern always binds here; a hypothetical `Absent` falls
+							// through to the no-primitive-parameter failure below.
 							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
 
 							switch (supplied.relate(inferred)) {
-							case SUPPLIED_TIGHTER -> {
-								this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
-										+ "it can be reconfigured to admit the observed inputs.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
+							case SUPPLIED_TIGHTER -> this
+									.addWarning("This hybrid function's input signature is narrower than its call sites require; "
+											+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
+											+ "admitting those calls would change program behavior rather than preserve it.");
+							case INCOMPARABLE -> this.addWarning("This hybrid function's input signature disagrees with its call sites; "
+									+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
+									+ "reconciling it would change the inputs the function accepts.");
+							case SUPPLIED_BROADER -> this
+									.addInfo("This hybrid function's input signature is broader than its call sites require; "
+											+ "it is left unchanged in case the broader signature is intentional.");
+							case AGREEMENT -> {
+								// Nothing to report: the supplied signature matches the call-site evidence.
 							}
-							case INCOMPARABLE -> {
-								this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-										+ "reconfiguring it will change the inputs the function accepts.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
 							}
-							case SUPPLIED_BROADER -> {
-								this.addInfo("This hybrid function's input signature is broader than its call sites require; "
-										+ "it is left unchanged in case the broader signature is intentional.");
-								this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-										"Functions with no Python literal arguments may benefit from hybridization.");
-							}
-							case AGREEMENT -> this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+
+							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
-							}
 						} else {
 							if (unresolvedStaticallyReadAxes)
 								// Report the honest blocking reason alongside the default terminal failure: the reconfiguration was
@@ -3695,19 +3696,23 @@ public class Function {
 
 	/**
 	 * Reconfigures this already-hybrid function's {@code @tf.function} decorator to carry the inferred {@code input_signature} (the
-	 * {@code RECONFIGURE} transformation). When the decorator has no {@code input_signature}, the inferred one is added; when it already
-	 * has one that {@link #check()} determined should be overwritten, the existing value is replaced in place. Reuses the existing
-	 * import-shape resolution ({@link #getImportContext(IDocument)}) and emission gate
-	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function necessarily
-	 * imports TensorFlow (the decorator references it), so {@code getImportContext} is non-null. When the signature's names are not
-	 * reachable under the file's import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no
-	 * keyword and no edit is produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * {@code RECONFIGURE} transformation). Only the add path exists: {@link #check()} selects {@code RECONFIGURE} solely for a decorator
+	 * with no {@code input_signature}; an existing signature is adjudicated report-only and never rewritten, since the rewrite would repair
+	 * a nonconforming observed call rather than preserve behavior (issue 808; the sanctioned rewrite is a future find-and-fix
+	 * transformation, not this refactoring). Reuses the existing import-shape resolution ({@link #getImportContext(IDocument)}) and
+	 * emission gate ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function
+	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null}
+	 * check below is defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's
+	 * import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is
+	 * produced, matching {@link #convertToHybrid()}'s silent skip.
 	 *
-	 * @return The edits adding or replacing {@code input_signature=[...]} on the decorator, or an empty list when emission is gated out.
+	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
 		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
+		assert this.getHybridizationParameters() == null || !this.getHybridizationParameters()
+				.hasInputSignatureParam() : "RECONFIGURE is selected only for a decorator without an input_signature (issue 808).";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -3718,55 +3723,6 @@ public class Function {
 			return ret;
 
 		decoratorsType decorator = this.hybridDecorator;
-
-		// Overwrite path: an existing `input_signature` value is present (its node was retained during parameter parsing). Replace its
-		// bracketed list/tuple in place with the inferred one. `check()` selects this only when the inferred signature is emittable, so
-		// `inferInputSignature` is present here.
-		exprType existingValue = this.getHybridizationParameters() == null ? null
-				: this.getHybridizationParameters().getSuppliedInputSignatureNode();
-
-		if (existingValue != null) {
-			final int valueOffset;
-			final int valueLength;
-
-			if (existingValue instanceof Name name) {
-				// A name-referenced signature (#834): the retained node is the bare reference at the decorator site. Replace exactly
-				// the name's own span—a bracket scan would run past the decorator—leaving the referenced module-level constant intact
-				// for its other users.
-				valueOffset = getOffset(doc, existingValue);
-				valueLength = name.id.length();
-			} else {
-				// Span the existing value's bracketed list/tuple: from its first opening bracket to the matching close, tracking
-				// nesting.
-				int bracket = getOffset(doc, existingValue);
-				while (bracket < doc.getLength() && doc.getChar(bracket) != '[' && doc.getChar(bracket) != '(')
-					++bracket;
-
-				int depth = 0;
-				int end = bracket;
-				for (; end < doc.getLength(); end++) {
-					char c = doc.getChar(end);
-					if (c == '(' || c == '[' || c == '{')
-						++depth;
-					else if (c == ')' || c == ']' || c == '}') {
-						--depth;
-						if (depth == 0)
-							break;
-					}
-				}
-
-				valueOffset = bracket;
-				valueLength = end - bracket + 1;
-			}
-			MultiTextEdit replacement = new MultiTextEdit();
-			this.inferInputSignature().signature()
-					.ifPresent(sig -> replacement.addChild(new ReplaceEdit(valueOffset, valueLength, sig.toTensorSpecList(ctx.prefix()))));
-
-			if (replacement.hasChildren())
-				ret.add(replacement);
-
-			return ret;
-		}
 
 		// Offset just past the decorator name (e.g. just past `function` in `@tf.function`). Mirrors `convertToEager`'s proven offset
 		// computation: the `decoratorsType` node begins at `@`, and `getFullRepresentationString(decorator.func)` yields the dotted name

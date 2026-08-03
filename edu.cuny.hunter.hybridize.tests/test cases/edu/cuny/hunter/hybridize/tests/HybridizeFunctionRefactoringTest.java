@@ -18,7 +18,6 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
-import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -1935,69 +1934,65 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Modify path (#596), supplied-tighter: the existing {@code input_signature} is more specific than the call-site evidence (a concrete
-	 * rank-1 shape against call sites of differing rank, which infer an unknown-rank shape), so it is overwritten with the inferred one and
-	 * reported informationally.
+	 * Adjudication path (#596, made report-only by #808), supplied-tighter: the existing {@code input_signature} is more specific than the
+	 * call-site evidence (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the
+	 * inferred signature is the join over the observed call sites, this relation means a nonconforming observed call raises at runtime;
+	 * rewriting the signature would repair rather than preserve behavior, so it is preserved and the finding surfaces as a warning.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
-	public void testReconfigureOverwriteTighter() throws Exception {
-		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
+	public void testReconfigurePreserveTighter() throws Exception {
+		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
 	}
 
 	/**
-	 * Name-referenced variant of {@link #testReconfigureOverwriteTighter()} (#834). The tighter signature is referenced through a
-	 * module-level constant, so the retained decorator node is a bare name. The overwrite must replace exactly the reference's span at the
-	 * decorator site with the inferred literal—a bracket scan from the name would run past the decorator—and leave the module-level
-	 * constant itself intact (it may have other users).
+	 * Name-referenced variant of {@link #testReconfigurePreserveTighter()} (#834): the tighter signature is referenced through a
+	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same report-only
+	 * warning with the constant untouched.
 	 */
 	@Test
-	public void testReconfigureOverwriteNameReference() throws Exception {
-		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
+	public void testReconfigurePreserveNameReference() throws Exception {
+		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
 	}
 
 	/**
-	 * Modify path (#596), incomparable: the existing {@code input_signature} is incomparable with the inferred one (a float32 dtype against
-	 * an int32 call site), so it is overwritten with a warning.
+	 * Adjudication path (#596, made report-only by #808), incomparable: the existing {@code input_signature} is incomparable with the
+	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is
+	 * preserved and the finding surfaces as a warning.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
-	public void testReconfigureOverwriteIncomparable() throws Exception {
-		helperAssertReconfigureOverwrite(true, "disagrees with its call sites");
+	public void testReconfigurePreserveIncomparable() throws Exception {
+		helperAssertAdjudicationReportsOnly("disagrees with its call sites");
 	}
 
 	/**
-	 * Shared assertion for the modify-path overwrite tests: the single hybrid fixture function selects {@link Transformation#RECONFIGURE}
-	 * with passing precondition {@link PreconditionSuccess#P5}, emits a status of the expected severity (warning for an incomparable
-	 * signature, informational otherwise) containing {@code messageFragment}, and rewrites the decorator to match {@code out/A.py}.
+	 * Shared assertion for the report-only adjudication tests (#808): the single hybrid fixture function selects no transformation and no
+	 * passing precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing
+	 * {@code messageFragment}, and terminates in the same {@code HAS_NO_PRIMITIVE_PARAMETERS} failure as the other unmodified-signature
+	 * outcomes.
 	 *
-	 * @param expectWarning True iff the per-category status should be a warning (the incomparable case).
-	 * @param messageFragment A fragment the per-category status message must contain.
+	 * @param messageFragment A fragment the adjudication warning must contain.
 	 */
-	private void helperAssertReconfigureOverwrite(boolean expectWarning, String messageFragment) throws Exception {
+	private void helperAssertAdjudicationReportsOnly(String messageFragment) throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertEquals("A modify-path overwrite should select `RECONFIGURE`.", singleton(RECONFIGURE), f.getTransformations());
-		assertEquals("A modify-path overwrite should set the P5 passing precondition.", P5, f.getPassingPrecondition());
+		assertTrue("The adjudication is report-only: no transformation is selected.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on the report-only path.", f.getPassingPrecondition());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
 
-		boolean found = Arrays.stream(f.getStatus().getEntries())
-				.anyMatch(e -> (expectWarning ? e.isWarning() : e.isInfo()) && e.getMessage().contains(messageFragment));
-		assertTrue("Expected a " + (expectWarning ? "warning" : "informational") + " status containing: " + messageFragment, found);
+		boolean found = Arrays.stream(f.getStatus().getEntries()).anyMatch(e -> e.isWarning() && e.getMessage().contains(messageFragment));
+		assertTrue("Expected an adjudication warning containing: " + messageFragment, found);
 
-		IDocument doc = f.getContainingDocument();
-		List<TextEdit> edits = new ArrayList<>(f.transform());
-		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
-
-		for (TextEdit edit : edits)
-			edit.apply(doc);
-
-		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+		assertNotNull("The adjudicated function terminates in the no-primitive-parameters failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
