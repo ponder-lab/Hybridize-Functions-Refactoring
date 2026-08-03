@@ -1351,6 +1351,16 @@ public class Function {
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
+			if (TRUE.equals(this.getCallerCovered()))
+				// Advisory only, the measurement phase for de-hybridizing covered hybrid functions (issue 827), mirroring the
+				// staging the conversion side went through before its blocking promotion (issue 826): a covered hybrid function's
+				// decorator is redundant on every executed path, but removing it deletes an enforced boundary (any supplied
+				// input_signature validation) and leans on the dead-caller semantics, so the transformation waits on corpus
+				// evidence gathered through this INFO and the caller-covered column.
+				this.addInfo(Information.CALLER_COVERAGE,
+						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
+								+ "on every executed path; de-hybridizing it may be beneficial.");
+
 			if (this.getHasTensorParameter() != null && !this.getHasTensorParameter()) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
