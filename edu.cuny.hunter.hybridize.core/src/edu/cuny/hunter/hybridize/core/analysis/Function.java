@@ -1295,16 +1295,16 @@ public class Function {
 								// incompleteness-safe: it never violates semantics preservation.
 								this.addFailure(PreconditionFailure.NO_TENSOR_COMPUTATION,
 										"This function performs no tensor computation, so hybridization is unlikely to improve performance.");
+							else if (TRUE.equals(this.getCallerCovered()))
+								// Blocking as of issue 826, promoted from the phase-1 advisory (issue 767) on corpus evidence: a
+								// covered function's computation is already traced on every executed path, so conversion adds only a
+								// redundant nested trace boundary. Allow-on-unknown: only a determinate TRUE blocks.
+								this.addFailure(PreconditionFailure.HAS_COVERED_CALLERS,
+										"Every known call path to this function comes from hybridized code, so its computation "
+												+ "is already traced; hybridizing it would add no benefit.");
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
-
-								if (TRUE.equals(this.getCallerCovered()))
-									// Advisory only (issue 767, phase 1): the conversion still proceeds; the evaluation measures
-									// the flagged population before any enforcement.
-									this.addInfo(Information.CALLER_COVERAGE,
-											"Every known call path to this function comes from hybridized code, so its computation "
-													+ "is already traced; hybridizing it may add no benefit.");
 
 								/*
 								 * The eager→hybrid conversion emits the inferred signature into the new decorator during the change

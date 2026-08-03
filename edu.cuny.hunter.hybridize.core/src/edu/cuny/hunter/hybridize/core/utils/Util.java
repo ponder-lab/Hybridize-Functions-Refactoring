@@ -179,6 +179,7 @@ public class Util {
 		PythonNature nature = getPythonNature(pythonFile);
 
 		FunctionExtractor functionExtractor = new FunctionExtractor();
+
 		SimpleNode moduleRoot;
 
 		try {
