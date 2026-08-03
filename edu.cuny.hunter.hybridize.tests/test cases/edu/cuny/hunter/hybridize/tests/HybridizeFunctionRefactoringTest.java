@@ -149,7 +149,6 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
-import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -10387,41 +10386,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins phase 1 of the caller-coverage advisory (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767): a function
-	 * whose every known call path is dominated by a hybridized caller is already traced, so hybridizing it may add no benefit. Phase 1 is
-	 * advisory-only: {@code inner} (called only from the hybridized {@code outer}) still converts (P1) and carries the INFO; {@code mixed}
-	 * is also called at module level, an uncovered path, so it carries no INFO. The least fixpoint, the inverted polarity, and the
-	 * module-caller block are the design settled on the issue.
+	 * Pins the caller-coverage benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767), promoted
+	 * from the phase-1 advisory to blocking on corpus evidence (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826):
+	 * a function whose every known call path is dominated by a hybridized caller is already traced, so converting it adds only a redundant
+	 * nested trace boundary. {@code inner} (called only from the hybridized {@code outer}) is covered and fails with
+	 * {@link PreconditionFailure#HAS_COVERED_CALLERS}; {@code mixed} is also called at module level, an uncovered path, and keeps P1
+	 * (allow-on-unknown polarity: only a determinate {@code TRUE} blocks). The least fixpoint and the module-caller block are the design
+	 * settled on the parent issue.
 	 */
 	@Test
-	public void testCallerCoverageAdvisory() throws Exception {
+	public void testCallerCoverageBlocksHybridization() throws Exception {
 		Function inner = getFunction("inner");
 		assertEquals("`inner`'s only caller is the hybridized `outer`, so it is covered.", Boolean.TRUE, inner.getCallerCovered());
-		assertEquals("Phase 1 is advisory-only: `inner` still hybridizes (P1).", P1, inner.getPassingPrecondition());
-		assertNotNull("`inner` carries the caller-coverage INFO.",
-				inner.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+		assertNull("`inner` must not pass a precondition; its computation is already traced on every executed path.",
+				inner.getPassingPrecondition());
+		assertNotNull("`inner` fails with HAS_COVERED_CALLERS.",
+				inner.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
 
 		Function mixed = getFunction("mixed");
 		assertEquals("`mixed` is also called at module level, an uncovered path.", Boolean.FALSE, mixed.getCallerCovered());
 		assertEquals("`mixed` still hybridizes (P1).", P1, mixed.getPassingPrecondition());
-		assertNull("`mixed` carries no caller-coverage INFO.",
-				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+		assertNull("`mixed` carries no coverage failure.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
 	}
 
 	/**
 	 * Pins the dead-caller semantics of the coverage fixpoint (#826): an eager call site inside a function that is itself unreachable
 	 * (defined, never referenced) contributes no executed path and no call-graph node, so it must not break coverage. This is the shape the
 	 * corpus evidence surfaced (an eval-only image loader left dead in the subject calling an otherwise-covered function), made a
-	 * deliberate fixture rather than an accident before any blocking behavior ships on the advisory.
+	 * deliberate fixture rather than an accident before the blocking promotion shipped.
 	 */
 	@Test
 	public void testCallerCoverageDeadCaller() throws Exception {
 		Function covered = getFunction("covered");
 		assertEquals("`covered`'s only reachable caller is the hybridized `live_caller`; the dead `dead_caller` has no call-graph node.",
 				Boolean.TRUE, covered.getCallerCovered());
-		assertEquals("The advisory does not block: `covered` still hybridizes (P1).", P1, covered.getPassingPrecondition());
-		assertNotNull("`covered` carries the caller-coverage INFO.",
-				covered.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+		assertNull("`covered` must not pass a precondition; coverage now blocks.", covered.getPassingPrecondition());
+		assertNotNull("`covered` fails with HAS_COVERED_CALLERS.",
+				covered.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
 	}
 
 	/**

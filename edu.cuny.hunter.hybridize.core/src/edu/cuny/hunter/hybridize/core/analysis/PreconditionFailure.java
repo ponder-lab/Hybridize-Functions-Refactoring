@@ -95,7 +95,17 @@ public enum PreconditionFailure {
 	 * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop. In-body {@code tf.range} loops are
 	 * AutoGraph-supported and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
 	 */
-	HAS_TENSOR_PARAMETER_ITERATION(20);
+	HAS_TENSOR_PARAMETER_ITERATION(20),
+
+	/**
+	 * Every known call path to the function comes from hybridized code (the least-fixpoint caller coverage of issue 767), so its
+	 * computation is already traced on every executed path and adding {@code tf.function} contributes only a redundant nested trace
+	 * boundary. A benefit precondition with the allow-on-unknown polarity: unknown, module-level, or uncovered callers leave the function
+	 * convertible, and only a determinate {@code TRUE} coverage blocks. Promoted from the phase-1 advisory on corpus evidence (four covered
+	 * functions, each source-verified; the dead-caller semantics pinned first). See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826.
+	 */
+	HAS_COVERED_CALLERS(21);
 
 	static {
 		// check that the codes are unique.
