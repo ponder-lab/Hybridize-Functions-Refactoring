@@ -148,6 +148,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
+import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -10403,6 +10404,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`mixed` still hybridizes (P1).", P1, mixed.getPassingPrecondition());
 		assertNull("`mixed` carries no coverage failure.",
 				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
+	}
+
+	/**
+	 * Pins the measurement phase for de-hybridizing covered hybrid functions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/827), mirroring the staging the conversion side went through
+	 * before its blocking promotion: a hybrid function whose every known caller is itself hybrid carries a redundant decorator on every
+	 * executed path, surfaced as the caller-coverage INFO with no transformation selected. {@code covered_h} (hybrid, called only from the
+	 * hybrid {@code outer_h}) carries the INFO; {@code outer_h}, called at module level, does not.
+	 */
+	@Test
+	public void testCallerCoverageHybridAdvisory() throws Exception {
+		Function coveredH = getFunction("covered_h");
+		assertEquals("`covered_h`'s only caller is the hybrid `outer_h`, so it is covered.", Boolean.TRUE, coveredH.getCallerCovered());
+		assertNotNull("`covered_h` carries the caller-coverage INFO.",
+				coveredH.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+		assertTrue("Advisory only: no transformation is selected for `covered_h`.", coveredH.getTransformations().isEmpty());
+
+		Function outerH = getFunction("outer_h");
+		assertEquals("`outer_h` is called at module level, an uncovered path.", Boolean.FALSE, outerH.getCallerCovered());
+		assertNull("`outer_h` carries no caller-coverage INFO.",
+				outerH.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
 	}
 
 	/**
