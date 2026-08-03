@@ -3701,9 +3701,10 @@ public class Function {
 	 * a nonconforming observed call rather than preserve behavior (issue 808; the sanctioned rewrite is a future find-and-fix
 	 * transformation, not this refactoring). Reuses the existing import-shape resolution ({@link #getImportContext(IDocument)}) and
 	 * emission gate ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function
-	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is non-null. When the signature's names are
-	 * not reachable under the file's import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate
-	 * yields no keyword and no edit is produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null}
+	 * check below is defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's
+	 * import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is
+	 * produced, matching {@link #convertToHybrid()}'s silent skip.
 	 *
 	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
