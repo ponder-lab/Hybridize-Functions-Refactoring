@@ -10064,6 +10064,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
+	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
+	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
+	 * Because the names are generic ML verbs with demonstrated in-corpus collisions, blocking requires dispatch evidence: {@code calls_fit}
+	 * invokes {@code fit} on a Keras model (the receiver's points-to holds a summarized framework instance) and fails with
+	 * {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}; {@code calls_override} invokes a user-defined {@code predict} (the resolved
+	 * dispatch is user code, analyzed transitively on its own merits) and stays P1. The unresolved residue allows (wala/ML#571 keeps a
+	 * class-hierarchy walk from identifying user model subclasses).
+	 */
+	@Test
+	public void testEagerOnlyTrainingSurface() throws Exception {
+		Function callsFit = getFunction("calls_fit");
+		assertTrue("`calls_fit` invokes the guarded Keras `fit` endpoint.", callsFit.getHasEagerOnlyCalls());
+		assertNull("`calls_fit` must not pass a precondition; the endpoint raises inside a trace.", callsFit.getPassingPrecondition());
+		assertNotNull("`calls_fit` fails with HAS_EAGER_ONLY_CALLS.",
+				callsFit.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function callsOverride = getFunction("calls_override");
+		assertFalse("`calls_override` dispatches to a user-defined `predict`, not the guarded endpoint.",
+				callsOverride.getHasEagerOnlyCalls());
+		assertEquals("`calls_override` still hybridizes (P1).", P1, callsOverride.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a
 	 * function that (transitively) applies a numpy API to a value flowing from its parameters must not hybridize, since the call raises
 	 * under {@code tf.function} tracing once the parameters become symbolic (it fails with
