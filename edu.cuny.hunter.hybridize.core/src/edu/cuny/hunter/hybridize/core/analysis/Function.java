@@ -1670,7 +1670,8 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		boolean eagerOnly = nodes.stream().anyMatch(cgNode -> Util.callsEagerOnlyApi(cgNode, callGraph, pointerAnalysis));
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
 

@@ -318,7 +318,7 @@ public class Util {
 	}
 
 	/** The WALA type name of the TensorFlow module object (what {@code import tensorflow as tf} binds). */
-	private static final String TENSORFLOW_MODULE_TYPE_NAME = "Ltensorflow";
+	static final String TENSORFLOW_MODULE_TYPE_NAME = "Ltensorflow";
 
 	/** WALA type-name prefix for modeled TensorFlow operations, e.g. {@code Ltensorflow/functions/matmul}. */
 	private static final String TENSORFLOW_FUNCTION_TYPE_NAME_PREFIX = "Ltensorflow/functions/";
@@ -334,7 +334,15 @@ public class Util {
 
 	/**
 	 * TensorFlow sub-namespaces that construct specs or protobufs rather than performing tensor computation, so a call into them does not
-	 * count as a tensor op. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
+	 * count as a tensor op. The whole-namespace exclusion is deliberate although both namespaces also contain tensor-producing ops
+	 * ({@code tf.io.parse_single_example}, {@code tf.io.decode_jpeg}): the benefit signal asks whether graph execution accelerates the
+	 * function's work, and parsing or decoding input is preprocessing, typically per-element work living in {@code tf.data} pipelines that
+	 * trace their map functions independently, so counting it would mislabel exactly the functions a developer would leave eager. At corpus
+	 * scale the premise holds (roughly 120 builder and checkpoint references against 6 op call sites, with no observed misjudgment), and
+	 * the window is double-bounded: a typed result from such an op still counts through the tensor-type branch of
+	 * {@link #performsTensorFlowOp}. Should a decode-heavy function ever be wrongly declined, narrow this to a builder-name blocklist then,
+	 * with the instance in hand. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/715.
 	 */
 	private static final Set<String> NON_OP_TENSORFLOW_FQN_PREFIXES = Set.of("tensorflow.train.", "tensorflow.io.");
 
@@ -417,67 +425,6 @@ public class Util {
 	static boolean isTensorFlowNode(CGNode node) {
 		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
 		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
-	}
-
-	/** Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}). */
-	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy");
-
-	/**
-	 * True iff {@code node}, transitively over its call-graph successors, invokes an eager-only API (e.g. {@code Tensor.numpy()}), which
-	 * raises under {@code tf.function} tracing. Detection is by callee attribute name rather than receiver typing: the receiver's tensor
-	 * typing is frequently unavailable (e.g. the result of a user-defined callable), and missing a real {@code .numpy()} call would
-	 * hybridize a function that crashes on first call, while over-matching only declines an optimization. Only user-defined bodies are
-	 * scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks, both mirroring
-	 * {@link #performsTensorFlowOp(CGNode, CallGraph, PointerAnalysis, Map)}. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
-	 *
-	 * @param node The call-graph node to check.
-	 * @param callGraph The call graph, used to follow callees transitively.
-	 * @param pointerAnalysis The pointer analysis, used to resolve the callee's attribute name.
-	 * @return True iff an eager-only API call is reachable from {@code node}.
-	 */
-	public static boolean callsEagerOnlyApi(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
-		return callsEagerOnlyApi(node, callGraph, pointerAnalysis, Sets.newHashSet());
-	}
-
-	private static boolean callsEagerOnlyApi(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<CGNode> seen) {
-		if (!seen.add(node))
-			return false;
-
-		if (!isTensorFlowNode(node)) {
-			IR ir = node.getIR();
-
-			if (ir != null) {
-				DefUse defUse = node.getDU();
-
-				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-					if (instruction instanceof PythonInvokeInstruction invoke && invokesEagerOnlyApi(node, invoke, defUse, pointerAnalysis))
-						return true;
-			}
-		}
-
-		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();) {
-			CGNode succNode = succNodes.next();
-
-			if (callsEagerOnlyApi(succNode, callGraph, pointerAnalysis, seen))
-				return true;
-		}
-
-		return false;
-	}
-
-	/** True iff {@code invoke}'s callee is an attribute read whose member name is an eager-only method name (e.g. {@code numpy}). */
-	private static boolean invokesEagerOnlyApi(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
-			PointerAnalysis<InstanceKey> pointerAnalysis) {
-		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-
-		if (def instanceof PythonPropertyRead read) {
-			String member = resolveStringConstant(node, read.getMemberRef(), pointerAnalysis);
-			return member != null && EAGER_ONLY_METHOD_NAMES.contains(member);
-		}
-
-		return false;
 	}
 
 	/** The origin set of a value produced by numpy only: tensor-convertible, but not a TensorFlow computation. */
