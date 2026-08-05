@@ -159,6 +159,19 @@ public class Util {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
 		exprType decoratorFunction = decorator.func;
+
+		// A run-time generated decorator like `@prop.setter` names an attribute of a property object
+		// defined in this very module, not a module-level definition anywhere. Asking the indexer to
+		// resolve the bare attribute matches every `setter` in the workspace, so the lookup reports an
+		// ambiguity and the decorator is dropped from the output entirely. Its declaring module is the
+		// containing one by construction, so name it directly.
+		if (isGenerated(decorator)) {
+			String generatedFQN = containingModName + "." + NodeUtils.getFullRepresentationString(decoratorFunction);
+			LOG.info(String.format("Generated decorator FQN is: %s.", generatedFQN));
+			monitor.done();
+			return generatedFQN;
+		}
+
 		String fqn = getFullyQualifiedName(decoratorFunction, containingModName, containingFile, containingSelection, nature, monitor);
 
 		monitor.done();
