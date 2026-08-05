@@ -74,12 +74,14 @@ import com.google.common.collect.Sets.SetView;
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
 import edu.cuny.hunter.hybridize.core.analysis.AmbiguousDeclaringModuleException;
+import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
+import edu.cuny.hunter.hybridize.core.analysis.Parameter.TensorTypeDimensionRow;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
@@ -119,6 +121,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String INPUT_SIGNATURES_CSV_FILENAME = "input_signatures.csv";
 
+	private static final String PARAMETERS_CSV_FILENAME = "parameters.csv";
+
+	private static final String PARAMETER_DIMENSIONS_CSV_FILENAME = "parameter_dimensions.csv";
+
+	/**
+	 * The per-point export of the depth-limited signal (#670): one row per points-to result the tensor analysis abandoned at the targeted
+	 * CFA depth limit, so an operator can see where raising a project's {@code targetedCfaDepth} may recover precision.
+	 */
+	private static final String DEPTH_LIMITED_CSV_FILENAME = "depth_limited.csv";
+
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
@@ -153,6 +165,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean alwaysCheckEagerOnlyCalls = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_EAGER_ONLY_CALLS.key());
 
 	private boolean alwaysCheckNumpyCalls = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_NUMPY_CALLS.key());
+
+	private boolean alwaysCheckStaticShapeReads = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_STATIC_SHAPE_READS.key());
+
+	private boolean alwaysCheckStaleVariableReads = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_STALE_VARIABLE_READS.key());
+
+	private boolean alwaysCheckTensorIteration = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_ITERATION.key());
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
@@ -217,9 +235,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"numpy calls", "type hints", "parallel", "speculative", "test entrypoints", "infer input signatures",
-				"targeted CFA depth" };
+				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "type hints", "parallel", "speculative",
+				"test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
+
+		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
+		resultsHeader.add("depth-limited results");
 
 		resultsHeader.add("time (s)");
 
@@ -242,7 +263,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "absence reason"));
 				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
-						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));) {
+						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));
+				CSVPrinter parametersPrinter = createCSVPrinter(PARAMETERS_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "param name", "is tensor", "is container", "tensor types",
+								"container element types"));
+				CSVPrinter parameterDimensionsPrinter = createCSVPrinter(PARAMETER_DIMENSIONS_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
+								"dim index", "dim class", "dtype", "dtype top"));
+				CSVPrinter depthLimitedPrinter = createCSVPrinter(DEPTH_LIMITED_CSV_FILENAME,
+						new String[] { "subject", "method", "value number", "call string length" });) {
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -279,6 +308,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckTensorComputation(this.getAlwaysCheckTensorComputation());
 					processor.setAlwaysCheckEagerOnlyCalls(this.getAlwaysCheckEagerOnlyCalls());
 					processor.setAlwaysCheckNumpyCalls(this.getAlwaysCheckNumpyCalls());
+					processor.setAlwaysCheckStaticShapeReads(this.getAlwaysCheckStaticShapeReads());
+					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
+					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -302,6 +334,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						printFunction(functionsPrinter, func);
 						printBlockedParameters(blockedParametersPrinter, func);
 						printInputSignatures(inputSignaturesPrinter, func);
+						printParameters(parametersPrinter, func);
+						printParameterDimensions(parameterDimensionsPrinter, func);
 					}
 
 					// optimization available functions. These are the "filtered" functions. We consider functions to be candidates iff they
@@ -378,6 +412,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// numpy calls.
 					resultsRecord.add(this.getAlwaysCheckNumpyCalls());
 
+					// static shape reads.
+					resultsRecord.add(this.getAlwaysCheckStaticShapeReads());
+
+					// stale variable reads.
+					resultsRecord.add(this.getAlwaysCheckStaleVariableReads());
+
+					// tensor iteration.
+					resultsRecord.add(this.getAlwaysCheckTensorIteration());
+
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
 
@@ -395,6 +438,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// targeted CFA depth.
 					resultsRecord.add(targetedCfaDepth);
+
+					// The depth-limited signal (#670): count in results.csv, one row per abandoned points-to result in
+					// depth_limited.csv.
+					List<DepthLimitedPoint> depthLimitedPoints = processor.getDepthLimitedPoints().getOrDefault(project, List.of());
+					resultsRecord.add(depthLimitedPoints.size());
+
+					for (DepthLimitedPoint point : depthLimitedPoints)
+						depthLimitedPrinter.printRecord(project.getName(), point.method(), point.valueNumber(), point.callStringLength());
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -572,10 +623,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
-				"numpy calls on parameters", "autograph", "experimental_autograph_options", "experimental_follow_type_hints",
-				"experimental_implements", "func", "input_signature", "supplied input_signature", "jit_compile", "reduce_retracing",
-				"inferred input_signature", "input_signature relation", "input_signature absence reason", "refactoring",
-				"passing precondition", "status");
+				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
+				"tensor parameter iteration", "caller covered", "autograph", "experimental_autograph_options",
+				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
+				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
+				"refactoring", "passing precondition", "status");
 	}
 
 	/**
@@ -599,14 +651,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * downstream analysis is a group-by rather than a parse of the joined {@code input_signature} string in {@code functions.csv}. There is
 	 * one row per non-{@code self} parameter of the inferred signature (source {@code "inferred"}) and of the developer-supplied signature
 	 * (source {@code "supplied"}); when inference was blocked, one row per blocking parameter (source {@code "absent"}) carrying its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. The {@code dtype} and {@code shape} columns hold the
-	 * raw per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Every considered function contributes at least one row
+	 * (#816): a function-level absence (no blocking parameter) and inference that never ran are each recorded as a single {@code "absent"}
+	 * row (the latter with reason {@code NOT_ATTEMPTED}), and a supplied signature that could not be fully modeled (e.g., a name reference
+	 * rather than a {@code TensorSpec} list) as a single {@code "supplied"} row with reason {@code UNMODELED}, so a function's absence from
+	 * the transformed set is always explained by something present in the output. The {@code dtype} and {@code shape} columns hold the raw
+	 * per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
 	 * recomputing, so it leaves the function's status untouched.
 	 *
 	 * @param printer The {@code input_signatures.csv} printer.
 	 * @param function The function whose per-parameter signatures to emit.
 	 * @throws IOException If a record cannot be written.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/816">Issue 816</a>
 	 */
 	private static void printInputSignatures(CSVPrinter printer, Function function) throws IOException {
 		// The non-self parameters in declaration order, aligned position-wise with InputSignature.getParameterSpecs().
@@ -614,14 +671,27 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		if (function.getInferredInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), "inferred");
-		else
+		else if (!function.getBlockingParameterReasons().isEmpty())
 			for (var entry : function.getBlockingParameterReasons().entrySet())
 				printer.printRecord(
 						buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue(), null, null));
+		else if (function.getInferredInputSignatureAbsenceReason().isPresent())
+			// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the per-parameter
+			// loop above emits nothing for it.
+			printer.printRecord(buildAttributeColumnValues(function, null, "absent",
+					function.getInferredInputSignatureAbsenceReason().get(), null, null));
+		else
+			// Inference never ran: an earlier precondition stopped the function before any inference call site (whose failure is in
+			// failed_preconditions.csv), or the run had inference disabled.
+			printer.printRecord(buildAttributeColumnValues(function, null, "absent", "NOT_ATTEMPTED", null, null));
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 		if (hybridizationParameters != null && hybridizationParameters.getSuppliedInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), "supplied");
+		else if (hybridizationParameters != null && hybridizationParameters.hasInputSignatureParam())
+			// A signature was supplied but could not be fully modeled; the three-state contract on getSuppliedInputSignature
+			// distinguishes this from "none supplied".
+			printer.printRecord(buildAttributeColumnValues(function, null, "supplied", "UNMODELED", null, null));
 	}
 
 	/**
@@ -646,11 +716,61 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}
 	}
 
+	/**
+	 * Emits one {@code parameters.csv} row per non-{@code self} parameter (#780), carrying its inferred tensor type(s) rendered so each
+	 * dimension's raw class (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a FINE-level
+	 * provenance run, where an {@code input_signature} entry would collapse them to a wildcard. The {@code tensor types} column holds the
+	 * direct types and {@code container element types} the per-position element types of a sequence container. The same information at
+	 * one-row-per-dimension grain is in {@code parameter_dimensions.csv} (see {@link #printParameterDimensions}). Reads the cached analysis
+	 * without recomputing, so it leaves the function's status untouched.
+	 *
+	 * @param printer The {@code parameters.csv} printer.
+	 * @param function The function whose parameters to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/780">Issue 780</a>
+	 */
+	private static void printParameters(CSVPrinter printer, Function function) throws IOException {
+		for (Parameter parameter : function.getParameters()) {
+			if (parameter.isSelf())
+				continue;
+
+			printer.printRecord(buildAttributeColumnValues(function, parameter.getIndex(), parameter.getName(), parameter.isTensor(),
+					parameter.isTensorContainer(), parameter.getRenderedTensorTypes(), parameter.getRenderedContainerElementTypes()));
+		}
+	}
+
+	/**
+	 * Emits the raw inferred tensor lattice at per-parameter, per-dimension granularity into {@code parameter_dimensions.csv} (#780), so a
+	 * wildcard dimension's cause (a static constant, an unresolved-but-fixed size, or a genuinely symbolic axis) is visible without a
+	 * FINE-level provenance run. There is one row per dimension of each inferred {@link Parameter}'s {@code TensorType}s; a parameter
+	 * carrying no inferred tensor type produces no rows. The parameter-grained view (one row per parameter, the type rendered) is in
+	 * {@code parameters.csv} (see {@link #printParameters}). Reads the cached analysis without recomputing, so it leaves the function's
+	 * status untouched.
+	 *
+	 * @param printer The {@code parameter_dimensions.csv} printer.
+	 * @param function The function whose parameters' tensor lattice to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/780">Issue 780</a>
+	 */
+	private static void printParameterDimensions(CSVPrinter printer, Function function) throws IOException {
+		for (Parameter parameter : function.getParameters()) {
+			if (parameter.isSelf())
+				continue;
+
+			for (TensorTypeDimensionRow row : parameter.getTensorTypeDiagnostics())
+				printer.printRecord(buildAttributeColumnValues(function, parameter.getIndex(), parameter.getName(),
+						parameter.isTensorContainer(), row.containerPosition(), row.typeOrdinal(), row.rank(), row.dimIndex(),
+						row.dimClass(), row.dtype(), row.dtypeTop()));
+		}
+	}
+
 	private static void printFunction(CSVPrinter printer, Function function) throws IOException, CoreException {
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
-				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters());
+				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
+				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads(),
+				function.getHasTensorParameterIteration(), function.getCallerCovered());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -760,6 +880,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckNumpyCalls() {
 		return alwaysCheckNumpyCalls;
+	}
+
+	public boolean getAlwaysCheckStaticShapeReads() {
+		return alwaysCheckStaticShapeReads;
+	}
+
+	public boolean getAlwaysCheckStaleVariableReads() {
+		return alwaysCheckStaleVariableReads;
+	}
+
+	public boolean getAlwaysCheckTensorIteration() {
+		return alwaysCheckTensorIteration;
 	}
 
 	public boolean getProcessFunctionsInParallel() {

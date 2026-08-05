@@ -9,7 +9,6 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
-import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -69,7 +68,6 @@ import org.eclipse.text.edits.DeleteEdit;
 import org.eclipse.text.edits.InsertEdit;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
-import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -82,17 +80,24 @@ import org.python.pydev.core.docutils.ImportHandle.ImportHandleInfo;
 import org.python.pydev.core.docutils.PyImportsHandling;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
+import org.python.pydev.parser.jython.ast.Assign;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
 import org.python.pydev.parser.jython.ast.Tuple;
+import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
+import org.python.pydev.parser.jython.ast.expr_contextType;
 import org.python.pydev.parser.jython.ast.keywordType;
+import org.python.pydev.parser.jython.ast.name_contextType;
+import org.python.pydev.parser.jython.ast.stmtType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
 import com.google.common.collect.Maps;
@@ -237,9 +242,11 @@ public class Function {
 		private Optional<InputSignature> suppliedInputSignature = Optional.empty();
 
 		/**
-		 * The AST expression node of the supplied {@code input_signature} argument's value (the {@code [tf.TensorSpec(...)]} list/tuple),
-		 * whether supplied by keyword or by position, or {@code null} when none was supplied. Retained so {@link #reconfigure()} can locate
-		 * the existing value's source span to overwrite it. See {@link #getSuppliedInputSignatureNode()}.
+		 * The AST expression node of the supplied {@code input_signature} argument's value—the {@code [tf.TensorSpec(...)]} list/tuple, or
+		 * the bare name referencing one (#834)—whether supplied by keyword or by position, or {@code null} when none was supplied. Always
+		 * the node at the decorator site, never a resolved referent. Retained for reporting and for the sanctioned future find-and-fix
+		 * signature rewrite (issue 808); the refactoring itself never edits an existing signature. See
+		 * {@link #getSuppliedInputSignatureNode()}.
 		 */
 		private exprType suppliedInputSignatureNode;
 
@@ -282,7 +289,7 @@ public class Function {
 						// keyword, so this and the keyword branch below cannot both set the field for a well-formed decorator.
 						if (INPUT_SIGNATURE.equals(TF_FUNCTION_POSITIONAL_PARAMS[i])) {
 							this.suppliedInputSignatureNode = positionalArgs[i];
-							this.suppliedInputSignature = parseSuppliedInputSignature(positionalArgs[i]);
+							this.suppliedInputSignature = this.modelSuppliedInputSignature(positionalArgs[i]);
 						}
 					}
 				}
@@ -299,7 +306,7 @@ public class Function {
 						// Parse the content of a keyword-form `input_signature=[tf.TensorSpec(...)]`.
 						if (INPUT_SIGNATURE.equals(name.id)) {
 							this.suppliedInputSignatureNode = keyword.value;
-							this.suppliedInputSignature = parseSuppliedInputSignature(keyword.value);
+							this.suppliedInputSignature = this.modelSuppliedInputSignature(keyword.value);
 						}
 					}
 			} // else, tf.function is used without parameters.
@@ -410,8 +417,10 @@ public class Function {
 		}
 
 		/**
-		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple), or
-		 * {@code null} when none was supplied. {@link #reconfigure()} uses it to locate the existing value's source span when overwriting.
+		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple, or the bare
+		 * name referencing one; #834), or {@code null} when none was supplied. Always the node at the decorator site, never a resolved
+		 * referent. Retained for reporting and for the sanctioned future find-and-fix signature rewrite (issue 808); the refactoring itself
+		 * never edits an existing signature.
 		 *
 		 * @return The supplied {@code input_signature} value node, or {@code null}.
 		 */
@@ -469,6 +478,91 @@ public class Function {
 				}
 
 			return Optional.of(InputSignature.ofSingles(parameterTypes));
+		}
+
+		/**
+		 * Model the value supplied to {@code input_signature}: parse it directly when it is a literal list/tuple, and otherwise, when it is
+		 * a bare name, resolve the name to the module-level literal it references (#834) and parse that instead. Resolution is single-level
+		 * (a name whose referent is itself a name is not chased) and inherits {@link #parseSuppliedInputSignature}'s all-or-nothing
+		 * contract: a name that does not resolve to a fully modeled literal leaves the signature unmodeled, exactly as before #834.
+		 *
+		 * @param value The expression bound to {@code input_signature}, whether by keyword or by position.
+		 * @return The parsed signature, or {@link Optional#empty} if neither the value nor its unambiguous module-level referent is a fully
+		 *         modeled literal.
+		 */
+		private Optional<InputSignature> modelSuppliedInputSignature(exprType value) {
+			Optional<InputSignature> parsed = parseSuppliedInputSignature(value);
+
+			if (parsed.isPresent() || !(value instanceof Name name))
+				return parsed;
+
+			return this.resolveModuleLevelLiteral(name).flatMap(HybridizationParameters::parseSuppliedInputSignature);
+		}
+
+		/**
+		 * Resolve a bare name supplied as the {@code input_signature} value to the module-level literal it references. The resolution is
+		 * deliberately conservative: it succeeds only when the name's identifier is bound exactly once in the entire containing module, by
+		 * a single-target module-level assignment. Under that sole-binding rule, Python's scoping cannot bind the decorator expression to
+		 * any other value: a decorator evaluates in its enclosing (class-body or module) scope, and with no competing binding anywhere,
+		 * both fall back to the module-level one. Attribute stores (e.g. {@code self.x = ...}) and call-site keyword names are not name
+		 * bindings and do not compete; reassignments, shadowing definitions, imports, loop targets, deletions, and parameters all count as
+		 * competing bindings and decline the resolution.
+		 *
+		 * @param reference The bare name supplied as the {@code input_signature} value.
+		 * @return The value of the module-level assignment the name references, or {@link Optional#empty} when the name does not resolve
+		 *         unambiguously.
+		 */
+		private Optional<exprType> resolveModuleLevelLiteral(Name reference) {
+			SimpleNode root = Function.this.getFunctionDefinition().getContainingModule();
+
+			if (!(root instanceof Module module) || module.body == null)
+				return Optional.empty();
+
+			String identifier = reference.id;
+			int[] bindings = { 0 };
+
+			try {
+				module.accept(new VisitorBase() {
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) {
+						// `Name` bindings cover assignment targets, augmented/named (walrus) stores, deletions, loop and
+						// comprehension targets, and parameters; `NameTok` bindings cover function, class, import, global/nonlocal,
+						// and match-pattern names. Call-site keyword names and attribute names are the two `NameTok` roles that are
+						// not bindings.
+						if (node instanceof Name name && identifier.equals(name.id) && name.ctx != expr_contextType.Load
+								&& name.ctx != expr_contextType.AugLoad)
+							++bindings[0];
+						else if (node instanceof NameTok tok && identifier.equals(tok.id) && tok.ctx != name_contextType.KeywordName
+								&& tok.ctx != name_contextType.Attrib)
+							++bindings[0];
+
+						return null;
+					}
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+				});
+			} catch (Exception e) {
+				LOG.error("Failed to traverse the module containing " + Function.this + " while resolving a name-referenced input"
+						+ " signature.", e);
+				return Optional.empty();
+			}
+
+			if (bindings[0] != 1)
+				return Optional.empty();
+
+			// The sole binding must be a single-target module-level assignment to the identifier; its value is the resolution. If the
+			// one binding sits anywhere else (e.g., inside a function, where it cannot feed the decorator), no such statement exists
+			// and the resolution declines.
+			for (stmtType statement : module.body)
+				if (statement instanceof Assign assign && assign.targets != null && assign.targets.length == 1
+						&& assign.targets[0] instanceof Name target && identifier.equals(target.id))
+					return Optional.ofNullable(assign.value);
+
+			return Optional.empty();
 		}
 
 		/**
@@ -816,7 +910,7 @@ public class Function {
 			else // it's a ConcreteTypeKey.
 				instanceKeyToProcess = instanceKey; // use the original.
 
-			IClass concreteType = instanceKeyToProcess.getConcreteType();
+			IClass concreteType = instanceKeyToProcess.concreteType();
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
@@ -933,6 +1027,45 @@ public class Function {
 	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
 
 	/**
+	 * The per-parameter reduced spec entries from the last successful {@link #computeInputSignature()} run, in declaration order over the
+	 * spec-contributing parameters. Empty until inference produces a signature. Retained so consumers can attribute the reduced spec's
+	 * entries to their {@link Parameter}s (the unresolved statically-read-axis precondition; issue 811).
+	 */
+	private Map<Parameter, InputSignature.SpecEntry> inferredSpecByParameter = Map.of();
+
+	/**
+	 * True iff a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python integer is
+	 * required is left unresolved (wildcard) by the inferred input signature, so emitting that signature would break the function at trace
+	 * time. {@code false} when no signature would be emitted (inference off or absent) or every such axis is concrete; {@code null} when it
+	 * could not be determined (no call-graph node), in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 */
+	private Boolean hasUnresolvedStaticallyReadAxes;
+
+	/**
+	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
+	 * feeds the snapshot to an optimizer or gradient computation, which raises under {@code tf.function} tracing when slot creation lands
+	 * on the variable-lifting re-trace. {@code null} when it could not be determined (no call-graph node), in which case the precondition
+	 * does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 */
+	private Boolean hasStaleVariableReads;
+
+	/**
+	 * True iff every known call path to this {@link Function} is dominated by a hybridized caller, so its computation is already traced and
+	 * hybridizing it may add no benefit. Advisory-only (phase 1 of issue 767): consulted for an INFO on the P1 path and the evaluator's
+	 * measurement column, never for a decision. {@code null} until the processor's project-wide caller-coverage pass assigns it. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767.
+	 */
+	private Boolean callerCovered;
+
+	/**
+	 * True iff this {@link Function}'s body iterates a parameter-derived, tensor-typed value, which raises under {@code tf.function}
+	 * tracing once the parameter is symbolic. {@code null} when it could not be determined (no call-graph node), in which case the
+	 * precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 */
+	private Boolean hasTensorParameterIteration;
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -986,6 +1119,14 @@ public class Function {
 	 * precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 */
 	private Boolean hasNumpyCallsOnParameters;
+
+	/**
+	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
+	 * {@code tf.sqrt(x, tf.float32)}), which raises under {@code tf.function} tracing. Unlike the call-graph-based safety checks above,
+	 * this is computed by a syntactic scan of the body. {@code null} when it could not be determined (an AST traversal failure), in which
+	 * case the precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 */
+	private Boolean hasInvalidNameArguments;
 
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
@@ -1124,11 +1265,43 @@ public class Function {
 								// second safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
 										"Can't hybridize a function that applies numpy to values derived from its parameters.");
+							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
+								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
+								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
+										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
+							else if (this.getHasUnresolvedStaticallyReadAxes() != null && this.getHasUnresolvedStaticallyReadAxes())
+								// The inferred signature leaves unresolved an axis the body reads statically (issue 811). Emitting it
+								// would break the function at trace time, so the conversion is declined; the fourth safety failure in
+								// the family, also preceding the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+										"Can't hybridize this function with the inferred input signature: "
+												+ "its body reads a tensor dimension the signature leaves unspecified.");
+							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
+								// Snapshots a model's variables before the model's first call, which raises under tracing when
+								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
+								// family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_STALE_VARIABLE_READS,
+										"Can't hybridize a function that reads a model's variables before calling the model in its body; "
+												+ "tracing would create optimizer state after the first trace.");
+							else if (this.getHasTensorParameterIteration() != null && this.getHasTensorParameterIteration())
+								// Iterates a parameter-derived tensor, which raises under tracing once the parameter is symbolic
+								// (issue 830). The sixth safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION,
+										"Can't hybridize a function that iterates one of its tensor arguments with a Python loop; "
+												+ "tracing makes the argument symbolic, which cannot be iterated.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
 								this.addFailure(PreconditionFailure.NO_TENSOR_COMPUTATION,
 										"This function performs no tensor computation, so hybridization is unlikely to improve performance.");
+							else if (TRUE.equals(this.getCallerCovered()))
+								// Blocking as of issue 826, promoted from the phase-1 advisory (issue 767) on corpus evidence: a
+								// covered function's computation is already traced on every executed path, so conversion adds only a
+								// redundant nested trace boundary. Allow-on-unknown: only a determinate TRUE blocks.
+								this.addFailure(PreconditionFailure.HAS_COVERED_CALLERS,
+										"Every known call path to this function comes from hybridized code, so its computation "
+												+ "is already traced; hybridizing it would add no benefit.");
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
@@ -1178,6 +1351,16 @@ public class Function {
 		} else { // Hybrid. Use table 2.
 			this.setRefactoring(OPTIMIZE_HYBRID_FUNCTION);
 
+			if (TRUE.equals(this.getCallerCovered()))
+				// Advisory only, the measurement phase for de-hybridizing covered hybrid functions (issue 827), mirroring the
+				// staging the conversion side went through before its blocking promotion (issue 826): a covered hybrid function's
+				// decorator is redundant on every executed path, but removing it deletes an enforced boundary (any supplied
+				// input_signature validation) and leans on the dead-caller semantics, so the transformation waits on corpus
+				// evidence gathered through this INFO and the caller-covered column.
+				this.addInfo(Information.CALLER_COVERAGE,
+						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
+								+ "on every executed path; de-hybridizing it may be beneficial.");
+
 			if (this.getHasTensorParameter() != null && !this.getHasTensorParameter()) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
@@ -1225,46 +1408,59 @@ public class Function {
 						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
 						 * the default precondition matrix unchanged.
 						 */
+						// An unresolved statically-read axis blocks every reconfigure path: writing the inferred signature (adding or
+						// overwriting) would break the function at trace time (issue 811).
+						boolean unresolvedStaticallyReadAxes = this.getHasUnresolvedStaticallyReadAxes() != null
+								&& this.getHasUnresolvedStaticallyReadAxes();
+
 						boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
 								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-								&& this.canEmitInferredInputSignature();
+								&& this.canEmitInferredInputSignature() && !unresolvedStaticallyReadAxes;
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
-							this.addInfo("This hybrid function has no input signature and can be reconfigured to add the inferred one.");
+							this.addInfo("This hybrid function has no input signature and will be reconfigured to add the inferred one.");
 							this.addTransformation(RECONFIGURE);
 							this.setPassingPrecondition(P4);
 						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
 								&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
-							// Modify path: an existing, fully-modeled `input_signature` is present. Compare it against the inferred one.
-							// `canReconfigure` implies inference succeeded (it gates on `canEmitInferredInputSignature`), so the pattern
-							// always
-							// binds here; a hypothetical `Absent` falls through to the no-primitive-parameter failure below.
+							// Adjudication path: an existing, fully-modeled `input_signature` is present. Compare it against the
+							// inferred one and REPORT; no relation rewrites the signature (issue 808). Since the inferred signature is
+							// the join over the observed call sites, the tighter and incomparable relations can only arise when some
+							// observed call violates the existing signature, i.e., the original program raises at that site; rewriting
+							// the signature to admit those calls would repair rather than refactor, with zero retracing benefit (a
+							// present signature already pins one trace). The rewrite is a sanctioned future find-and-fix
+							// transformation, not this refactoring. `canReconfigure` implies inference succeeded (it gates on
+							// `canEmitInferredInputSignature`), so the pattern always binds here; a hypothetical `Absent` falls
+							// through to the no-primitive-parameter failure below.
 							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
 
 							switch (supplied.relate(inferred)) {
-							case SUPPLIED_TIGHTER -> {
-								this.addInfo("This hybrid function's input signature is narrower than its call sites require; "
-										+ "it can be reconfigured to admit the observed inputs.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
+							case SUPPLIED_TIGHTER -> this
+									.addWarning("This hybrid function's input signature is narrower than its call sites require; "
+											+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
+											+ "admitting those calls would change program behavior rather than preserve it.");
+							case INCOMPARABLE -> this.addWarning("This hybrid function's input signature disagrees with its call sites; "
+									+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
+									+ "reconciling it would change the inputs the function accepts.");
+							case SUPPLIED_BROADER -> this
+									.addInfo("This hybrid function's input signature is broader than its call sites require; "
+											+ "it is left unchanged in case the broader signature is intentional.");
+							case AGREEMENT -> {
+								// Nothing to report: the supplied signature matches the call-site evidence.
 							}
-							case INCOMPARABLE -> {
-								this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-										+ "reconfiguring it will change the inputs the function accepts.");
-								this.addTransformation(RECONFIGURE);
-								this.setPassingPrecondition(P5);
 							}
-							case SUPPLIED_BROADER -> {
-								this.addInfo("This hybrid function's input signature is broader than its call sites require; "
-										+ "it is left unchanged in case the broader signature is intentional.");
-								this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-										"Functions with no Python literal arguments may benefit from hybridization.");
-							}
-							case AGREEMENT -> this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+
+							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
-							}
 						} else {
+							if (unresolvedStaticallyReadAxes)
+								// Report the honest blocking reason alongside the default terminal failure: the reconfiguration was
+								// declined because writing the inferred signature would break the function (issue 811).
+								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+										"Can't reconfigure this function's input signature: "
+												+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
+
 							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
 
@@ -1474,7 +1670,8 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		boolean eagerOnly = nodes.stream().anyMatch(cgNode -> Util.callsEagerOnlyApi(cgNode, callGraph, pointerAnalysis));
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
 
@@ -1538,6 +1735,433 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * Computes whether a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python
+	 * integer is required is left unresolved (wildcard) by the inferred input signature, storing the result for
+	 * {@link #getHasUnresolvedStaticallyReadAxes()}. Under an emitted signature, a wildcard axis is {@code None} at trace time; a static
+	 * read consumed at a weight shape, a reshape target, or integer arithmetic then raises (or silently misbehaves through a
+	 * {@code [:None]} slice). A dynamic read ({@code tf.shape(x)[i]}) is safe and does not disqualify. When no signature would be emitted
+	 * (inference disabled or blocked), the property holds trivially and the result is {@code false}; when the function has no call-graph
+	 * node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
+		if (!this.getInferInputSignatures()) {
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		InferenceResult result;
+
+		try {
+			result = this.inferInputSignature();
+		} catch (IllegalStateException _) {
+			// The degenerate no-spec state throws: inference's contract expects tensor-parameter-gated callers, which the
+			// measurement override (alwaysCheckStaticShapeReads) is not. Nothing can be emitted there, so it is the same
+			// determinate pass as a blocked inference.
+			LOG.info("No inferable signature for " + this + "; the statically-read-axis check passes determinately.");
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		// A blocked inference emits nothing either: determinately safe.
+		if (!(result instanceof InferenceResult.Inferred)) {
+			this.hasUnresolvedStaticallyReadAxes = FALSE;
+			return;
+		}
+
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " statically reads an unresolved axis.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " statically reads an unresolved axis without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
+		// sampling a single node can miss a read at an imprecise context.
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
+		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
+
+		for (CGNode node : nodes) {
+			StaticShapeReadAnalysis.StaticShapeReads nodeReads = analysis.staticallyReadAxes(node, this.isMethod());
+			reads.addAll(nodeReads.axisReads());
+			rankReads.addAll(nodeReads.rankReads());
+		}
+
+		// An extent-sensitive read blocks on any non-concrete covered axis; a rank-sensitive-only read (`as_list`, `rank`/`ndims`,
+		// `len`; #809) blocks only when the affected spec's rank itself is unknown (`shape=None`), which every such surface breaks on.
+		boolean unresolved = reads.stream().anyMatch(this::isUnresolvedRead) || rankReads.stream().anyMatch(this::isRankUnresolvedRead);
+
+		this.hasUnresolvedStaticallyReadAxes = unresolved;
+
+		LOG.info(this + (unresolved ? " statically reads an axis its inferred signature leaves unresolved."
+				: " statically reads no unresolved axis."));
+	}
+
+	/**
+	 * True iff the given axis read is unresolved by the inferred signature: some read axis of some read parameter reduces to a non-concrete
+	 * extent. Lost provenance widens to every spec-contributing parameter and lost coverage to every axis, so the check errs toward
+	 * declining (the conservative default this precondition requires). A parameter without a spec entry was omitted from the signature (a
+	 * defaulted, never-supplied parameter), so its axes come from its concrete default at trace time and are safe.
+	 *
+	 * @param read The axis read to resolve against the inferred signature.
+	 * @return True iff the read consumes an axis the signature leaves unresolved.
+	 */
+	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
+			// A container spec's per-element axes are not attributable to the read: conservative.
+			if (!(entry instanceof InputSignature.Single single))
+				return true;
+
+			List<Dimension<?>> dims = single.type().getDims();
+
+			// Shape-⊤ renders `shape=None`: every axis is wild.
+			if (dims == null)
+				return true;
+
+			if (read.axes() == null) {
+				for (Dimension<?> dim : dims)
+					if (!(dim instanceof NumericDim))
+						return true;
+			} else
+				for (int axis : read.axes()) {
+					int index = axis < 0 ? dims.size() + axis : axis;
+
+					// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
+					// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
+					if (index < 0 || index >= dims.size())
+						continue;
+
+					if (!(dims.get(index) instanceof NumericDim))
+						return true;
+				}
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff the given rank-sensitive-only read ({@code as_list}, {@code rank}/{@code ndims}, {@code len}; #809) is unresolved by the
+	 * inferred signature: some affected spec entry has an unknown rank ({@code shape=None}), which every rank-reading surface breaks on. A
+	 * known rank satisfies the read even when axes are dynamic ({@code [None, 3].as_list()} succeeds; {@code rank} is a trace-time
+	 * integer), which is exactly the precision the split from {@link #isUnresolvedRead} buys. A container entry stays conservative.
+	 *
+	 * @param read The rank-sensitive read to resolve against the inferred signature.
+	 * @return True iff the read consumes a rank the signature leaves unknown.
+	 */
+	private boolean isRankUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
+			if (!(entry instanceof InputSignature.Single single) || single.type().getDims() == null)
+				return true;
+
+		return false;
+	}
+
+	/**
+	 * The inferred-spec entries a read's provenance touches: every entry when provenance was lost ({@code null} ordinals), otherwise the
+	 * entries of the named non-{@code self} parameters. A parameter without a spec entry was omitted from the signature (a defaulted,
+	 * never-supplied parameter), so its axes come from its concrete default at trace time and contribute nothing.
+	 *
+	 * @param read The read whose affected entries to collect.
+	 * @return The spec entries the read may constrain.
+	 */
+	private List<InputSignature.SpecEntry> affectedSpecEntries(StaticShapeReadAnalysis.AxisRead read) {
+		List<InputSignature.SpecEntry> entries = new ArrayList<>();
+
+		if (read.parameterOrdinals() == null)
+			entries.addAll(this.inferredSpecByParameter.values());
+		else {
+			List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+			for (int ordinal : read.parameterOrdinals())
+				if (ordinal < nonSelfParameters.size()) {
+					InputSignature.SpecEntry entry = this.inferredSpecByParameter.get(nonSelfParameters.get(ordinal));
+
+					if (entry != null)
+						entries.add(entry);
+				}
+		}
+
+		return entries;
+	}
+
+	/**
+	 * True iff the inferred input signature leaves a statically-read parameter axis unresolved, {@code null} if undetermined.
+	 *
+	 * @return True iff a statically-read axis is unresolved, null if undetermined.
+	 */
+	public Boolean getHasUnresolvedStaticallyReadAxes() {
+		return this.hasUnresolvedStaticallyReadAxes;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body
+	 * and feeds the snapshot to an optimizer or gradient computation, storing the result for {@link #getHasStaleVariableReads()}. The
+	 * hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what keeps the refactoring from introducing it;
+	 * reading the collection after the forward pass never fires. When the function has no call-graph node, the result is left undetermined,
+	 * mirroring the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeStaleVariableReads(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " snapshots stale variables.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " snapshots stale variables without a call graph node.");
+			return;
+		}
+
+		boolean stale = new StaleVariableReadAnalysis(pointerAnalysis).hasStaleVariableRead(nodes);
+
+		this.hasStaleVariableReads = stale;
+
+		LOG.info(this + (stale ? " snapshots a model's variables before its first call." : " snapshots no stale variables."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body feeds a pre-build variable-collection snapshot to an optimizer or gradient computation,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a stale variable snapshot reaches a consumer, null if undetermined.
+	 */
+	public Boolean getHasStaleVariableReads() {
+		return this.hasStaleVariableReads;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
+	 * {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the parameter is symbolic and iterating it
+	 * raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at earlier Ariadne
+	 * versions). When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
+	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
+	 */
+	public void computeTensorParameterIteration(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " iterates a tensor parameter.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " iterates a tensor parameter without a call graph node.");
+			return;
+		}
+
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
+		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
+
+		this.hasTensorParameterIteration = iterates;
+
+		LOG.info(this + (iterates ? " iterates a tensor parameter." : " iterates no tensor parameter."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body iterates a parameter-derived, tensor-typed value, {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter is iterated, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterIteration() {
+		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * Computes which of {@code functions} have every known call path dominated by a hybridized caller (issue 767, phase 1), delegating to
+	 * the package-private {@link CallerCoverageAnalysis}. Hybridization must already be computed for every function.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 * @return The covered subset.
+	 */
+	public static Set<Function> computeCallerCoverage(Set<Function> functions, CallGraph callGraph) {
+		return CallerCoverageAnalysis.computeCovered(functions, callGraph);
+	}
+
+	/**
+	 * Sets whether every known call path to this {@link Function} is dominated by a hybridized caller (the processor's project-wide
+	 * caller-coverage pass; issue 767).
+	 *
+	 * @param callerCovered Whether this function is caller-covered.
+	 */
+	public void setCallerCovered(boolean callerCovered) {
+		this.callerCovered = callerCovered;
+	}
+
+	/**
+	 * True iff every known call path to this {@link Function} is dominated by a hybridized caller, {@code null} if not computed.
+	 *
+	 * @return True iff this function is caller-covered, null if not computed.
+	 */
+	public Boolean getCallerCovered() {
+		return this.callerCovered;
+	}
+
+	/**
+	 * TensorFlow ops whose public signature is exactly {@code (x, name=None)}, so a second positional argument binds to {@code name}. Keyed
+	 * by the trailing attribute name; {@code tf.sqrt} and {@code tf.math.sqrt} resolve to the same op and both match. Generated by
+	 * enumerating the {@code tf}, {@code tf.math}, {@code tf.linalg}, and {@code tf.nn} namespaces of TensorFlow 2.9.3 with
+	 * {@code inspect.signature} and keeping the callables with exactly the positional-or-keyword parameters {@code x} and {@code name}.
+	 */
+	private static final Set<String> UNARY_TENSORFLOW_OP_NAMES = Set.of("abs", "acos", "acosh", "asin", "asinh", "atan", "atanh",
+			"bessel_i0", "bessel_i0e", "bessel_i1", "bessel_i1e", "ceil", "conj", "cos", "cosh", "digamma", "erf", "erfc", "erfcinv",
+			"erfinv", "exp", "expm1", "floor", "invert_permutation", "is_finite", "is_inf", "is_nan", "is_non_decreasing",
+			"is_strictly_increasing", "lbeta", "lgamma", "log", "log1p", "log_sigmoid", "logical_not", "ndtri", "negative", "reciprocal",
+			"reciprocal_no_nan", "rint", "round", "rsqrt", "sigmoid", "sign", "sin", "sinh", "sqrt", "square", "tan", "tanh", "trace");
+
+	/**
+	 * Module aliases under which the fixture and subject code reference TensorFlow. The syntactic scan only recognizes an attribute chain
+	 * rooted at one of these names; other import forms (e.g., {@code from tensorflow import sqrt}) are conservatively skipped.
+	 */
+	private static final Set<String> TENSORFLOW_MODULE_ALIASES = Set.of("tf", "tensorflow");
+
+	/**
+	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
+	 * parameter, storing the result for {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens
+	 * a name scope with it and raises, so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely
+	 * syntactic scan of the body; no call graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned,
+	 * the result is left {@code null} and the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 */
+	public void computeInvalidNameArguments() {
+		boolean[] found = { false };
+
+		try {
+			this.getFunctionDefinition().getFunctionDef().traverse(new VisitorBase() {
+
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
+
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
+
+				@Override
+				public Object visitCall(Call node) throws Exception {
+					if (passesInvalidNameArgument(node))
+						found[0] = true;
+					// Keep descending; the motivating case nests the offending call inside other calls.
+					node.traverse(this);
+					return null;
+				}
+			});
+		} catch (Exception e) {
+			// Undeterminable; leave null so the precondition does not block, mirroring the sibling safety checks.
+			LOG.warn("Can't determine whether " + this + " passes an invalid name argument.", e);
+			return;
+		}
+
+		this.hasInvalidNameArguments = found[0];
+
+		LOG.info(this + (found[0] ? " passes an invalid name argument." : " passes no invalid name arguments."));
+	}
+
+	/**
+	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter. A keyword {@code name=...}
+	 * argument binds unambiguously for any TensorFlow callee; a positional argument is only recognized for the ops in
+	 * {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare {@code name} second.
+	 *
+	 * @param call A call in this {@link Function}'s body.
+	 * @return True iff the call passes a non-string constant as its {@code name} argument.
+	 */
+	private static boolean passesInvalidNameArgument(Call call) {
+		if (!isTensorFlowRooted(call.func))
+			return false;
+
+		if (call.keywords != null)
+			for (keywordType keyword : call.keywords)
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && isNonStringConstant(keyword.value))
+					return true;
+
+		String calleeName = NodeUtils.getRepresentationString(call.func);
+		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
+				&& isNonStringConstant(call.args[1]);
+	}
+
+	/**
+	 * True iff the given expression is an attribute chain rooted at a TensorFlow module alias (e.g., {@code tf.sqrt},
+	 * {@code tf.math.sqrt}).
+	 *
+	 * @param expression The expression to inspect.
+	 * @return True iff the expression is rooted at a TensorFlow module alias.
+	 */
+	private static boolean isTensorFlowRooted(exprType expression) {
+		exprType root = expression;
+
+		while (root instanceof Attribute)
+			root = ((Attribute) root).value;
+
+		return root instanceof Name && TENSORFLOW_MODULE_ALIASES.contains(((Name) root).id);
+	}
+
+	/**
+	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
+	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged—it is the declared default for {@code name}—and anything whose
+	 * value is unknown (a variable, a call) is conservatively accepted.
+	 *
+	 * @param expression The expression bound to a {@code name} argument.
+	 * @return True iff the expression is a non-string constant.
+	 */
+	private static boolean isNonStringConstant(exprType expression) {
+		if (expression instanceof Num)
+			return true;
+
+		if (expression instanceof Name) {
+			String id = ((Name) expression).id;
+			return "True".equals(id) || "False".equals(id);
+		}
+
+		// A dtype constant like `tf.float32` (the word2vec shape). Requiring the TensorFlow root keeps a bare variable that happens to
+		// share a dtype's name (e.g., `half`) from being misread as a constant.
+		return expression instanceof Attribute && isTensorFlowRooted(expression)
+				&& HybridizationParameters.parseDType(expression).isPresent();
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff this function passes an invalid name argument, null if undetermined.
+	 */
+	public Boolean getHasInvalidNameArguments() {
+		return this.hasInvalidNameArguments;
 	}
 
 	@Override
@@ -2042,7 +2666,7 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -2058,6 +2682,34 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the positional parameter at the given IR parameter index is a defaulted parameter that no call site supplies, and so
+	 * is exempt from {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS}. A defaulted parameter no caller supplies is always the default,
+	 * a single constant value, so it induces no retracing and is not the retrace risk the precondition guards against. This is the
+	 * supplied-parameter analysis of {@link #inferSuppliedParameters} (#788) applied on the primitive-parameter axis rather than the
+	 * input-signature axis (#795). Conservative on ignorance: only {@link Parameter#isSuppliedAtCallSite()} {@code == FALSE} (definitely
+	 * not supplied) exempts; {@code null} (undetermined) does not.
+	 * <p>
+	 * The IR parameter index maps to the positional {@link Parameter} at {@link Parameter#getIndex()} {@code == irParamIndex - 1} (IR slot
+	 * 0 is the callable, so slot 1 is the first declared parameter, {@code self} for a method). Keyword-only parameters share the
+	 * positional index space and are excluded via {@link Parameter#isKeywordOnly()}; a parameter that cannot be mapped is not exempt.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @return True iff that parameter is a defaulted, definitely-unsupplied positional parameter.
+	 */
+	private boolean isDefaultedUnsuppliedPrimitive(int irParamIndex) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		return !parameter.isKeywordOnly() && !parameter.isSelf() && parameter.getIndex() == declarationIndex && parameter.hasDefault()
+				&& FALSE.equals(parameter.isSuppliedAtCallSite());
 	}
 
 	/**
@@ -2237,7 +2889,8 @@ public class Function {
 	 * @param nodes The call-graph nodes of this function.
 	 * @param callGraph The call graph.
 	 * @return {@code TRUE} if some call site supplies it, {@code FALSE} if every reachable call site omits it, or {@code null} if any call
-	 *         site could not be examined. See {@link #inferSuppliedParameters} for why ignorance is {@code null}.
+	 *         site could not be examined or an unpacked positional argument made its alignment undetermined (wala/ML#751). See
+	 *         {@link #inferSuppliedParameters} for why ignorance is {@code null}.
 	 */
 	private Boolean isSuppliedAtAnyCallSite(Parameter parameter, Set<CGNode> nodes, CallGraph callGraph) {
 		String name = parameter.getName();
@@ -2247,6 +2900,7 @@ public class Function {
 		int positionalSlot = parameter.getIndex() + 1;
 
 		boolean sawCallSite = false;
+		boolean sawIndeterminate = false;
 
 		for (CGNode node : nodes)
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
@@ -2266,13 +2920,50 @@ public class Function {
 
 						sawCallSite = true;
 
-						if (invoke.getNumberOfPositionalParameters() > positionalSlot || invoke.getKeywords().contains(name))
+						// A keyword argument supplies the parameter regardless of positional layout.
+						if (invoke.getKeywords().contains(name))
+							return TRUE;
+
+						// A starred (unpacked) positional argument at or before the parameter's slot collapses a
+						// statically-unknown number of arguments into one slot, so the positional alignment past it is unreliable:
+						// the parameter may or may not be supplied by the unpack (wala/ML#751). Treat this call site as undetermined
+						// rather than concluding it omits the parameter.
+						if (hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
+							sawIndeterminate = true;
+							continue;
+						}
+
+						// No unpack precedes the slot, so the positional count is exact: the parameter is supplied iff a positional
+						// argument occupies its slot.
+						if (invoke.getNumberOfPositionalParameters() > positionalSlot)
 							return TRUE;
 					}
 			}
 
-		// Every reachable call site omits it. Having no call site at all is ignorance, not absence.
-		return sawCallSite ? FALSE : null;
+		// TRUE (returned above) means some call site definitely supplies it. Absent that, a call site whose alignment an unpack made
+		// unreliable leaves the answer undetermined; every reachable call site definitely omitting it is FALSE; and no call site at all
+		// is ignorance, not absence.
+		if (!sawCallSite || sawIndeterminate)
+			return null;
+
+		return FALSE;
+	}
+
+	/**
+	 * Returns whether {@code invoke} has a starred (unpacked) positional argument at or before {@code positionalSlot}, past which the
+	 * positional-to-parameter alignment is unreliable because an unpack collapses a statically-unknown number of arguments into one slot
+	 * (wala/ML#751).
+	 *
+	 * @param invoke The call.
+	 * @param positionalSlot The invoke positional slot of the parameter in question.
+	 * @return True iff a starred positional argument occupies a slot at or before {@code positionalSlot}.
+	 */
+	private static boolean hasStarredArgumentAtOrBefore(PythonInvokeInstruction invoke, int positionalSlot) {
+		for (int starredPosition : invoke.getStarredPositions())
+			if (starredPosition <= positionalSlot)
+				return true;
+
+		return false;
 	}
 
 	/**
@@ -2585,6 +3276,10 @@ public class Function {
 			throw new IllegalStateException("Cannot infer an input signature for `" + this + "`: no non-self parameter contributes a spec ("
 					+ nonSelfParameters.size() + " non-self parameter(s), " + omittable.size()
 					+ " omittable). Refactoring call sites are gated on `getHasTensorParameter()`.");
+
+		// Retain the per-parameter mapping for consumers needing parameter-level attribution of the reduced spec (the unresolved
+		// statically-read-axis precondition resolves its parameter ordinals through it; issue 811).
+		this.inferredSpecByParameter = Collections.unmodifiableMap(specByParameter);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
 	}
@@ -3012,19 +3707,23 @@ public class Function {
 
 	/**
 	 * Reconfigures this already-hybrid function's {@code @tf.function} decorator to carry the inferred {@code input_signature} (the
-	 * {@code RECONFIGURE} transformation). When the decorator has no {@code input_signature}, the inferred one is added; when it already
-	 * has one that {@link #check()} determined should be overwritten, the existing value is replaced in place. Reuses the existing
-	 * import-shape resolution ({@link #getImportContext(IDocument)}) and emission gate
-	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function necessarily
-	 * imports TensorFlow (the decorator references it), so {@code getImportContext} is non-null. When the signature's names are not
-	 * reachable under the file's import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no
-	 * keyword and no edit is produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * {@code RECONFIGURE} transformation). Only the add path exists: {@link #check()} selects {@code RECONFIGURE} solely for a decorator
+	 * with no {@code input_signature}; an existing signature is adjudicated report-only and never rewritten, since the rewrite would repair
+	 * a nonconforming observed call rather than preserve behavior (issue 808; the sanctioned rewrite is a future find-and-fix
+	 * transformation, not this refactoring). Reuses the existing import-shape resolution ({@link #getImportContext(IDocument)}) and
+	 * emission gate ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function
+	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null}
+	 * check below is defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's
+	 * import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is
+	 * produced, matching {@link #convertToHybrid()}'s silent skip.
 	 *
-	 * @return The edits adding or replacing {@code input_signature=[...]} on the decorator, or an empty list when emission is gated out.
+	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
 		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
+		assert this.getHybridizationParameters() == null || !this.getHybridizationParameters()
+				.hasInputSignatureParam() : "RECONFIGURE is selected only for a decorator without an input_signature (issue 808).";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -3035,43 +3734,6 @@ public class Function {
 			return ret;
 
 		decoratorsType decorator = this.hybridDecorator;
-
-		// Overwrite path: an existing `input_signature` value is present (its node was retained during parameter parsing). Replace its
-		// bracketed list/tuple in place with the inferred one. `check()` selects this only when the inferred signature is emittable, so
-		// `inferInputSignature` is present here.
-		exprType existingValue = this.getHybridizationParameters() == null ? null
-				: this.getHybridizationParameters().getSuppliedInputSignatureNode();
-
-		if (existingValue != null) {
-			// Span the existing value's bracketed list/tuple: from its first opening bracket to the matching close, tracking nesting.
-			int bracket = getOffset(doc, existingValue);
-			while (bracket < doc.getLength() && doc.getChar(bracket) != '[' && doc.getChar(bracket) != '(')
-				++bracket;
-
-			int depth = 0;
-			int end = bracket;
-			for (; end < doc.getLength(); end++) {
-				char c = doc.getChar(end);
-				if (c == '(' || c == '[' || c == '{')
-					++depth;
-				else if (c == ')' || c == ']' || c == '}') {
-					--depth;
-					if (depth == 0)
-						break;
-				}
-			}
-
-			final int valueOffset = bracket;
-			final int valueLength = end - bracket + 1;
-			MultiTextEdit replacement = new MultiTextEdit();
-			this.inferInputSignature().signature()
-					.ifPresent(sig -> replacement.addChild(new ReplaceEdit(valueOffset, valueLength, sig.toTensorSpecList(ctx.prefix()))));
-
-			if (replacement.hasChildren())
-				ret.add(replacement);
-
-			return ret;
-		}
 
 		// Offset just past the decorator name (e.g. just past `function` in `@tf.function`). Mirrors `convertToEager`'s proven offset
 		// computation: the `decoratorsType` node begins at `@`, and `getFullRepresentationString(decorator.func)` yields the dotted name

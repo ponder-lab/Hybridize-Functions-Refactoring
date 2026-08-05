@@ -18,7 +18,6 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
-import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -85,6 +84,7 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
 import org.eclipse.text.edits.TextEdit;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -148,6 +148,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
+import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -504,6 +505,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			info.addForcedLib("numpy");
 	}
 
+	/**
+	 * Clears the static analysis caches after each test. The caches key on per-test artifacts (call graph nodes, tensor-type analyses), so
+	 * entries written by one test are never read by another; without clearing, every test's call graph is retained for the remainder of the
+	 * suite run. The evaluator clears per project for the same reason; only {@code analyzeAccuracyYPredAtDepth} cleared here, for its own
+	 * within-test reason. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/798.
+	 */
+	@After
+	@SuppressWarnings("static-method") // JUnit 4 requires @After methods to be instance methods.
+	public void clearAnalysisCaches() {
+		Function.clearCaches();
+	}
+
 	@AfterClass
 	public static void tearDown() {
 		CompletionProposalFactory.set(null);
@@ -686,14 +699,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Returns the refactoring available {@link FunctionDef}s found in the test file X.py, where X is fileNameWithoutExtension. The
-	 * {@link IDocument} represents the contents of X.py.
+	 * {@link IDocument} represents the contents of X.py, and the {@link SimpleNode} is the parsed module's AST root the
+	 * {@link FunctionDef}s were extracted from.
 	 *
 	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
-	 * @return The refactoring available {@link FunctionDef}s in X.py, where X is fileNameWithoutExtension, represented by the
-	 *         {@link IDocument}.
+	 * @return The refactoring available {@link FunctionDef}s in X.py, where X is fileNameWithoutExtension, keyed by the module's AST root
+	 *         and the {@link IDocument}.
 	 */
-	private Entry<IDocument, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(String fileNameWithoutExtension)
-			throws Exception {
+	private Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> getDocumentToAvailableFunctionDefinitions(
+			String fileNameWithoutExtension) throws Exception {
 		Entry<SimpleNode, IDocument> pythonNodeToDocument = this.createPythonNodeFromTestFile(fileNameWithoutExtension);
 
 		// extract function definitions.
@@ -705,9 +719,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Collection<FunctionDef> availableFunctionDefinitions = functionExtractor.getDefinitions().stream()
 				.filter(RefactoringAvailabilityTester::isHybridizationAvailable).collect(Collectors.toList());
 
-		IDocument document = pythonNodeToDocument.getValue();
-
-		return Map.entry(document, availableFunctionDefinitions);
+		return Map.entry(pythonNodeToDocument, availableFunctionDefinitions);
 	}
 
 	/**
@@ -719,10 +731,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
 		File inputTestFile = this.getInputTestFile(fileNameWithoutExtension);
 
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
 				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
 
-		IDocument document = documentToAvailableFunctionDefs.getKey();
+		SimpleNode moduleRoot = documentToAvailableFunctionDefs.getKey().getKey();
+		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
 		Collection<FunctionDef> availableFunctionDefs = documentToAvailableFunctionDefs.getValue();
 
 		IFile actualInputTestFile = new FileStub2(fileNameWithoutExtension + ".py") {
@@ -753,8 +766,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			}
 		};
 
-		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream()
-				.map(f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, nature))
+		Set<FunctionDefinition> inputFunctionDefinitions = availableFunctionDefs.stream().map(
+				f -> new FunctionDefinition(f, fileNameWithoutExtension, inputTestFile, actualInputTestFile, document, moduleRoot, nature))
 				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
@@ -1132,6 +1145,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(args.hasInputSignatureParam());
 		assertFalse(args.getSuppliedInputSignature().isPresent());
+	}
+
+	/**
+	 * Test for #834. The gpt-2 shape: a module-level constant referenced by name from two decorated methods, alongside a same-named
+	 * attribute store carrying a different literal. The identifier is bound exactly once in the module (the attribute store is not a name
+	 * binding and does not compete), so both signatures resolve to the constant's literal.
+	 */
+	@Test
+	public void testSuppliedInputSignatureNameReference() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Model.train_step", "Model.test_step")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue(function.isHybrid());
+
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
+			assertTrue(args.hasInputSignatureParam());
+
+			Optional<InputSignature> signature = args.getSuppliedInputSignature();
+			assertTrue(signature.isPresent());
+			assertEquals(List.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE)),
+					new TensorType(INT32, List.of(DynamicDim.INSTANCE, DynamicDim.INSTANCE))), signature.get().singleTypes());
+		}
+	}
+
+	/**
+	 * Test for #834's declines. Name references that must NOT resolve: a name bound twice at module level (reassignment), a name whose sole
+	 * binding's value is a call rather than a literal, a name shadowed by a class-body binding (which is what the decorator actually sees
+	 * at decoration time; resolving to the module-level literal would model the wrong value), and a name whose sole binding is a loop
+	 * target rather than a plain assignment. Each leaves the signature unmodeled while {@code hasInputSignatureParam()} stays true,
+	 * preserving the presence-true/parse-empty contract state.
+	 */
+	@Test
+	public void testSuppliedInputSignatureNameReferenceControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("reassigned", "computed", "Shadowing.shadowed", "loop_bound")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue(function.isHybrid());
+
+			Function.HybridizationParameters args = function.getHybridizationParameters();
+			assertNotNull(args);
+			assertTrue(args.hasInputSignatureParam());
+			assertFalse(args.getSuppliedInputSignature().isPresent());
+		}
 	}
 
 	/**
@@ -1898,58 +1957,65 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Modify path (#596), supplied-tighter: the existing {@code input_signature} is more specific than the call-site evidence (a concrete
-	 * rank-1 shape against call sites of differing rank, which infer an unknown-rank shape), so it is overwritten with the inferred one and
-	 * reported informationally.
+	 * Adjudication path (#596, made report-only by #808), supplied-tighter: the existing {@code input_signature} is more specific than the
+	 * call-site evidence (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the
+	 * inferred signature is the join over the observed call sites, this relation means a nonconforming observed call raises at runtime;
+	 * rewriting the signature would repair rather than preserve behavior, so it is preserved and the finding surfaces as a warning.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
-	public void testReconfigureOverwriteTighter() throws Exception {
-		helperAssertReconfigureOverwrite(false, "narrower than its call sites require");
+	public void testReconfigurePreserveTighter() throws Exception {
+		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
 	}
 
 	/**
-	 * Modify path (#596), incomparable: the existing {@code input_signature} is incomparable with the inferred one (a float32 dtype against
-	 * an int32 call site), so it is overwritten with a warning.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * Name-referenced variant of {@link #testReconfigurePreserveTighter()} (#834): the tighter signature is referenced through a
+	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same report-only
+	 * warning with the constant untouched.
 	 */
 	@Test
-	public void testReconfigureOverwriteIncomparable() throws Exception {
-		helperAssertReconfigureOverwrite(true, "disagrees with its call sites");
+	public void testReconfigurePreserveNameReference() throws Exception {
+		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
 	}
 
 	/**
-	 * Shared assertion for the modify-path overwrite tests: the single hybrid fixture function selects {@link Transformation#RECONFIGURE}
-	 * with passing precondition {@link PreconditionSuccess#P5}, emits a status of the expected severity (warning for an incomparable
-	 * signature, informational otherwise) containing {@code messageFragment}, and rewrites the decorator to match {@code out/A.py}.
+	 * Adjudication path (#596, made report-only by #808), incomparable: the existing {@code input_signature} is incomparable with the
+	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is
+	 * preserved and the finding surfaces as a warning.
 	 *
-	 * @param expectWarning True iff the per-category status should be a warning (the incomparable case).
-	 * @param messageFragment A fragment the per-category status message must contain.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
-	private void helperAssertReconfigureOverwrite(boolean expectWarning, String messageFragment) throws Exception {
+	@Test
+	public void testReconfigurePreserveIncomparable() throws Exception {
+		helperAssertAdjudicationReportsOnly("disagrees with its call sites");
+	}
+
+	/**
+	 * Shared assertion for the report-only adjudication tests (#808): the single hybrid fixture function selects no transformation and no
+	 * passing precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing
+	 * {@code messageFragment}, and terminates in the same {@code HAS_NO_PRIMITIVE_PARAMETERS} failure as the other unmodified-signature
+	 * outcomes.
+	 *
+	 * @param messageFragment A fragment the adjudication warning must contain.
+	 */
+	private void helperAssertAdjudicationReportsOnly(String messageFragment) throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertEquals("A modify-path overwrite should select `RECONFIGURE`.", singleton(RECONFIGURE), f.getTransformations());
-		assertEquals("A modify-path overwrite should set the P5 passing precondition.", P5, f.getPassingPrecondition());
+		assertTrue("The adjudication is report-only: no transformation is selected.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on the report-only path.", f.getPassingPrecondition());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
 
-		boolean found = Arrays.stream(f.getStatus().getEntries())
-				.anyMatch(e -> (expectWarning ? e.isWarning() : e.isInfo()) && e.getMessage().contains(messageFragment));
-		assertTrue("Expected a " + (expectWarning ? "warning" : "informational") + " status containing: " + messageFragment, found);
+		boolean found = Arrays.stream(f.getStatus().getEntries()).anyMatch(e -> e.isWarning() && e.getMessage().contains(messageFragment));
+		assertTrue("Expected an adjudication warning containing: " + messageFragment, found);
 
-		IDocument doc = f.getContainingDocument();
-		List<TextEdit> edits = new ArrayList<>(f.transform());
-		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
-
-		for (TextEdit edit : edits)
-			edit.apply(doc);
-
-		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+		assertNotNull("The adjudicated function terminates in the no-primitive-parameters failure.",
+				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -2062,7 +2128,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void testGetDecoratorFQNInternal() throws Exception {
-		Entry<IDocument, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefinitions = this
 				.getDocumentToAvailableFunctionDefinitions("A");
 
 		Collection<FunctionDef> functionDefinitions = documentToAvailableFunctionDefinitions.getValue();
@@ -2087,7 +2153,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		File inputTestFile = this.getInputTestFile("A");
 
-		IDocument document = documentToAvailableFunctionDefinitions.getKey();
+		IDocument document = documentToAvailableFunctionDefinitions.getKey().getValue();
 
 		int offset = NodeUtils.getOffset(document, decoratorFunction);
 		String representationString2 = NodeUtils.getRepresentationString(decoratorFunction);
@@ -7089,9 +7155,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH} collapsed the contexts into a single, unsound concrete shape, and
 	 * {@link PythonTensorAnalysisEngine#MODEL_FORWARD_CFA_DEPTH} separated them (wala/ML#587). As of Ariadne 0.52.16, layer-method
 	 * trampolines are keyed on the receiver instance (ponder-lab/ML#520), which separates the model-forward contexts at any depth: both
-	 * depths now yield the identical sound set, the concrete training shape plus the wildcard ({@code null}-dims) over-approximation
-	 * covering the test call site. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no longer
-	 * demonstrate depth sensitivity.
+	 * depths yield the identical sound set. Through Ariadne 0.52.36 that set was the concrete training shape plus the wildcard
+	 * ({@code null}-dims) over-approximation covering the test call site; as of 0.52.76 the test call site resolves concretely, so the set
+	 * is the two concrete call-site shapes. The depth forwarding remains pinned here as the sound-by-default guard; this fixture can no
+	 * longer demonstrate depth sensitivity.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/600">Issue 600</a>
 	 */
@@ -7101,10 +7168,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<TensorType> deep = this.analyzeAccuracyYPredAtDepth(PythonTensorAnalysisEngine.MODEL_FORWARD_CFA_DEPTH);
 
 		assertEquals("Receiver-keyed trampolines (Ariadne 0.52.16) make the set depth-invariant.", shallow, deep);
-		assertEquals("The set holds the concrete training shape and the wildcard over-approximation.", 2, deep.size());
-		assertTrue("One member is concrete.", deep.stream().anyMatch(t -> t.getDims() != null));
-		assertTrue("One member is the wildcard (unconstrained-shape) over-approximation.",
-				deep.stream().anyMatch(t -> t.getDims() == null));
+		// As of Ariadne 0.52.76, the test call site resolves concretely: the wildcard (null-dims) over-approximation that covered it
+		// through 0.52.36 is replaced by the concrete test shape, so the sound set is the two concrete call-site shapes.
+		assertEquals("The set holds both concrete call-site shapes; the wildcard over-approximation resolved at Ariadne 0.52.76.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(256), new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(new NumericDim(10000), new NumericDim(10)))),
+				deep);
 	}
 
 	/**
@@ -8548,6 +8617,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The comprehension-built variant of the sequence reduction (#807): the container's catalog at Ariadne 0.52.58+ carries the
+	 * analysis-internal append-contents key (wala/ML#773 stores comprehension elements under the same channel {@code append} uses)
+	 * alongside its numeric indices. With the synthetic key filtered before the contiguity check, the contiguous singleton reduces exactly
+	 * like the literal-list fixture; without the filter, it declined as non-contiguous.
+	 */
+	@Test
+	public void testInputSignatureContainerComprehension() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 must classify the comprehension-built container.", TRUE, xs.isTensorContainer());
+		assertNotNull("The container's element types must survive the synthetic catalog key (#807).", xs.getContainerElementTypes());
+		assertEquals("A singleton comprehension has one element position.", 1, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("The comprehension-built singleton reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("The nested rendering matches the literal-list fixture's.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				result.signature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * The arity bottom of the sequence reduction (#781): `xs` receives a singleton list at one call site and a two-element list at the
 	 * other. TensorFlow rejects a sequence of a different length than the signature declares and no wildcard length exists, so no single
 	 * nested spec admits both call sites; the parameter blocks as `HETEROGENEOUS_ARITY`, the `|X| != 1` discipline the dtype and sparseness
@@ -9658,7 +9751,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code unknown}-dtype twin persists alongside it, so the residual is narrowed rather than closed. Bisected to 0.52.33: the gain is
 	 * the dtype feed, not 0.52.34's wala/ML#682 type-feed composition or its wala/ML#740 trampoline re-keying, neither of which moves this
 	 * subject. Dtype on the logits forms is the residual, from reshape/elementwise producers on the logits path (ponder-lab/ML#514's
-	 * wala/ML#672 triage).
+	 * wala/ML#672 triage). As of Ariadne 0.52.36 (the 0.52.35 shape-recovery work, wala/ML#739's deeper decoder-stack operand walk and
+	 * wider generator shape walks, accumulated since this pin's 0.52.34 baseline), the residual closes and the shape sharpens: the
+	 * {@code unknown}-dtype form drops, so {@code pred} is {@code float32} throughout (wala/ML#677 closed); the batch and sequence axes,
+	 * evidence-free and hence {@code Unresolved} at 0.52.26/27, become {@code Dynamic}, the deeper walk having reached the model's static
+	 * shape and confirmed the runtime {@code None} (the wala/ML#721 evidence criterion, so the sharper classification, not a regression);
+	 * and the rank-unknown {@code float32} form resolved to a rank-4 {@code (Dynamic, Dynamic, 8, 8)}. As of Ariadne 0.52.76, the batch
+	 * axis sharpens further to the concrete extent (symbolic in the one context that does not recover it), matching the
+	 * {@code padded_batch(32)} pipeline, and the rank-4 member (the attention-internal d_model shape that had leaked into the call result)
+	 * no longer appears; the assertions below pin that state.
 	 * <p>
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
@@ -9668,15 +9769,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
 		Set<Function> fns = this.getFunctions();
-		assertEquals("`get_loss`'s `real` types as the dataset element type (wala/ML#618 fixed for `real` in Ariadne 0.52.8).",
-				Set.of(new TensorType(INT32, List.of(DynamicDim.INSTANCE))), findParameter(fns, "real").getTensorTypes());
-		// TODO(wala/ML#677): the `unknown`-dtype rank-3 form should drop once the residual dtype imprecision is fully fixed, leaving only
-		// its `float32` counterpart. Ariadne 0.52.33 got the `float32` form to appear; both now coexist.
-		assertEquals(
-				"`get_loss`'s `pred` types via the keras call result; leading dims `Unresolved` (evidence-free `tf.shape` axes, wala/ML#721/#722).",
-				Set.of(new TensorType(DType.UNKNOWN, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, null)),
+		// Through Ariadne 0.52.36, `real` typed as the UNBATCHED dataset element (rank-1; the wala/ML#618-era answer this pin
+		// previously codified). The pipeline pads and batches (`padded_batch(32, ([-1], [-1]))`), so the iterated element is rank-2
+		// `(32, None)` at runtime; as of the 0.52.76 bump the analysis types the batched element, with the batch extent concrete in
+		// one context and symbolic in the other.
+		assertEquals("`get_loss`'s `real` types as the batched dataset element (rank-2, batch 32) as of Ariadne 0.52.76.",
+				Set.of(new TensorType(INT32, List.of(new NumericDim(32), DynamicDim.INSTANCE)),
+						new TensorType(INT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE))),
+				findParameter(fns, "real").getTensorTypes());
+		// At the Ariadne 0.52.36 bump (its 0.52.35 shape-recovery work), the `unknown`-dtype form the wala/ML#677 TODO tracked
+		// dropped, `pred` became `float32` throughout, and the batch/sequence axes became the evidence-based `Dynamic`.
+		// The 0.52.76 bump improves `pred` the same way as `real`: the batch axis is the concrete extent (or symbolic where the
+		// context does not recover it) rather than `Dynamic`, and the spurious rank-4 `(Dynamic, Dynamic, 8, 8)` member (the
+		// attention-internal d_model shape leaking into the call result) no longer appears.
+		assertEquals("`get_loss`'s `pred` types via the keras call result; batch axis concrete as of Ariadne 0.52.76.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(32), DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE, new NumericDim(10))),
+						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10)))),
 				findParameter(fns, "pred").getTensorTypes());
 		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
 				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
@@ -9829,16 +9938,124 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code sample_train_nodes} and the outer {@code split_labels}) do perform a (numpy) computation but are declined by the
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
+	/**
+	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
+	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
+	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
+	 * declines). Directly exercises the exemption on the current release.
+	 */
+	@Test
+	public void testExemptDefaultedUnsuppliedPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function f = findFunction(functions, "f");
+
+		Parameter flag = f.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertTrue("`flag` declares a default.", flag.hasDefault());
+		assertEquals("No call site supplies `flag`.", FALSE, flag.isSuppliedAtCallSite());
+
+		assertNotEquals("A defaulted, unsupplied primitive must not make the function primitive-declining (#795).", TRUE,
+				f.getHasPrimitiveParameter());
+		assertTrue("With the primitive exemption and a tensor `x`, `f` is optimizable.",
+				f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 negative: a defaulted primitive parameter that a call site supplies with a varying value is a retrace key, so the exemption must
+	 * not apply. `g` is called both with `flag` defaulted and with `flag=5`, so `g` stays declined by `HAS_PRIMITIVE_PARAMETERS`.
+	 */
+	@Test
+	public void testDefaultedSuppliedPrimitiveStillDeclines() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function g = findFunction(functions, "g");
+
+		Parameter flag = g.getParameters().get(1);
+		assertEquals("flag", flag.getName());
+		assertEquals("A call site supplies `flag`, so it is not exempt.", TRUE, flag.isSuppliedAtCallSite());
+
+		assertEquals("A supplied defaulted primitive still declines the function.", TRUE, g.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 tripwire for the wala/ML#743 regression that lands with the Ariadne 0.52.35 bump. `C.m`'s `flag` is a defaulted primitive no
+	 * caller supplies. On the current release the trampolined method default is not materialized, so `flag` has an empty points-to set and
+	 * `HAS_PRIMITIVE_PARAMETERS` never fires (this test passes via that path). At 0.52.35, wala/ML#743 materializes the default and `flag`
+	 * becomes a detected primitive; without the #795 exemption this test flips red as `m` declines, and the exemption restores it. It is
+	 * the unit guard the corpus regression check surfaced by hand (the `LayerNormalization.call` decline).
+	 */
+	@Test
+	public void testDefaultedPrimitiveMethodTripwire() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function m = findFunction(functions, "C.m");
+
+		assertNotEquals("A defaulted, unsupplied primitive method parameter must not make the method primitive-declining (#795).", TRUE,
+				m.getHasPrimitiveParameter());
+		assertTrue("`m` is optimizable with a tensor `x` and the exempt `flag`.",
+				m.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * #795 with the wala/ML#751 star-argument fix (Ariadne 0.52.36). {@code combine}'s {@code scale} is a defaulted primitive supplied by
+	 * the trailing {@code i} (a varying loop index) after a {@code *rest} unpack in {@code combine(tf.constant(...), *rest, i)}. The unpack
+	 * collapses a statically-unknown number of arguments into a single invoke slot, so whether the trailing argument reaches {@code scale}
+	 * is undetermined: {@link Function#isSuppliedAtAnyCallSite} consults {@code PythonInvokeInstruction.getStarredPositions()} and reads
+	 * {@code null} rather than {@code FALSE}, so the defaulted-primitive exemption (which requires a definite {@code FALSE}) does not apply
+	 * and {@code combine} declines for {@code HAS_PRIMITIVE_PARAMETERS}. This is the corpus {@code compute_loss(pred, conv, *target[i], i)}
+	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable.
+	 */
+	@Test
+	public void testDefaultedPrimitiveAfterStarUnpackDeclines() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function combine = findFunction(functions, "combine");
+
+		Parameter scale = combine.getParameters().get(3);
+		assertEquals("scale", scale.getName());
+		assertTrue("`scale` declares a default.", scale.hasDefault());
+
+		// The `*rest` unpack makes the trailing `i`'s alignment with `scale` undetermined, so supply is null, not a definite FALSE.
+		assertNull("A defaulted primitive whose supply an unpack made undetermined is not read as unsupplied (wala/ML#751).",
+				scale.isSuppliedAtCallSite());
+
+		// A null (undetermined) supply is not exempt; only a definite FALSE exempts. So the varying primitive `scale` declines `combine`.
+		assertEquals("`combine` declines: `scale` is a primitive whose supply is undetermined, so the exemption does not apply.", TRUE,
+				combine.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.",
+				combine.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testCoraDataPrepBarren() throws Exception {
+		// All six Cora data-prep methods are numpy/list-only and perform no tensor computation. `sample_train_nodes` and `split_labels`
+		// joined this group at the Ariadne 0.52.36 bump: their former tensor-computation flag came from a loop-carried `list` concatenation
+		// wrongly typed as a tensor (wala/ML#750), fixed in 0.52.36 (wala/ML#627), so they are now correctly barren. Asserting "not a
+		// tensor computation" (not strictly `false`) tolerates a `null` verdict, which arises when the method is declined for another
+		// reason
+		// before tensor computation is computed.
 		for (String barren : List.of("Cora.build_graph", "Cora.encode_labels", "Cora.split_labels._get_labels",
-				"Cora.split_labels._sample_mask"))
-			assertFalse(barren + " is numpy-only data preparation and must report no tensor computation (#774).",
+				"Cora.split_labels._sample_mask", "Cora.sample_train_nodes", "Cora.split_labels"))
+			assertNotEquals(barren + " is numpy-only data preparation and must not report a tensor computation (#774, wala/ML#750).", TRUE,
 					getFunction(barren).getHasTensorComputation());
+	}
 
-		for (String sibling : List.of("Cora.sample_train_nodes", "Cora.split_labels"))
-			assertTrue(sibling + " applies numpy to its parameters, so it is declined by the numpy-on-parameters precondition, not barren.",
-					getFunction(sibling).getHasTensorComputation());
+	/**
+	 * Regression guard for the MusicTransformer {@code _divide_note} false positive. The vendored {@code midi_processor/processor.py}
+	 * contains no TensorFlow at all: {@code _divide_note} sorts a Python list of {@code SplitNote} instances and builds another via the
+	 * list concatenation {@code result_array += [on, off]}. Ariadne 0.52.35 wrongly typed that list concatenation as a tensor with
+	 * TensorFlow origin (https://github.com/wala/ML/issues/750), enabled by its list of {@code SplitNote} being mis-typed as a tensor in
+	 * the first place (https://github.com/wala/ML/issues/752), which flipped the function to a tensor computation. Ariadne 0.52.36 stops
+	 * typing loop-carried list concatenation as a tensor, so the function is once again barren. Asserting no tensor computation here fails
+	 * if a future release reintroduces the mis-typing, catching at unit scale a change that otherwise only surfaces in the corpus.
+	 */
+	@Test
+	public void testDivideNoteBarren() throws Exception {
+		// Tolerate a null verdict (not just false): under the full suite `getHasTensorComputation()` can be null for
+		// `_divide_note` via the tc-null transient (#799, on the #798 cache-retention substrate), which `assertFalse`
+		// would NPE on. The guard is against the value becoming TRUE (the wala/ML#750 false positive), so `!= TRUE` is
+		// the correct, transient-robust assertion, matching the barren-pin rationale.
+		assertNotEquals(
+				"`_divide_note` builds a plain Python list of `SplitNote` and performs no tensor computation (guards the wala/ML#750 list-concatenation false positive fixed in Ariadne 0.52.36).",
+				Boolean.TRUE, getFunction("_divide_note").getHasTensorComputation());
 	}
 
 	/**
@@ -9866,6 +10083,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`compute` makes no eager-only calls; the `numpy()` call on its result belongs to the caller.",
 				compute.getHasEagerOnlyCalls());
 		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
+	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
+	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
+	 * Because the names are generic ML verbs with demonstrated in-corpus collisions, blocking requires dispatch evidence: {@code calls_fit}
+	 * invokes {@code fit} on a Keras model (the receiver's points-to holds a summarized framework instance) and fails with
+	 * {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS}; {@code calls_override} invokes a user-defined {@code predict} (the resolved
+	 * dispatch is user code, analyzed transitively on its own merits) and stays P1. The unresolved residue allows (wala/ML#571 keeps a
+	 * class-hierarchy walk from identifying user model subclasses).
+	 */
+	@Test
+	public void testEagerOnlyTrainingSurface() throws Exception {
+		Function callsFit = getFunction("calls_fit");
+		assertTrue("`calls_fit` invokes the guarded Keras `fit` endpoint.", callsFit.getHasEagerOnlyCalls());
+		assertNull("`calls_fit` must not pass a precondition; the endpoint raises inside a trace.", callsFit.getPassingPrecondition());
+		assertNotNull("`calls_fit` fails with HAS_EAGER_ONLY_CALLS.",
+				callsFit.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function callsOverride = getFunction("calls_override");
+		assertFalse("`calls_override` dispatches to a user-defined `predict`, not the guarded endpoint.",
+				callsOverride.getHasEagerOnlyCalls());
+		assertEquals("`calls_override` still hybridizes (P1).", P1, callsOverride.getPassingPrecondition());
 	}
 
 	/**
@@ -9901,6 +10142,351 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function compute = getFunction("compute");
 		assertFalse("`compute` applies no numpy to its parameter.", compute.getHasNumpyCallsOnParameters());
 		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the invalid-name-argument safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814): a
+	 * function that passes a non-string constant where a TensorFlow API declares its {@code name} parameter must not hybridize, since eager
+	 * execution never validates the name but tracing opens a name scope with it and raises (it fails with
+	 * {@link PreconditionFailure#HAS_INVALID_NAME_ARGUMENTS}). Covers each flagged constant kind across both binding forms: a dtype
+	 * constant positionally ({@code evaluate}, distilling word2vec's {@code evaluate}) and by keyword ({@code annotate}), a numeric literal
+	 * positionally ({@code scale}), and a boolean literal by keyword ({@code toggle}); {@code compute} passes a string name to the same op
+	 * and remains P1.
+	 */
+	@Test
+	public void testInvalidNameArgumentsBlockHybridization() throws Exception {
+		Function evaluate = getFunction("evaluate");
+		assertTrue("`evaluate` passes `tf.float32` positionally where `tf.sqrt` declares `name`.", evaluate.getHasInvalidNameArguments());
+		assertNull("`evaluate` must not pass a precondition; tracing validates its name argument.", evaluate.getPassingPrecondition());
+		assertNotNull("`evaluate` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				evaluate.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function annotate = getFunction("annotate");
+		assertTrue("`annotate` passes `tf.float32` as the `name` keyword argument.", annotate.getHasInvalidNameArguments());
+		assertNull("`annotate` must not pass a precondition; tracing validates its name argument.", annotate.getPassingPrecondition());
+		assertNotNull("`annotate` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				annotate.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function scale = getFunction("scale");
+		assertTrue("`scale` passes a numeric literal positionally where `tf.sqrt` declares `name`.", scale.getHasInvalidNameArguments());
+		assertNotNull("`scale` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				scale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function toggle = getFunction("toggle");
+		assertTrue("`toggle` passes a boolean literal as the `name` keyword argument.", toggle.getHasInvalidNameArguments());
+		assertNotNull("`toggle` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				toggle.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+		Function compute = getFunction("compute");
+		assertFalse("`compute` passes a string name to `tf.sqrt`.", compute.getHasInvalidNameArguments());
+		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the unresolved statically-read-axis safety precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when the inferred input signature leaves unresolved an
+	 * axis the body reads statically and consumes where a Python integer is required, emitting it would break the function at trace time,
+	 * so the conversion is declined (it fails with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}). Covers integer
+	 * arithmetic over a directly-read axis ({@code arith}, distilling {@code RelativeGlobalAttention._qe_masking}) and a reshape target fed
+	 * by a derived tensor's static read ({@code reshape_derived}, distilling {@code _skewing}); {@code dynamic_read} consumes
+	 * {@code tf.shape(x)[1]} (safe under a wildcard) and {@code pinned} reads an axis its call sites keep concrete, so both remain P1.
+	 * {@code sliced} pins the subscript-of-a-narrowed-slice composition ({@code x.shape[-2:]} then {@code dims[1]} is axis -1, not axis 1);
+	 * {@code extracted} pins the read crossing a user-defined shape extractor's return; {@code keras_static} pins {@code K.int_shape} as a
+	 * static read; {@code casted} launders a {@code dtype} read and remains P1; {@code prefixed} reads only axis 0 through a prefix slice,
+	 * which its signature pins, so the per-axis condition admits it beside the wild axis 1; {@code bounded} feeds the wild axis into a
+	 * slice bound, the silent-misbehavior consumption, and is declined.
+	 */
+	@Test
+	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function arith = getFunction("arith");
+		assertTrue("`arith` does integer arithmetic over `x.shape[-1]`, which its signature leaves unresolved.",
+				arith.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`arith` must not pass a precondition; the emitted signature would break it.", arith.getPassingPrecondition());
+		assertNotNull("`arith` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", arith.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function reshapeDerived = getFunction("reshape_derived");
+		assertTrue("`reshape_derived` feeds `padded.shape[1]` into a reshape target.", reshapeDerived.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`reshape_derived` must not pass a precondition.", reshapeDerived.getPassingPrecondition());
+		assertNotNull("`reshape_derived` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", reshapeDerived.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function dynamicRead = getFunction("dynamic_read");
+		assertFalse("`dynamic_read` reads its dimension dynamically via `tf.shape`, which a wildcard admits.",
+				dynamicRead.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`dynamic_read` still hybridizes (P1).", P1, dynamicRead.getPassingPrecondition());
+
+		Function pinned = getFunction("pinned");
+		assertFalse("`pinned` reads an axis every call site keeps concrete, so the signature pins it.",
+				pinned.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`pinned` still hybridizes (P1).", P1, pinned.getPassingPrecondition());
+
+		Function sliced = getFunction("sliced");
+		assertTrue("`sliced` subscripts `x.shape[-2:]` at 1, which is axis -1, unresolved in its signature.",
+				sliced.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`sliced` must not pass a precondition.", sliced.getPassingPrecondition());
+		assertNotNull("`sliced` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", sliced.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function extracted = getFunction("extracted");
+		assertTrue("`extracted` reads axis 1 through `dims_of`'s returned shape vector.", extracted.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`extracted` must not pass a precondition.", extracted.getPassingPrecondition());
+		assertNotNull("`extracted` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", extracted.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function kerasStatic = getFunction("keras_static");
+		assertTrue("`keras_static` reads axis 1 statically via `K.int_shape`.", kerasStatic.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`keras_static` must not pass a precondition.", kerasStatic.getPassingPrecondition());
+		assertNotNull("`keras_static` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", kerasStatic.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function casted = getFunction("casted");
+		assertFalse("`casted` reads only `x.dtype`, a trace-time constant.", casted.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`casted` still hybridizes (P1).", P1, casted.getPassingPrecondition());
+
+		Function bounded = getFunction("bounded");
+		assertTrue("`bounded` feeds `x.shape[1]` into a slice bound, where a wildcard's None silently means to-the-end.",
+				bounded.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`bounded` must not pass a precondition.", bounded.getPassingPrecondition());
+		assertNotNull("`bounded` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", bounded.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function prefixed = getFunction("prefixed");
+		assertFalse("`prefixed` reads only axis 0 through `x.shape[:1]`, which its signature pins.",
+				prefixed.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`prefixed` still hybridizes (P1); the per-axis condition admits a pinned read beside a wild axis.", P1,
+				prefixed.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the Keras lazy-{@code build} reach of the unresolved statically-read-axis precondition
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): a static read need not sit in the decorated function's
+	 * own body. {@code Proj.call} never touches a shape, but its class's {@code build} passes {@code input_shape[-1]} to {@code add_weight}
+	 * (a sibling under the {@code __call__} trampoline, distilling {@code PositionWiseFeedForward}); {@code Outer.call} reaches the same
+	 * read through the sublayer it invokes (distilling {@code Transformer}). {@code Gate.call}'s {@code build} reads {@code input_shape}
+	 * only into an {@code InputSpec}, the negative case that forces the dataflow formulation (distilling {@code WDEmbedding}), and remains
+	 * P1.
+	 */
+	@Test
+	public void testUnresolvedStaticallyReadAxesInKerasBuild() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function projCall = getFunction("Proj.call");
+		assertTrue("`Proj.call`'s own `build` passes `input_shape[-1]` to `add_weight`.", projCall.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`Proj.call` must not pass a precondition.", projCall.getPassingPrecondition());
+		assertNotNull("`Proj.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", projCall.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function outerCall = getFunction("Outer.call");
+		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
+				outerCall.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`Outer.call` must not pass a precondition.", outerCall.getPassingPrecondition());
+		assertNotNull("`Outer.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", outerCall.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+
+		Function gateCall = getFunction("Gate.call");
+		assertFalse("`Gate.call`'s `build` reads `input_shape` only into an `InputSpec`, which a wildcard admits.",
+				gateCall.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Gate.call` still hybridizes (P1).", P1, gateCall.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
+	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
+	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
+	 * its spec to shape-&#8868;) must fail with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}. Every runtime failure mode
+	 * was verified per sink on TF 2.9.3 ({@code as_list}/{@code len}/{@code ndims} raise {@code ValueError}; {@code rank} arithmetic raises
+	 * {@code TypeError} on the {@code None}). The {@code ranked_*} twins are called at one rank with differing extents, so their specs keep
+	 * a known rank with a dynamic axis, which every rank read tolerates: they must stay P1, pinning the precision split from the
+	 * extent-sensitive verdict (notably {@code ranked_rank}, whose rank arithmetic is a trace-time constant that must not trip the
+	 * arithmetic sink).
+	 */
+	@Test
+	public void testUnresolvedRankReadsBlockHybridization() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_as_list", "wild_len", "wild_rank", "wild_ndims")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue("`" + identifier + "` reads its input's rank surface, which `shape=None` breaks.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		}
+
+		for (String identifier : List.of("ranked_as_list", "ranked_len", "ranked_rank")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "`'s spec keeps a known rank, which every rank read tolerates.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
+	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
+	 * two call sites with the same total argument count but different keyword-name sets ({@code step=} from the training script,
+	 * {@code mode='d'} from {@code train_on_batch}), plus the sibling {@code MusicTransformer} class with its same-named methods (a minimal
+	 * single-class reduction did not reproduce; see the issue). Through Ariadne 0.52.33, trampoline bodies were cached on (receiver, total
+	 * argument count), so the colliding sites shared one body and a keyword's value never reached its parameter, reporting the method as
+	 * having no primitive parameter; 0.52.34 keys the cache on the keyword-name set as well, and {@code mode}'s default-and-supplied
+	 * strings make the verdict {@code TRUE}.
+	 */
+	@Test
+	public void testSanityCheckKeywordCollisionVendored() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function sanityCheck = findFunction(functions, "MusicTransformerDecoder.sanity_check");
+		assertEquals("`sanity_check` has a primitive parameter (`mode` binds strings; `step` binds an int).", Boolean.TRUE,
+				sanityCheck.getHasPrimitiveParameter());
+	}
+
+	/**
+	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
+	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
+	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
+	 * non-first trace (it fails with {@link PreconditionFailure#HAS_STALE_VARIABLE_READS}). {@code stale_read} distills multigpu_training's
+	 * {@code run_optimization}; {@code fresh_read} reads the collection after the forward pass, the pervasive beneficial idiom, and remains
+	 * P1.
+	 */
+	@Test
+	public void testStaleVariableReadsBlockHybridization() throws Exception {
+		Function staleRead = getFunction("stale_read");
+		assertTrue("`stale_read` snapshots `model.trainable_variables` before `model` is first called.",
+				staleRead.getHasStaleVariableReads());
+		assertNull("`stale_read` must not pass a precondition; tracing would raise on slot creation.", staleRead.getPassingPrecondition());
+		assertNotNull("`stale_read` fails with HAS_STALE_VARIABLE_READS.",
+				staleRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
+		Function compiledStale = getFunction("compiled_stale");
+		assertTrue("`compiled_stale`'s earlier `model.compile` builds nothing, so it must not suppress the stale read.",
+				compiledStale.getHasStaleVariableReads());
+		assertNull("`compiled_stale` must not pass a precondition.", compiledStale.getPassingPrecondition());
+		assertNotNull("`compiled_stale` fails with HAS_STALE_VARIABLE_READS.",
+				compiledStale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
+		Function freshRead = getFunction("fresh_read");
+		assertFalse("`fresh_read` reads the collection after the forward pass builds the model.", freshRead.getHasStaleVariableReads());
+		assertEquals("`fresh_read` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());
+	}
+
+	/**
+	 * Completes the building-member set (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/825): beyond
+	 * {@code call}/{@code __call__}/{@code build}/{@code fit}, the whole Keras training surface triggers the lazy build ({@code predict},
+	 * {@code evaluate}, the {@code *_on_batch} family, and the deprecated {@code *_generator} wrappers; each runtime-verified to flip
+	 * {@code built} on TF 2.9.3). A variable-collection read ordered after any of them is fresh and must not be flagged stale. Only the
+	 * stale-read dimension is pinned here: the training-surface members are themselves eager-only under tracing, an unmodeled hazard
+	 * tracked by #836, so passing-precondition assertions are deferred to it.
+	 */
+	@Test
+	public void testStaleVariableReadsBuildingMembers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("fresh_after_predict", "fresh_after_evaluate", "fresh_after_train_on_batch",
+				"fresh_after_test_on_batch", "fresh_after_predict_on_batch", "fresh_after_fit_generator", "fresh_after_evaluate_generator",
+				"fresh_after_predict_generator")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "` reads the collection only after a build-triggering member; the read is fresh.",
+					function.getHasStaleVariableReads());
+		}
+	}
+
+	/**
+	 * Pins the symbolic-iteration safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830, distilling
+	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but raises
+	 * {@code OperatorNotAllowedInGraphError} under tracing once the parameter is symbolic, even with AutoGraph converting the loop (it
+	 * fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). {@code range_loop}'s in-body {@code tf.range} iteration is
+	 * AutoGraph-supported, is not parameter-derived, and remains P1.
+	 */
+	@Test
+	public void testTensorParameterIterationBlocksHybridization() throws Exception {
+		Function iterateParam = getFunction("iterate_param");
+		assertTrue("`iterate_param` iterates its tensor parameter with a Python loop.", iterateParam.getHasTensorParameterIteration());
+		assertNull("`iterate_param` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
+				iterateParam.getPassingPrecondition());
+		assertNotNull("`iterate_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", iterateParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		Function rangeParamBound = getFunction("range_param_bound");
+		assertFalse("`range_param_bound` iterates a `tf.range` whose bound is parameter-derived, the AutoGraph-supported form.",
+				rangeParamBound.getHasTensorParameterIteration());
+		assertEquals("`range_param_bound` still hybridizes (P1).", P1, rangeParamBound.getPassingPrecondition());
+
+		Function listIter = getFunction("list_iter");
+		assertFalse("`list_iter` iterates a Python list of tensors, which tracing unrolls (issue 832).",
+				listIter.getHasTensorParameterIteration());
+		assertEquals("`list_iter` remains convertible (P1), the exemption's whole point.", P1, listIter.getPassingPrecondition());
+
+		Function rangeLoop = getFunction("range_loop");
+		assertFalse("`range_loop` iterates an in-body `tf.range`, the AutoGraph-supported form.",
+				rangeLoop.getHasTensorParameterIteration());
+		assertEquals("`range_loop` still hybridizes (P1).", P1, rangeLoop.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the caller-coverage benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767), promoted
+	 * from the phase-1 advisory to blocking on corpus evidence (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826):
+	 * a function whose every known call path is dominated by a hybridized caller is already traced, so converting it adds only a redundant
+	 * nested trace boundary. {@code inner} (called only from the hybridized {@code outer}) is covered and fails with
+	 * {@link PreconditionFailure#HAS_COVERED_CALLERS}; {@code mixed} is also called at module level, an uncovered path, and keeps P1
+	 * (allow-on-unknown polarity: only a determinate {@code TRUE} blocks). The least fixpoint and the module-caller block are the design
+	 * settled on the parent issue.
+	 */
+	@Test
+	public void testCallerCoverageBlocksHybridization() throws Exception {
+		Function inner = getFunction("inner");
+		assertEquals("`inner`'s only caller is the hybridized `outer`, so it is covered.", Boolean.TRUE, inner.getCallerCovered());
+		assertNull("`inner` must not pass a precondition; its computation is already traced on every executed path.",
+				inner.getPassingPrecondition());
+		assertNotNull("`inner` fails with HAS_COVERED_CALLERS.",
+				inner.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
+
+		Function mixed = getFunction("mixed");
+		assertEquals("`mixed` is also called at module level, an uncovered path.", Boolean.FALSE, mixed.getCallerCovered());
+		assertEquals("`mixed` still hybridizes (P1).", P1, mixed.getPassingPrecondition());
+		assertNull("`mixed` carries no coverage failure.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
+	}
+
+	/**
+	 * Pins the measurement phase for de-hybridizing covered hybrid functions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/827), mirroring the staging the conversion side went through
+	 * before its blocking promotion: a hybrid function whose every known caller is itself hybrid carries a redundant decorator on every
+	 * executed path, surfaced as the caller-coverage INFO with no transformation selected. {@code covered_h} (hybrid, called only from the
+	 * hybrid {@code outer_h}) carries the INFO; {@code outer_h}, called at module level, does not.
+	 */
+	@Test
+	public void testCallerCoverageHybridAdvisory() throws Exception {
+		Function coveredH = getFunction("covered_h");
+		assertEquals("`covered_h`'s only caller is the hybrid `outer_h`, so it is covered.", Boolean.TRUE, coveredH.getCallerCovered());
+		assertNotNull("`covered_h` carries the caller-coverage INFO.",
+				coveredH.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+		assertTrue("Advisory only: no transformation is selected for `covered_h`.", coveredH.getTransformations().isEmpty());
+
+		Function outerH = getFunction("outer_h");
+		assertEquals("`outer_h` is called at module level, an uncovered path.", Boolean.FALSE, outerH.getCallerCovered());
+		assertNull("`outer_h` carries no caller-coverage INFO.",
+				outerH.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, Information.CALLER_COVERAGE.getCode()));
+	}
+
+	/**
+	 * Pins the dead-caller semantics of the coverage fixpoint (#826): an eager call site inside a function that is itself unreachable
+	 * (defined, never referenced) contributes no executed path and no call-graph node, so it must not break coverage. This is the shape the
+	 * corpus evidence surfaced (an eval-only image loader left dead in the subject calling an otherwise-covered function), made a
+	 * deliberate fixture rather than an accident before the blocking promotion shipped.
+	 */
+	@Test
+	public void testCallerCoverageDeadCaller() throws Exception {
+		Function covered = getFunction("covered");
+		assertEquals("`covered`'s only reachable caller is the hybridized `live_caller`; the dead `dead_caller` has no call-graph node.",
+				Boolean.TRUE, covered.getCallerCovered());
+		assertNull("`covered` must not pass a precondition; coverage now blocks.", covered.getPassingPrecondition());
+		assertNotNull("`covered` fails with HAS_COVERED_CALLERS.",
+				covered.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_COVERED_CALLERS.getCode()));
 	}
 
 	/**

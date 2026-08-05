@@ -62,7 +62,7 @@ JUL logging in test runs: tycho-surefire injects `java.util.logging.config.file`
 
 ## Ariadne release verification
 
-Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump, after the suite is green (failures are usually pins to advance, not bugs) and the PR merges, run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` and report measured deltas upstream, reopening issues whose subject-scale case persists.
+Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump: open the bump PR as a **draft**, advance the failing pins (failures are usually pins to advance, not bugs), and run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` **before merging** — it gates the merge, and a drift classified as a regression keeps the PR draft. Only after the merge, report measured deltas upstream, reopening issues whose subject-scale case persists. (The private document is authoritative on the loop's steps; this summary previously stated the verification as post-merge, which inverted the gate.)
 
 ## Module layout
 

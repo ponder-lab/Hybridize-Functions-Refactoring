@@ -180,6 +180,8 @@ public class Util {
 
 		FunctionExtractor functionExtractor = new FunctionExtractor();
 
+		SimpleNode moduleRoot;
+
 		try {
 			ParserInfo parserInfo = new ParserInfo(document, nature, moduleName, file);
 			ParseOutput parseOutput = PyParser.reparseDocument(parserInfo);
@@ -187,6 +189,7 @@ public class Util {
 			if (!(parseOutput.ast instanceof SimpleNode node))
 				return ret;
 
+			moduleRoot = node;
 			node.accept(functionExtractor);
 		} catch (Exception e) {
 			LOG.error("Failed to extract functions from: " + pythonFile + ".", e);
@@ -194,7 +197,7 @@ public class Util {
 		}
 
 		for (FunctionDef def : functionExtractor.getDefinitions())
-			ret.add(new FunctionDefinition(def, moduleName, file, pythonFile, document, nature));
+			ret.add(new FunctionDefinition(def, moduleName, file, pythonFile, document, moduleRoot, nature));
 
 		return ret;
 	}
@@ -261,7 +264,7 @@ public class Util {
 		Collection<FunctionDef> definitions = functionExtractor.getDefinitions();
 
 		for (FunctionDef def : definitions) {
-			FunctionDefinition function = new FunctionDefinition(def, moduleName, file, actualFile, document, nature);
+			FunctionDefinition function = new FunctionDefinition(def, moduleName, file, actualFile, document, simpleNode, nature);
 			ret.add(function);
 		}
 

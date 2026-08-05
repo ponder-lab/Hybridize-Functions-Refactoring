@@ -60,7 +60,52 @@ public enum PreconditionFailure {
 	 * {@code tf.function} tracing once the parameters become symbolic tensors, so hybridization would not preserve semantics. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 */
-	HAS_NUMPY_CALLS_ON_PARAMETERS(16);
+	HAS_NUMPY_CALLS_ON_PARAMETERS(16),
+
+	/**
+	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
+	 * {@code tf.sqrt(x, tf.float32)}). Eager execution never validates the name, but {@code tf.function} tracing opens a name scope with it
+	 * and raises, so hybridization would not preserve semantics. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 */
+	HAS_INVALID_NAME_ARGUMENTS(17),
+
+	/**
+	 * The inferred input signature leaves unresolved (wildcard) a parameter axis that the function's body (transitively) reads statically
+	 * and consumes where a Python integer is required (a weight shape, a reshape target, or integer arithmetic). Under the emitted
+	 * signature such an axis is {@code None} at trace time, so the consumption raises or silently misbehaves; a dynamic read
+	 * ({@code tf.shape(x)[i]}) is safe and does not disqualify. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 */
+	HAS_UNRESOLVED_STATICALLY_READ_AXES(18),
+
+	/**
+	 * The function snapshots a model's variable collection ({@code trainable_variables}/{@code trainable_weights}) before the model's first
+	 * invocation in its body and feeds the snapshot to an optimizer or gradient computation. A subclassed Keras model's collection is
+	 * silently empty before its first build, so under tracing the initial trace captures the empty snapshot, the in-trace build engages
+	 * {@code tf.function}'s variable-lifting re-trace, and optimizer slot creation lands on a non-first trace, raising the
+	 * singleton-variable {@code ValueError}. Reading the collection after the forward pass (the pervasive beneficial idiom) is untouched:
+	 * the ordering is the discriminator. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 */
+	HAS_STALE_VARIABLE_READS(19),
+
+	/**
+	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}. Eagerly the elements are tensors and
+	 * the loop runs; under {@code tf.function} tracing the parameter is symbolic, and iterating a symbolic tensor raises
+	 * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop. In-body {@code tf.range} loops are
+	 * AutoGraph-supported and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 */
+	HAS_TENSOR_PARAMETER_ITERATION(20),
+
+	/**
+	 * Every known call path to the function comes from hybridized code (the least-fixpoint caller coverage of issue 767), so its
+	 * computation is already traced on every executed path and adding {@code tf.function} contributes only a redundant nested trace
+	 * boundary. A benefit precondition with the allow-on-unknown polarity: unknown, module-level, or uncovered callers leave the function
+	 * convertible, and only a determinate {@code TRUE} coverage blocks. Promoted from the phase-1 advisory on corpus evidence (four covered
+	 * functions, each source-verified; the dead-caller semantics pinned first). See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826.
+	 */
+	HAS_COVERED_CALLERS(21);
 
 	static {
 		// check that the codes are unique.
