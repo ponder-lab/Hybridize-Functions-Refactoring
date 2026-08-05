@@ -9820,6 +9820,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator written as an attribute access names the module that defines the function, not the module that uses it. Two modules here
+	 * define {@code option}, and the decorator still resolves.
+	 * <p>
+	 * This passes today and is a guard rather than a reproduction. The ambiguity seen on real subjects
+	 * (ponder-lab/Hybridize-Functions-Refactoring#852) needs a search scope large enough for a common leaf name to match many definitions,
+	 * which a stub interpreter over a fixture directory does not provide, so that failure cannot be staged here.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testAmbiguousAttributeDecorator() throws Exception {
+		assertEquals("An attribute decorator names its defining module, not whichever module also defines the leaf.", Set.of("decs.option"),
+				getFunction("f").getDecoratorNames(null));
+	}
+
+	/**
 	 * Regression guard against a destructuring assignment whose left-hand side rebinds the name being destructured losing every field but
 	 * the first (fixed by <a href="https://github.com/wala/ML/issues/819">wala/ML#819</a>, released in Ariadne 0.52.79). Through 0.52.78
 	 * the read that followed the rebinding was carried to field 0's definition, so field 1 was read out of field 0's result rather than out
