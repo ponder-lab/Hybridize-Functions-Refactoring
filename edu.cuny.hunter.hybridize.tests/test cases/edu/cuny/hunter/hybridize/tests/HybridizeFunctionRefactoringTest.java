@@ -9788,6 +9788,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Regression guard against a destructuring assignment whose left-hand side rebinds the name being destructured losing every field but
+	 * the first (fixed by <a href="https://github.com/wala/ML/issues/819">wala/ML#819</a>, released in Ariadne 0.52.79). Through 0.52.78
+	 * the read that followed the rebinding was carried to field 0's definition, so field 1 was read out of field 0's result rather than out
+	 * of the tuple and reached its consumer untyped.
+	 * <p>
+	 * This is pinned here, not only upstream, because the consequence is the consumer's: a function whose parameters all fail to type
+	 * yields no input signature and is not recorded as having declined one, so it leaves the candidate population with no reason attached.
+	 * Distilled from {@code gpt-2-tensorflow2.0}'s {@code Gpt2.fit}, which opens {@code train_dataset, test_dataset = train_dataset} and
+	 * draws the testing arm's arguments from the second field, leaving {@code Gpt2._test_step} untyped while the structurally identical
+	 * {@code _train_step} typed correctly.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testRebindingDestructure() throws Exception {
+		assertTrue("Control: field 1 of a destructure whose targets do not shadow the source is a tensor.",
+				getFunction("consume_plain_second").getHasTensorParameter());
+		assertTrue("Field 1 survives a destructure whose field-0 target rebinds the source name (wala/ML#819).",
+				getFunction("consume_rebound_second").getHasTensorParameter());
+	}
+
+	/**
 	 * Regression guard against typing a parameter fed a subscript-slice of an opaque (argparse) value as a tensor (fixed by
 	 * https://github.com/wala/ML/issues/656, released in Ariadne 0.52.9): no tensor reaches {@code check}'s {@code value}, so it must not
 	 * be typed as a tensor.
