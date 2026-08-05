@@ -1656,6 +1656,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Runtime-pinned variant (#810). The fixture's three call sites were traced under {@code python3.10}/TF 2.9.3, observing argument
+	 * shapes {@code (256, 784)}, {@code (10000, 784)}, and {@code (5, 784)}, all {@code float32}; the observations are pinned as
+	 * {@code assert} statements the {@code runInput} hook executes. Dimension 0 disagrees across the observed union and generalizes to a
+	 * wildcard, so the emitted signature must be {@code input_signature=[tf.TensorSpec(shape=(None, 784), dtype=tf.float32)]}—which
+	 * executing the expected {@code out/A.py} also validates, since TF enforces the written signature at each call site.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/810">Issue 810</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionRuntimeObserved() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
+	 * Unanimous-union control for {@link #testInferInputSignatureEmissionRuntimeObserved()} (#810). Both traced call sites pass
+	 * {@code (256, 784)} {@code float32}, so the emitted signature must stay fully concrete:
+	 * {@code input_signature=[tf.TensorSpec(shape=(256, 784), dtype=tf.float32)]}. Executing the expected {@code out/A.py} has TF enforce
+	 * that exact shape at both call sites, failing a signature that drifts from the runtime-observed types.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/810">Issue 810</a>
+	 */
+	@Test
+	public void testInferInputSignatureEmissionRuntimeObservedConcrete() throws Exception {
+		helperAssertInputSignatureEmission();
+	}
+
+	/**
 	 * Auto-inject variant (#574). The fixture has no TensorFlow import at all, but {@code x} is tensor-typed via {@code np.ones}. The
 	 * source-write must inject a {@code from tensorflow import ...} line carrying {@code function}, {@code TensorSpec}, and the inferred
 	 * signature's dtype constant, then emit the unqualified {@code input_signature}—rather than injecting a bare
