@@ -9823,9 +9823,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * A decorator written as an attribute access names the module that defines the function, not the module that uses it. Two modules here
 	 * define {@code option}, and the decorator still resolves.
 	 * <p>
-	 * This passes today and is a guard rather than a reproduction. The ambiguity seen on real subjects
-	 * (ponder-lab/Hybridize-Functions-Refactoring#852) needs a search scope large enough for a common leaf name to match many definitions,
-	 * which a stub interpreter over a fixture directory does not provide, so that failure cannot be staged here.
+	 * This passes today, so it is a guard rather than a reproduction of ponder-lab/Hybridize-Functions-Refactoring#852. Two sibling modules
+	 * defining the same name are not enough to make the lookup ambiguous; what the real subjects supply and this does not has not been
+	 * isolated. A package re-exporting one name from two modules was tried and broke the fixture in an unrelated way, leaving the decorated
+	 * function out of the call graph, so it established nothing.
 	 *
 	 * @throws Exception On error.
 	 */
