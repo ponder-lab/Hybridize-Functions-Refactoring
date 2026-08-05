@@ -920,6 +920,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			switch (function.getIdentifier()) {
 			case "Test.name":
 				assertNull(function.getHasTensorParameter());
+				// `@value.setter` names an attribute of the property object defined in this module.
+				// Resolving the bare attribute through the indexer matches every `setter` in the
+				// workspace, so the decorator used to be dropped from the reported names entirely.
+				assertEquals("A property setter's decorator is named, not dropped as ambiguous.", Set.of("A.value.setter"),
+						function.getDecoratorNames(null));
 				break;
 			case "Test.value":
 				assertFalse(function.getHasTensorParameter());
