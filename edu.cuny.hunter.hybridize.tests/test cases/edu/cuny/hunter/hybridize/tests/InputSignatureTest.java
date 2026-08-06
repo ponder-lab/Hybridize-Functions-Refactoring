@@ -172,8 +172,7 @@ public class InputSignatureTest {
 
 	/**
 	 * {@link InputSignature#getParameterSpecs()} exposes each parameter's dtype and raw shape in declaration order, the per-parameter view
-	 * the {@code input_signatures.csv} emitter consumes, matching the rendering {@link InputSignature#toTensorSpecList(String)} joins
-	 * (#665).
+	 * the {@code tensor_specs.csv} emitter consumes, matching the rendering {@link InputSignature#toTensorSpecList(String)} joins (#665).
 	 */
 	@Test
 	public void testParameterSpecs() {

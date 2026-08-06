@@ -16,6 +16,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -119,7 +120,21 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
 
-	private static final String INPUT_SIGNATURES_CSV_FILENAME = "input_signatures.csv";
+	/**
+	 * One row per {@code TensorSpec} of an emitted input signature (#854). Signature absence is recorded in {@code signature_absences.csv},
+	 * not here.
+	 */
+	private static final String TENSOR_SPECS_CSV_FILENAME = "tensor_specs.csv";
+
+	/**
+	 * One row per recorded input-signature absence (#854): the non-spec disposition rows that lived in this file's predecessor
+	 * ({@code input_signatures.csv}), split out so {@code tensor_specs.csv} carries specs only. Together the two files partition the
+	 * predecessor's rows and preserve the #816 invariant (added by #818) that every considered function contributes at least one row.
+	 */
+	private static final String SIGNATURE_ABSENCES_CSV_FILENAME = "signature_absences.csv";
+
+	/** The name of the Markdown file documenting each emitted CSV's row key, written beside the CSVs (#854). */
+	private static final String README_FILENAME = "README.md";
 
 	private static final String PARAMETERS_CSV_FILENAME = "parameters.csv";
 
@@ -262,8 +277,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter callPrinter = createCSVPrinter(CALL_CSV_FILENAME, CALLS_HEADER);
 				CSVPrinter blockedParametersPrinter = createCSVPrinter(BLOCKED_PARAMETERS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "absence reason"));
-				CSVPrinter inputSignaturesPrinter = createCSVPrinter(INPUT_SIGNATURES_CSV_FILENAME,
-						buildAttributeColumnNames("param index", "source", "absence reason", "dtype", "shape"));
+				CSVPrinter tensorSpecsPrinter = createCSVPrinter(TENSOR_SPECS_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "source", "dtype", "shape"));
+				CSVPrinter signatureAbsencesPrinter = createCSVPrinter(SIGNATURE_ABSENCES_CSV_FILENAME,
+						buildAttributeColumnNames("param index", "source", "absence reason"));
 				CSVPrinter parametersPrinter = createCSVPrinter(PARAMETERS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "is tensor", "is container", "tensor types",
 								"container element types"));
@@ -272,6 +289,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 								"dim index", "dim class", "dtype", "dtype top"));
 				CSVPrinter depthLimitedPrinter = createCSVPrinter(DEPTH_LIMITED_CSV_FILENAME,
 						new String[] { "subject", "method", "value number", "call string length" });) {
+			writeReadme();
+
 			if (BUILD_WORKSPACE) {
 				// build the workspace.
 				monitor.beginTask("Building workspace ...", IProgressMonitor.UNKNOWN);
@@ -333,7 +352,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Function func : functions) {
 						printFunction(functionsPrinter, func);
 						printBlockedParameters(blockedParametersPrinter, func);
-						printInputSignatures(inputSignaturesPrinter, func);
+						printTensorSpecs(tensorSpecsPrinter, func);
+						printSignatureAbsences(signatureAbsencesPrinter, func);
 						printParameters(parametersPrinter, func);
 						printParameterDimensions(parameterDimensionsPrinter, func);
 					}
@@ -631,6 +651,45 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	/**
+	 * Writes {@value #README_FILENAME} beside the emitted CSVs, stating what a single row of each file is (#854). The CSVs append across
+	 * runs; this file is instead rewritten each run, so it always reflects the current writer.
+	 *
+	 * @throws IOException If the file cannot be written.
+	 */
+	private static void writeReadme() throws IOException {
+		Files.writeString(Path.of(README_FILENAME), """
+				# Evaluation output
+
+				Emitted by the Hybridize Functions evaluator. The CSVs append across runs; this file is rewritten each run. Each file is
+				named for what a single row is
+				(<https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/854>):
+
+				| File | One row per |
+				| ---- | ----------- |
+				| `results.csv` | evaluated project (subject). |
+				| `functions.csv` | function considered by the refactoring. |
+				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
+				| `transformations.csv` | (candidate function, transformation). |
+				| `optimizable.csv` | candidate function passing the preconditions. |
+				| `nonoptimizable.csv` | candidate function failing a precondition. |
+				| `failed_preconditions.csv` | error-severity status entry of a failing candidate. |
+				| `statuses.csv` | refactoring status entry of a considered function. |
+				| `decorators.csv` | (function, decorator name). |
+				| `calls.csv` | resolved call expression (emitted only when `outputCalls` is set). |
+				| `blocked_parameters.csv` | parameter that blocked input-signature inference, with its absence reason. |
+				| `tensor_specs.csv` | `TensorSpec` of a modeled input signature, keyed by (function, source, param index). A signature \
+				spans one row per non-`self` parameter, so per-signature facts (content, relation to a supplied signature, and absence \
+				reason) are in `functions.csv`, not here. |
+				| `signature_absences.csv` | recorded input-signature absence: a blocking parameter, a function-level reason, inference \
+				that never ran (`NOT_ATTEMPTED`), or a supplied signature that could not be modeled (`UNMODELED`). Together with \
+				`tensor_specs.csv`, every considered function contributes at least one row. |
+				| `parameters.csv` | non-`self` declared parameter. |
+				| `parameter_dimensions.csv` | (non-`self` parameter, inferred tensor type, dimension). |
+				| `depth_limited.csv` | points-to result abandoned at the targeted CFA depth. |
+				""");
+	}
+
+	/**
 	 * Emits one row per parameter that blocked input-signature inference for the given function, naming the parameter and its
 	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Where the {@code functions.csv} {@code input_signature
 	 * absence reason} column reports only the function's first blocking reason, this surfaces the per-parameter attribution (#654). Reads
@@ -647,59 +706,81 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	/**
-	 * Emits the function's input signatures at per-parameter (per-{@code TensorSpec}) granularity into {@code input_signatures.csv}, so
-	 * downstream analysis is a group-by rather than a parse of the joined {@code input_signature} string in {@code functions.csv}. There is
-	 * one row per non-{@code self} parameter of the inferred signature (source {@code "inferred"}) and of the developer-supplied signature
-	 * (source {@code "supplied"}); when inference was blocked, one row per blocking parameter (source {@code "absent"}) carrying its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Every considered function contributes at least one row
-	 * (#816): a function-level absence (no blocking parameter) and inference that never ran are each recorded as a single {@code "absent"}
-	 * row (the latter with reason {@code NOT_ATTEMPTED}), and a supplied signature that could not be fully modeled (e.g., a name reference
-	 * rather than a {@code TensorSpec} list) as a single {@code "supplied"} row with reason {@code UNMODELED}, so a function's absence from
-	 * the transformed set is always explained by something present in the output. The {@code dtype} and {@code shape} columns hold the raw
-	 * per-parameter values, with rank and wildcard counts left to derive downstream. Reads the memoized inference result without
-	 * recomputing, so it leaves the function's status untouched.
+	 * Emits the function's input signatures at per-{@code TensorSpec} granularity into {@code tensor_specs.csv}, so downstream analysis is
+	 * a group-by rather than a parse of the joined {@code input_signature} string in {@code functions.csv}. There is one row per
+	 * non-{@code self} parameter of the inferred signature (source {@code "inferred"}) and of the developer-supplied signature (source
+	 * {@code "supplied"}); every row is a {@code TensorSpec}, so a function without a modeled signature contributes none (#854). Its
+	 * absence is instead recorded in {@code signature_absences.csv} (see {@link #printSignatureAbsences}); the two files partition the rows
+	 * of the pre-#854 {@code input_signatures.csv}. The {@code dtype} and {@code shape} columns hold the raw per-parameter values, with
+	 * rank and wildcard counts left to derive downstream. Reads the memoized inference result without recomputing, so it leaves the
+	 * function's status untouched.
 	 *
-	 * @param printer The {@code input_signatures.csv} printer.
+	 * @param printer The {@code tensor_specs.csv} printer.
 	 * @param function The function whose per-parameter signatures to emit.
 	 * @throws IOException If a record cannot be written.
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/665">Issue 665</a>
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/816">Issue 816</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/854">Issue 854</a>
 	 */
-	private static void printInputSignatures(CSVPrinter printer, Function function) throws IOException {
+	private static void printTensorSpecs(CSVPrinter printer, Function function) throws IOException {
 		// The non-self parameters in declaration order, aligned position-wise with InputSignature.getParameterSpecs().
 		List<Parameter> parameters = function.getParameters().stream().filter(p -> !p.isSelf()).toList();
 
 		if (function.getInferredInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, function.getInferredInputSignature().get(), "inferred");
-		else if (!function.getBlockingParameterReasons().isEmpty())
-			for (var entry : function.getBlockingParameterReasons().entrySet())
-				printer.printRecord(
-						buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue(), null, null));
-		else if (function.getInferredInputSignatureAbsenceReason().isPresent())
-			// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the per-parameter
-			// loop above emits nothing for it.
-			printer.printRecord(buildAttributeColumnValues(function, null, "absent",
-					function.getInferredInputSignatureAbsenceReason().get(), null, null));
-		else
-			// Inference never ran: an earlier precondition stopped the function before any inference call site (whose failure is in
-			// failed_preconditions.csv), or the run had inference disabled.
-			printer.printRecord(buildAttributeColumnValues(function, null, "absent", "NOT_ATTEMPTED", null, null));
 
 		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
 		if (hybridizationParameters != null && hybridizationParameters.getSuppliedInputSignature().isPresent())
 			printSignatureRows(printer, function, parameters, hybridizationParameters.getSuppliedInputSignature().get(), "supplied");
-		else if (hybridizationParameters != null && hybridizationParameters.hasInputSignatureParam())
-			// A signature was supplied but could not be fully modeled; the three-state contract on getSuppliedInputSignature
-			// distinguishes this from "none supplied".
-			printer.printRecord(buildAttributeColumnValues(function, null, "supplied", "UNMODELED", null, null));
 	}
 
 	/**
-	 * Emits one {@code input_signatures.csv} row per parameter of the given signature, tagging each with {@code source} and pairing it
+	 * Emits one {@code signature_absences.csv} row per recorded input-signature absence for the given function: when inference was blocked,
+	 * one row per blocking parameter (source {@code "absent"}) carrying its
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}; a function-level absence (no blocking parameter) and
+	 * inference that never ran each as a single {@code "absent"} row (the latter with reason {@code NOT_ATTEMPTED}); and a supplied
+	 * signature that could not be fully modeled (e.g., a name reference rather than a {@code TensorSpec} list) as a single
+	 * {@code "supplied"} row with reason {@code UNMODELED}. These are exactly the non-spec rows of the pre-#854
+	 * {@code input_signatures.csv}, split out so {@code tensor_specs.csv} carries specs only; across the two files, every considered
+	 * function still contributes at least one row, preserving #816's invariant (added by #818) that a function's absence from the
+	 * transformed set is always explained by something present in the output. Reads the memoized inference result without recomputing, so
+	 * it leaves the function's status untouched.
+	 *
+	 * @param printer The {@code signature_absences.csv} printer.
+	 * @param function The function whose absence rows to emit.
+	 * @throws IOException If a record cannot be written.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/816">Issue 816</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/854">Issue 854</a>
+	 */
+	private static void printSignatureAbsences(CSVPrinter printer, Function function) throws IOException {
+		if (function.getInferredInputSignature().isEmpty()) {
+			if (!function.getBlockingParameterReasons().isEmpty())
+				for (var entry : function.getBlockingParameterReasons().entrySet())
+					printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue()));
+			else if (function.getInferredInputSignatureAbsenceReason().isPresent())
+				// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the
+				// per-parameter loop above emits nothing for it.
+				printer.printRecord(
+						buildAttributeColumnValues(function, null, "absent", function.getInferredInputSignatureAbsenceReason().get()));
+			else
+				// Inference never ran: an earlier precondition stopped the function before any inference call site (whose failure
+				// is in failed_preconditions.csv), or the run had inference disabled.
+				printer.printRecord(buildAttributeColumnValues(function, null, "absent", "NOT_ATTEMPTED"));
+		}
+
+		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
+		if (hybridizationParameters != null && hybridizationParameters.hasInputSignatureParam()
+				&& hybridizationParameters.getSuppliedInputSignature().isEmpty())
+			// A signature was supplied but could not be fully modeled; the three-state contract on getSuppliedInputSignature
+			// distinguishes this from "none supplied".
+			printer.printRecord(buildAttributeColumnValues(function, null, "supplied", "UNMODELED"));
+	}
+
+	/**
+	 * Emits one {@code tensor_specs.csv} row per parameter of the given signature, tagging each with {@code source} and pairing it
 	 * position-wise with the function's non-{@code self} parameters for the {@code param index} join key. A signature entry beyond the
 	 * declared non-{@code self} parameter count (a parameter-count mismatch) gets a {@code null} index rather than failing the row.
 	 *
-	 * @param printer The {@code input_signatures.csv} printer.
+	 * @param printer The {@code tensor_specs.csv} printer.
 	 * @param function The function the signature belongs to.
 	 * @param parameters The function's non-{@code self} parameters in declaration order.
 	 * @param signature The signature whose per-parameter rows to emit.
@@ -712,7 +793,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		for (int i = 0; i < specs.size(); i++) {
 			Integer index = i < parameters.size() ? parameters.get(i).getIndex() : null;
-			printer.printRecord(buildAttributeColumnValues(function, index, source, null, specs.get(i).dtype(), specs.get(i).shape()));
+			printer.printRecord(buildAttributeColumnValues(function, index, source, specs.get(i).dtype(), specs.get(i).shape()));
 		}
 	}
 
