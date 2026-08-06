@@ -19,6 +19,19 @@
 			<repository location="https://ponder-lab.github.io/Common-Eclipse-Refactoring-Framework/releases/"/>
 			<unit id="edu.cuny.citytech.refactoring.common.feature.feature.group" version="5.6.1"/>
 		</location>
+		<!-- The 4.39 SimRel ships no 6.x vintage engine, but the JDT test bundles pin the runtime to the 6.x
+		     jupiter/platform line; the junit6 surefire provider therefore needs Central's vintage engine to
+		     discover JUnit 4 tests. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/749. -->
+		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
+			<dependencies>
+				<dependency>
+					<groupId>org.junit.vintage</groupId>
+					<artifactId>junit-vintage-engine</artifactId>
+					<version>6.0.3</version>
+					<type>jar</type>
+				</dependency>
+			</dependencies>
+		</location>
 		<location includeDependencyDepth="none" includeDependencyScopes="compile" includeSource="true" missingManifest="generate" type="Maven">
 			<dependencies>
 				<dependency>
