@@ -8827,7 +8827,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Type-hint-classified parameter without Phase 2 data must yield `Optional.empty`.", result.signature().isPresent());
 
 		// Distinct from the container case: this parameter's evidence is genuinely absent rather than discarded, and
-		// `input_signatures.csv` must separate the two so the container gap can be sized.
+		// `signature_absences.csv` must separate the two so the container gap can be sized.
 		assertEquals("A type-hint-only parameter must report the type-hint-specific absence reason.",
 				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), result.absenceReason());
 		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE,
