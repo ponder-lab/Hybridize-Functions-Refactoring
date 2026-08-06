@@ -9873,6 +9873,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
+	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
+	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the
+	 * leaked shape rejects every call the function actually receives. The control pins that the method-body and module-scope forms agree.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
+	 */
+	@Test
+	public void testColumnSliceRankInMethodBody() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function step = getFunction("step");
+		assertTrue("`step`'s inferred signature is available.", step.getInferredInputSignature().isPresent());
+		assertEquals("`step`'s `x` (a column slice computed in a method body) is rank 1, not the receiver's rank 2 (wala/ML#824).",
+				"[tf.TensorSpec(shape=(30,), dtype=tf.int32)]", step.getInferredInputSignature().get().toTensorSpecList("tf."));
+
+		// Control: the same slice at module scope, pinning that the two forms agree.
+		Function control = getFunction("step_control");
+		assertTrue("`step_control`'s inferred signature is available.", control.getInferredInputSignature().isPresent());
+		assertEquals("`step_control`'s `x` (the same slice at module scope) matches the method-body form.",
+				"[tf.TensorSpec(shape=(30,), dtype=tf.int32)]", control.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * Pins the hybrid-to-eager benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): a hybrid
 	 * function with a tensor parameter that performs no tensor computation and has no Python side-effects is de-hybridized (P6,
 	 * {@link Transformation#CONVERT_TO_EAGER}), while a computing hybrid function is not.
