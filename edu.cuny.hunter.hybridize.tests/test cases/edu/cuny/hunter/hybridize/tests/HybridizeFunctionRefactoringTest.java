@@ -5021,8 +5021,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Test a model. No tf.function in this one. Use call instead of __call__. Ariadne doesn't support call. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291.
+	 * Test a model. No tf.function in this one. Uses {@code call} instead of {@code __call__}, reached only implicitly through
+	 * {@code Model.__call__} (#291). The call graph reaches it since wala/ML#106's fix, so both the tensor parameter and the side-effects
+	 * verdict are inferable; the side-effects assertion below is the regression pin for that edge.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/291">Issue 291</a>
 	 */
 	@Test
 	public void testModel2() throws Exception {
@@ -5047,6 +5050,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				break;
 			case "call":
 				assertTrue("Expecting " + simpleName + " to have a tensor param.", f.getHasTensorParameter());
+				// The body only invokes layers and rebinds a local. A null verdict here means the implicit `Model.__call__`
+				// edge regressed (wala/ML#106; #291).
+				assertFalse("Expecting the implicitly-called " + simpleName + " to have no Python side-effects.",
+						f.getHasPythonSideEffects());
 				break;
 			default:
 				throw new IllegalStateException("Not expecting function: " + simpleName + ".");
