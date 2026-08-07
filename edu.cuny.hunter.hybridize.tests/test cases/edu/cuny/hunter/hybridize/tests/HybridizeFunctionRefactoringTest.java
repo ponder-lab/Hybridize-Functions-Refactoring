@@ -10426,6 +10426,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Probe scaffold for the implicitly-cast NumPy argument hazard
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861 Case 1); the assertions harden once the detector lands. The
+	 * fixture reduces linear_regression: a module-scope {@code float32} variable combined with a {@code float64} NumPy call-site argument.
+	 */
+	@Test
+	public void testImplicitNumpyCast() throws Exception {
+		Function f = getFunction("linear_regression");
+		assertNotNull("`linear_regression` is a candidate.", f);
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
