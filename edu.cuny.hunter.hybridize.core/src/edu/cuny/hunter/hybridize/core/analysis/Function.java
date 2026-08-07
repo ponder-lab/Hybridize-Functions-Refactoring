@@ -2607,6 +2607,17 @@ public class Function {
 		return this.functionDefinition;
 	}
 
+	/**
+	 * The one-based line number on which this {@link Function}'s definition begins in its containing file. Distinguishes two bindings of
+	 * one name in one module (Python legally rebinds a def), which the name-based identity columns alone cannot; see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/860.
+	 *
+	 * @return The definition's beginning line number.
+	 */
+	public int getBeginningLineNumber() {
+		return this.getFunctionDefinition().getFunctionDef().beginLine;
+	}
+
 	public Boolean getHasPythonSideEffects() {
 		return this.hasPythonSideEffects;
 	}

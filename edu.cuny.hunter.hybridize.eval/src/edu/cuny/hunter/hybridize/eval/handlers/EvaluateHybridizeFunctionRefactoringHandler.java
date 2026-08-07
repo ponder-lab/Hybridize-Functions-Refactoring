@@ -155,7 +155,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String TARGETED_CFA_DEPTH_KEY = EvaluationOption.PREFIX + TARGETED_CFA_DEPTH_PROPERTY_KEY;
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
-		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path" };
+		// The beginning line is a KEY column, not an informational one: Python legally rebinds one name in one module, and without
+		// it the identity columns cannot tell the twin definitions apart (#860).
+		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path", "beginning line" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnNames));
 		return ret.toArray(String[]::new);
@@ -165,7 +167,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
-				relativePath };
+				relativePath, function.getBeginningLineNumber() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);
@@ -662,7 +664,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				Emitted by the Hybridize Functions evaluator. The CSVs append across runs; this file is rewritten each run. Each file is
 				named for what a single row is
-				(<https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/854>):
+				(<https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/854>). Function identity is the key
+				(subject, function, module, relative path, beginning line): the line number is part of the key because Python legally
+				rebinds one name in one module, and the name columns alone cannot tell such twins apart
+				(<https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/860>):
 
 				| File | One row per |
 				| ---- | ----------- |
