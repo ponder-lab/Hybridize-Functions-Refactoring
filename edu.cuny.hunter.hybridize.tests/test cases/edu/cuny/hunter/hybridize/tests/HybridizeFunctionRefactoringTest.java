@@ -10263,12 +10263,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the unresolved statically-read-axis safety precondition
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when the inferred input signature leaves unresolved an
-	 * axis the body reads statically and consumes where a Python integer is required, emitting it would break the function at trace time,
-	 * so the conversion is declined (it fails with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}). Covers integer
-	 * arithmetic over a directly-read axis ({@code arith}, distilling {@code RelativeGlobalAttention._qe_masking}) and a reshape target fed
-	 * by a derived tensor's static read ({@code reshape_derived}, distilling {@code _skewing}); {@code dynamic_read} consumes
+	 * Pins the unresolved statically-read-axis condition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when
+	 * the inferred input signature leaves unresolved an axis the body reads statically and consumes where a Python integer is required,
+	 * emitting it would break the function at trace time. Since https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/864
+	 * the conversion is no longer declined: the signature is withheld ({@code WITHHELD_STATICALLY_READ_AXES}) and the function hybridizes
+	 * with a bare decorator, matching the tool's inference-off behavior, which ships exactly these functions decorated and working. Covers
+	 * integer arithmetic over a directly-read axis ({@code arith}, distilling {@code RelativeGlobalAttention._qe_masking}) and a reshape
+	 * target fed by a derived tensor's static read ({@code reshape_derived}, distilling {@code _skewing}); {@code dynamic_read} consumes
 	 * {@code tf.shape(x)[1]} (safe under a wildcard) and {@code pinned} reads an axis its call sites keep concrete, so both remain P1.
 	 * {@code sliced} pins the subscript-of-a-narrowed-slice composition ({@code x.shape[-2:]} then {@code dims[1]} is axis -1, not axis 1);
 	 * {@code extracted} pins the read crossing a user-defined shape extractor's return; {@code keras_static} pins {@code K.int_shape} as a
@@ -10283,15 +10284,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function arith = getFunction("arith");
 		assertTrue("`arith` does integer arithmetic over `x.shape[-1]`, which its signature leaves unresolved.",
 				arith.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`arith` must not pass a precondition; the emitted signature would break it.", arith.getPassingPrecondition());
-		assertNotNull("`arith` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", arith.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
-				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`arith` hybridizes bare (P1); only the signature was unwritable (#864).", P1, arith.getPassingPrecondition());
+		assertNull("`arith` must not fail; the conversion proceeds without the signature.", arith.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`arith`'s signature is withheld as the third disposition.",
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES), arith.getInferredInputSignatureAbsenceReason());
 
 		Function reshapeDerived = getFunction("reshape_derived");
 		assertTrue("`reshape_derived` feeds `padded.shape[1]` into a reshape target.", reshapeDerived.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`reshape_derived` must not pass a precondition.", reshapeDerived.getPassingPrecondition());
-		assertNotNull("`reshape_derived` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", reshapeDerived.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`reshape_derived` hybridizes bare (P1).", P1, reshapeDerived.getPassingPrecondition());
+		assertEquals("`reshape_derived`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				reshapeDerived.getInferredInputSignatureAbsenceReason());
 
 		Function dynamicRead = getFunction("dynamic_read");
 		assertFalse("`dynamic_read` reads its dimension dynamically via `tf.shape`, which a wildcard admits.",
@@ -10306,21 +10309,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function sliced = getFunction("sliced");
 		assertTrue("`sliced` subscripts `x.shape[-2:]` at 1, which is axis -1, unresolved in its signature.",
 				sliced.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`sliced` must not pass a precondition.", sliced.getPassingPrecondition());
-		assertNotNull("`sliced` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", sliced.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`sliced` hybridizes bare (P1).", P1, sliced.getPassingPrecondition());
+		assertEquals("`sliced`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				sliced.getInferredInputSignatureAbsenceReason());
 
 		Function extracted = getFunction("extracted");
 		assertTrue("`extracted` reads axis 1 through `dims_of`'s returned shape vector.", extracted.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`extracted` must not pass a precondition.", extracted.getPassingPrecondition());
-		assertNotNull("`extracted` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", extracted.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`extracted` hybridizes bare (P1).", P1, extracted.getPassingPrecondition());
+		assertEquals("`extracted`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				extracted.getInferredInputSignatureAbsenceReason());
 
 		Function kerasStatic = getFunction("keras_static");
 		assertTrue("`keras_static` reads axis 1 statically via `K.int_shape`.", kerasStatic.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`keras_static` must not pass a precondition.", kerasStatic.getPassingPrecondition());
-		assertNotNull("`keras_static` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", kerasStatic.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`keras_static` hybridizes bare (P1).", P1, kerasStatic.getPassingPrecondition());
+		assertEquals("`keras_static`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				kerasStatic.getInferredInputSignatureAbsenceReason());
 
 		Function casted = getFunction("casted");
 		assertFalse("`casted` reads only `x.dtype`, a trace-time constant.", casted.getHasUnresolvedStaticallyReadAxes());
@@ -10329,9 +10332,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function bounded = getFunction("bounded");
 		assertTrue("`bounded` feeds `x.shape[1]` into a slice bound, where a wildcard's None silently means to-the-end.",
 				bounded.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`bounded` must not pass a precondition.", bounded.getPassingPrecondition());
-		assertNotNull("`bounded` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", bounded.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`bounded` hybridizes bare (P1).", P1, bounded.getPassingPrecondition());
+		assertEquals("`bounded`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				bounded.getInferredInputSignatureAbsenceReason());
 
 		Function prefixed = getFunction("prefixed");
 		assertFalse("`prefixed` reads only axis 0 through `x.shape[:1]`, which its signature pins.",
@@ -10355,16 +10358,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function projCall = getFunction("Proj.call");
 		assertTrue("`Proj.call`'s own `build` passes `input_shape[-1]` to `add_weight`.", projCall.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`Proj.call` must not pass a precondition.", projCall.getPassingPrecondition());
-		assertNotNull("`Proj.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", projCall.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`Proj.call` hybridizes bare (P1); only the signature was unwritable (#864).", P1, projCall.getPassingPrecondition());
+		assertEquals("`Proj.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				projCall.getInferredInputSignatureAbsenceReason());
 
 		Function outerCall = getFunction("Outer.call");
 		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
 				outerCall.getHasUnresolvedStaticallyReadAxes());
-		assertNull("`Outer.call` must not pass a precondition.", outerCall.getPassingPrecondition());
-		assertNotNull("`Outer.call` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", outerCall.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`Outer.call` hybridizes bare (P1).", P1, outerCall.getPassingPrecondition());
+		assertEquals("`Outer.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				outerCall.getInferredInputSignatureAbsenceReason());
 
 		Function gateCall = getFunction("Gate.call");
 		assertFalse("`Gate.call`'s `build` reads `input_shape` only into an `InputSpec`, which a wildcard admits.",
@@ -10376,8 +10379,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
-	 * its spec to shape-&#8868;) must fail with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}. Every runtime failure mode
-	 * was verified per sink on TF 2.9.3 ({@code as_list}/{@code len}/{@code ndims} raise {@code ValueError}; {@code rank} arithmetic raises
+	 * its spec to shape-&#8868;) must have its signature withheld and hybridize bare (#864). Every runtime failure mode was verified per
+	 * sink on TF 2.9.3 ({@code as_list}/{@code len}/{@code ndims} raise {@code ValueError}; {@code rank} arithmetic raises
 	 * {@code TypeError} on the {@code None}). The {@code ranked_*} twins are called at one rank with differing extents, so their specs keep
 	 * a known rank with a dynamic axis, which every rank read tolerates: they must stay P1, pinning the precision split from the
 	 * extent-sensitive verdict (notably {@code ranked_rank}, whose rank arithmetic is a trace-time constant that must not trip the
@@ -10393,9 +10396,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
 			assertTrue("`" + identifier + "` reads its input's rank surface, which `shape=None` breaks.",
 					function.getHasUnresolvedStaticallyReadAxes());
-			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
-			assertNotNull("`" + identifier + "` fails with HAS_UNRESOLVED_STATICALLY_READ_AXES.", function.getStatus()
-					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable (#864).", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
 		}
 
 		for (String identifier : List.of("ranked_as_list", "ranked_len", "ranked_rank")) {

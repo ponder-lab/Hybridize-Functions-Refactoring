@@ -98,7 +98,17 @@ public sealed interface InferenceResult {
 		 * {@code TensorSpec} admits only dense tensors, so no single spec accepts both layouts; emitting either would reject traffic the
 		 * function accepts, so the reduction is bottom (#642). Checked after the dtype axis, mirroring {@link Function#inferSpec}.
 		 */
-		HETEROGENEOUS_SPARSITY
+		HETEROGENEOUS_SPARSITY,
+
+		/**
+		 * A complete signature was inferred, but it leaves unresolved (wildcard) an axis the function's body reads statically (#811), so
+		 * emitting it would break the function at trace time. Unlike every other constant, the signature's absence is a choice rather than
+		 * an inference failure: the conversion proceeds with a bare decorator, which is exactly what the tool ships with inference off, and
+		 * the withholding is this third disposition, distinct from both "hybridized with a signature" and "not hybridized" (#864). The
+		 * reconfiguration path is unaffected: there an existing signature's replacement is the only action on the table, and it still
+		 * declines with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}.
+		 */
+		WITHHELD_STATICALLY_READ_AXES
 	}
 
 	/**

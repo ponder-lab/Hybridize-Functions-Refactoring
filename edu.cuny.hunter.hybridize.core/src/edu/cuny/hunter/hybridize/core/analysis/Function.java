@@ -1284,13 +1284,6 @@ public class Function {
 								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
 										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
-							else if (this.getHasUnresolvedStaticallyReadAxes() != null && this.getHasUnresolvedStaticallyReadAxes())
-								// The inferred signature leaves unresolved an axis the body reads statically (issue 811). Emitting it
-								// would break the function at trace time, so the conversion is declined; the fourth safety failure in
-								// the family, also preceding the benefit signal.
-								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
-										"Can't hybridize this function with the inferred input signature: "
-												+ "its body reads a tensor dimension the signature leaves unspecified.");
 							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
 								// Snapshots a model's variables before the model's first call, which raises under tracing when
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
@@ -1336,8 +1329,27 @@ public class Function {
 								 * result is memoized, so the change does not recompute it, and computing it has no bearing on the P1
 								 * decision.
 								 */
-								if (this.getInferInputSignatures())
+								if (this.getInferInputSignatures()) {
 									this.inferInputSignature();
+
+									// The third disposition of issue 864: the signature leaves unresolved an axis the body reads
+									// statically (issue 811), so emitting it would break the function at trace time, while the bare
+									// decorator is exactly what the tool ships with inference off and works there. Withhold the
+									// signature, keep the conversion, and surface the withholding as the function-level absence so a
+									// reader can tell "hybridized without a signature because one could not be written safely" from
+									// both "hybridized with a signature" and "not hybridized". The reconfiguration path keeps
+									// declining with the precondition failure: there the decoration already exists, and changing its
+									// argument is the only action on the table.
+									if (TRUE.equals(this.getHasUnresolvedStaticallyReadAxes())
+											&& this.getInferredInputSignature().isPresent()) {
+										this.inferredInputSignature = new InferenceResult.Absent(
+												InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES);
+										this.addInfo(INPUT_SIGNATURE_INFERENCE,
+												"The inferred input signature of `" + this + "` leaves unspecified a tensor dimension "
+														+ "its body reads statically, so the signature is withheld and the function is "
+														+ "hybridized with a bare decorator instead.");
+									}
+								}
 							}
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");

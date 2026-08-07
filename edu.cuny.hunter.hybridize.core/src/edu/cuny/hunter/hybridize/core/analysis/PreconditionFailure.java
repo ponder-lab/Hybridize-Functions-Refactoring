@@ -75,7 +75,11 @@ public enum PreconditionFailure {
 	 * and consumes where a Python integer is required (a weight shape, a reshape target, or integer arithmetic). Under the emitted
 	 * signature such an axis is {@code None} at trace time, so the consumption raises or silently misbehaves; a dynamic read
 	 * ({@code tf.shape(x)[i]}) is safe and does not disqualify. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811. Since
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/864, this failure is emitted only on the reconfiguration path,
+	 * where replacing an existing signature is the only action available; the conversion path withholds the unwritable signature
+	 * ({@code InferenceResult.AbsenceReason#WITHHELD_STATICALLY_READ_AXES}) and hybridizes with a bare decorator, matching the tool's
+	 * behavior with inference off.
 	 */
 	HAS_UNRESOLVED_STATICALLY_READ_AXES(18),
 
