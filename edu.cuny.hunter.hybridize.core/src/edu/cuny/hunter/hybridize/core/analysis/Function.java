@@ -1066,6 +1066,20 @@ public class Function {
 	private Boolean hasTensorParameterIteration;
 
 	/**
+	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
+	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
+	 * could not be determined (no call-graph node), in which case the precondition does not block.
+	 */
+	private Boolean hasConflictingEagerDtypeCoercions;
+
+	/**
+	 * Per-{@link Parameter} eager-effective dtype pins: a parameter maps here when its direct consumers impose exactly one concrete dtype
+	 * that differs from the parameter's own dtype evidence, and the emitted spec's dtype is substituted accordingly (the repair direction
+	 * of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1).
+	 */
+	private Map<Parameter, DType> eagerEffectiveDtypePins = new HashMap<>();
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1290,6 +1304,15 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION,
 										"Can't hybridize a function that iterates one of its tensor arguments with a Python loop; "
 												+ "tracing makes the argument symbolic, which cannot be iterated.");
+							else if (this.getHasConflictingEagerDtypeCoercions() != null && this.getHasConflictingEagerDtypeCoercions())
+								// A parameter's direct consumers impose different eager-effective dtypes (issue 861, Case 1): eager
+								// execution coerces the argument differently at each op, so no single input signature preserves
+								// semantics and a bare decorator raises at the first mismatched op. The seventh safety failure in the
+								// family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS,
+										"Can't hybridize a function whose parameter combines with tensors of different dtypes; "
+												+ "eager execution coerces the argument per operation, so no single input signature "
+												+ "preserves its semantics.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1998,6 +2021,105 @@ public class Function {
 	 */
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * Computes the eager-effective dtypes each parameter's direct consumers impose (see {@link EagerCoercionAnalysis}), storing a
+	 * per-parameter pin when the set is a singleton that diverges from the parameter's own dtype evidence, and the conflicting verdict for
+	 * {@link #getHasConflictingEagerDtypeCoercions()} when some parameter's set is plural. An indeterminate collection (a partner operand
+	 * with ⊤ dtype) fires neither, the allowing direction. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861,
+	 * Case 1.
+	 *
+	 * @param callGraph The call graph.
+	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies partner-operand dtypes.
+	 */
+	public void computeEagerDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine eager-effective dtypes for " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine eager-effective dtypes for " + this + " without a call graph node.");
+			return;
+		}
+
+		EagerCoercionAnalysis analysis = new EagerCoercionAnalysis(tensorTypeAnalysis);
+		List<Parameter> parameters = this.getParameters();
+		boolean conflicting = false;
+		Map<Parameter, DType> pins = new HashMap<>();
+
+		for (int position = 0; position < parameters.size(); position++) {
+			Parameter parameter = parameters.get(position);
+
+			if (parameter.isSelf())
+				continue;
+
+			// Merge outcomes across the function's nodes (contexts): dtypes union, indeterminate if any node is.
+			Set<DType> dtypes = new HashSet<>();
+			boolean indeterminate = false;
+
+			for (CGNode node : nodes) {
+				IR ir = node.getIR();
+
+				if (ir == null)
+					continue;
+
+				int[] parameterValues = ir.getSymbolTable().getParameterValueNumbers();
+
+				// Value slot 0 is the callable itself; declared parameter `position` sits at `position + 1`.
+				if (position + 1 >= parameterValues.length)
+					continue;
+
+				EagerCoercionAnalysis.Outcome outcome = analysis.eagerEffectiveDtypes(node, parameterValues[position + 1]);
+				dtypes.addAll(outcome.dtypes());
+				indeterminate |= outcome.indeterminate();
+			}
+
+			if (indeterminate) {
+				LOG.info("Parameter " + parameter.getName() + " of " + this + " has an indeterminate eager-effective dtype set.");
+				continue;
+			}
+
+			if (dtypes.size() > 1) {
+				conflicting = true;
+				LOG.info("Parameter " + parameter.getName() + " of " + this + " has conflicting eager-effective dtypes: " + dtypes + ".");
+			} else if (dtypes.size() == 1) {
+				DType eagerEffective = dtypes.iterator().next();
+				Set<DType> parameterDtypes = parameter.getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet());
+
+				// The pin exists only on a determinate divergence: the parameter's own evidence is a single concrete dtype that
+				// differs from the eager-effective one. Matching dtypes need no repair; ⊤ or mixed parameter evidence already drops
+				// the spec elsewhere.
+				if (parameterDtypes.size() == 1) {
+					DType parameterDtype = parameterDtypes.iterator().next();
+
+					if (parameterDtype != DType.UNKNOWN && parameterDtype != eagerEffective) {
+						pins.put(parameter, eagerEffective);
+						LOG.info("Parameter " + parameter.getName() + " of " + this + " pins to the eager-effective dtype " + eagerEffective
+								+ " (evidence " + parameterDtype + ").");
+					}
+				}
+			}
+		}
+
+		this.hasConflictingEagerDtypeCoercions = conflicting;
+		this.eagerEffectiveDtypePins = pins;
+	}
+
+	/**
+	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, {@code null} if undetermined.
+	 *
+	 * @return True iff no single input signature reproduces eager coercion, null if undetermined.
+	 */
+	public Boolean getHasConflictingEagerDtypeCoercions() {
+		return this.hasConflictingEagerDtypeCoercions;
 	}
 
 	/**
@@ -3196,6 +3318,26 @@ public class Function {
 
 				blocking.put(param, reason);
 				continue;
+			}
+
+			DType pin = this.eagerEffectiveDtypePins.get(param);
+
+			if (pin != null) {
+				// The repair direction of issue 861, Case 1: the parameter's direct consumers all impose one concrete dtype that
+				// diverges from the argument evidence, so the spec pins the eager-effective dtype. The boundary cast then reproduces
+				// exactly what eager execution did at each op (runtime-verified on the pinned TF 2.9.3), where emitting the observed
+				// dtype would carry the mismatch into the trace.
+				Optional<TensorType> observed = inferSpec(contexts);
+
+				if (observed.isPresent()) {
+					TensorType pinned = new TensorType(pin, observed.get().getDims());
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Parameter `" + param.getName() + "` of `" + this + "` receives arguments observed as "
+									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
+									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
+					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+					continue;
+				}
 			}
 
 			Optional<TensorType> spec = inferSpec(contexts);

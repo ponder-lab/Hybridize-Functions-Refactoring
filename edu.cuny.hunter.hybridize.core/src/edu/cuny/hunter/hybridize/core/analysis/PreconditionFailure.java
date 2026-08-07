@@ -105,7 +105,17 @@ public enum PreconditionFailure {
 	 * functions, each source-verified; the dead-caller semantics pinned first). See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826.
 	 */
-	HAS_COVERED_CALLERS(21);
+	HAS_COVERED_CALLERS(21),
+
+	/**
+	 * A parameter's direct consumers impose more than one concrete eager-effective dtype (e.g., {@code W32 * x} beside {@code V64 * x}).
+	 * Eager execution coerces a NumPy or Python argument at each op under the other operand's dtype, so the program runs; traced, the
+	 * argument materializes at one dtype at the boundary, and any single {@code input_signature} breaks at least one op, so hybridization
+	 * is declined. The singleton counterpart repairs instead of declining: the spec pins the one eager-effective dtype, whose boundary cast
+	 * reproduces eager coercion (runtime-verified on the pinned TF 2.9.3). See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1.
+	 */
+	HAS_CONFLICTING_EAGER_DTYPE_COERCIONS(22);
 
 	static {
 		// check that the codes are unique.

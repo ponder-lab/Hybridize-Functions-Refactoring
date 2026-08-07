@@ -519,6 +519,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// Check whether the inferred input signature leaves unresolved an axis the body reads statically (issue 811). Same
 				// reachable region, same gate; overridable independently via alwaysCheckStaticShapeReads. The compute short-circuits
+				// Collect the eager-effective dtypes each parameter's direct consumers impose (issue 861, Case 1): a singleton
+				// divergence pins the emitted spec's dtype, a plural set declines. Must precede any signature materialization
+				// (the static-shape-read check below triggers the memoized inference), or the pin misses the emitted spec.
+				if (barrenCouldDecide)
+					func.computeEagerDtypeCoercions(callGraph, analysis);
+
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
