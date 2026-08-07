@@ -1934,11 +1934,13 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body
-	 * and feeds the snapshot to an optimizer or gradient computation, storing the result for {@link #getHasStaleVariableReads()}. The
-	 * hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what keeps the refactoring from introducing it;
-	 * reading the collection after the forward pass never fires. When the function has no call-graph node, the result is left undetermined,
-	 * mirroring the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation, directly
+	 * in the body or transitively through a callee, and feeds the snapshot to an optimizer or gradient computation, storing the result for
+	 * {@link #getHasStaleVariableReads()}. The hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what
+	 * keeps the refactoring from introducing it; reading the collection after the forward pass never fires. When the function has no
+	 * call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822 and, for the transitive invocation scan,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
@@ -1960,7 +1962,7 @@ public class Function {
 			return;
 		}
 
-		boolean stale = new StaleVariableReadAnalysis(pointerAnalysis).hasStaleVariableRead(nodes);
+		boolean stale = new StaleVariableReadAnalysis(callGraph, pointerAnalysis).hasStaleVariableRead(nodes);
 
 		this.hasStaleVariableReads = stale;
 
