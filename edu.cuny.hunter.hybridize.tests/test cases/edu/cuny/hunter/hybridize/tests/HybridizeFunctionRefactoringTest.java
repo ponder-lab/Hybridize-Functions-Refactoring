@@ -10482,22 +10482,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * The implicitly-cast NumPy argument hazard's motivating reduction
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): linear_regression combines a {@code float64}
-	 * NumPy argument with module-scope variables that are {@code float32} at runtime but scalar-initialized, so their analysis dtype is ⊤
-	 * (wala/ML#827) and the eager-coercion detector is indeterminate: no pin, no decline. This pins that current state. TODO: once the
-	 * scalar-initializer derivation lands, the detector's set becomes the singleton float32 and the emitted spec flips to
-	 * {@code [tf.TensorSpec(shape=(10,), dtype=tf.float32)]}; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/867.
+	 * NumPy argument with module-scope variables that are {@code float32} at runtime. Eager execution converts the argument through the
+	 * variables' dtype, so the dtype the body computes with is {@code float32} and the dtype the caller feeds is not; only the former
+	 * survives tracing, and a spec naming the fed dtype makes the traced call raise where the eager one runs.
+	 * <p>
+	 * The fixture previously pinned the opposite, because the variables are scalar-initialized and their analysis dtype was ⊤, which left
+	 * the eager-coercion detector indeterminate: no pin and no decline. Ariadne 0.52.83 derives the scalar initializer's dtype
+	 * (wala/ML#827) and applies the coercion to the parameter itself (wala/ML#828), so the detector's set is now the singleton
+	 * {@code float32} and the emitted spec carries it. This is the flip
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/867 tracked, taken at the 0.52.83 bump.
 	 */
 	@Test
 	public void testImplicitNumpyCast() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Function f = getFunction("linear_regression");
-		assertEquals("`linear_regression`'s partner dtypes are ⊤, so no plural set is determinate.", Boolean.FALSE,
+		assertEquals("`linear_regression`'s consumers impose one dtype, so no plural set arises.", Boolean.FALSE,
 				f.getHasConflictingEagerDtypeCoercions());
-		assertEquals("`linear_regression` hybridizes (P1); the hazard is not yet detectable.", P1, f.getPassingPrecondition());
+		assertEquals("`linear_regression` hybridizes (P1); the hazard is repaired by pinning, not by declining.", P1,
+				f.getPassingPrecondition());
 		assertTrue("An input signature is inferred from the argument evidence.", f.getInferredInputSignature().isPresent());
-		assertEquals("The spec carries the observed float64: with the variables' dtypes ⊤, no eager-effective pin exists.",
-				"[tf.TensorSpec(shape=(10,), dtype=tf.float64)]", f.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals("The spec carries the eager-effective float32 the body computes with, not the float64 it is fed.",
+				"[tf.TensorSpec(shape=(10,), dtype=tf.float32)]", f.getInferredInputSignature().get().toTensorSpecList("tf."));
 	}
 
 	/**
