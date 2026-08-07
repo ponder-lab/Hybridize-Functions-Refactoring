@@ -10426,6 +10426,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The implicitly-cast NumPy argument hazard's motivating reduction
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): linear_regression combines a {@code float64}
+	 * NumPy argument with module-scope variables that are {@code float32} at runtime but scalar-initialized, so their analysis dtype is ⊤
+	 * (wala/ML#827) and the eager-coercion detector is indeterminate: no pin, no decline. This pins that current state. TODO: once the
+	 * scalar-initializer derivation lands, the detector's set becomes the singleton float32 and the emitted spec flips to
+	 * {@code [tf.TensorSpec(shape=(10,), dtype=tf.float32)]}; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/867.
+	 */
+	@Test
+	public void testImplicitNumpyCast() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = getFunction("linear_regression");
+		assertEquals("`linear_regression`'s partner dtypes are ⊤, so no plural set is determinate.", Boolean.FALSE,
+				f.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`linear_regression` hybridizes (P1); the hazard is not yet detectable.", P1, f.getPassingPrecondition());
+		assertTrue("An input signature is inferred from the argument evidence.", f.getInferredInputSignature().isPresent());
+		assertEquals("The spec carries the observed float64: with the variables' dtypes ⊤, no eager-effective pin exists.",
+				"[tf.TensorSpec(shape=(10,), dtype=tf.float64)]", f.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins the repair direction of the implicitly-cast NumPy argument hazard
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): {@code scale} combines its {@code float64} NumPy
+	 * argument with a {@code float32} tensor-initialized variable, the detector's eager-effective set is the singleton {@code float32}, and
+	 * the emitted spec pins it in place of the observed {@code float64}. The boundary cast then reproduces the eager per-op coercion, where
+	 * the observed dtype would carry the mismatch into the trace.
+	 */
+	@Test
+	public void testEagerDtypePin() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function scale = getFunction("scale");
+		assertEquals("`scale`'s single partner dtype is concrete, so nothing conflicts.", Boolean.FALSE,
+				scale.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`scale` hybridizes (P1).", P1, scale.getPassingPrecondition());
+		assertTrue("An input signature is inferred.", scale.getInferredInputSignature().isPresent());
+		assertEquals("The spec pins the eager-effective float32 over the observed float64.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", scale.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins the decline fallback of the implicitly-cast NumPy argument hazard
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): {@code combine}'s parameter is consumed in
+	 * parallel by a {@code float32} and a {@code float64} multiply, both of which succeed eagerly through per-op coercion, so the
+	 * eager-effective set is plural and no single input signature preserves semantics (it fails with
+	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS}).
+	 */
+	@Test
+	public void testEagerDtypeConflict() throws Exception {
+		Function combine = getFunction("combine");
+		assertEquals("`combine`'s parameter is combined under two concrete dtypes.", Boolean.TRUE,
+				combine.getHasConflictingEagerDtypeCoercions());
+		assertNull("`combine` must not pass a precondition; any single signature breaks one multiply.", combine.getPassingPrecondition());
+		assertNotNull("`combine` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", combine.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
