@@ -1868,6 +1868,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The signature-less variant of the axes-blocked reconfiguration (the blocked <em>add</em>;
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/865): {@code wild} is hybrid, side-effect-free, and
+	 * signature-less with an otherwise-viable reconfiguration, but its calls at two ranks degrade the inferred spec to shape-&#8868; while
+	 * the body reads axis 1 statically into a weight-shape sink (#811), so the unresolved axis is the sole blocker. The operative failure
+	 * is {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES} alone: the already-optimal verdict
+	 * ({@code HAS_NO_PRIMITIVE_PARAMETERS}) would be false here, since an improvement existed and was withheld as unwritable. The faithful
+	 * supplied-signature reproducer is {@link #testReconfigureBlockedAxes}; this twin pins the same arm's other entry route.
+	 */
+	@Test
+	public void testReconfigureBlockedAxesAdd() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function wild = getFunction("wild");
+		assertTrue("Fixture function `wild` should be hybrid.", wild.isHybrid());
+		assertTrue("`wild` reads axis 1 statically while its spec leaves it unresolved.", wild.getHasUnresolvedStaticallyReadAxes());
+		assertNull("No passing precondition: the reconfiguration is blocked.", wild.getPassingPrecondition());
+		assertNotNull("The unresolved axis is the operative failure.", wild.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertNull("The already-optimal verdict must not co-issue: an improvement was withheld (#865).",
+				wild.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * The faithful reproducer of the axes-blocked reconfiguration, matching the corpus shape where the family was found: a hybrid function
+	 * with an existing supplied {@code input_signature} whose otherwise-viable reconfiguration is blocked by the unresolved axis
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/865). The inferred wildcard comes from flow over-approximation
+	 * rather than runtime variation, which is the one configuration where a supplied signature coexists with a running program. Only
+	 * {@code (2, 3)} ever reaches the call (the zero-trip loop's body never executes), conforming to the supplied signature with the
+	 * trace-time read of axis 0 concrete, while the loop-head phi joins both definitions and the inferred spec leaves axis 0 unresolved
+	 * where the body reads it statically. The otherwise-viable reconfiguration is blocked by the axis alone, and the operative failure
+	 * reports without the already-optimal verdict, exactly as in the signature-less twin ({@link #testReconfigureBlockedAxesAdd}).
+	 */
+	@Test
+	public void testReconfigureBlockedAxes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function wild = getFunction("wild");
+		assertTrue("Fixture function `wild` should be hybrid.", wild.isHybrid());
+		assertTrue("A supplied `input_signature` must be detected.", wild.getHybridizationParameters().hasInputSignatureParam());
+		assertTrue("`wild` reads axis 0 statically while the inferred spec leaves it unresolved.",
+				wild.getHasUnresolvedStaticallyReadAxes());
+		assertNull("No passing precondition: the reconfiguration is blocked.", wild.getPassingPrecondition());
+		assertNotNull("The unresolved axis is the operative failure.", wild.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertNull("The already-optimal verdict must not co-issue: an improvement was withheld (#865).",
+				wild.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
 	 * A function that already supplies an {@code input_signature} must not be reconfigured. Per the presence/parse three-state contract
 	 * (#557), a supplied signature must not be clobbered; validate-then-overwrite is future work. Even with inference enabled,
 	 * {@code RECONFIGURE} is not selected, no passing precondition is set, and the function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS}

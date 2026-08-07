@@ -1448,9 +1448,14 @@ public class Function {
 						boolean unresolvedStaticallyReadAxes = this.getHasUnresolvedStaticallyReadAxes() != null
 								&& this.getHasUnresolvedStaticallyReadAxes();
 
-						boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
+						// The reconfiguration gates minus the axis check, so the blocked case below can tell "the axis was the sole
+						// blocker" (code 18 reports alone) from "reconfiguration was never otherwise viable" (the pre-inference
+						// terminal applies); see issue 865.
+						boolean reconfigureOtherwiseViable = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
 								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-								&& this.canEmitInferredInputSignature() && !unresolvedStaticallyReadAxes;
+								&& this.canEmitInferredInputSignature();
+
+						boolean canReconfigure = reconfigureOtherwiseViable && !unresolvedStaticallyReadAxes;
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
@@ -1486,16 +1491,21 @@ public class Function {
 							}
 							}
 
+							// No transformation applies, so the already-optimal verdict reports (issue 865's model: a function the
+							// refactoring cannot further improve "fails" it, benignly): staying hybrid is this function's best form,
+							// and the relation entries above inform beside the verdict.
 							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
+						} else if (reconfigureOtherwiseViable && unresolvedStaticallyReadAxes) {
+							// The one emission issue 865 removes: this function is NOT already optimal, since a signature
+							// improvement existed and was withheld as unwritable, so the already-optimal verdict would be false
+							// here. The unresolved axis is the operative failure and reports alone (issue 811).
+							this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+									"Can't reconfigure this function's input signature: "
+											+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
 						} else {
-							if (unresolvedStaticallyReadAxes)
-								// Report the honest blocking reason alongside the default terminal failure: the reconfiguration was
-								// declined because writing the inferred signature would break the function (issue 811).
-								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
-										"Can't reconfigure this function's input signature: "
-												+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
-
+							// The pre-inference terminal, unchanged: no signature flow resolved anything here, so the already-optimal
+							// verdict reports as it always did.
 							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 									"Functions with no Python literal arguments may benefit from hybridization.");
 
