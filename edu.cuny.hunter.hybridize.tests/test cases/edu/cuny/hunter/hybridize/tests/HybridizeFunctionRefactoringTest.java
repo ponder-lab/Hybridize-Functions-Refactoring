@@ -10455,6 +10455,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the interprocedural reach of the stale-variable-read scan
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 2): multigpu_training's {@code run_optimization}
+	 * never invokes its model directly; the forward pass sits one call down, in {@code backprop}. The original scan was body-local, so the
+	 * absent in-body invocation read as "this body does not build the receiver" and the subject escaped the #822 precondition. The fixture
+	 * distills that shape faithfully ({@code stale_read_through_helper} reads the collection, then reaches the forward pass only through
+	 * {@code forward}), and decorating it reproduces the subject's singleton-variable {@code ValueError} verbatim on TF 2.9.3.
+	 * {@code fresh_read_after_helper} orders the helper's forward pass before the read, which the transitive scan must keep fresh, and
+	 * {@code forward} itself reads nothing and remains P1.
+	 */
+	@Test
+	public void testStaleVariableReadsThroughCallees() throws Exception {
+		Function staleRead = getFunction("stale_read_through_helper");
+		assertTrue("`stale_read_through_helper` snapshots `model.trainable_variables` before the model is first called through `forward`.",
+				staleRead.getHasStaleVariableReads());
+		assertNull("`stale_read_through_helper` must not pass a precondition; tracing would raise on slot creation.",
+				staleRead.getPassingPrecondition());
+		assertNotNull("`stale_read_through_helper` fails with HAS_STALE_VARIABLE_READS.",
+				staleRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
+
+		Function freshRead = getFunction("fresh_read_after_helper");
+		assertFalse("`fresh_read_after_helper` reads the collection after the helper's forward pass builds the model.",
+				freshRead.getHasStaleVariableReads());
+		assertEquals("`fresh_read_after_helper` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());
+
+		Function forward = getFunction("forward");
+		assertFalse("`forward` reads no variable collection.", forward.getHasStaleVariableReads());
+		assertEquals("`forward` still hybridizes (P1).", P1, forward.getPassingPrecondition());
+	}
+
+	/**
 	 * Completes the building-member set (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/825): beyond
 	 * {@code call}/{@code __call__}/{@code build}/{@code fit}, the whole Keras training surface triggers the lazy build ({@code predict},
 	 * {@code evaluate}, the {@code *_on_batch} family, and the deprecated {@code *_generator} wrappers; each runtime-verified to flip
