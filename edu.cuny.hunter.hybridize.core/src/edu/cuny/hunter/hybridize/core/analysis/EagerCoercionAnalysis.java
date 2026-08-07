@@ -37,7 +37,9 @@ import com.ibm.wala.util.collections.Pair;
  * <p>
  * Polarity is allowing: a partner operand without tensor typing contributes nothing, and a partner whose dtype is ⊤ ({@link DType#UNKNOWN})
  * makes the whole parameter indeterminate, firing neither the pin nor the decline (wala/ML#827 tracks the scalar-initializer derivation
- * that leaves the reduced subject's variables ⊤ today).
+ * that leaves the reduced subject's variables ⊤ today). A partner that is itself a parameter likewise contributes nothing
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878): each side of such a pair would take its dtype from the other,
+ * a circular decision with no fixed point, which is also the exclusion the upstream parameter coercion applies (wala/ML#828).
  */
 class EagerCoercionAnalysis {
 
@@ -88,8 +90,11 @@ class EagerCoercionAnalysis {
 
 			int other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
 
-			// A self-combination (x * x) imposes no partner dtype.
-			if (other == parameterValue)
+			// A partner that is itself a parameter (including a self-combination like x * x) imposes no dtype: each side of such a
+			// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
+			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878). The upstream parameter coercion excludes
+			// the same case (wala/ML#828), keeping the two implementations in agreement until #875 collapses this one into a read.
+			if (ir.getSymbolTable().isParameter(other))
 				continue;
 
 			Set<TensorType> partnerTypes = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(other, Set.of());

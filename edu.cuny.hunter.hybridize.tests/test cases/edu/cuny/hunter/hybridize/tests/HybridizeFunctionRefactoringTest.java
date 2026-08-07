@@ -10544,6 +10544,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-partner exclusion of the eager-coercion detector
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878), reducing TensorFlow2.0-Examples' RPN
+	 * {@code compute_loss}: {@code loss} combines its two parameters only with each other, so each one's sole partner operand is the other
+	 * parameter. A partner that is itself a parameter imposes nothing&mdash;each side of such a pair would take its dtype from the other, a
+	 * circular decision with no fixed point whose orientation is arbitrary (the corpus emission swapped orientations between Ariadne
+	 * 0.52.82 and 0.52.83)&mdash;so neither the pin nor the decline fires and the spec carries the argument evidence unchanged. The
+	 * upstream parameter coercion excludes the same case (wala/ML#828).
+	 */
+	@Test
+	public void testEagerDtypeParameterPartners() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function loss = getFunction("loss");
+		assertEquals("`loss`'s parameters partner only each other, and a parameter partner imposes nothing, so nothing conflicts.",
+				Boolean.FALSE, loss.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`loss` hybridizes (P1).", P1, loss.getPassingPrecondition());
+		assertTrue("An input signature is inferred from the argument evidence.", loss.getInferredInputSignature().isPresent());
+		assertEquals("The spec carries the fed dtypes; neither parameter takes the other's.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float64), tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				loss.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a
