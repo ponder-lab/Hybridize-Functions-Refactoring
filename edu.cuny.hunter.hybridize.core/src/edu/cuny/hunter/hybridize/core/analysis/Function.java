@@ -2058,7 +2058,10 @@ public class Function {
 		for (int position = 0; position < parameters.size(); position++) {
 			Parameter parameter = parameters.get(position);
 
-			if (parameter.isSelf())
+			// Keyword-only parameters are excluded: their IR value-number ordering relative to the positional block is unproven,
+			// and a misaligned lookup here could pin the wrong dtype. Positional parameters map to value slots by list position
+			// (keyword-only entries trail the positional block in `getParameters()`, so skipping them keeps `position` aligned).
+			if (parameter.isSelf() || parameter.isKeywordOnly())
 				continue;
 
 			// Merge outcomes across the function's nodes (contexts): dtypes union, indeterminate if any node is.
