@@ -10552,17 +10552,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * identically (wala/ML#828)&mdash;and the pair's divergent evidence (a float64 NumPy argument beside a float32 tensor) admits no repair
 	 * at all: either-orientation pin breaks one reading, a spec naming the fed dtypes raises at the subtraction, and a bare decorator
 	 * materializes the NumPy argument at float64 and raises the same way, so the conversion declines with
-	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS}.
+	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS}. The rule is divergence-gated, which the allowing arms pin:
+	 * {@code matched}'s pair agrees on float32 and keeps the ordinary signature, and {@code selfed}'s self-combination has no partner at
+	 * all.
 	 */
 	@Test
 	public void testEagerDtypeParameterPartners() throws Exception {
-		Function loss = getFunction("loss");
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function loss = findFunction(functions, "loss");
 		assertEquals("`loss`'s parameters are combined with each other under divergent evidence.", Boolean.TRUE,
 				loss.getHasConflictingEagerDtypeCoercions());
 		assertNull("`loss` must not pass a precondition; either-orientation pin, the fed-dtype spec, and the bare decorator all raise.",
 				loss.getPassingPrecondition());
 		assertNotNull("`loss` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", loss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
+
+		Function matched = findFunction(functions, "matched");
+		assertEquals("`matched`'s pair agrees on float32, so nothing conflicts.", Boolean.FALSE,
+				matched.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`matched` hybridizes (P1).", P1, matched.getPassingPrecondition());
+		assertTrue("An input signature is inferred for the agreeing pair.", matched.getInferredInputSignature().isPresent());
+
+		Function selfed = findFunction(functions, "selfed");
+		assertEquals("`selfed`'s only combination is with itself, which has no partner.", Boolean.FALSE,
+				selfed.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`selfed` hybridizes (P1).", P1, selfed.getPassingPrecondition());
 	}
 
 	/**
