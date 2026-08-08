@@ -119,6 +119,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckTensorIteration;
 
+	private boolean alwaysCheckKerasSymbolicArguments;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -539,6 +541,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
 					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
 
+				// Check whether a call site passes a Keras symbolic tensor (issue 887). Same reachable region, same gate;
+				// overridable independently via alwaysCheckKerasSymbolicArguments.
+				if (this.getAlwaysCheckKerasSymbolicArguments() || barrenCouldDecide)
+					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -895,6 +902,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckTensorIteration(boolean alwaysCheckTensorIteration) {
 		this.alwaysCheckTensorIteration = alwaysCheckTensorIteration;
+	}
+
+	public boolean getAlwaysCheckKerasSymbolicArguments() {
+		return this.alwaysCheckKerasSymbolicArguments;
+	}
+
+	/**
+	 * Force the Keras symbolic-argument check (issue 887) on every candidate, not only tensor-parameter ones. Off by default; for
+	 * measurement, mirroring {@code alwaysCheckTensorIteration}.
+	 *
+	 * @param alwaysCheckKerasSymbolicArguments Whether to always compute whether a call site passes a {@code KerasTensor}.
+	 */
+	public void setAlwaysCheckKerasSymbolicArguments(boolean alwaysCheckKerasSymbolicArguments) {
+		this.alwaysCheckKerasSymbolicArguments = alwaysCheckKerasSymbolicArguments;
 	}
 
 	@Override

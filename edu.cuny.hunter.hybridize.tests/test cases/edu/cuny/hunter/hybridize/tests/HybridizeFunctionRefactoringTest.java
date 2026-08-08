@@ -10457,6 +10457,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the Keras symbolic-argument decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887, reducing
+	 * TensorFlow2.0-Examples' YOLOv3: a function factored out of Keras Functional model construction is called with the symbolic input, and
+	 * {@code tf.function} is one of the APIs a {@code KerasTensor} refuses, so the decorator raises a {@code TypeError} on the first call,
+	 * before anything is traced. {@code symbolic} takes the {@code Input} result directly and {@code derived} takes it threaded through a
+	 * built-in {@code Dense}, which the Functional API keeps symbolic; both decline. {@code eager}, called only with a real tensor, is the
+	 * allowing direction and still converts. All three arms were runtime-verified on the pinned TF 2.9.3: decorating either of the first
+	 * two raises the {@code TypeError}, decorating {@code eager} runs.
+	 */
+	@Test
+	public void testKerasSymbolicArgument() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : Set.of("symbolic", "derived")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is called with a Keras symbolic tensor.", function.getHasKerasSymbolicArguments());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		}
+
+		Function eager = findFunction(functions, "eager");
+		assertFalse("`eager` is called only with a real tensor.", eager.getHasKerasSymbolicArguments());
+		assertEquals("`eager` still converts (P1).", P1, eager.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading

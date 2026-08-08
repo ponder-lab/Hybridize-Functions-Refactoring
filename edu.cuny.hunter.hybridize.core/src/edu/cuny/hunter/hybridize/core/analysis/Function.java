@@ -1066,6 +1066,14 @@ public class Function {
 	private Boolean hasTensorParameterIteration;
 
 	/**
+	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor ({@code KerasTensor}), which {@code tf.function}
+	 * refuses outright, so the decorator raises before anything is traced. {@code null} when it could not be determined (no call-graph
+	 * node, or a caller whose arguments are invisible), in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 */
+	private Boolean hasKerasSymbolicArguments;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1306,6 +1314,13 @@ public class Function {
 										"Can't hybridize a function whose parameter combines with tensors of different dtypes; "
 												+ "eager execution coerces the argument per operation, so no single input signature "
 												+ "preserves its semantics.");
+							else if (this.getHasKerasSymbolicArguments() != null && this.getHasKerasSymbolicArguments())
+								// A call site passes a Keras symbolic tensor (issue 887): tf.function is one of the APIs a KerasTensor
+								// refuses, so the decorator raises on the first call before anything is traced, bare or with a
+								// signature. The eighth safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS,
+										"Can't hybridize a function called with a Keras symbolic tensor; tf.function refuses a "
+												+ "KerasTensor, so the decorator raises before anything is traced.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -2045,6 +2060,47 @@ public class Function {
 	 */
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * Computes whether some call site of this {@link Function} passes a Keras symbolic tensor ({@link KerasSymbolicArgumentAnalysis}),
+	 * storing the result for {@link #getHasKerasSymbolicArguments()}. {@code tf.function} refuses a {@code KerasTensor} outright, so
+	 * decorating such a function raises a {@code TypeError} on the first call, before anything is traced, and the conversion must be
+	 * declined. When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 *
+	 * @param callGraph The call graph, walked in the caller direction.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each argument's producing API.
+	 */
+	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " is passed a Keras symbolic tensor.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " is passed a Keras symbolic tensor without a call graph node.");
+			return;
+		}
+
+		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis).hasKerasSymbolicArgument(nodes, callGraph);
+
+		LOG.info(this + " passed a Keras symbolic tensor: " + this.hasKerasSymbolicArguments + ".");
+	}
+
+	/**
+	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor, {@code null} if undetermined.
+	 *
+	 * @return True iff a call site passes a {@code KerasTensor}, null if undetermined.
+	 */
+	public Boolean getHasKerasSymbolicArguments() {
+		return this.hasKerasSymbolicArguments;
 	}
 
 	/**
