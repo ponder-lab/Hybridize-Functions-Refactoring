@@ -174,7 +174,8 @@ class KerasSymbolicArgumentAnalysis {
 				if (!this.isKerasSymbolic(node, phi.getUse(i), defUse, memo))
 					return false;
 
-			return phi.getNumberOfUses() > 0;
+			// A phi always has operands, so reaching here means every one of them was symbolic.
+			return true;
 		}
 
 		return false;

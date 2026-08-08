@@ -50,4 +50,21 @@ public class HybridizeFunctionRefactoringProcessorTest {
 		processor.setInferInputSignatures(false);
 		assertFalse(processor.getInferInputSignatures());
 	}
+
+	/**
+	 * {@link HybridizeFunctionRefactoringProcessor#setAlwaysCheckKerasSymbolicArguments(boolean)} updates the flag the accessor returns,
+	 * and the flag is off by default, so the Keras symbolic-argument check runs on the tensor-parameter candidates alone until the
+	 * evaluator asks for it corpus-wide (#887).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887">Issue 887</a>
+	 */
+	@Test
+	public void testSetAlwaysCheckKerasSymbolicArguments() {
+		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor();
+		assertFalse(processor.getAlwaysCheckKerasSymbolicArguments());
+		processor.setAlwaysCheckKerasSymbolicArguments(true);
+		assertTrue(processor.getAlwaysCheckKerasSymbolicArguments());
+		processor.setAlwaysCheckKerasSymbolicArguments(false);
+		assertFalse(processor.getAlwaysCheckKerasSymbolicArguments());
+	}
 }
