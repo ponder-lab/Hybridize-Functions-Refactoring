@@ -151,8 +151,8 @@ public final class Parameter {
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
 	 * by {@link #classifyAsTensor} only when the container check ({@link #hasTensorContainer}) executes, which is Phase 3 when
 	 * classification falls through Phase 1 (type hints) with an empty Phase 2 (Ariadne) cache, plus the Phase 2 hit whose parameter also
-	 * receives a sequence ({@link #receivesSequence}, #888). The remaining early returns (self, type-hint hit, a Phase 2 hit with no
-	 * sequence reaching the parameter, or empty call-graph nodes) leave this field at its default. {@code null} therefore means either
+	 * receives a container ({@link #receivesContainer}, #888). The remaining early returns (self, type-hint hit, a Phase 2 hit with no
+	 * container reaching the parameter, or empty call-graph nodes) leave this field at its default. {@code null} therefore means either
 	 * classification has not run or it ran without asking the container question.
 	 */
 	private Boolean tensorContainer;
@@ -842,16 +842,18 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns true iff some value reaching this parameter is a positionally-indexed Python sequence (a list or tuple). The cheap gate on
-	 * collecting container evidence for a parameter Ariadne already typed as a tensor (#888): only such a parameter can carry a nested
-	 * structure a single {@code TensorSpec} would misdescribe, and asking the question costs one points-to walk rather than the
-	 * whole-analysis container catalog {@link #hasTensorContainer} builds.
+	 * Returns true iff some value reaching this parameter is a Python container per {@link Util#isContainerType}. The cheap gate on
+	 * collecting container evidence for a parameter Ariadne already typed as a tensor (#888): only such a parameter can carry a structure a
+	 * single {@code TensorSpec} would misdescribe, and asking the question costs one points-to walk rather than the whole-analysis
+	 * container catalog {@link #hasTensorContainer} builds. The predicate is the broad container set rather than the positionally-indexed
+	 * subset the nested-spec reduction models, since a form the reduction cannot write is still a form one spec describes wrongly, and the
+	 * container branch reports that as unsupported instead of emitting it.
 	 *
 	 * @param nodes The call graph nodes corresponding to the owning function.
 	 * @param builder The propagation-call-graph builder for the project.
-	 * @return True iff a list or tuple reaches this parameter.
+	 * @return True iff a container reaches this parameter.
 	 */
-	private boolean receivesSequence(Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+	private boolean receivesContainer(Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
 			int paramInx = this.getIndex() + 1; // the first argument is the function being invoked.
@@ -864,7 +866,7 @@ public final class Parameter {
 			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
 				TypeReference reference = getTypeReference(instanceKey);
 
-				if (reference != null && Util.isSequenceType(reference))
+				if (reference != null && Util.isContainerType(reference))
 					return true;
 			}
 		}
@@ -1154,11 +1156,11 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 
-					// A sequence also reaching the parameter means the Phase 2 typing is not the whole story: the parameter carries a
+					// A container also reaching the parameter means the Phase 2 typing is not the whole story: the parameter carries a
 					// nested structure at some call site, which a single `TensorSpec` cannot express, so the container evidence has to be
 					// collected here too rather than only where Phase 2 came up empty (#888). Gated on a sequence actually reaching the
 					// parameter so an ordinary tensor parameter pays nothing and keeps its `isTensorContainer()` cache unset.
-					if (this.receivesSequence(nodes, builder)) {
+					if (this.receivesContainer(nodes, builder)) {
 						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 
 						if (this.tensorContainer)
