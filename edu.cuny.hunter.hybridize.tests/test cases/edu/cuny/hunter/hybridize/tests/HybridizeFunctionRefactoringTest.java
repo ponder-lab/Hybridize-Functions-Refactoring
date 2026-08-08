@@ -10457,13 +10457,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the container precedence of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reducing
-	 * deep_recommenders' {@code CIN.call}: a parameter that receives a two-tensor tuple at one call site and a bare tensor at another is
-	 * typed by Ariadne from the bare site, so before this change the container evidence was never collected and a single {@code TensorSpec}
-	 * reduced from that one site was emitted. TensorFlow enforces the declared nesting, so such a signature admits none of the callers that
-	 * pass the tuple, which is the reported harm: the decorated function would refuse every conforming caller. The container verdict now
-	 * outranks Phase 2's own evidence, and since the mixed form has no nested spec either, the signature is withheld. {@code tuples_only},
-	 * which receives tuples alone, is the allowing direction and keeps its nested spec.
+	 * Pins the defect of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888 rather than a fix for it, reducing
+	 * deep_recommenders' {@code CIN.call}: {@code cin} receives a two-tensor tuple at one call site and a bare tensor at another, Ariadne
+	 * types the parameter from the unwrapped site so the tensor-type cache is non-empty, and the container check never runs, since it is
+	 * reached only where that cache came up empty. The emitted signature is therefore a single {@code TensorSpec} reduced from the one site
+	 * whose argument does not fit the parameter's real structure, and TensorFlow enforces the declared nesting, so the decorated function
+	 * would refuse every caller that passes the tuple.
+	 * <p>
+	 * The assertions below state that wrong emission deliberately, so the reproduction survives as a two-sided anchor. The fix is not
+	 * container precedence, which was tried and reverted as too broad a use of points-to membership: per-call-site attribution of the
+	 * tensor evidence exists at the default context depth (probed on both a plain function and a Keras layer {@code call}, where the
+	 * bare-tensor typing lands on the node whose context names the rejecting caller and the tuple site contributes no tensor type at all),
+	 * and {@code Parameter.inferTensorTypes} discards it when it unions across nodes. Retaining it lets the offending site be excluded and
+	 * the correct nested spec emitted, at which point this fixture flips to the {@code tuples_only} shape's rendering.
+	 * <p>
+	 * {@code tuples_only}, which receives tuples alone, already reduces correctly and is the contrast that localizes the defect to the
+	 * mixed evidence rather than to the tuple parameter itself.
 	 */
 	@Test
 	public void testInputSignatureMixedContainerEvidence() throws Exception {
@@ -10473,16 +10482,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function cin = findFunction(functions, "cin");
 		Parameter inputs = cin.getParameters().get(0);
-		assertEquals("The tuple call site makes `inputs` a container despite the bare-tensor site.", TRUE, inputs.isTensorContainer());
-		assertFalse("Ariadne still types `inputs` from the bare-tensor site.", inputs.getTensorTypes().isEmpty());
-		assertNull("The mixed form has no nested spec to write.", inputs.getContainerElementTypes());
-		assertEquals("No signature is written for a parameter whose nesting varies across call sites.",
-				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), cin.getInferredInputSignatureAbsenceReason());
-		assertEquals("`cin` still hybridizes bare (P1); only the signature was unwritable.", P1, cin.getPassingPrecondition());
+		assertNull("The container check is never reached, so its verdict stays unset.", inputs.isTensorContainer());
+		assertFalse("Ariadne types `inputs` from the bare-tensor site.", inputs.getTensorTypes().isEmpty());
+		assertEquals("The defect: one spec, reduced from the site that does not fit the parameter's structure.",
+				"[tf.TensorSpec(shape=(2, 3, 3), dtype=tf.float32)]",
+				cin.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`cin` converts (P1) carrying that signature.", P1, cin.getPassingPrecondition());
 
 		Function tuplesOnly = findFunction(functions, "tuples_only");
 		assertEquals("`tuples_only` receives tuples alone.", TRUE, tuplesOnly.getParameters().get(0).isTensorContainer());
-		assertEquals("Its two-element nested spec is unaffected.",
+		assertEquals("Its two-element nested spec is what `cin` should eventually carry.",
 				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
 				tuplesOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`tuples_only` hybridizes (P1).", P1, tuplesOnly.getPassingPrecondition());
