@@ -10507,6 +10507,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the framework-supplied parameter rule of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/881, reducing
+	 * TensorFlow2.0-Examples' RPN model: {@code RPNplus.call} declares {@code training} with a default, no source call site passes it, and
+	 * Keras's {@code Layer.__call__} supplies {@code training=False} itself on every invocation, from outside the analyzed program. The
+	 * parameter therefore cannot be omitted from an all-or-nothing {@code input_signature} (the corpus emission raised on its first call),
+	 * and being a Python bool it has no spec (#508), so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function
+	 * still hybridizes bare (P1); the corpus original runs under the bare decorator.
+	 */
+	@Test
+	public void testKerasFrameworkSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "RPNplus.call");
+		assertEquals("`RPNplus.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the repair direction of the implicitly-cast NumPy argument hazard
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): {@code scale} combines its {@code float64} NumPy
 	 * argument with a {@code float32} tensor-initialized variable, the detector's eager-effective set is the singleton {@code float32}, and

@@ -3253,6 +3253,20 @@ public class Function {
 				 * unconditionally fatal.
 				 */
 				if (param.hasDefault()) {
+					// Keras supplies `training`/`mask` to a `call` override through `Layer.__call__` on every invocation, from
+					// outside the analyzed program, so a call-site examination cannot see the supplier: omitting the parameter cuts
+					// the hybridized function's arity below what the dispatch passes, and the first call raises (#881). The gate is
+					// local to this reduction rather than folded into `isSuppliedAtCallSite`, whose other consumer (the #795
+					// star-arg exemption) must keep treating a source-unsupplied parameter as bound to its default.
+					if (KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES.contains(param.getName()) && this.isKerasCallOverride()) {
+						this.addInfo(INPUT_SIGNATURE_INFERENCE,
+								"Parameter `" + param.getName() + "` of `" + this + "` is supplied by Keras itself on every "
+										+ "invocation, so it cannot be left out of an input signature, and being non-tensor it has "
+										+ "no spec; input-signature inference is dropped.");
+						blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+						continue;
+					}
+
 					Boolean supplied = param.isSuppliedAtCallSite();
 
 					if (supplied != null && !supplied) {
@@ -3630,6 +3644,32 @@ public class Function {
 		}
 
 		return matches;
+	}
+
+	/**
+	 * Names of the parameters Keras itself supplies to a {@code call} override through {@code Layer.__call__} on every invocation
+	 * ({@code training}, {@code mask}): the framework contract on {@code Layer.call}. No source-visible call site passes them, so call-site
+	 * examination cannot establish they are supplied (#881).
+	 */
+	private static final Set<String> KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES = Set.of("training", "mask");
+
+	/** The last segments of the Keras base-class names whose {@code call} overrides Keras dispatches to. */
+	private static final Set<String> KERAS_CALLABLE_BASE_LAST_SEGMENTS = Set.of("Model", "Layer");
+
+	/**
+	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
+	 * class transitively extends a base whose last segment is {@code Model} or {@code Layer}, resolved through the PyDev class hierarchy
+	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition). Matching by last segment
+	 * over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable signature (#881), the conservative
+	 * default.
+	 *
+	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
+	 */
+	private boolean isKerasCallOverride() {
+		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return false;
+
+		return this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
 	}
 
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
