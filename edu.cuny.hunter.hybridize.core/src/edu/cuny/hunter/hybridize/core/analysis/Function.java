@@ -3410,20 +3410,16 @@ public class Function {
 			}
 
 			Set<TensorType> contexts = param.getTensorTypes();
-			if (contexts.isEmpty() || TRUE.equals(param.isTensorContainer())) {
+			if (contexts.isEmpty()) {
 				/*
-				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence, or classified as a container
-				 * whether or not Phase 2 also had something to say. The two ways to land here without Phase 2 evidence have opposite
-				 * evidence situations, so each names its own disposition rather than sharing one tracker (#782). Container detection leaves
-				 * `isTensorContainer()` TRUE; Phase 1 (type hint) returns before it runs, leaving it null. It cannot leave it FALSE with an
-				 * empty `contexts`: a FALSE container check there falls through to `tensor = FALSE`, i.e. category (a). A container verdict
-				 * outranks Phase 2's own evidence (#888): the parameter carries a nested structure at some call site, and TensorFlow
-				 * enforces the declared nesting, so a single `TensorSpec` reduced from the values that happen to arrive unwrapped would
-				 * admit none of the callers that pass the sequence. Either the nested spec is writable or no signature is.
+				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence. The two ways to land here have
+				 * opposite evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
+				 * (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before Phase 3 runs, leaving it null. Phase 3
+				 * cannot leave it FALSE here: a FALSE container check falls through to `tensor = FALSE`, i.e. category (a).
 				 */
 				AbsenceReason reason;
 
-				if (TRUE.equals(param.isTensorContainer())) {
+				if (param.isTensorContainer() != null && param.isTensorContainer()) {
 					// The sequence reduction (#781): a list or tuple of tensors with a modeled element structure reduces each element
 					// position independently through `inferSpec`, and the parameter contributes a nested entry rather than blocking.
 					List<Set<TensorType>> elements = param.getContainerElementTypes();
