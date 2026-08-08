@@ -10461,6 +10461,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the two consumption surfaces issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/882 adds to the
+	 * statically-read-axis walk. {@code wild_upsample} tuple-unpacks its second argument's shape (constant-index property reads in this IR,
+	 * not iteration) and feeds the extents to {@code tf.image.resize}'s {@code size}, a Python-integer sink; its axis-1 extent is wild, so
+	 * the signature is withheld, while {@code ranked_upsample}'s extents agree and stay writable. {@code wild_iter} iterates the shape
+	 * itself, which raises on an unknown rank; called at differing ranks its spec is {@code shape=None} and the signature is withheld,
+	 * while {@code ranked_iter}'s known rank tolerates iteration. {@code np_sized} sizes a NumPy buffer from its wild axis 1
+	 * ({@code np.zeros} requires Python integers), so the signature is withheld, while {@code ranked_np} reads the concrete axis 2 and
+	 * stays writable. All six arms run eagerly; the wild emissions were runtime-verified broken on the corpus originals (see the issue).
+	 */
+	@Test
+	public void testUnresolvedShapeIterationAndIntegerSinks() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_upsample", "wild_iter", "np_sized")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable (#864).", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		for (String identifier : List.of("ranked_upsample", "ranked_iter", "ranked_np")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
 	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from

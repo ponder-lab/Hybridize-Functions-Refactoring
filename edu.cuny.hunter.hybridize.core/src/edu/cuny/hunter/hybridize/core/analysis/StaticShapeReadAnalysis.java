@@ -14,6 +14,7 @@ import java.util.TreeSet;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
@@ -49,9 +50,11 @@ import com.ibm.wala.types.MethodReference;
  * <p>
  * Sinks are the enumerated consumption sites observed in the corpus (extensible by adding a constant and a membership entry; a new sink is
  * not a new {@link PreconditionFailure}): a weight shape passed to {@code add_weight} in a layer's {@code build}, a
- * {@code tf.reshape}/{@code tf.range} target, integer arithmetic over a dimension, and a slice bound (where a wildcard's {@code None}
- * silently means "to the end" rather than raising). Element-through-container flow into a reshape target list is followed by coloring the
- * written container ({@link PythonPropertyWrite}).
+ * {@code tf.reshape}/{@code tf.range} target, {@code tf.image.resize}'s {@code size}, a NumPy buffer constructor's shape argument (issue
+ * 882), integer arithmetic over a dimension, and a slice bound (where a wildcard's {@code None} silently means "to the end" rather than
+ * raising). Element-through-container flow into a reshape target list is followed by coloring the written container
+ * ({@link PythonPropertyWrite}). Iterating the shape vector itself is a rank-only surface like {@code len} (issue 882): it raises on an
+ * unknown rank and tolerates a known one.
  * <p>
  * Keras lazy-{@code build} reachability: a layer's own {@code build} is a call-graph <em>sibling</em> of {@code call} (both hang off the
  * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to the
@@ -100,9 +103,17 @@ class StaticShapeReadAnalysis {
 
 	/**
 	 * Fully-qualified names of the ops whose arguments require Python integers for a shape target: a statically-read dimension flowing into
-	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption).
+	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption;
+	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882).
 	 */
-	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range");
+	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
+
+	/**
+	 * Member names of the NumPy buffer constructors whose shape argument requires Python integers, every bit as much as {@code tf.reshape}
+	 * requires them for its target (issue 882): a statically-read dimension flowing into them is a sink. NumPy attribute chains do not root
+	 * at the TensorFlow module, so these are recognized by member name on a numpy-module receiver rather than through the FQN walk.
+	 */
+	private static final Set<String> NUMPY_INTEGER_SINK_MEMBER_NAMES = Set.of("zeros", "ones", "empty", "full");
 
 	/**
 	 * Names of the binary operators constituting integer arithmetic over a dimension, matched by {@code toString()} since the operator
@@ -393,6 +404,22 @@ class StaticShapeReadAnalysis {
 					continue;
 				}
 
+				// Iterating a shape vector (a `for` over `x.shape`) raises on an unknown rank and yields the dimensions otherwise: a
+				// rank-only requirement, like `len` (#809), whose products are the dimensions themselves and keep the taint at lost
+				// coverage for per-axis consumption downstream (issue 882). Tuple-unpacking is not this surface: it lowers to
+				// constant-index property reads in this IR, reaching the sinks through the subscript narrowing above.
+				if (use instanceof EachElementGetInstruction each && !valueColored && shapeDescriptors.containsKey(valueNumber)
+						&& each.getUse(0) == valueNumber) {
+					AxisRead base = shapeDescriptors.get(valueNumber);
+					AxisRead widened = new AxisRead(base.parameterOrdinals(), null);
+					rankReads.add(widened);
+
+					for (int d = 0; d < each.getNumberOfDefs(); d++)
+						colorShape(each.getDef(d), widened, valueProvenance, shapeDescriptors, worklist);
+
+					continue;
+				}
+
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (this.handleInvoke(node, invoke, defUse, valueNumber, valueColored, valueProvenance, shapeDescriptors, worklist,
 							reads, rankReads))
@@ -508,6 +535,13 @@ class StaticShapeReadAnalysis {
 			return true;
 		}
 
+		// A NumPy buffer constructor consuming a statically-read dimension (directly or through its shape tuple) is a sink: under a
+		// wildcard the dimension is None at trace time, which NumPy rejects as a size (issue 882, the position-encoding consumption).
+		if (this.isNumpyIntegerSinkCall(node, invoke, defUse)) {
+			recordShapeArguments(invoke, shapeDescriptors, reads);
+			return true;
+		}
+
 		// `K.int_shape(x)` is a static read of `x`'s shape, like `x.shape`.
 		if (valueColored && isMemberCall(invoke, defUse, INT_SHAPE_MEMBER_NAME, node, this.pointerAnalysis)) {
 			AxisRead descriptor = new AxisRead(valueProvenance.get(valueNumber), null);
@@ -551,6 +585,24 @@ class StaticShapeReadAnalysis {
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff {@code invoke} calls a NumPy buffer constructor ({@link #NUMPY_INTEGER_SINK_MEMBER_NAMES}) on the numpy module.
+	 *
+	 * @param node The call-graph node whose IR contains {@code invoke}.
+	 * @param invoke The invoke instruction to test.
+	 * @param defUse The def-use chains of {@code node}'s IR.
+	 * @return True iff {@code invoke} calls a NumPy buffer constructor.
+	 */
+	private boolean isNumpyIntegerSinkCall(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		if (!(defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead calleeRead))
+			return false;
+
+		String member = Util.resolveStringConstant(node, calleeRead.getMemberRef(), this.pointerAnalysis);
+
+		return member != null && NUMPY_INTEGER_SINK_MEMBER_NAMES.contains(member)
+				&& Util.isNumpyModule(node, calleeRead.getObjectRef(), defUse, this.pointerAnalysis);
 	}
 
 	/** Records every shape-tainted argument of {@code invoke} as a consumed {@link AxisRead}. */
