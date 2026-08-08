@@ -93,6 +93,36 @@ class StaticShapeReadAnalysis {
 	private static final String BUILD_METHOD_NAME_SUFFIX = "/build";
 
 	/**
+	 * Type-name prefixes of the summarized Keras endpoints a built-in layer application dispatches to (the summary class and its method
+	 * trampoline). A target under either marks the callee as a built-in layer, whose {@code build} reads a static axis off the input shape
+	 * (issue 883); the {@code /class/} namespace segment is excluded below, since it holds constructors, and passing a parameter-derived
+	 * value to a layer constructor is not an input-shape flow.
+	 */
+	private static final Set<String> KERAS_ENDPOINT_TYPE_NAME_PREFIXES = Set.of("Ltensorflow/keras/", "L$tensorflow/keras/");
+
+	/** The namespace segment holding class objects (constructors), excluded from the built-in-layer predicate. */
+	private static final String CLASS_NAMESPACE_SEGMENT = "/class/";
+
+	/**
+	 * True iff {@code invoke} resolves to a summarized Keras endpoint: a call-graph target declared under the Keras namespace (or its
+	 * {@code $}-prefixed trampoline), excluding {@code /class/} constructor nodes.
+	 *
+	 * @param node The node containing {@code invoke}.
+	 * @param invoke The invoke instruction to test.
+	 * @return True iff {@code invoke} applies a built-in Keras layer.
+	 */
+	private boolean invokesBuiltInKerasLayer(CGNode node, PythonInvokeInstruction invoke) {
+		for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+			String name = target.getMethod().getReference().getDeclaringClass().getName().toString();
+
+			if (KERAS_ENDPOINT_TYPE_NAME_PREFIXES.stream().anyMatch(name::startsWith) && !name.contains(CLASS_NAMESPACE_SEGMENT))
+				return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Fully-qualified names of the TensorFlow dynamic shape ops, whose results are tensors and therefore valid under a wildcard axis: their
 	 * reads are laundered, the central static/dynamic distinction of the precondition.
 	 */
@@ -474,6 +504,19 @@ class StaticShapeReadAnalysis {
 	private boolean handleInvoke(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, int valueNumber, boolean valueColored,
 			Map<Integer, Set<Integer>> valueProvenance, Map<Integer, AxisRead> shapeDescriptors, Deque<Integer> worklist,
 			Set<AxisRead> reads, Set<AxisRead> rankReads) {
+		// A parameter-derived value applied to a built-in Keras layer is a rank-only requirement
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/883): the layer's build reads a static axis off the
+		// input shape (Conv2D the channel axis, Dense the last dimension), so an unknown-rank spec raises before the body runs,
+		// while a known rank with wildcard axes is exactly what the layers admit. Ordinary modeled ops (tf.abs, tf.reshape) resolve
+		// to function endpoints rather than keras-class ones and stay outside the predicate. Recording falls through so the value's
+		// escape and result coloring stay as before.
+		if (valueColored && this.invokesBuiltInKerasLayer(node, invoke))
+			for (int j = 1; j < invoke.getNumberOfUses(); j++)
+				if (invoke.getUse(j) == valueNumber) {
+					rankReads.add(new AxisRead(valueProvenance.get(valueNumber), null));
+					break;
+				}
+
 		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
 
 		// A dynamic shape read returns a tensor, valid under a wildcard: launder entirely.

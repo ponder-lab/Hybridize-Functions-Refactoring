@@ -10425,6 +10425,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the built-in-layer rank requirement of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/883, reducing
+	 * deep_recommenders' FM linear term: a parameter flowing into a built-in Keras layer must arrive with a known rank, since the layer's
+	 * {@code build} reads a static axis off the input shape ({@code Dense} the last dimension, {@code Conv2D} the channel axis) and an
+	 * unknown-rank spec raises before the body runs. {@code FM.call} is invoked at differing ranks, so its spec is {@code shape=None} and
+	 * the signature is withheld; {@code Ranked.call}'s known rank stays writable (the layers admit wildcard axes); {@code op_only} keeps an
+	 * unknown-rank spec emittable through ordinary modeled ops, pinning that only layer applications are rank-sensitive.
+	 */
+	@Test
+	public void testUnknownRankIntoBuiltinLayer() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function fmCall = findFunction(functions, "FM.call");
+		assertTrue("`FM.call` feeds its unknown-rank parameter to a built-in Dense, whose build reads the last dimension.",
+				fmCall.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`FM.call` hybridizes bare (P1); only the signature was unwritable (#864).", P1, fmCall.getPassingPrecondition());
+		assertEquals("`FM.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				fmCall.getInferredInputSignatureAbsenceReason());
+
+		Function rankedCall = findFunction(functions, "Ranked.call");
+		assertFalse("`Ranked.call`'s known rank satisfies the layer's build.", rankedCall.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Ranked.call` still hybridizes (P1).", P1, rankedCall.getPassingPrecondition());
+
+		Function opOnly = findFunction(functions, "op_only");
+		assertFalse("`op_only` applies only modeled ops; an unknown-rank spec stays emittable.",
+				opOnly.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`op_only` hybridizes (P1).", P1, opOnly.getPassingPrecondition());
+		assertTrue("An unknown-rank signature is emitted for `op_only`.", opOnly.getInferredInputSignature().isPresent());
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
