@@ -3098,8 +3098,8 @@ public class Function {
 	 * raising a {@code TypeError}. The omission is therefore behavior-preserving only when no call site supplies it, which is a
 	 * whole-program question rather than a syntactic one.
 	 * <p>
-	 * This is the only analysis in the plug-in that walks the call graph in the caller direction; the others ask what a function's body
-	 * reaches. Two wrinkles follow from that:
+	 * This and the Keras symbolic-argument analysis ({@link KerasSymbolicArgumentAnalysis}, #887) are the only analyses in the plug-in that
+	 * walk the call graph in the caller direction; the others ask what a function's body reaches. Two wrinkles follow from that:
 	 * <ul>
 	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
 	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
