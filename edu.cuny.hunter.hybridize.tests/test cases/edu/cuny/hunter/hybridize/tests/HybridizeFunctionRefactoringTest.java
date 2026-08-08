@@ -10457,6 +10457,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the container precedence of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reducing
+	 * deep_recommenders' {@code CIN.call}: a parameter that receives a two-tensor tuple at one call site and a bare tensor at another is
+	 * typed by Ariadne from the bare site, so before this change the container evidence was never collected and a single {@code TensorSpec}
+	 * reduced from that one site was emitted. TensorFlow enforces the declared nesting, so such a signature admits none of the callers that
+	 * pass the tuple, which is the reported harm: the decorated function would refuse every conforming caller. The container verdict now
+	 * outranks Phase 2's own evidence, and since the mixed form has no nested spec either, the signature is withheld. {@code tuples_only},
+	 * which receives tuples alone, is the allowing direction and keeps its nested spec.
+	 */
+	@Test
+	public void testInputSignatureMixedContainerEvidence() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function cin = findFunction(functions, "cin");
+		Parameter inputs = cin.getParameters().get(0);
+		assertEquals("The tuple call site makes `inputs` a container despite the bare-tensor site.", TRUE, inputs.isTensorContainer());
+		assertFalse("Ariadne still types `inputs` from the bare-tensor site.", inputs.getTensorTypes().isEmpty());
+		assertNull("The mixed form has no nested spec to write.", inputs.getContainerElementTypes());
+		assertEquals("No signature is written for a parameter whose nesting varies across call sites.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), cin.getInferredInputSignatureAbsenceReason());
+		assertEquals("`cin` still hybridizes bare (P1); only the signature was unwritable.", P1, cin.getPassingPrecondition());
+
+		Function tuplesOnly = findFunction(functions, "tuples_only");
+		assertEquals("`tuples_only` receives tuples alone.", TRUE, tuplesOnly.getParameters().get(0).isTensorContainer());
+		assertEquals("Its two-element nested spec is unaffected.",
+				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
+				tuplesOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`tuples_only` hybridizes (P1).", P1, tuplesOnly.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
