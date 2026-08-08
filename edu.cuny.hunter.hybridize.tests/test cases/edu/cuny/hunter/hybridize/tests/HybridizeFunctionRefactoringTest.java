@@ -10489,6 +10489,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the Keras symbolic-argument decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887, reducing
+	 * TensorFlow2.0-Examples' YOLOv3: a function factored out of Keras Functional model construction is called with the symbolic input, and
+	 * {@code tf.function} is one of the APIs a {@code KerasTensor} refuses, so the decorator raises a {@code TypeError} on the first call,
+	 * before anything is traced. The declining arms cover each way the provenance walk reaches an {@code Input}: {@code symbolic} takes its
+	 * result directly, {@code derived} takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, and
+	 * {@code by_keyword} takes it by keyword rather than positionally, and {@code both_paths} takes a merge whose every operand is
+	 * symbolic, through two different layers over the one {@code Input}, which the walk must decide once rather than skip on the second
+	 * branch. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, {@code merged} receives the
+	 * symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so leaves the
+	 * verdict allowing, and {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application
+	 * propagates symbolicness rather than producing it. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm
+	 * raises the {@code TypeError}, decorating any allowing arm runs.
+	 */
+	@Test
+	public void testKerasSymbolicArgument() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : Set.of("symbolic", "derived", "by_keyword", "both_paths")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is called with a Keras symbolic tensor.", function.getHasKerasSymbolicArguments());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		}
+
+		for (String name : Set.of("eager", "merged", "layer_on_eager")) {
+			Function function = findFunction(functions, name);
+			assertFalse("`" + name + "` is not called with a value that is symbolic on every path.",
+					function.getHasKerasSymbolicArguments());
+			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading

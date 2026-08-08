@@ -119,7 +119,17 @@ public enum PreconditionFailure {
 	 * reproduces eager coercion (runtime-verified on the pinned TF 2.9.3). See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1.
 	 */
-	HAS_CONFLICTING_EAGER_DTYPE_COERCIONS(22);
+	HAS_CONFLICTING_EAGER_DTYPE_COERCIONS(22),
+
+	/**
+	 * Some call site passes the function a Keras <em>symbolic</em> tensor: a {@code KerasTensor}, the value {@code tf.keras.layers.Input}
+	 * produces and the Functional API threads through layer applications. {@code tf.function} is one of the APIs {@code KerasTensor}
+	 * explicitly refuses, so the decorator raises a {@code TypeError} on the first call, before anything is traced, and the hazard is
+	 * independent of any {@code input_signature}: a bare decorator fails the same way. A function factored out of Functional model
+	 * construction, taking the symbolic input and returning symbolic outputs, is an ordinary shape, so the decline is the only
+	 * behavior-preserving option. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 */
+	HAS_KERAS_SYMBOLIC_ARGUMENTS(23);
 
 	static {
 		// check that the codes are unique.

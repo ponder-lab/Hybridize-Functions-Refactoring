@@ -189,6 +189,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckTensorIteration = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_ITERATION.key());
 
+	private boolean alwaysCheckKerasSymbolicArguments = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_KERAS_SYMBOLIC_ARGUMENTS.key());
+
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
 	private boolean useTestEntrypoints = Boolean.getBoolean(EvaluationOption.USE_TEST_ENTRYPOINTS.key());
@@ -252,8 +254,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "type hints", "parallel", "speculative",
-				"test entrypoints", "infer input signatures", "targeted CFA depth" };
+				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "keras symbolic arguments", "type hints",
+				"parallel", "speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
@@ -332,6 +334,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckStaticShapeReads(this.getAlwaysCheckStaticShapeReads());
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
+					processor.setAlwaysCheckKerasSymbolicArguments(this.getAlwaysCheckKerasSymbolicArguments());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -442,6 +445,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// tensor iteration.
 					resultsRecord.add(this.getAlwaysCheckTensorIteration());
+
+					// Keras symbolic arguments.
+					resultsRecord.add(this.getAlwaysCheckKerasSymbolicArguments());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -646,7 +652,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
 				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
-				"tensor parameter iteration", "caller covered", "autograph", "experimental_autograph_options",
+				"tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
 				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
 				"refactoring", "passing precondition", "status");
@@ -856,7 +862,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
 				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
 				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads(),
-				function.getHasTensorParameterIteration(), function.getCallerCovered());
+				function.getHasTensorParameterIteration(), function.getHasKerasSymbolicArguments(), function.getCallerCovered());
 
 		for (Object columnValue : initialColumnValues)
 			printer.print(columnValue);
@@ -978,6 +984,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckTensorIteration() {
 		return alwaysCheckTensorIteration;
+	}
+
+	public boolean getAlwaysCheckKerasSymbolicArguments() {
+		return alwaysCheckKerasSymbolicArguments;
 	}
 
 	public boolean getProcessFunctionsInParallel() {
