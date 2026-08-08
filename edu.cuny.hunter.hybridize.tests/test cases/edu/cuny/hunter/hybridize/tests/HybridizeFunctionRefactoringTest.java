@@ -10462,16 +10462,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code tf.function} is one of the APIs a {@code KerasTensor} refuses, so the decorator raises a {@code TypeError} on the first call,
 	 * before anything is traced. The declining arms cover each way the provenance walk reaches an {@code Input}: {@code symbolic} takes its
 	 * result directly, {@code derived} takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, and
-	 * {@code by_keyword} takes it by keyword rather than positionally. The allowing arms cover the two ways it does not: {@code eager} is
-	 * called only with a real tensor, and {@code merged} receives the symbolic input on one path and a real tensor on the other, which
-	 * makes the argument's symbolicness path-dependent and so leaves the verdict allowing. Every arm was runtime-verified on the pinned TF
-	 * 2.9.3: decorating any declining arm raises the {@code TypeError}, decorating either allowing arm runs.
+	 * {@code by_keyword} takes it by keyword rather than positionally, and {@code both_paths} takes a merge whose every operand is
+	 * symbolic, through two different layers over the one {@code Input}, which the walk must decide once rather than skip on the second
+	 * branch. The allowing arms cover the two ways it does not: {@code eager} is called only with a real tensor, and {@code merged}
+	 * receives the symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so
+	 * leaves the verdict allowing. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm raises the
+	 * {@code TypeError}, decorating either allowing arm runs.
 	 */
 	@Test
 	public void testKerasSymbolicArgument() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : Set.of("symbolic", "derived", "by_keyword")) {
+		for (String name : Set.of("symbolic", "derived", "by_keyword", "both_paths")) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "` is called with a Keras symbolic tensor.", function.getHasKerasSymbolicArguments());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());

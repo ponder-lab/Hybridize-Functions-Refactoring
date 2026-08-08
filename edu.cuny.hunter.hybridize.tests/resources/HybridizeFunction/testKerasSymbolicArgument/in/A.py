@@ -7,7 +7,10 @@ import tensorflow as tf
 # (the same input passed by keyword) raises a `TypeError` on the first call, before
 # anything is traced. `eager` is called only with a real tensor, and `merged` receives the
 # symbolic input on one path and a real tensor on the other, which leaves its argument's
-# symbolicness path-dependent; both stay convertible.
+# symbolicness path-dependent; both stay convertible. `both_paths` receives a symbolic
+# value on every path, through two different layers over the one `Input`, so it declines
+# like the rest: the shared `Input` must be decided once rather than skipped as
+# already-visited by the second branch.
 
 
 def symbolic(input_layer):
@@ -30,6 +33,10 @@ def merged(x):
     return tf.abs(x)
 
 
+def both_paths(x):
+    return tf.abs(x)
+
+
 input_tensor = tf.keras.layers.Input([4])
 symbolic_output = symbolic(input_tensor)
 derived_output = derived(tf.keras.layers.Dense(3)(input_tensor))
@@ -46,3 +53,10 @@ else:
     pick = input_tensor
 
 assert merged(pick).shape == (2, 4)
+
+if tf.executing_eagerly():
+    branched = tf.keras.layers.Dense(3)(input_tensor)
+else:
+    branched = tf.keras.layers.Dense(5)(input_tensor)
+
+both_paths(branched)

@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
@@ -109,11 +110,11 @@ class KerasSymbolicArgumentAnalysis {
 
 						// Positional slot 0 is the callee itself; the arguments start at 1.
 						for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
-							if (this.isKerasSymbolic(predecessor, invoke.getUse(slot), defUse, new HashSet<>()))
+							if (this.isKerasSymbolic(predecessor, invoke.getUse(slot), defUse, new HashMap<>()))
 								return Boolean.TRUE;
 
 						for (String keyword : invoke.getKeywords())
-							if (this.isKerasSymbolic(predecessor, invoke.getUse(keyword), defUse, new HashSet<>()))
+							if (this.isKerasSymbolic(predecessor, invoke.getUse(keyword), defUse, new HashMap<>()))
 								return Boolean.TRUE;
 					}
 			}
@@ -123,12 +124,26 @@ class KerasSymbolicArgumentAnalysis {
 
 	/**
 	 * True iff {@code value} in {@code node}'s frame holds a Keras symbolic tensor, per the provenance rules documented on this class.
-	 * {@code seen} guards the recursion against loops; a value already under consideration contributes nothing rather than recurring.
+	 * {@code memo} both caches answers and guards the recursion against loops: a value is marked non-symbolic on entry, so a cycle
+	 * contributes nothing, and its real answer replaces the marker on exit, so a sub-value two operands of one phi share is decided once
+	 * rather than being skipped as already-visited by the second operand (which would report an all-symbolic merge as allowing).
 	 */
-	private boolean isKerasSymbolic(CGNode node, int value, DefUse defUse, Set<Integer> seen) {
-		if (!seen.add(value))
-			return false;
+	private boolean isKerasSymbolic(CGNode node, int value, DefUse defUse, Map<Integer, Boolean> memo) {
+		Boolean cached = memo.get(value);
 
+		if (cached != null)
+			return cached;
+
+		memo.put(value, false);
+
+		boolean result = this.computeKerasSymbolic(node, value, defUse, memo);
+		memo.put(value, result);
+
+		return result;
+	}
+
+	/** The provenance rules themselves; {@link #isKerasSymbolic} wraps this with the memo and the cycle guard. */
+	private boolean computeKerasSymbolic(CGNode node, int value, DefUse defUse, Map<Integer, Boolean> memo) {
 		SSAInstruction def = defUse.getDef(value);
 
 		if (def instanceof PythonInvokeInstruction invoke) {
@@ -141,7 +156,7 @@ class KerasSymbolicArgumentAnalysis {
 			// `Dense(...)(kt)` is a KerasTensor, while the same layer on an eager tensor is an eager tensor.
 			if (this.appliesBuiltInKerasLayer(node, callee))
 				for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
-					if (this.isKerasSymbolic(node, invoke.getUse(slot), defUse, seen))
+					if (this.isKerasSymbolic(node, invoke.getUse(slot), defUse, memo))
 						return true;
 
 			return false;
@@ -151,7 +166,7 @@ class KerasSymbolicArgumentAnalysis {
 		// existential across call sites.
 		if (def instanceof SSAPhiInstruction phi) {
 			for (int i = 0; i < phi.getNumberOfUses(); i++)
-				if (!this.isKerasSymbolic(node, phi.getUse(i), defUse, seen))
+				if (!this.isKerasSymbolic(node, phi.getUse(i), defUse, memo))
 					return false;
 
 			return phi.getNumberOfUses() > 0;
