@@ -2153,14 +2153,19 @@ public class Function {
 				LOG.info("Parameter " + parameter.getName() + " of " + this + " has conflicting eager-effective dtypes: " + dtypes + ".");
 			} else if (dtypes.size() == 1) {
 				DType eagerEffective = dtypes.iterator().next();
+				Set<DType> parameterDtypes = parameter.getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet());
 
 				// The pin exists only on a determinate divergence: the parameter's own evidence is a single concrete dtype that
 				// differs from the eager-effective one. Matching dtypes need no repair; ⊤ or mixed parameter evidence already drops
 				// the spec elsewhere.
-				if (own != null && own != eagerEffective) {
-					pins.put(parameter, eagerEffective);
-					LOG.info("Parameter " + parameter.getName() + " of " + this + " pins to the eager-effective dtype " + eagerEffective
-							+ " (evidence " + own + ").");
+				if (parameterDtypes.size() == 1) {
+					DType parameterDtype = parameterDtypes.iterator().next();
+
+					if (parameterDtype != DType.UNKNOWN && parameterDtype != eagerEffective) {
+						pins.put(parameter, eagerEffective);
+						LOG.info("Parameter " + parameter.getName() + " of " + this + " pins to the eager-effective dtype " + eagerEffective
+								+ " (evidence " + parameterDtype + ").");
+					}
 				}
 			}
 		}
