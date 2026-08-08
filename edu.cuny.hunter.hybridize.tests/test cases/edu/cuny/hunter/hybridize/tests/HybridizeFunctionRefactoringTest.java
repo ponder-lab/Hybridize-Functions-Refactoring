@@ -10480,6 +10480,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Vendored coverage pin for the enumerate-dispatch reach Ariadne 0.52.82 opened (wala/ML#826;
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/872). The fixture reduces NLPGNN's GPT2 encoder loop: the blocks
+	 * are consumed only through the pair binding {@code for i, (block, layer_past) in enumerate(zip(...))} followed by {@code block(...)},
+	 * so dispatch into {@code Block.call} and {@code MLP.call} beneath it exists only because {@code enumerate} yields (index, element)
+	 * tuples. Validated two-sided at the 0.52.83 pin: under 0.52.81 the element binding carries nothing and the assertions below fail.
+	 */
+	@Test
+	public void testEnumerateLayerDispatchVendored() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function mlpCall = findFunction(functions, "MLP.call");
+		assertEquals("`MLP.call` is reached through the enumerate-loop pair binding and hybridizes (P1).", P1,
+				mlpCall.getPassingPrecondition());
+	}
+
+	/**
 	 * The implicitly-cast NumPy argument hazard's motivating reduction
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): linear_regression combines a {@code float64}
 	 * NumPy argument with module-scope variables that are {@code float32} at runtime. Eager execution converts the argument through the
