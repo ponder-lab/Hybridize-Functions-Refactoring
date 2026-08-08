@@ -10,7 +10,9 @@ import tensorflow as tf
 # symbolicness path-dependent; both stay convertible. `both_paths` receives a symbolic
 # value on every path, through two different layers over the one `Input`, so it declines
 # like the rest: the shared `Input` must be decided once rather than skipped as
-# already-visited by the second branch.
+# already-visited by the second branch. `layer_on_eager` takes the output of the same kind
+# of built-in layer applied to a real tensor, which the Functional API leaves eager, so the
+# layer application propagates symbolicness rather than producing it.
 
 
 def symbolic(input_layer):
@@ -37,6 +39,10 @@ def both_paths(x):
     return tf.abs(x)
 
 
+def layer_on_eager(x):
+    return tf.abs(x)
+
+
 input_tensor = tf.keras.layers.Input([4])
 symbolic_output = symbolic(input_tensor)
 derived_output = derived(tf.keras.layers.Dense(3)(input_tensor))
@@ -60,3 +66,5 @@ else:
     branched = tf.keras.layers.Dense(5)(input_tensor)
 
 both_paths(branched)
+
+assert layer_on_eager(tf.keras.layers.Dense(3)(tf.ones((2, 4)))).shape == (2, 3)

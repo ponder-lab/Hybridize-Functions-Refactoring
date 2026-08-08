@@ -10464,10 +10464,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * result directly, {@code derived} takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, and
 	 * {@code by_keyword} takes it by keyword rather than positionally, and {@code both_paths} takes a merge whose every operand is
 	 * symbolic, through two different layers over the one {@code Input}, which the walk must decide once rather than skip on the second
-	 * branch. The allowing arms cover the two ways it does not: {@code eager} is called only with a real tensor, and {@code merged}
-	 * receives the symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so
-	 * leaves the verdict allowing. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm raises the
-	 * {@code TypeError}, decorating either allowing arm runs.
+	 * branch. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, {@code merged} receives the
+	 * symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so leaves the
+	 * verdict allowing, and {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application
+	 * propagates symbolicness rather than producing it. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm
+	 * raises the {@code TypeError}, decorating any allowing arm runs.
 	 */
 	@Test
 	public void testKerasSymbolicArgument() throws Exception {
@@ -10481,7 +10482,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
 
-		for (String name : Set.of("eager", "merged")) {
+		for (String name : Set.of("eager", "merged", "layer_on_eager")) {
 			Function function = findFunction(functions, name);
 			assertFalse("`" + name + "` is not called with a value that is symbolic on every path.",
 					function.getHasKerasSymbolicArguments());
