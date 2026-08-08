@@ -39,7 +39,11 @@ import com.ibm.wala.util.collections.Pair;
  * makes the whole parameter indeterminate, firing neither the pin nor the decline (wala/ML#827 tracks the scalar-initializer derivation
  * that leaves the reduced subject's variables ⊤ today). A partner that is itself a parameter likewise contributes nothing
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878): each side of such a pair would take its dtype from the other,
- * a circular decision with no fixed point, which is also the exclusion the upstream parameter coercion applies (wala/ML#828).
+ * a circular decision with no fixed point, which is also the exclusion the upstream parameter coercion applies (wala/ML#828). The pair is
+ * not thereby exempt: when both parameters' own evidence is a single concrete dtype and the two differ, the eager program's survival
+ * implies a weak operand whose identity the pair alone cannot decide, either-orientation pin breaks one reading, a spec naming the fed
+ * dtypes raises at the op, and the bare decorator materializes the weak argument at its own dtype and raises the same way, so the consumer
+ * declines (the plural-set outcome).
  */
 class EagerCoercionAnalysis {
 
@@ -58,10 +62,11 @@ class EagerCoercionAnalysis {
 	}
 
 	/**
-	 * The eager-effective dtype outcome for one parameter: the concrete dtypes its direct consumers' partner operands impose, and whether
-	 * any partner's ⊤ dtype leaves the collection indeterminate.
+	 * The eager-effective dtype outcome for one parameter: the concrete dtypes its direct consumers' partner operands impose, whether any
+	 * partner's ⊤ dtype leaves the collection indeterminate, and the value numbers of partner operands that are themselves parameters
+	 * (self-combinations excluded), whose evidence the caller compares for the divergent-pair decline (issue 878).
 	 */
-	record Outcome(Set<DType> dtypes, boolean indeterminate) {
+	record Outcome(Set<DType> dtypes, boolean indeterminate, Set<Integer> parameterPartners) {
 	}
 
 	/**
@@ -75,10 +80,11 @@ class EagerCoercionAnalysis {
 	Outcome eagerEffectiveDtypes(CGNode node, int parameterValue) {
 		Set<DType> dtypes = new HashSet<>();
 		boolean indeterminate = false;
+		Set<Integer> parameterPartners = new HashSet<>();
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new Outcome(dtypes, false);
+			return new Outcome(dtypes, false, parameterPartners);
 
 		DefUse defUse = node.getDU();
 
@@ -94,8 +100,14 @@ class EagerCoercionAnalysis {
 			// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
 			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878). The upstream parameter coercion excludes
 			// the same case (wala/ML#828), keeping the two implementations in agreement until #875 collapses this one into a read.
-			if (ir.getSymbolTable().isParameter(other))
+			// A pair that is not a self-combination is recorded for the caller's evidence comparison: a definite dtype divergence
+			// between the two is a definite hazard no single signature (and no bare decorator) survives.
+			if (ir.getSymbolTable().isParameter(other)) {
+				if (other != parameterValue)
+					parameterPartners.add(other);
+
 				continue;
+			}
 
 			Set<TensorType> partnerTypes = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(other, Set.of());
 
@@ -109,6 +121,6 @@ class EagerCoercionAnalysis {
 			}
 		}
 
-		return new Outcome(dtypes, indeterminate);
+		return new Outcome(dtypes, indeterminate, parameterPartners);
 	}
 }

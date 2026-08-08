@@ -10544,26 +10544,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the parameter-partner exclusion of the eager-coercion detector
+	 * Pins the parameter-partner rule of the eager-coercion detector
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878), reducing TensorFlow2.0-Examples' RPN
 	 * {@code compute_loss}: {@code loss} combines its two parameters only with each other, so each one's sole partner operand is the other
-	 * parameter. A partner that is itself a parameter imposes nothing&mdash;each side of such a pair would take its dtype from the other, a
-	 * circular decision with no fixed point whose orientation is arbitrary (the corpus emission swapped orientations between Ariadne
-	 * 0.52.82 and 0.52.83)&mdash;so neither the pin nor the decline fires and the spec carries the argument evidence unchanged. The
-	 * upstream parameter coercion excludes the same case (wala/ML#828).
+	 * parameter. Neither may take its dtype from the other&mdash;a circular decision with no fixed point whose orientation is arbitrary
+	 * (the corpus emission swapped orientations between Ariadne 0.52.82 and 0.52.83), and the upstream parameter coercion excludes the pair
+	 * identically (wala/ML#828)&mdash;and the pair's divergent evidence (a float64 NumPy argument beside a float32 tensor) admits no repair
+	 * at all: either-orientation pin breaks one reading, a spec naming the fed dtypes raises at the subtraction, and a bare decorator
+	 * materializes the NumPy argument at float64 and raises the same way, so the conversion declines with
+	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS}.
 	 */
 	@Test
 	public void testEagerDtypeParameterPartners() throws Exception {
-		this.setInferInputSignatures(true);
-
 		Function loss = getFunction("loss");
-		assertEquals("`loss`'s parameters partner only each other, and a parameter partner imposes nothing, so nothing conflicts.",
-				Boolean.FALSE, loss.getHasConflictingEagerDtypeCoercions());
-		assertEquals("`loss` hybridizes (P1).", P1, loss.getPassingPrecondition());
-		assertTrue("An input signature is inferred from the argument evidence.", loss.getInferredInputSignature().isPresent());
-		assertEquals("The spec carries the fed dtypes; neither parameter takes the other's.",
-				"[tf.TensorSpec(shape=(2,), dtype=tf.float64), tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
-				loss.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals("`loss`'s parameters are combined with each other under divergent evidence.", Boolean.TRUE,
+				loss.getHasConflictingEagerDtypeCoercions());
+		assertNull("`loss` must not pass a precondition; either-orientation pin, the fed-dtype spec, and the bare decorator all raise.",
+				loss.getPassingPrecondition());
+		assertNotNull("`loss` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", loss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
 	}
 
 	/**
