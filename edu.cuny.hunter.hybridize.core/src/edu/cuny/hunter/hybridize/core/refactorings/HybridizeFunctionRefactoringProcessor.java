@@ -429,6 +429,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
+				// Which of the function's nodes are reached only from call sites the tests declare must fail (issue 888). Must precede
+				// tensor-parameter inference, which is where the per-node evidence is read and attributed.
+				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis());
+
 				try {
 					func.inferTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
 				} catch (CantInferTensorParametersException e) {

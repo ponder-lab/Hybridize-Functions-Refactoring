@@ -1066,6 +1066,14 @@ public class Function {
 	private Boolean hasTensorParameterIteration;
 
 	/**
+	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites (a call inside {@code assertRaises} or
+	 * {@code pytest.raises}), whose evidence a specification must not be derived from (#888). Empty when none is, when the question was not
+	 * asked, or when every node is guarded, in which case nothing is excluded: a function called only from expected-failure tests would
+	 * otherwise lose its tensor-parameter classification, which moves preconditions rather than signatures and is out of scope here.
+	 */
+	private Set<CGNode> expectedFailureNodes = Set.of();
+
+	/**
 	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor ({@code KerasTensor}), which {@code tf.function}
 	 * refuses outright, so the decorator raises before anything is traced. {@code null} when it could not be determined (no call-graph
 	 * node, or a caller whose arguments are invisible), in which case the precondition does not block. See
@@ -2060,6 +2068,51 @@ public class Function {
 	 */
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * Computes this {@link Function}'s expected-failure nodes ({@link ExpectedFailureContextAnalysis}), the ones reached only from call
+	 * sites the developer has declared must fail, whose evidence the signature reduction then leaves out (#888). Must run before
+	 * {@link #inferTensorParameters}, which is where the per-node evidence is read. Excluding every node is treated as excluding none, so
+	 * the change stays confined to what is emitted rather than to which precondition passes.
+	 *
+	 * @param callGraph The call graph, walked in the caller direction.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each guard call's member name.
+	 */
+	public void computeExpectedFailureNodes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine expected-failure call sites for " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty())
+			return;
+
+		Set<CGNode> guarded = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis).guardedOnlyNodes(nodes);
+
+		if (guarded.size() == nodes.size()) {
+			LOG.info("Every call site of " + this + " is an expected failure; excluding none.");
+			return;
+		}
+
+		this.expectedFailureNodes = guarded;
+
+		if (!guarded.isEmpty())
+			LOG.info(this + " has " + guarded.size() + " node(s) reached only from expected-failure call sites.");
+	}
+
+	/**
+	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites, whose evidence the signature reduction leaves
+	 * out.
+	 *
+	 * @return The excluded nodes; empty when none is excluded.
+	 */
+	Set<CGNode> getExpectedFailureNodes() {
+		return this.expectedFailureNodes;
 	}
 
 	/**
@@ -3409,7 +3462,21 @@ public class Function {
 				continue;
 			}
 
-			Set<TensorType> contexts = param.getTensorTypes();
+			// The reduction reads the conforming evidence, not everything observed: a call the callee is specified to reject is not
+			// evidence of what it accepts (#888). Classification above deliberately still reads every node.
+			Set<TensorType> contexts = param.getConformingTensorTypes();
+
+			if (contexts.isEmpty() && !param.getTensorTypes().isEmpty()) {
+				// Everything observed for this parameter came from a declared expected failure, so there is nothing a specification may be
+				// derived from. The conforming callers may still support a nested spec; recovering it is tracked separately.
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Every tensor type observed for parameter `" + param.getName() + "` of `" + this + "` comes from a call site the "
+								+ "tests declare must fail, so it describes an input the function rejects rather than one it accepts; "
+								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
+				blocking.put(param, AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY);
+				continue;
+			}
+
 			if (contexts.isEmpty()) {
 				/*
 				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence. The two ways to land here have

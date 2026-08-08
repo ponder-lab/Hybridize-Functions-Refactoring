@@ -157,6 +157,14 @@ public final class Parameter {
 	private Boolean tensorContainer;
 
 	/**
+	 * This parameter's {@link TensorType}s from the call-graph nodes that are <em>not</em> expected-failure contexts
+	 * ({@link Function#getExpectedFailureNodes()}), which is the evidence a specification may be derived from (#888). Equal to
+	 * {@link #getTensorTypes()} whenever no node is excluded, which is the overwhelmingly common case. Populated alongside it by
+	 * {@link #inferTensorTypes}.
+	 */
+	private Set<TensorType> conformingTensorTypes = Set.of();
+
+	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
 	 * {@code TRUE} or {@code FALSE}.
 	 */
@@ -985,6 +993,8 @@ public final class Parameter {
 	 */
 	void inferTensorTypes(TensorTypeAnalysis analysis) {
 		Set<TensorType> result = new HashSet<>();
+		Set<TensorType> conforming = new HashSet<>();
+		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
@@ -995,11 +1005,28 @@ public final class Parameter {
 					if (tensorVariable == null)
 						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
 					result.addAll(tensorVariable.getTypes());
+
+					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
+					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
+					if (!excluded.contains(localPointerKey.getNode()))
+						conforming.addAll(tensorVariable.getTypes());
 				}
 			}
 		}
 
 		this.setTensorTypes(unmodifiableSet(result));
+		this.conformingTensorTypes = unmodifiableSet(conforming);
+	}
+
+	/**
+	 * Returns this parameter's {@link TensorType}s excluding those observed only at expected-failure call sites, the evidence the signature
+	 * reduction is entitled to use (#888). Classification deliberately keeps reading {@link #getTensorTypes()}: whether the parameter is
+	 * tensor-typed is a fact about the program, while what specification may be written for it is a fact about the conforming callers.
+	 *
+	 * @return The conforming tensor types; equal to {@link #getTensorTypes()} when nothing is excluded.
+	 */
+	public Set<TensorType> getConformingTensorTypes() {
+		return this.conformingTensorTypes;
 	}
 
 	private exprType getNameExpr() {
