@@ -10645,6 +10645,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-partner rule of the eager-coercion detector
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878), reducing TensorFlow2.0-Examples' RPN
+	 * {@code compute_loss}: {@code loss} combines its two parameters only with each other, so each one's sole partner operand is the other
+	 * parameter. Neither may take its dtype from the other&mdash;a circular decision with no fixed point whose orientation is arbitrary
+	 * (the corpus emission swapped orientations between Ariadne 0.52.82 and 0.52.83), and the upstream parameter coercion excludes the pair
+	 * identically (wala/ML#828)&mdash;and the pair's divergent evidence (a float64 NumPy argument beside a float32 tensor) admits no repair
+	 * at all: either-orientation pin breaks one reading, a spec naming the fed dtypes raises at the subtraction, and a bare decorator
+	 * materializes the NumPy argument at float64 and raises the same way, so the conversion declines with
+	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS}. The rule is divergence-gated, which the allowing arms pin:
+	 * {@code matched}'s pair agrees on float32 and keeps the ordinary signature, and {@code selfed}'s self-combination has no partner at
+	 * all.
+	 */
+	@Test
+	public void testEagerDtypeParameterPartners() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function loss = findFunction(functions, "loss");
+		assertEquals("`loss`'s parameters are combined with each other under divergent evidence.", Boolean.TRUE,
+				loss.getHasConflictingEagerDtypeCoercions());
+		assertNull("`loss` must not pass a precondition; either-orientation pin, the fed-dtype spec, and the bare decorator all raise.",
+				loss.getPassingPrecondition());
+		assertNotNull("`loss` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", loss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
+
+		Function matched = findFunction(functions, "matched");
+		assertEquals("`matched`'s pair agrees on float32, so nothing conflicts.", Boolean.FALSE,
+				matched.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`matched` hybridizes (P1).", P1, matched.getPassingPrecondition());
+		assertTrue("An input signature is inferred for the agreeing pair.", matched.getInferredInputSignature().isPresent());
+
+		Function selfed = findFunction(functions, "selfed");
+		assertEquals("`selfed`'s only combination is with itself, which has no partner.", Boolean.FALSE,
+				selfed.getHasConflictingEagerDtypeCoercions());
+		assertEquals("`selfed` hybridizes (P1).", P1, selfed.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the stale-variable-read safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822): a
 	 * function that snapshots a model's variable collection before the model's first invocation in its body and feeds the snapshot to an
 	 * optimizer raises under tracing, since the in-trace build engages the variable-lifting re-trace and optimizer slot creation lands on a

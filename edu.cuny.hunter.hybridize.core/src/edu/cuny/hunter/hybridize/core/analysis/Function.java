@@ -2051,8 +2051,9 @@ public class Function {
 	 * Computes the eager-effective dtypes each parameter's direct consumers impose (see {@link EagerCoercionAnalysis}), storing a
 	 * per-parameter pin when the set is a singleton that diverges from the parameter's own dtype evidence, and the conflicting verdict for
 	 * {@link #getHasConflictingEagerDtypeCoercions()} when some parameter's set is plural. An indeterminate collection (a partner operand
-	 * with ⊤ dtype) fires neither, the allowing direction. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861,
-	 * Case 1.
+	 * with ⊤ dtype) fires neither, the allowing direction. A pair of parameters combined directly with each other under single, divergent
+	 * evidence also sets the conflicting verdict (#878): no single signature, and no bare decorator, reproduces eager coercion there. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1.
 	 *
 	 * @param callGraph The call graph.
 	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies partner-operand dtypes.
@@ -2088,9 +2089,11 @@ public class Function {
 			if (parameter.isSelf() || parameter.isKeywordOnly())
 				continue;
 
-			// Merge outcomes across the function's nodes (contexts): dtypes union, indeterminate if any node is.
+			// Merge outcomes across the function's nodes (contexts): dtypes union, indeterminate if any node is, parameter partners
+			// mapped back to their declared parameters by value slot.
 			Set<DType> dtypes = new HashSet<>();
 			boolean indeterminate = false;
+			Set<Parameter> parameterPartners = new HashSet<>();
 
 			for (CGNode node : nodes) {
 				IR ir = node.getIR();
@@ -2107,7 +2110,38 @@ public class Function {
 				EagerCoercionAnalysis.Outcome outcome = analysis.eagerEffectiveDtypes(node, parameterValues[position + 1]);
 				dtypes.addAll(outcome.dtypes());
 				indeterminate |= outcome.indeterminate();
+
+				for (int partnerValue : outcome.parameterPartners())
+					for (int slot = 1; slot < parameterValues.length; slot++)
+						if (parameterValues[slot] == partnerValue && slot - 1 < parameters.size()) {
+							Parameter partner = parameters.get(slot - 1);
+
+							// A keyword-only partner's slot alignment is unproven (the same exclusion the outer loop applies).
+							if (!partner.isSelf() && !partner.isKeywordOnly())
+								parameterPartners.add(partner);
+
+							break;
+						}
 			}
+
+			// A partner that is another parameter imposes nothing (wala/ML#828's exclusion), but a definite evidence divergence
+			// between the pair is a definite hazard (#878): the eager program's survival implies a weak operand whose identity the
+			// pair alone cannot decide, either-orientation pin breaks one reading, a spec naming the fed dtypes raises at the op,
+			// and the bare decorator materializes the weak argument at its own dtype and raises the same way. No transformation
+			// survives, which is this precondition's plural-set meaning. ⊤ or plural evidence on either side stays allowing, the
+			// established polarity.
+			DType own = singleEvidenceDtype(parameter);
+
+			if (own != null)
+				for (Parameter partner : parameterPartners) {
+					DType partnerDtype = singleEvidenceDtype(partner);
+
+					if (partnerDtype != null && partnerDtype != own) {
+						conflicting = true;
+						LOG.info("Parameters " + parameter.getName() + " and " + partner.getName() + " of " + this
+								+ " are combined with each other under divergent evidence (" + own + " vs. " + partnerDtype + ").");
+					}
+				}
 
 			if (indeterminate) {
 				LOG.info("Parameter " + parameter.getName() + " of " + this + " has an indeterminate eager-effective dtype set.");
@@ -2138,6 +2172,22 @@ public class Function {
 
 		this.hasConflictingEagerDtypeCoercions = conflicting;
 		this.eagerEffectiveDtypePins = pins;
+	}
+
+	/**
+	 * The single concrete dtype of a parameter's own evidence, or {@code null} when the evidence is absent, plural, or ⊤.
+	 *
+	 * @param parameter The parameter whose evidence to reduce.
+	 * @return The single concrete evidence dtype, or {@code null} if none.
+	 */
+	private static DType singleEvidenceDtype(Parameter parameter) {
+		Set<DType> dtypes = parameter.getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet());
+
+		if (dtypes.size() != 1)
+			return null;
+
+		DType only = dtypes.iterator().next();
+		return only == null || only == DType.UNKNOWN ? null : only;
 	}
 
 	/**
