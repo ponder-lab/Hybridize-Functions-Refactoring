@@ -11,7 +11,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -97,17 +96,6 @@ class NumpyParameterFlowAnalysis {
 	 * package, so its type cannot be referenced here, but its {@code toString()} is stable.
 	 */
 	private static final String NEGATION_OPERATOR_NAME = "neg";
-
-	/**
-	 * Global-read names identifying the numpy/scipy modules by import alias, mirroring {@code Util}'s TensorFlow module global names.
-	 * Unlike the TensorFlow fallback, whose over-recognition is incompleteness-safe (it only lets an eager function hybridize),
-	 * over-recognition here over-blocks: a non-numpy global named {@code np} would fail the precondition. Accepted safety-first; the
-	 * evaluation measures the cost. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
-	 */
-	private static final Set<String> NUMPY_MODULE_GLOBAL_NAMES = Set.of("global numpy", "global np", "global scipy", "global sp");
-
-	/** Type-name prefixes of the numpy/scipy module objects, for the points-to (precise) branch of the module test. */
-	private static final Set<String> NUMPY_MODULE_TYPE_NAME_PREFIXES = Set.of("Lnumpy", "Lscipy");
 
 	/**
 	 * True iff {@code node} (transitively through user-defined callees) applies a numpy/scipy API to a value flowing from its parameters.
@@ -806,7 +794,7 @@ class NumpyParameterFlowAnalysis {
 
 	/** True iff {@code use}'s attribute chain roots at the numpy/scipy module (points-to preferred, import alias as fallback). */
 	private boolean isNumpyRooted(CGNode node, int use, DefUse defUse) {
-		if (this.isNumpyModule(node, use, defUse))
+		if (Util.isNumpyModule(node, use, defUse, this.pointerAnalysis))
 			return true;
 
 		SSAInstruction def = defUse.getDef(use);
@@ -815,14 +803,5 @@ class NumpyParameterFlowAnalysis {
 			return this.isNumpyRooted(node, read.getObjectRef(), defUse);
 
 		return false;
-	}
-
-	/** True iff {@code use} refers to the numpy/scipy module. Prefers points-to; falls back to the import alias on a global read. */
-	private boolean isNumpyModule(CGNode node, int use, DefUse defUse) {
-		for (String prefix : NUMPY_MODULE_TYPE_NAME_PREFIXES)
-			if (Util.pointsToType(node, use, this.pointerAnalysis, prefix, false))
-				return true;
-
-		return defUse.getDef(use) instanceof AstGlobalRead global && NUMPY_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 }

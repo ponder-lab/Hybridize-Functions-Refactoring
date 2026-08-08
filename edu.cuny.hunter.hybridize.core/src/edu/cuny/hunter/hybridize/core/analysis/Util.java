@@ -522,6 +522,35 @@ public class Util {
 		return defUse.getDef(use) instanceof AstGlobalRead global && TENSORFLOW_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 
+	/**
+	 * Global-read names identifying the numpy/scipy modules by import alias, mirroring {@link #TENSORFLOW_MODULE_GLOBAL_NAMES}. Unlike the
+	 * TensorFlow fallback, whose over-recognition is incompleteness-safe (it only lets an eager function hybridize), over-recognition here
+	 * over-blocks: a non-numpy global named {@code np} would fail a consuming precondition. Accepted safety-first; the evaluation measures
+	 * the cost. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 */
+	static final Set<String> NUMPY_MODULE_GLOBAL_NAMES = Set.of("global numpy", "global np", "global scipy", "global sp");
+
+	/** Type-name prefixes of the numpy/scipy module objects, for the points-to (precise) branch of the module test. */
+	static final Set<String> NUMPY_MODULE_TYPE_NAME_PREFIXES = Set.of("Lnumpy", "Lscipy");
+
+	/**
+	 * True iff {@code use} refers to the numpy/scipy module. Prefers points-to; falls back to the import alias on a global read. Shared by
+	 * the numpy-application precondition and the statically-read-axis walk's NumPy integer sinks (issue 882).
+	 *
+	 * @param node The call-graph node whose IR contains {@code use}.
+	 * @param use The value number to test.
+	 * @param defUse The def-use chains of {@code node}'s IR.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @return True iff {@code use} refers to the numpy/scipy module.
+	 */
+	static boolean isNumpyModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		for (String prefix : NUMPY_MODULE_TYPE_NAME_PREFIXES)
+			if (pointsToType(node, use, pointerAnalysis, prefix, false))
+				return true;
+
+		return defUse.getDef(use) instanceof AstGlobalRead global && NUMPY_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
+	}
+
 	/** The string value of a {@link ConstantKey} in {@code use}'s points-to set, or {@code null} if none. */
 	static String resolveStringConstant(CGNode node, int use, PointerAnalysis<InstanceKey> pointerAnalysis) {
 		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, use);
