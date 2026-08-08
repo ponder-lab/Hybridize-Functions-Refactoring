@@ -129,6 +129,11 @@ class KerasSymbolicArgumentAnalysis {
 	 * rather than being skipped as already-visited by the second operand (which would report an all-symbolic merge as allowing).
 	 */
 	private boolean isKerasSymbolic(CGNode node, int value, DefUse defUse, Map<Integer, Boolean> memo) {
+		// A phi operand is -1 where the variable is undefined on that path, which the def-use chains cannot be asked about. Not symbolic,
+		// which under the universal phi rule is also enough to settle the merge.
+		if (value < 0)
+			return false;
+
 		Boolean cached = memo.get(value);
 
 		if (cached != null)
