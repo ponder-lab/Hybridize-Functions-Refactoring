@@ -2080,6 +2080,11 @@ public class Function {
 	 * @param pointerAnalysis The pointer analysis, used to resolve each guard call's member name.
 	 */
 	public void computeExpectedFailureNodes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		// The exclusion is read in exactly one place, the signature reduction, so with inference off there is nothing for it to affect and
+		// the walk is pure cost. Gating here rather than at the call site keeps that invariant next to the code that relies on it.
+		if (!this.getInferInputSignatures())
+			return;
+
 		Set<CGNode> nodes;
 
 		try {
