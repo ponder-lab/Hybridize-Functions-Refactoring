@@ -1,7 +1,5 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -18,9 +16,9 @@ import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
-import com.ibm.wala.ssa.SSACFG;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.util.collections.Iterator2Iterable;
+import com.ibm.wala.util.graph.dominators.Dominators;
 
 /**
  * The expected-failure analysis behind the negative-test exclusion of
@@ -43,9 +41,10 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * of every sibling analysis.
  * <p>
  * The guard test is dominance rather than lexical nesting, which is what the IR preserves: the {@code with} body sits on the straight-line
- * path after the {@code assertRaises(...)} invoke, so the invoke's block dominates it. The {@code assertRaises(Exception, f, x)} call-form
- * is deliberately out of scope: there the callee is passed as a value and applied inside {@code unittest}, which is unmodeled, so no
- * call-graph edge carries evidence from it in the first place.
+ * path after the {@code assertRaises(...)} invoke, so the invoke's block dominates it. A cheaper "the guard appears earlier in the method"
+ * proxy would be wrong, since it also covers an ordinary call following a {@code with} block, which would discard conforming evidence. The
+ * {@code assertRaises(Exception, f, x)} call-form is deliberately out of scope: there the callee is passed as a value and applied inside
+ * {@code unittest}, which is unmodeled, so no call-graph edge carries evidence from it in the first place.
  */
 class ExpectedFailureContextAnalysis {
 
@@ -138,6 +137,8 @@ class ExpectedFailureContextAnalysis {
 		if (guards.isEmpty())
 			return false;
 
+		Dominators<ISSABasicBlock> dominators = Dominators.make(ir.getControlFlowGraph(), ir.getControlFlowGraph().entry());
+
 		for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site.reference())) {
 			ISSABasicBlock block = ir.getBasicBlockForInstruction(instruction);
 
@@ -147,7 +148,7 @@ class ExpectedFailureContextAnalysis {
 			boolean dominated = false;
 
 			for (ISSABasicBlock guard : guards)
-				if (!guard.equals(block) && dominates(ir.getControlFlowGraph(), guard, block)) {
+				if (!guard.equals(block) && dominators.isDominatedBy(block, guard)) {
 					dominated = true;
 					break;
 				}
@@ -156,36 +157,6 @@ class ExpectedFailureContextAnalysis {
 				return false;
 		}
 
-		return true;
-	}
-
-	/**
-	 * True iff {@code guard} dominates {@code block}: every path from the entry to {@code block} passes through {@code guard}. Computed as
-	 * unreachability from the entry with {@code guard} removed, which is the definition read directly, rather than through WALA's
-	 * {@code Dominators}, whose package the bundle does not export.
-	 */
-	private static boolean dominates(SSACFG cfg, ISSABasicBlock guard, ISSABasicBlock block) {
-		Set<ISSABasicBlock> reached = new HashSet<>();
-		Deque<ISSABasicBlock> worklist = new ArrayDeque<>();
-
-		reached.add(guard);
-		worklist.add(cfg.entry());
-		reached.add(cfg.entry());
-
-		while (!worklist.isEmpty()) {
-			ISSABasicBlock current = worklist.pop();
-
-			if (current.equals(block))
-				// Reached without going through the guard, so the guard does not dominate it.
-				return false;
-
-			for (ISSABasicBlock successor : Iterator2Iterable.make(cfg.getSuccNodes(current)))
-				if (reached.add(successor))
-					worklist.push(successor);
-		}
-
-		// The entry itself being the guard leaves `block` unreached, which is dominance only if they differ; the caller has excluded
-		// equality.
 		return true;
 	}
 
