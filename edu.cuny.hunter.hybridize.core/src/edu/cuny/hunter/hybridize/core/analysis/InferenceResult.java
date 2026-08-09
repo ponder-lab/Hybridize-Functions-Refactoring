@@ -74,6 +74,18 @@ public sealed interface InferenceResult {
 		HETEROGENEOUS_ARITY,
 
 		/**
+		 * Every {@code TensorType} observed for a parameter comes from a call site the developer has declared must fail: a call inside
+		 * {@code with self.assertRaises(...)} or {@code pytest.raises(...)}, which {@code unittest} and pytest enforce by failing the test
+		 * if the call succeeds. Such a site is an executable assertion that the callee rejects that argument, so a specification derived
+		 * from it would admit exactly the input the body refuses while rejecting every conforming caller. The conforming call sites carry
+		 * no {@code TensorType} of their own here, typically because what they pass is a container rather than a tensor, so once the
+		 * declared failures are set aside nothing is left to write. The function still converts with a bare decorator; only the
+		 * specification is withheld. Recovering the nested spec the conforming sites do support is a further step, tracked separately. See
+		 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888.
+		 */
+		EXPECTED_FAILURE_EVIDENCE_ONLY,
+
+		/**
 		 * A parameter is classified as tensor-typed by its type hint alone (Phase 1), with no call-site evidence. A bare
 		 * {@code x: tf.Tensor} annotation carries no dtype, and {@code tf.function(input_signature=...)} admits no dtype-⊤ (#494), so no
 		 * valid spec exists to synthesize from this signal. Unlike {@link #TENSOR_CONTAINER_UNSUPPORTED} the evidence is genuinely absent
