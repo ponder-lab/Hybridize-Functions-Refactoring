@@ -10531,6 +10531,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the dict-valued tensor parameter, the multi-input Keras shape and the form deep_recommenders' estimator rankers take as
+	 * {@code call(self, features)}. A dict of tensors classifies as a container, the nested reduction models only positionally-indexed
+	 * sequences, so the form is reported unsupported and the function hybridizes bare at P1 with no specification. That is the desired
+	 * answer rather than a defect being recorded: a dict is not one {@code TensorSpec}, and TensorFlow enforces the declared structure.
+	 * <p>
+	 * The population had no fixture at all until now, which is why widening the container gate to every container in
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/pull/890 could leave a green suite. Worth being exact about what that
+	 * change would have moved: a dict-only parameter like this one already reaches the container check, since the parameter itself carries
+	 * no tensor type; only a dict arriving <em>beside</em> a tensor-typed value would have been rerouted. The pin covers the base case so
+	 * any future reduction change has to move something visible here.
+	 */
+	@Test
+	public void testInputSignatureDictParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function score = findFunction(this.getFunctions(), "score");
+		Parameter features = score.getParameters().get(0);
+
+		assertTrue("A dict of tensors classifies as tensor-like.", features.isTensor());
+		assertEquals("It classifies through the container check.", TRUE, features.isTensorContainer());
+		assertTrue("The dict itself carries no tensor type, which is why the container check runs.", features.getTensorTypes().isEmpty());
+		assertNull("The nested reduction models sequences, not dicts, so no element structure is surfaced.",
+				features.getContainerElementTypes());
+		assertEquals("No specification is written for a dict-valued parameter.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), score.getInferredInputSignatureAbsenceReason());
+		assertEquals("`score` still converts (P1) with a bare decorator.", P1, score.getPassingPrecondition());
+		assertEquals("Conversion is the transformation; only the specification is absent.", Set.of(Transformation.CONVERT_TO_HYBRID),
+				score.getTransformations());
+	}
+
+	/**
+	 * Pins the reconfigure population, reducing TensorFlow2.0-Examples' {@code CNN.py} {@code train_step}: already hybrid with a bare
+	 * {@code @tf.function}, two tensor parameters, no Python literal, and the variable collection read after the forward pass (the benign
+	 * ordering of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822). Adding the inferred signature is its own
+	 * transformation here, {@code RECONFIGURE} at P4, which is what makes this population different from the conversion path: a withheld
+	 * signature costs the transformation rather than only the specification, and the function falls to the benign already-optimal verdict.
+	 * <p>
+	 * That is precisely what https://github.com/ponder-lab/Hybridize-Functions-Refactoring/pull/890 could have done silently, since nothing
+	 * pinned a live P4 whose parameter might be rerouted. The pin closes that blind spot.
+	 */
+	@Test
+	public void testReconfigureVendoredTrainStep() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function trainStep = findFunction(this.getFunctions(), "train_step");
+
+		assertTrue("`train_step` carries a bare `@tf.function`.", trainStep.isHybrid());
+		assertTrue("Both parameters are tensors.", trainStep.getHasTensorParameter());
+		assertFalse("Neither is a Python literal.", trainStep.getHasPrimitiveParameter());
+		assertEquals("The inferred signature covers both parameters, dtypes included.",
+				"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int32)]",
+				trainStep.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Adding it to the existing bare decorator is the reconfigure transformation.", Set.of(Transformation.RECONFIGURE),
+				trainStep.getTransformations());
+		assertEquals("Which passes P4, not P1.", PreconditionSuccess.P4, trainStep.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading
