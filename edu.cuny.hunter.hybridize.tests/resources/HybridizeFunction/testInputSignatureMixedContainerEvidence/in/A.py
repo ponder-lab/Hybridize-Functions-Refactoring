@@ -9,6 +9,10 @@ import tensorflow as tf
 # derived from it. The guarded call is legal Python that runs, since `assertRaises` both
 # expects and swallows the error, which keeps the file executable while still declaring
 # that the call fails. `tuples_only` receives tuples alone and keeps its nested spec.
+# `use_pair` is the residue the recovery does not reach: its guarded site passes a tensor, so
+# the parameter is tensor-typed, while its conforming site passes an object holding tensors,
+# which is no container of them, so nothing is left for a specification to rest on. Its
+# conforming call precedes the first guard deliberately; see the test's comment.
 
 case = unittest.TestCase()
 
@@ -21,9 +25,25 @@ def tuples_only(inputs):
     return tf.matmul(inputs[0], inputs[1])
 
 
+class Pair:
+    def __init__(self):
+        self.left = tf.ones((2, 3))
+        self.right = tf.ones((3, 2))
+
+
+def use_pair(pair):
+    return tf.matmul(pair.left, pair.right)
+
+
+assert use_pair(Pair()).shape == (2, 2)
+
 assert cin((tf.ones((2, 3, 5)), tf.ones((2, 5, 3)))).shape == (2, 3, 3)
 
 with case.assertRaises(tf.errors.InvalidArgumentError):
     cin(tf.ones((2, 3, 5)))
 
 assert tuples_only((tf.ones((2, 3, 5)), tf.ones((2, 5, 3)))).shape == (2, 3, 3)
+
+
+with case.assertRaises(AttributeError):
+    use_pair(tf.ones((2, 3)))

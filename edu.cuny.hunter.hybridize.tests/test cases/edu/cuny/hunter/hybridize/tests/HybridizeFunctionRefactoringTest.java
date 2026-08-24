@@ -10473,6 +10473,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <p>
 	 * {@code tuples_only} receives tuples alone, so nothing is excluded anywhere and its spec is the control: identical output, reached
 	 * without the exclusion, which is what makes the recovered spec the conforming callers' own rather than an artifact of the filter.
+	 * <p>
+	 * {@code use_pair} is the residue the recovery does not reach, and the arm that keeps {@code EXPECTED_FAILURE_EVIDENCE_ONLY} pinned now
+	 * that {@code cin} has stopped reporting it. Its guarded site passes a tensor, so the parameter is tensor-typed; its conforming site
+	 * passes an object holding two tensors, which is no container of them, so the container question is asked, answered no, and the
+	 * withholding stands. An object rather than a list or a tuple of primitives, because either of those classifies the parameter as
+	 * primitive and the function then declines before inference is attempted at all.
+	 * <p>
+	 * Its conforming call is placed <em>before</em> the first guarded block deliberately. A guard dominates every later call in the same
+	 * frame, its own or not, so a conforming call written after one is read as guarded as well. That is visible here in
+	 * {@code tuples_only}, which is guarded nowhere yet is reported as guarded everywhere, keeping its evidence only through the rule that
+	 * excluding every node counts as excluding none. Moving this arm's conforming call below the block empties it silently rather than
+	 * failing it.
+	 * <p>
+	 * Every arm executes on the pinned TF 2.9.3: the conforming call multiplies the object's two tensors, while the guarded one passes a
+	 * tensor, whose missing attribute raises the {@code AttributeError} the guard both expects and swallows.
 	 */
 	@Test
 	public void testInputSignatureMixedContainerEvidence() throws Exception {
@@ -10494,6 +10509,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				cin.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertTrue("Nothing is withheld once the nested spec is emitted.", cin.getInferredInputSignatureAbsenceReason().isEmpty());
 		assertEquals("`cin` converts (P1).", P1, cin.getPassingPrecondition());
+
+		Function usePair = findFunction(functions, "use_pair");
+		Parameter pair = usePair.getParameters().get(0);
+		assertFalse("The guarded site passes a tensor, so `pair` is tensor-typed.", pair.getTensorTypes().isEmpty());
+		assertTrue("Its conforming site passes an object, so nothing conforming is observed.", pair.getConformingTensorTypes().isEmpty());
+		assertEquals("An object holding tensors is no container of them, which is what leaves the withholding standing.", FALSE,
+				pair.isTensorContainer());
+		assertEquals("The residue the recovery does not reach still withholds.",
+				Optional.of(InferenceResult.AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY),
+				usePair.getInferredInputSignatureAbsenceReason());
+		assertEquals("`use_pair` still converts (P1); only the specification is withheld.", P1, usePair.getPassingPrecondition());
 
 		Function tuplesOnly = findFunction(functions, "tuples_only");
 		assertEquals("`tuples_only` receives tuples alone, so nothing is excluded.", tuplesOnly.getParameters().get(0).getTensorTypes(),
