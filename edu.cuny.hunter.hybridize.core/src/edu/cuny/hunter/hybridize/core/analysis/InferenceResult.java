@@ -77,10 +77,10 @@ public sealed interface InferenceResult {
 		 * Every {@code TensorType} observed for a parameter comes from a call site the developer has declared must fail: a call inside
 		 * {@code with self.assertRaises(...)} or {@code pytest.raises(...)}, which {@code unittest} and pytest enforce by failing the test
 		 * if the call succeeds. Such a site is an executable assertion that the callee rejects that argument, so a specification derived
-		 * from it would admit exactly the input the body refuses while rejecting every conforming caller. The conforming call sites carry
-		 * no {@code TensorType} of their own here, typically because what they pass is a container rather than a tensor, so once the
-		 * declared failures are set aside nothing is left to write. The function still converts with a bare decorator; only the
-		 * specification is withheld. Recovering the nested spec the conforming sites do support is a further step, tracked separately. See
+		 * from it would admit exactly the input the body refuses while rejecting every conforming caller. Reported only once the container
+		 * route has come up empty as well: the conforming callers typically pass a container rather than a tensor, and where they do, the
+		 * nested spec they support is emitted instead of nothing (#888), so this constant now names the residue where they pass no
+		 * container either. The function still converts with a bare decorator; only the specification is withheld. See
 		 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888.
 		 */
 		EXPECTED_FAILURE_EVIDENCE_ONLY,

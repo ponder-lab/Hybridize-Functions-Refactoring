@@ -3306,15 +3306,17 @@ public class Function {
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
 	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
 	 * flow over the parameter.
-	 * <li>Tensor-classified by type hint or container detection but no Phase 2 entry ({@code isTensor() && getTensorTypes().isEmpty()}):
-	 * the two ways to land here now diverge (#781). A container ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types
-	 * were surfaced ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
+	 * <li>Tensor-classified by type hint or container detection but no conforming Phase 2 entry
+	 * ({@code isTensor() && getConformingTensorTypes().isEmpty()}, which a parameter whose every observed type came from an
+	 * expected-failure call site also reaches): the two ways to land here now diverge (#781). A container
+	 * ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types were surfaced
+	 * ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
 	 * {@link InputSignature.Sequence} entry; a container of an unmodeled form blocks with
 	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, and disagreeing sequence lengths block with
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
-	 * <li>Phase-2 hit ({@code isTensor() && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the reduced
-	 * spec to the signature.
+	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
+	 * add the reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -3471,23 +3473,19 @@ public class Function {
 			// evidence of what it accepts (#888). Classification above deliberately still reads every node.
 			Set<TensorType> contexts = param.getConformingTensorTypes();
 
-			if (contexts.isEmpty() && !param.getTensorTypes().isEmpty()) {
-				// Everything observed for this parameter came from a declared expected failure, so there is nothing a specification may be
-				// derived from. The conforming callers may still support a nested spec; recovering it is tracked separately.
-				this.addInfo(INPUT_SIGNATURE_INFERENCE,
-						"Every tensor type observed for parameter `" + param.getName() + "` of `" + this + "` comes from a call site the "
-								+ "tests declare must fail, so it describes an input the function rejects rather than one it accepts; "
-								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
-				blocking.put(param, AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY);
-				continue;
-			}
+			// Everything observed for this parameter came from a declared expected failure, so nothing of its own is left to reduce. What
+			// the conforming callers pass may still be a container, whose element structure classification surfaced for exactly this case,
+			// so the container branch below runs first and only its failure reports the exclusion (#888).
+			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && !param.getTensorTypes().isEmpty();
 
 			if (contexts.isEmpty()) {
 				/*
-				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence. The two ways to land here have
-				 * opposite evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
-				 * (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before Phase 3 runs, leaving it null. Phase 3
-				 * cannot leave it FALSE here: a FALSE container check falls through to `tensor = FALSE`, i.e. category (a).
+				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence. The ways to land
+				 * here have different evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase
+				 * 3 (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before the container question is asked,
+				 * leaving it null. FALSE reaches here only on the expected-failure route (#888), where a Phase 2 hit whose every type was
+				 * excluded asked the container question and got no for an answer; on the Phase 3 route a FALSE verdict falls through to
+				 * `tensor = FALSE`, i.e. category (a).
 				 */
 				AbsenceReason reason;
 
@@ -3535,6 +3533,15 @@ public class Function {
 										+ "form not currently reduced to an input signature; the signature is dropped.");
 						reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
 					}
+				} else if (expectedFailureEvidenceOnly) {
+					// Tensor-typed, but only by calls the tests declare must fail, and the conforming callers passed no container either.
+					// Nothing a specification may be derived from is left, so the function is hybridized with a bare decorator.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Every tensor type observed for parameter `" + param.getName() + "` of `" + this + "` comes from a call site "
+									+ "the tests declare must fail, so it describes an input the function rejects rather than one it "
+									+ "accepts, and the conforming call sites carry no container evidence in its place; input-signature "
+									+ "inference is dropped and the function is hybridized with a bare decorator.");
+					reason = AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY;
 				} else {
 					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
 					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
