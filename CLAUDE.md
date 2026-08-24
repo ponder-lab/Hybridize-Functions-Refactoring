@@ -10,7 +10,7 @@ The tool is **not compatible with stock PyDev**: it depends on the ponder-lab fo
 
 ## Build / test commands
 
-The reactor is a Tycho multi-module Maven build. Requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports 3.9.9 but trips a `TargetPlatformArtifactResolver` binding error on 3.9.9 — see eclipse-tycho/tycho#5384; the project's `maven-enforcer-plugin` rule pins `[3.9.11,)`). `.mvn/extensions.xml` registers `tycho-build` as a Maven core extension (required by Tycho 4+).
+The reactor is a Tycho multi-module Maven build. Requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.4 nominally supports 3.9.9 but trips a `TargetPlatformArtifactResolver` binding error on 3.9.9 — see eclipse-tycho/tycho#5384; the project's `maven-enforcer-plugin` rule pins `[3.9.11,)`). `.mvn/extensions.xml` registers `tycho-build` as a Maven core extension (required by Tycho 4+).
 
 The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11 so contributors don't need to upgrade their system Maven. **Use `./mvnw` rather than system `mvn`** — system Maven is often 3.9.9 and will fail on the Tycho binding error.
 
@@ -37,7 +37,7 @@ Python formatting in CI uses `black --fast --check --extend-exclude \/out .` (`r
 
 Tests live in `edu.cuny.hunter.hybridize.tests/` under a non-standard Eclipse-PDE source folder named **`test cases/`** (note the space). The bulk is `HybridizeFunctionRefactoringTest` (~10k lines, hundreds of `testXxx` methods, each backed by a fixture directory); `InputSignatureTest`, `InferSpecTest`, and `HybridizeFunctionRefactoringProcessorTest` are smaller unit classes that exercise their targets directly, without a fixture or a call graph. `FunctionUnderTest` is a helper, not a test class.
 
-Method-level selection does not work: the module runs under `<providerHint>junit4</providerHint>`, whose provider honors `-Dtest=<Class>` but silently drops a `#method` suffix, running the whole class. Note that `-Dtest=<Class>` also *excludes the other test classes*, so a filtered run's total is not the suite total. Migrating to the junit-platform provider is [#749](https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/749).
+Method-level selection works: the module runs under `<providerHint>junit6</providerHint>`, and Tycho 5.0.4 forwards the method part of `-Dtest` to the provider ([eclipse-tycho/tycho#6217](https://github.com/eclipse-tycho/tycho/issues/6217)), so `-Dtest='HybridizeFunctionRefactoringTest#testComputeParameters'` runs that one method. Wildcards (`#testSuppliedInputSignature*`) and `+`-separated method lists work too. Note that `-Dtest=<Class>` also *excludes the other test classes*, so a filtered run's total is not the suite total.
 
 CI requires our PyDev fork to be cloned at `$HOME/git/Pydev` (branch `pydev_9_3`) before running tests — `TestDependent` resolves Python lib paths relative to that checkout. Reproduce locally:
 

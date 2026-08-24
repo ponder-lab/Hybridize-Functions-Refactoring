@@ -17,7 +17,7 @@ The project includes a Maven configuration file using the Tycho plug-in, which i
 
 ### JDK and Maven versions
 
-This project requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.2 nominally supports Maven 3.9.9 but in practice trips a `TargetPlatformArtifactResolver` binding error on 3.9.9; see [eclipse-tycho/tycho#5384](https://github.com/eclipse-tycho/tycho/issues/5384)). The `maven-enforcer-plugin` rule pins Maven `[3.9.11,)`.
+This project requires **Java 25** (`<maven.compiler.source/target>` and every bundle's `Bundle-RequiredExecutionEnvironment` are `JavaSE-25`) and **Maven 3.9.11+** (Tycho 5.0.4 nominally supports Maven 3.9.9 but in practice trips a `TargetPlatformArtifactResolver` binding error on 3.9.9; see [eclipse-tycho/tycho#5384](https://github.com/eclipse-tycho/tycho/issues/5384)). The `maven-enforcer-plugin` rule pins Maven `[3.9.11,)`.
 
 The repo ships **Maven Wrapper** (`./mvnw`) pinned to Maven 3.9.11. Use `./mvnw` rather than system `mvn`; most system Maven installations are 3.9.9 and will fail on the Tycho binding error described above.
 
