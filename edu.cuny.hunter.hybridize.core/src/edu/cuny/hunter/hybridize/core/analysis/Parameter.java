@@ -149,10 +149,11 @@ public final class Parameter {
 
 	/**
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
-	 * by {@link #classifyAsTensor} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
-	 * (type hints) and the Phase 2 (Ariadne) cache is empty. Earlier-returning phases (self, type-hint hit, non-empty Phase 2 result, or
-	 * empty call-graph nodes) leave this field at its default. {@code null} therefore means either classification has not run or it ran but
-	 * did not reach Phase 3.
+	 * by {@link #classifyAsTensor} when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
+	 * (type hints) and the Phase 2 (Ariadne) cache is empty, and also on a Phase 2 hit whose every type came from an expected-failure call
+	 * site, where the reduction has nothing of the parameter's own to read and the conforming callers may still pass a container (#888).
+	 * The remaining earlier-returning phases (self, type-hint hit, or empty call-graph nodes) leave this field at its default. {@code null}
+	 * therefore means either classification has not run or it ran without asking the container question.
 	 */
 	private Boolean tensorContainer;
 
@@ -333,15 +334,15 @@ public final class Parameter {
 
 	/**
 	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
-	 * tensors). Populated only when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
-	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
-	 * classification has not run or did not reach Phase 3. Distinct from {@link #getTensorTypes()}: a tensor container is recognized as
-	 * tensor-typed by Phase 3's container detection, but Ariadne does not emit a single {@link TensorType} for the container itself.
-	 * Consumers that distinguish "container of tensors" from "direct tensor" should use this method.
+	 * tensors). Populated when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes, and on a Phase 2 hit whose
+	 * evidence is entirely from expected-failure call sites (#888); the remaining earlier-returning phases (self, type-hint hit, or empty
+	 * call-graph nodes) leave it at the default. Returns {@code null} when classification has not run or did not ask the question. Distinct
+	 * from {@link #getTensorTypes()}: a tensor container is recognized by the container detection, but Ariadne does not emit a single
+	 * {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from "direct tensor" should use this
+	 * method.
 	 *
-	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not classify
-	 *         the parameter as a tensor container, or {@code null} if Phase 3 did not run (classification not started, or returned
-	 *         earlier).
+	 * @return {@code TRUE} if the container check classified this parameter as a tensor container, {@code FALSE} if it ran and did not, or
+	 *         {@code null} if the question was not asked (classification not started, or returned earlier).
 	 */
 	public Boolean isTensorContainer() {
 		return this.tensorContainer;
@@ -1029,6 +1030,25 @@ public final class Parameter {
 		return this.conformingTensorTypes;
 	}
 
+	/**
+	 * The given nodes less the owning {@link Function}'s expected-failure contexts, i.e. the nodes whose evidence a specification may be
+	 * derived from (#888). The node-level filter {@link #inferTensorTypes} applies to the tensor types, applied to the container evidence
+	 * for the same reason: what a call the tests declare must fail passes describes an input the function rejects.
+	 *
+	 * @param nodes The owning function's call-graph nodes.
+	 * @return The conforming subset; the argument itself whenever nothing is excluded, which is the overwhelmingly common case.
+	 */
+	private Set<CGNode> conformingNodes(Set<CGNode> nodes) {
+		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
+
+		if (excluded.isEmpty())
+			return nodes;
+
+		Set<CGNode> conforming = new LinkedHashSet<>(nodes);
+		conforming.removeAll(excluded);
+		return conforming;
+	}
+
 	private exprType getNameExpr() {
 		return (this.keywordOnly ? this.arguments.kwonlyargs : this.arguments.args)[this.index];
 	}
@@ -1148,6 +1168,19 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+
+					if (this.getConformingTensorTypes().isEmpty()) {
+						// Every type observed here came from a call site the tests declare must fail, so the reduction has nothing of the
+						// parameter's own to read (#892). What the conforming callers pass may still be a container, and its element
+						// structure is the specification they do support, so ask Phase 3's question rather than leaving the reduction to
+						// choose between a spec derived from a rejected call and no spec at all (#888). The verdict below is TRUE either
+						// way, so this asks a further question about an already tensor-typed parameter and moves no precondition.
+						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+
+						if (this.tensorContainer)
+							this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
+					}
+
 					subMonitor.worked(2);
 					return this.tensor = TRUE;
 				}
@@ -1159,8 +1192,10 @@ public final class Parameter {
 				this.tensorContainer = isContainer;
 				if (isContainer) {
 					// Surface the elements' types for the nested-spec reduction (#781); the boolean verdict stands regardless of whether
-					// the container form is one the reduction models.
-					this.extractContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					// the container form is one the reduction models. The extraction reads the conforming nodes alone, on the same ground
+					// the tensor types do: a value passed by a call the tests declare must fail describes what the function rejects, so
+					// letting it stand beside the containers would report the form unsupported on the strength of a rejected call (#888).
+					this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");

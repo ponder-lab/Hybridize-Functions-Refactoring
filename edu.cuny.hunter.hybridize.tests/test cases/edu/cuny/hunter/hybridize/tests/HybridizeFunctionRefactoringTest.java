@@ -10464,13 +10464,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code TensorSpec} reduced from that one site was emitted, admitting none of the conforming callers.
 	 * <p>
 	 * The evidence is per-call-graph-node, which is the attribution the exclusion needs: {@code getTensorTypes()} keeps everything
-	 * observed, so classification is untouched, while {@code getConformingTensorTypes()} drops the guarded node and comes up empty, and the
-	 * reduction withholds the signature with {@code EXPECTED_FAILURE_EVIDENCE_ONLY}. The function still converts at P1 with a bare
-	 * decorator, since hybridizing it is behavior-preserving whether or not a specification can be written. Recovering the nested spec the
-	 * conforming site does support is deliberately not attempted here.
+	 * observed, so classification is untouched, while {@code getConformingTensorTypes()} drops the guarded node and comes up empty. With
+	 * nothing of the parameter's own left to reduce, the container question is asked of the conforming node alone, and what that node
+	 * passes is the tuple, so {@code cin} now emits the same two-element nested spec as {@code tuples_only} rather than withholding: the
+	 * specification the conforming caller supports, recovered instead of lost with the rejected call. Both the boolean container verdict
+	 * and the element extraction have to leave the guarded node out for this to hold, since the bare tensor it passes is neither a sequence
+	 * nor element evidence, and beside the tuple it would report the form unsupported.
 	 * <p>
-	 * {@code tuples_only} receives tuples alone and keeps its two-element nested spec, which localizes the withholding to the guarded
-	 * evidence rather than to tuple parameters in general.
+	 * {@code tuples_only} receives tuples alone, so nothing is excluded anywhere and its spec is the control: identical output, reached
+	 * without the exclusion, which is what makes the recovered spec the conforming callers' own rather than an artifact of the filter.
 	 */
 	@Test
 	public void testInputSignatureMixedContainerEvidence() throws Exception {
@@ -10481,16 +10483,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function cin = findFunction(functions, "cin");
 		Parameter inputs = cin.getParameters().get(0);
 		assertFalse("Ariadne types `inputs` from the guarded site, so classification still sees it.", inputs.getTensorTypes().isEmpty());
-		assertTrue("Setting the declared failure aside leaves no evidence a specification may be derived from.",
+		assertTrue("Setting the declared failure aside leaves nothing of the parameter's own to reduce.",
 				inputs.getConformingTensorTypes().isEmpty());
-		assertEquals("No signature is written from a call the tests declare must fail.",
-				Optional.of(InferenceResult.AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY), cin.getInferredInputSignatureAbsenceReason());
-		assertEquals("`cin` still converts (P1); only the specification is withheld.", P1, cin.getPassingPrecondition());
+		assertEquals("With its own evidence excluded, the container question is asked and the conforming site answers it.", TRUE,
+				inputs.isTensorContainer());
+		assertEquals("The guarded node's bare tensor is left out of the extraction, so the tuple's structure survives it.", 2,
+				inputs.getContainerElementTypes().size());
+		assertEquals("The specification the conforming caller supports is recovered rather than lost with the rejected call.",
+				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
+				cin.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertTrue("Nothing is withheld once the nested spec is emitted.", cin.getInferredInputSignatureAbsenceReason().isEmpty());
+		assertEquals("`cin` converts (P1).", P1, cin.getPassingPrecondition());
 
 		Function tuplesOnly = findFunction(functions, "tuples_only");
 		assertEquals("`tuples_only` receives tuples alone, so nothing is excluded.", tuplesOnly.getParameters().get(0).getTensorTypes(),
 				tuplesOnly.getParameters().get(0).getConformingTensorTypes());
-		assertEquals("Its two-element nested spec is untouched.",
+		assertEquals("Reached without any exclusion, its spec is the control `cin` now matches.",
 				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
 				tuplesOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`tuples_only` hybridizes (P1).", P1, tuplesOnly.getPassingPrecondition());
