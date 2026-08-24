@@ -40,9 +40,14 @@ import com.ibm.wala.util.graph.dominators.Dominators;
  * {@code call} override would never see its test method. A node with no resolvable call site is not excluded, the allow-on-unknown polarity
  * of every sibling analysis.
  * <p>
- * The guard test is dominance rather than lexical nesting, which is what the IR preserves: the {@code with} body sits on the straight-line
- * path after the {@code assertRaises(...)} invoke, so the invoke's block dominates it. A cheaper "the guard appears earlier in the method"
- * proxy would be wrong, since it also covers an ordinary call following a {@code with} block, which would discard conforming evidence. The
+ * The guard test delimits the {@code with} body rather than testing dominance by the guard alone. Dominance alone was wrong in the
+ * permissive direction: the body sits on the straight-line path after the {@code assertRaises(...)} invoke, but so does everything
+ * following the block, so an ordinary call written after a guard was read as guarded and its conforming evidence discarded (#898). What
+ * makes the region expressible is that the front end materializes it: {@code with} lowers to {@code __begin__} and {@code __end__} invokes
+ * on the context manager the guard call produced, with the body between them and a second {@code __end__} on the exception path. A call is
+ * therefore inside the body iff its block is dominated by that manager's {@code __begin__} and is <em>not</em> dominated by any of its
+ * {@code __end__}s, which the normal-completion one supplies for everything after the block. A guard whose region cannot be recovered
+ * guards nothing, keeping the allow-on-unknown polarity: failing to recognize a shape leaves evidence in rather than discarding it. The
  * {@code assertRaises(Exception, f, x)} call-form is deliberately out of scope: there the callee is passed as a value and applied inside
  * {@code unittest}, which is unmodeled, so no call-graph edge carries evidence from it in the first place.
  */
@@ -56,6 +61,12 @@ class ExpectedFailureContextAnalysis {
 
 	/** The pytest spelling. Matched only on a {@code pytest}-rooted receiver, since {@code raises} alone is not distinctive. */
 	private static final String PYTEST_GUARD_MEMBER_NAME = "raises";
+
+	/** The member the front end invokes on a context manager where a {@code with} body opens. */
+	private static final String REGION_BEGIN_MEMBER_NAME = "__begin__";
+
+	/** The member it invokes where the body closes, once on normal completion and once on the exception path. */
+	private static final String REGION_END_MEMBER_NAME = "__end__";
 
 	/** Global-read names identifying the pytest module by import alias, mirroring {@link Util#NUMPY_MODULE_GLOBAL_NAMES}. */
 	private static final Set<String> PYTEST_MODULE_GLOBAL_NAMES = Set.of("global pytest", "global py");
@@ -125,16 +136,16 @@ class ExpectedFailureContextAnalysis {
 		return ret;
 	}
 
-	/** True iff every invoke at {@code site} is dominated by an expected-failure guard in the same frame. */
+	/** True iff every invoke at {@code site} lies inside the body of an expected-failure guard in the same frame. */
 	private boolean isGuarded(Site site) {
 		IR ir = site.caller().getIR();
 
 		if (ir == null)
 			return false;
 
-		Set<ISSABasicBlock> guards = this.guardBlocks(site.caller(), ir);
+		Set<GuardRegion> regions = this.guardRegions(site.caller(), ir);
 
-		if (guards.isEmpty())
+		if (regions.isEmpty())
 			return false;
 
 		Dominators<ISSABasicBlock> dominators = Dominators.make(ir.getControlFlowGraph(), ir.getControlFlowGraph().entry());
@@ -145,29 +156,89 @@ class ExpectedFailureContextAnalysis {
 			if (block == null)
 				return false;
 
-			boolean dominated = false;
+			boolean inside = false;
 
-			for (ISSABasicBlock guard : guards)
-				if (!guard.equals(block) && dominators.isDominatedBy(block, guard)) {
-					dominated = true;
+			for (GuardRegion region : regions)
+				if (region.contains(block, dominators)) {
+					inside = true;
 					break;
 				}
 
-			if (!dominated)
+			if (!inside)
 				return false;
 		}
 
 		return true;
 	}
 
-	/** The blocks containing an expected-failure guard invocation in {@code ir}. */
-	private Set<ISSABasicBlock> guardBlocks(CGNode node, IR ir) {
-		Set<ISSABasicBlock> ret = new HashSet<>();
+	/**
+	 * One guard's {@code with} body, as the blocks that open and close it. A block lies inside the body when the opening dominates it and
+	 * no closing does; the closing on normal completion is what puts everything after the block outside (#898).
+	 *
+	 * @param begins The blocks invoking {@code __begin__} on the guard's context manager.
+	 * @param ends The blocks invoking {@code __end__} on it, on normal completion and on the exception path.
+	 */
+	private record GuardRegion(Set<ISSABasicBlock> begins, Set<ISSABasicBlock> ends) {
+
+		/** True iff {@code block} lies within this body. */
+		boolean contains(ISSABasicBlock block, Dominators<ISSABasicBlock> dominators) {
+			boolean opened = false;
+
+			for (ISSABasicBlock begin : this.begins())
+				if (!begin.equals(block) && dominators.isDominatedBy(block, begin)) {
+					opened = true;
+					break;
+				}
+
+			if (!opened)
+				return false;
+
+			for (ISSABasicBlock end : this.ends())
+				if (end.equals(block) || dominators.isDominatedBy(block, end))
+					return false;
+
+			return true;
+		}
+	}
+
+	/**
+	 * The {@code with} bodies of the expected-failure guards in {@code ir}, one region per guard call whose context manager the front end
+	 * opened and closed. A guard whose region is not recoverable is left out, so it guards nothing.
+	 */
+	private Set<GuardRegion> guardRegions(CGNode node, IR ir) {
+		Set<GuardRegion> ret = new HashSet<>();
 		DefUse defUse = node.getDU();
 
-		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-			if (instruction instanceof PythonInvokeInstruction invoke && this.isGuardCall(node, invoke, defUse))
+		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+			if (!(instruction instanceof PythonInvokeInstruction invoke) || !this.isGuardCall(node, invoke, defUse))
+				continue;
+
+			// The guard call's result is the context manager the `with` opens, and the region is delimited by the members invoked on it.
+			int manager = invoke.getDef();
+			Set<ISSABasicBlock> begins = this.regionBlocks(node, ir, defUse, manager, REGION_BEGIN_MEMBER_NAME);
+			Set<ISSABasicBlock> ends = this.regionBlocks(node, ir, defUse, manager, REGION_END_MEMBER_NAME);
+
+			if (!begins.isEmpty() && !ends.isEmpty())
+				ret.add(new GuardRegion(begins, ends));
+		}
+
+		return ret;
+	}
+
+	/** The blocks invoking {@code member} on the value {@code manager} in {@code ir}. */
+	private Set<ISSABasicBlock> regionBlocks(CGNode node, IR ir, DefUse defUse, int manager, String member) {
+		Set<ISSABasicBlock> ret = new HashSet<>();
+
+		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+			if (!(instruction instanceof PythonInvokeInstruction invoke))
+				continue;
+
+			if (!(defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead read) || read.getObjectRef() != manager)
+				continue;
+
+			if (member.equals(Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis)))
 				ret.add(ir.getBasicBlockForInstruction(invoke));
+		}
 
 		ret.remove(null);
 		return ret;
