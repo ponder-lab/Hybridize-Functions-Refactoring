@@ -10483,8 +10483,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (String name : List.of("plain_np", "LayerNp.call", "LayerInMethod.call")) {
 			Function function = findFunction(functions, name);
-			Parameter parameter = function.getParameters().get(function.getParameters().size() - 1);
-
+			// By name rather than by position: `**kwargs` is not modeled as a parameter, so the last one happens to be the right one,
+			// which is luck rather than intent.
+			Parameter parameter = function.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
 			assertEquals("`" + name + "` classifies its tuple as a container of tensors.", TRUE, parameter.isTensorContainer());
 			assertEquals("Its two element positions are surfaced.", 2, parameter.getContainerElementTypes().size());
 			assertEquals("An array carries no resolved shape, so the structure is emitted with wildcards.",
