@@ -9,8 +9,9 @@ import tensorflow as tf
 # what kept an annotated parameter out of reach of the recovery.
 #
 # `hinted` takes arrays, whose shapes do not survive, and `symbolic` takes a pair of `Input`
-# results, whose shapes do. `unmodeled` takes an element produced by a call the analysis does
-# not model, so no element evidence exists for that position and the form is unsupported.
+# results, whose shapes do. `transposed` takes an element produced by a transposition, which
+# the analysis models as of Ariadne 0.52.85 (wala/ML#835); before it did, that position had no
+# element evidence and the whole parameter declined as an unsupported form.
 
 a = np.asarray([[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]]).astype(np.float32)
 b = np.asarray([[[0.1, 0.4], [0.2, 0.5], [0.3, 0.6]]]).astype(np.float32)
@@ -28,7 +29,7 @@ class Symbolic(tf.keras.layers.Layer):
         return x0 * tf.reduce_mean(x)
 
 
-class Unmodeled(tf.keras.layers.Layer):
+class Transposed(tf.keras.layers.Layer):
     def call(self, inputs: Tuple[tf.Tensor, tf.Tensor]):
         x0, x = inputs
         return x0 * tf.reduce_mean(x)
@@ -39,4 +40,4 @@ Hinted()((a, b))
 i0 = tf.keras.layers.Input(shape=(12, 10))
 Symbolic()((i0, i0))
 
-Unmodeled()((a, np.transpose(b, (0, 2, 1))))
+Transposed()((a, np.transpose(b, (0, 2, 1))))
