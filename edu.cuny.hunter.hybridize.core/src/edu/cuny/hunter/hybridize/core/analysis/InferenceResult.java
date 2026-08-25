@@ -32,6 +32,18 @@ public sealed interface InferenceResult {
 		SPECULATIVE_TENSOR_PARAMETER,
 
 		/**
+		 * The function declares a rest-keyword ({@code **kwargs}) parameter. An {@code input_signature} fixes the arguments the function
+		 * accepts, so the slot stops absorbing anything and any caller passing a keyword raises {@code TypeError} where it previously
+		 * succeeded. For a Keras layer the caller is the framework: Keras inspects {@code call}'s declaration, sees that {@code **kwargs}
+		 * can take {@code training}, and passes it, so the layer breaks with no keyword written by the developer anywhere. Declining is
+		 * therefore about behavior preservation rather than about coverage, and it is decided on the declaration alone, since the callers
+		 * that matter are outside the analyzed program. Blocks the function before the per-parameter dispatch, so no parameter is named.
+		 * The rest-positional ({@code *args}) slot is deliberately not covered: Keras passes {@code training} by keyword only, so it does
+		 * not reach a function that cannot accept one, and the exposure there needs a caller passing extra positional arguments (#902).
+		 */
+		VARIABLE_KEYWORD_PARAMETER,
+
+		/**
 		 * A parameter is not classified as tensor-typed by any phase and declares no default, so it is a <em>required</em> argument for
 		 * which {@code tf.function(input_signature=...)} demands a {@code TensorSpec} that cannot be synthesized (#508). A non-tensor
 		 * parameter that declares a default is not this case: TensorFlow requires a spec per required argument only, so it may be omittable
