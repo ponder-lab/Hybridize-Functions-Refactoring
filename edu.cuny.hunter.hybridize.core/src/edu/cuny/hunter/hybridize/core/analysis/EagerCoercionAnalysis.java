@@ -5,13 +5,18 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
@@ -47,10 +52,57 @@ import com.ibm.wala.util.collections.Pair;
  */
 class EagerCoercionAnalysis {
 
+	/**
+	 * The operations that convert a non-tensor operand against their tensor partner's dtype, by member name. The criterion is that behavior
+	 * rather than the list, which is only its current extension: an operation belongs here iff eager execution converts a non-tensor
+	 * operand through {@code convert_to_tensor} against the other operand's dtype.
+	 * <p>
+	 * The upstream declaration covers the operator spellings alone, reached through {@link SSABinaryOpInstruction}, so the call spellings
+	 * of the very same operations are unaccounted on both sides: {@code V * x} is covered where {@code tf.multiply(V, x)} is not (#907).
+	 * Matching on the member name covers the {@code tf.math} aliases with the plain ones.
+	 * <p>
+	 * The list's canonical home is upstream (wala/ML#837); it lives here only while the declaration does not cover the call spellings.
+	 */
+	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "einsum", "add", "subtract", "multiply", "divide", "truediv",
+			"floordiv", "mod", "floormod", "divide_no_nan", "multiply_no_nan", "pow", "maximum", "minimum", "squared_difference");
+
+	/**
+	 * The operations that require their operands to agree rather than converting one against the other. They convert a non-tensor operand
+	 * without passing the partner's dtype as a hint and then raise on the mismatch, measured on the pinned TensorFlow with a NumPy operand
+	 * and with a Python list alike, so they fail {@link #COERCING_MEMBER_NAMES}'s criterion (wala/ML#837).
+	 * <p>
+	 * For the signature question the two classes converge on the same imposition, by a different rationale. A program that ran cannot have
+	 * carried a mismatch through one of these, because the mismatch raises eagerly, so the operand's eager-effective dtype at that consumer
+	 * <em>equals</em> the partner's and imposing it is sound. Leaving them unaccounted instead would be worse than either: it would make
+	 * the whole parameter indeterminate and discard the coercions its other consumers did impose.
+	 */
+	private static final Set<String> EQUALITY_ENFORCING_MEMBER_NAMES = Set.of("tensordot", "matvec");
+
+	/** The operations from which a partner's dtype may be imposed, whether by conversion or by the run premise. */
+	private static final Set<String> IMPOSING_MEMBER_NAMES = Stream
+			.concat(COERCING_MEMBER_NAMES.stream(), EQUALITY_ENFORCING_MEMBER_NAMES.stream()).collect(Collectors.toUnmodifiableSet());
+
+	/**
+	 * The imposing operations whose first positional argument is not an operand. {@code einsum} leads with its equation string, so its
+	 * operands start one slot later; reading its arity as though the equation were an operand would decline it always, which is the
+	 * listed-but-unreachable shape that looks like coverage and is not.
+	 */
+	private static final Set<String> EQUATION_LED_MEMBER_NAMES = Set.of("einsum");
+
+	/**
+	 * The keyword arguments that carry no operand and so do not make a call unaccounted. An operation's {@code name} is metadata for the
+	 * graph, not a value the operation combines.
+	 */
+	private static final Set<String> NON_OPERAND_KEYWORDS = Set.of("name");
+
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
 
-	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis) {
+	/** Resolves a callee's fully-qualified name, which is how an imposing call is told from a same-named method on anything else. */
+	private final PointerAnalysis<InstanceKey> pointerAnalysis;
+
+	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		this.pointerAnalysis = pointerAnalysis;
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -90,11 +142,32 @@ class EagerCoercionAnalysis {
 
 		for (Iterator<SSAInstruction> uses = defUse.getUses(parameterValue); uses.hasNext();) {
 			SSAInstruction use = uses.next();
+			int other;
 
-			if (!(use instanceof SSABinaryOpInstruction binary))
+			if (use instanceof SSABinaryOpInstruction binary)
+				other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
+			else if (use instanceof PythonInvokeInstruction invoke
+					&& this.imposingMemberName(node, invoke, defUse) instanceof String member) {
+				// The call spelling of the same coercion. Only the binary shape is read: a call carrying a further operand, or a keyword
+				// that is not mere metadata, is unaccounted, and incompleteness declines the whole parameter rather than pinning from the
+				// operands it did understand.
+				int firstOperand = EQUATION_LED_MEMBER_NAMES.contains(member) ? 2 : 1;
+
+				if (invoke.getNumberOfPositionalParameters() != firstOperand + 2
+						|| !NON_OPERAND_KEYWORDS.containsAll(invoke.getKeywords())) {
+					indeterminate = true;
+					continue;
+				}
+
+				int first = invoke.getUse(firstOperand);
+				int second = invoke.getUse(firstOperand + 1);
+
+				if (first != parameterValue && second != parameterValue)
+					continue; // Reaches the call other than as a direct operand, so no dtype is imposed on it here.
+
+				other = first == parameterValue ? second : first;
+			} else
 				continue;
-
-			int other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
 
 			// A partner that is itself a parameter (including a self-combination like x * x) imposes no dtype: each side of such a
 			// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
@@ -122,5 +195,32 @@ class EagerCoercionAnalysis {
 		}
 
 		return new Outcome(dtypes, indeterminate, parameterPartners);
+	}
+
+	/**
+	 * The member name under which {@code invoke} calls an operation that imposes its tensor partner's dtype on the other operand, or
+	 * {@code null} if it calls no such operation. The callee's fully-qualified name is resolved and required to root at the TensorFlow
+	 * module, so a same-named method on an unrelated object imposes nothing. The name is returned rather than a verdict because the operand
+	 * positions depend on it ({@link #EQUATION_LED_MEMBER_NAMES}).
+	 *
+	 * @param node The call-graph node containing the call.
+	 * @param invoke The call.
+	 * @param defUse The node's def-use chains.
+	 * @return The imposing operation's member name, or {@code null} if the call imposes nothing.
+	 */
+	private String imposingMemberName(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
+
+		if (fqn == null)
+			return null;
+
+		int lastDot = fqn.lastIndexOf('.');
+
+		if (lastDot < 0)
+			return null;
+
+		String member = fqn.substring(lastDot + 1);
+
+		return IMPOSING_MEMBER_NAMES.contains(member) ? member : null;
 	}
 }
