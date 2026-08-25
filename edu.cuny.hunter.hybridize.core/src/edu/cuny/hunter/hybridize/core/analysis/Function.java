@@ -2203,8 +2203,10 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies partner-operand dtypes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve a coercing call's callee.
 	 */
-	public void computeEagerDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis) {
+	public void computeEagerDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		Set<CGNode> nodes;
 
 		try {
@@ -2221,7 +2223,7 @@ public class Function {
 			return;
 		}
 
-		EagerCoercionAnalysis analysis = new EagerCoercionAnalysis(tensorTypeAnalysis);
+		EagerCoercionAnalysis analysis = new EagerCoercionAnalysis(tensorTypeAnalysis, pointerAnalysis);
 		List<Parameter> parameters = this.getParameters();
 		boolean conflicting = false;
 		Map<Parameter, DType> pins = new HashMap<>();

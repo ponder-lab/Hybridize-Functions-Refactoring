@@ -10970,8 +10970,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				scale.getHasConflictingEagerDtypeCoercions());
 		assertEquals("`scale` hybridizes (P1).", P1, scale.getPassingPrecondition());
 		assertTrue("An input signature is inferred.", scale.getInferredInputSignature().isPresent());
-		assertEquals("The spec pins the eager-effective float32 over the observed float64.",
-				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", scale.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals("The spec names float32, the dtype eager execution computes with.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				scale.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals(
+				"Nothing needs pinning in the operator spelling any more: the type analysis declares that coercion and reports the "
+						+ "coerced dtype itself, so the reduction reads float32 rather than the fed float64.",
+				Set.of(DType.FLOAT32),
+				scale.getParameters().get(0).getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet()));
+
+		// The same operation, spelled as a call. The upstream declaration covers operator spellings only, so the fed dtype is what gets
+		// reported and the repair is this tool's (#907).
+		Function multiplied = getFunction("multiplied");
+		assertEquals("The call spelling reports the fed float64, where the operator spelling reported the coerced float32.",
+				Set.of(DType.FLOAT64),
+				multiplied.getParameters().get(0).getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet()));
+		assertEquals("So the pin does the work there, and the two spellings agree again.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				multiplied.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`multiplied` hybridizes (P1).", P1, multiplied.getPassingPrecondition());
+
+		// An operation with no declaration on either side, which is how this was found.
+		Function matmuled = getFunction("matmuled");
+		assertEquals("`matmul` is undeclared upstream, so its parameter reports the fed float64 too.", Set.of(DType.FLOAT64),
+				matmuled.getParameters().get(0).getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet()));
+		assertEquals("The pin names the eager-effective float32, which is what the body computes with and what a signature must say.",
+				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				matmuled.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`matmuled` hybridizes (P1).", P1, matmuled.getPassingPrecondition());
 	}
 
 	/**

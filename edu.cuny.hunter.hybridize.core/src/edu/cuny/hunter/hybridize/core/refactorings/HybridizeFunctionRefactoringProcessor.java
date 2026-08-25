@@ -530,7 +530,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// divergence pins the emitted spec's dtype, a plural set declines. Must precede any signature materialization
 				// (the static-shape-read check below triggers the memoized inference), or the pin misses the emitted spec.
 				if (barrenCouldDecide)
-					func.computeEagerDtypeCoercions(callGraph, analysis);
+					func.computeEagerDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis());
 
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)

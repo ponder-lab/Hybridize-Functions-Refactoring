@@ -10,8 +10,11 @@ import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
+import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
@@ -47,10 +50,26 @@ import com.ibm.wala.util.collections.Pair;
  */
 class EagerCoercionAnalysis {
 
+	/**
+	 * The operations that convert a non-tensor operand against their tensor partner's dtype, by member name. The criterion is that behavior
+	 * rather than the list, which is only its current extension: an operation belongs here iff eager execution converts a non-tensor
+	 * operand through {@code convert_to_tensor} against the other operand's dtype.
+	 * <p>
+	 * The upstream declaration covers the operator spellings alone, reached through {@link SSABinaryOpInstruction}, so the call spellings
+	 * of the very same operations are unaccounted on both sides: {@code V * x} is covered where {@code tf.multiply(V, x)} is not (#907).
+	 * Matching on the member name covers the {@code tf.math} aliases with the plain ones.
+	 */
+	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "tensordot", "einsum", "matvec", "add", "subtract",
+			"multiply", "divide", "pow", "maximum", "minimum", "squared_difference");
+
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
 
-	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis) {
+	/** Resolves a callee's fully-qualified name, which is how a coercing call is told from a same-named method on anything else. */
+	private final PointerAnalysis<InstanceKey> pointerAnalysis;
+
+	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		this.pointerAnalysis = pointerAnalysis;
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -90,11 +109,28 @@ class EagerCoercionAnalysis {
 
 		for (Iterator<SSAInstruction> uses = defUse.getUses(parameterValue); uses.hasNext();) {
 			SSAInstruction use = uses.next();
+			int other;
 
-			if (!(use instanceof SSABinaryOpInstruction binary))
+			if (use instanceof SSABinaryOpInstruction binary)
+				other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
+			else if (use instanceof PythonInvokeInstruction invoke && this.isCoercingCall(node, invoke, defUse)) {
+				// The call spelling of the same coercion. Only the binary shape is read: a call carrying anything beyond the callee and
+				// two operands (a third argument, or a keyword) is unaccounted, and incompleteness declines the whole parameter rather
+				// than pinning from the operands it did understand.
+				if (invoke.getNumberOfUses() != 3) {
+					indeterminate = true;
+					continue;
+				}
+
+				int first = invoke.getUse(1);
+				int second = invoke.getUse(2);
+
+				if (first != parameterValue && second != parameterValue)
+					continue; // Reaches the call other than as a direct operand, so no dtype is imposed on it here.
+
+				other = first == parameterValue ? second : first;
+			} else
 				continue;
-
-			int other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
 
 			// A partner that is itself a parameter (including a self-combination like x * x) imposes no dtype: each side of such a
 			// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
@@ -122,5 +158,26 @@ class EagerCoercionAnalysis {
 		}
 
 		return new Outcome(dtypes, indeterminate, parameterPartners);
+	}
+
+	/**
+	 * True iff {@code invoke} calls an operation that converts a non-tensor operand against its tensor partner's dtype. The callee's
+	 * fully-qualified name is resolved and required to root at the TensorFlow module, so a same-named method on an unrelated object imposes
+	 * nothing.
+	 *
+	 * @param node The call-graph node containing the call.
+	 * @param invoke The call.
+	 * @param defUse The node's def-use chains.
+	 * @return True iff the call coerces its operands.
+	 */
+	private boolean isCoercingCall(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
+
+		if (fqn == null)
+			return false;
+
+		int lastDot = fqn.lastIndexOf('.');
+
+		return lastDot >= 0 && COERCING_MEMBER_NAMES.contains(fqn.substring(lastDot + 1));
 	}
 }
