@@ -58,9 +58,25 @@ class EagerCoercionAnalysis {
 	 * The upstream declaration covers the operator spellings alone, reached through {@link SSABinaryOpInstruction}, so the call spellings
 	 * of the very same operations are unaccounted on both sides: {@code V * x} is covered where {@code tf.multiply(V, x)} is not (#907).
 	 * Matching on the member name covers the {@code tf.math} aliases with the plain ones.
+	 * <p>
+	 * The list's canonical home is upstream (wala/ML#837); it lives here only while the declaration does not cover the call spellings.
 	 */
 	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "tensordot", "einsum", "matvec", "add", "subtract",
-			"multiply", "divide", "pow", "maximum", "minimum", "squared_difference");
+			"multiply", "divide", "truediv", "floordiv", "mod", "floormod", "divide_no_nan", "multiply_no_nan", "pow", "maximum", "minimum",
+			"squared_difference");
+
+	/**
+	 * The recognized operations whose first positional argument is not an operand. {@code einsum} leads with its equation string, so its
+	 * operands start one slot later; reading its arity as though the equation were an operand would decline it always, which is the
+	 * listed-but-unreachable shape that looks like coverage and is not.
+	 */
+	private static final Set<String> EQUATION_LED_MEMBER_NAMES = Set.of("einsum");
+
+	/**
+	 * The keyword arguments that carry no operand and so do not make a call unaccounted. An operation's {@code name} is metadata for the
+	 * graph, not a value the operation combines.
+	 */
+	private static final Set<String> NON_OPERAND_KEYWORDS = Set.of("name");
 
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
@@ -113,17 +129,21 @@ class EagerCoercionAnalysis {
 
 			if (use instanceof SSABinaryOpInstruction binary)
 				other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
-			else if (use instanceof PythonInvokeInstruction invoke && this.isCoercingCall(node, invoke, defUse)) {
-				// The call spelling of the same coercion. Only the binary shape is read: a call carrying anything beyond the callee and
-				// two operands (a third argument, or a keyword) is unaccounted, and incompleteness declines the whole parameter rather
-				// than pinning from the operands it did understand.
-				if (invoke.getNumberOfUses() != 3) {
+			else if (use instanceof PythonInvokeInstruction invoke
+					&& this.coercingMemberName(node, invoke, defUse) instanceof String member) {
+				// The call spelling of the same coercion. Only the binary shape is read: a call carrying a further operand, or a keyword
+				// that is not mere metadata, is unaccounted, and incompleteness declines the whole parameter rather than pinning from the
+				// operands it did understand.
+				int firstOperand = EQUATION_LED_MEMBER_NAMES.contains(member) ? 2 : 1;
+
+				if (invoke.getNumberOfPositionalParameters() != firstOperand + 2
+						|| !NON_OPERAND_KEYWORDS.containsAll(invoke.getKeywords())) {
 					indeterminate = true;
 					continue;
 				}
 
-				int first = invoke.getUse(1);
-				int second = invoke.getUse(2);
+				int first = invoke.getUse(firstOperand);
+				int second = invoke.getUse(firstOperand + 1);
 
 				if (first != parameterValue && second != parameterValue)
 					continue; // Reaches the call other than as a direct operand, so no dtype is imposed on it here.
@@ -161,23 +181,29 @@ class EagerCoercionAnalysis {
 	}
 
 	/**
-	 * True iff {@code invoke} calls an operation that converts a non-tensor operand against its tensor partner's dtype. The callee's
-	 * fully-qualified name is resolved and required to root at the TensorFlow module, so a same-named method on an unrelated object imposes
-	 * nothing.
+	 * The member name under which {@code invoke} calls an operation that converts a non-tensor operand against its tensor partner's dtype,
+	 * or {@code null} if it calls no such operation. The callee's fully-qualified name is resolved and required to root at the TensorFlow
+	 * module, so a same-named method on an unrelated object imposes nothing. The name is returned rather than a verdict because the operand
+	 * positions depend on it ({@link #EQUATION_LED_MEMBER_NAMES}).
 	 *
 	 * @param node The call-graph node containing the call.
 	 * @param invoke The call.
 	 * @param defUse The node's def-use chains.
-	 * @return True iff the call coerces its operands.
+	 * @return The coercing operation's member name, or {@code null} if the call coerces no operand.
 	 */
-	private boolean isCoercingCall(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+	private String coercingMemberName(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
 		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
 
 		if (fqn == null)
-			return false;
+			return null;
 
 		int lastDot = fqn.lastIndexOf('.');
 
-		return lastDot >= 0 && COERCING_MEMBER_NAMES.contains(fqn.substring(lastDot + 1));
+		if (lastDot < 0)
+			return null;
+
+		String member = fqn.substring(lastDot + 1);
+
+		return COERCING_MEMBER_NAMES.contains(member) ? member : null;
 	}
 }

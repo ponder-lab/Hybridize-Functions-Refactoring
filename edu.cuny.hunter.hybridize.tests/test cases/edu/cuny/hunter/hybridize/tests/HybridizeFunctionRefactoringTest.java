@@ -10960,6 +10960,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * argument with a {@code float32} tensor-initialized variable, the detector's eager-effective set is the singleton {@code float32}, and
 	 * the emitted spec pins it in place of the observed {@code float64}. The boundary cast then reproduces the eager per-op coercion, where
 	 * the observed dtype would carry the mismatch into the trace.
+	 * <p>
+	 * The remaining functions spell that one coercion as a call ({@code multiplied}, {@code matmuled}), lead it with an equation string
+	 * ({@code einsummed}), and hang graph metadata off it ({@code named}), which the operator-only reading missed (#907). Every one of them
+	 * runs eagerly, raises under a spec naming the fed dtype, and runs again under the pinned one.
 	 */
 	@Test
 	public void testEagerDtypePin() throws Exception {
@@ -10996,6 +11000,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
 				matmuled.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`matmuled` hybridizes (P1).", P1, matmuled.getPassingPrecondition());
+
+		// An equation-led operation, whose operands start past the equation string. Read as though the equation were an operand, its arity
+		// never matches and the operation is listed but unreachable (#907).
+		Function einsummed = getFunction("einsummed");
+		assertEquals("`einsum` is undeclared upstream too, so its parameter reports the fed float64.", Set.of(DType.FLOAT64),
+				einsummed.getParameters().get(0).getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet()));
+		assertEquals("The equation string is skipped and the pin still names the eager-effective float32.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				einsummed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`einsummed` hybridizes (P1).", P1, einsummed.getPassingPrecondition());
+
+		// A `name` keyword carries no operand, so it leaves the call accounted for.
+		Function named = getFunction("named");
+		assertEquals("The named call reports the fed float64, as the unnamed one does.", Set.of(DType.FLOAT64),
+				named.getParameters().get(0).getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet()));
+		assertEquals("Graph metadata does not make the call unaccounted, so the pin fires as it does without it.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", named.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`named` hybridizes (P1).", P1, named.getPassingPrecondition());
 	}
 
 	/**
