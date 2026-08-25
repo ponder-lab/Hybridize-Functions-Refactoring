@@ -10546,6 +10546,60 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
+	 * parameter is tensor-like, not what specification may be written for it, and it carries no dtype of its own (#494). Classification
+	 * used to return on the hint alone, so the container question was never asked and an annotated parameter stayed out of reach of the
+	 * recovery of #888 entirely, reporting {@code TYPE_HINT_WITHOUT_DTYPE} however much its callers supported.
+	 * <p>
+	 * {@code Hinted.call} now reaches the question and emits the nested spec its caller supports. The elements are wildcard rather than
+	 * concrete because an {@code np.asarray} argument reaches the reduction with its shape unresolved, which is the container's structure
+	 * surviving and the shape not, the same split pinned by {@code testContainerEvidenceShapes}.
+	 * <p>
+	 * {@code Symbolic.call} is the arm the fix does <em>not</em> rescue, and it is why this is only half of #899. Its second call site
+	 * passes a pair of {@code tf.keras.layers.Input} results, which is no modeled sequence of tensors, so the extraction bails and the form
+	 * is reported unsupported. The container is still recognized, so the reported reason is now accurate where it was previously about the
+	 * annotation; what remains is the element evidence, which is upstream of this repository.
+	 */
+	/**
+	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
+	 * parameter is tensor-like, not what specification may be written for it, and it carries no dtype of its own (#494). Classification
+	 * used to return on the hint alone, so the container question was never asked and an annotated parameter stayed out of reach of the
+	 * recovery of #888 entirely.
+	 * <p>
+	 * {@code Hinted.call} now reaches the question and emits the nested spec its caller supports. The elements are wildcard rather than
+	 * concrete because an {@code np.asarray} argument reaches the reduction with its shape unresolved, the same split pinned by
+	 * {@code testContainerEvidenceShapes}.
+	 * <p>
+	 * {@code Symbolic.call} is the arm the fix does <em>not</em> rescue, and is why this is half of #899. Its second call site passes a
+	 * pair of {@code tf.keras.layers.Input} results, which is no modeled sequence of tensors, so the extraction bails and the form is
+	 * reported unsupported. The container is still recognized, so the reason is now accurate where it previously spoke of the annotation.
+	 */
+	@Test
+	public void testHintedContainerEvidence() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function hinted = findFunction(functions, "Hinted.call");
+		Parameter hintedInputs = hinted.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+
+		assertEquals("An annotated parameter now reaches the container question.", TRUE, hintedInputs.isTensorContainer());
+		assertEquals("Its two element positions are surfaced.", 2, hintedInputs.getContainerElementTypes().size());
+		assertEquals("So the nested spec its caller supports is emitted, where the annotation alone yielded nothing.",
+				"[[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=None, dtype=tf.float32)]]",
+				hinted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function symbolic = findFunction(functions, "Symbolic.call");
+		Parameter symbolicInputs = symbolic.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+
+		assertEquals("The symbolic arm's container is recognized too.", TRUE, symbolicInputs.isTensorContainer());
+		assertNull("But a pair of `Input` results carries no element evidence, so the extraction bails.",
+				symbolicInputs.getContainerElementTypes());
+		assertEquals("Which is reported as the unsupported form rather than as an absent annotation dtype.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), symbolic.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the guard region of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/898: a guard covers its own
 	 * {@code with} body, not every call written after it in the same frame. {@code after_guard} is called twice, once inside the block with
 	 * a rank-1 argument the body rejects, and once below the block with a square one that multiplies cleanly. Only the first is a declared
