@@ -10556,10 +10556,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * results, whose shapes do survive, so its spec is concrete: a symbolic pair is modeled, and the suspicion that it was not is what this
 	 * arm exists to refute.
 	 * <p>
-	 * {@code Unmodeled} is the one that blocks, and the cause is neither the annotation nor the symbolic form. One of its elements is
-	 * produced by {@code np.transpose}, which the analysis does not model, so the tuple carries no element evidence for that position and
-	 * the extraction declines the whole parameter. The outcome is right, since a position with no evidence could only reduce to a
-	 * specification nobody may write, and it is worth pinning that the reported reason is the unsupported form rather than the annotation.
+	 * {@code Transposed} used to be the one that blocked, and the cause was neither the annotation nor the symbolic form. One of its
+	 * elements is produced by {@code np.transpose}, which the analysis did not model, so the tuple carried no element evidence for that
+	 * position and the extraction declined the whole parameter. Ariadne 0.52.85 models the transposition (wala/ML#835), so the position now
+	 * carries evidence and the parameter reduces, which is the recovery rather than a regression: the arm is kept to hold that boundary,
+	 * since a decline that stops firing is the whole point of modeling a producer. The shapes do not survive the transposition, so the
+	 * emitted structure is wildcard, and the emitted form was executed rather than compared.
 	 */
 	@Test
 	public void testHintedContainerEvidence() throws Exception {
@@ -10581,15 +10583,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[[tf.TensorSpec(shape=(None, 12, 10), dtype=tf.float32), tf.TensorSpec(shape=(None, 12, 10), dtype=tf.float32)]]",
 				symbolic.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		Function unmodeled = findFunction(functions, "Unmodeled.call");
-		Parameter unmodeledInputs = unmodeled.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+		Function transposed = findFunction(functions, "Transposed.call");
+		Parameter transposedInputs = transposed.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst()
+				.orElseThrow();
 
-		assertEquals("Its container is recognized.", TRUE, unmodeledInputs.isTensorContainer());
-		assertNull("An element produced by an unmodeled call leaves the position without evidence, so the extraction declines.",
-				unmodeledInputs.getContainerElementTypes());
-		assertEquals("Reported as the unsupported form rather than as an absent annotation dtype.",
-				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
-				unmodeled.getInferredInputSignatureAbsenceReason());
+		assertEquals("Its container is recognized.", TRUE, transposedInputs.isTensorContainer());
+		assertEquals("The transposition is modeled, so the position it produces carries evidence and both are surfaced.", 2,
+				transposedInputs.getContainerElementTypes().size());
+		assertEquals("The shapes do not survive the transposition, so the emitted structure is wildcard.",
+				"[[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=None, dtype=tf.float32)]]",
+				transposed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`Transposed.call` converts (P1), where it used to decline as an unsupported form.", P1,
+				transposed.getPassingPrecondition());
 	}
 
 	/**
