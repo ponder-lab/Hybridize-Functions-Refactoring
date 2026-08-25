@@ -5,6 +5,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
@@ -61,12 +63,27 @@ class EagerCoercionAnalysis {
 	 * <p>
 	 * The list's canonical home is upstream (wala/ML#837); it lives here only while the declaration does not cover the call spellings.
 	 */
-	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "tensordot", "einsum", "matvec", "add", "subtract",
-			"multiply", "divide", "truediv", "floordiv", "mod", "floormod", "divide_no_nan", "multiply_no_nan", "pow", "maximum", "minimum",
-			"squared_difference");
+	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "einsum", "add", "subtract", "multiply", "divide", "truediv",
+			"floordiv", "mod", "floormod", "divide_no_nan", "multiply_no_nan", "pow", "maximum", "minimum", "squared_difference");
 
 	/**
-	 * The recognized operations whose first positional argument is not an operand. {@code einsum} leads with its equation string, so its
+	 * The operations that require their operands to agree rather than converting one against the other. They convert a non-tensor operand
+	 * without passing the partner's dtype as a hint and then raise on the mismatch, measured on the pinned TensorFlow with a NumPy operand
+	 * and with a Python list alike, so they fail {@link #COERCING_MEMBER_NAMES}'s criterion (wala/ML#837).
+	 * <p>
+	 * For the signature question the two classes converge on the same imposition, by a different rationale. A program that ran cannot have
+	 * carried a mismatch through one of these, because the mismatch raises eagerly, so the operand's eager-effective dtype at that consumer
+	 * <em>equals</em> the partner's and imposing it is sound. Leaving them unaccounted instead would be worse than either: it would make
+	 * the whole parameter indeterminate and discard the coercions its other consumers did impose.
+	 */
+	private static final Set<String> EQUALITY_ENFORCING_MEMBER_NAMES = Set.of("tensordot", "matvec");
+
+	/** The operations from which a partner's dtype may be imposed, whether by conversion or by the run premise. */
+	private static final Set<String> IMPOSING_MEMBER_NAMES = Stream
+			.concat(COERCING_MEMBER_NAMES.stream(), EQUALITY_ENFORCING_MEMBER_NAMES.stream()).collect(Collectors.toUnmodifiableSet());
+
+	/**
+	 * The imposing operations whose first positional argument is not an operand. {@code einsum} leads with its equation string, so its
 	 * operands start one slot later; reading its arity as though the equation were an operand would decline it always, which is the
 	 * listed-but-unreachable shape that looks like coverage and is not.
 	 */
@@ -81,7 +98,7 @@ class EagerCoercionAnalysis {
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
 
-	/** Resolves a callee's fully-qualified name, which is how a coercing call is told from a same-named method on anything else. */
+	/** Resolves a callee's fully-qualified name, which is how an imposing call is told from a same-named method on anything else. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
 	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis, PointerAnalysis<InstanceKey> pointerAnalysis) {
@@ -130,7 +147,7 @@ class EagerCoercionAnalysis {
 			if (use instanceof SSABinaryOpInstruction binary)
 				other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
 			else if (use instanceof PythonInvokeInstruction invoke
-					&& this.coercingMemberName(node, invoke, defUse) instanceof String member) {
+					&& this.imposingMemberName(node, invoke, defUse) instanceof String member) {
 				// The call spelling of the same coercion. Only the binary shape is read: a call carrying a further operand, or a keyword
 				// that is not mere metadata, is unaccounted, and incompleteness declines the whole parameter rather than pinning from the
 				// operands it did understand.
@@ -181,17 +198,17 @@ class EagerCoercionAnalysis {
 	}
 
 	/**
-	 * The member name under which {@code invoke} calls an operation that converts a non-tensor operand against its tensor partner's dtype,
-	 * or {@code null} if it calls no such operation. The callee's fully-qualified name is resolved and required to root at the TensorFlow
+	 * The member name under which {@code invoke} calls an operation that imposes its tensor partner's dtype on the other operand, or
+	 * {@code null} if it calls no such operation. The callee's fully-qualified name is resolved and required to root at the TensorFlow
 	 * module, so a same-named method on an unrelated object imposes nothing. The name is returned rather than a verdict because the operand
 	 * positions depend on it ({@link #EQUATION_LED_MEMBER_NAMES}).
 	 *
 	 * @param node The call-graph node containing the call.
 	 * @param invoke The call.
 	 * @param defUse The node's def-use chains.
-	 * @return The coercing operation's member name, or {@code null} if the call coerces no operand.
+	 * @return The imposing operation's member name, or {@code null} if the call imposes nothing.
 	 */
-	private String coercingMemberName(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+	private String imposingMemberName(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
 		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
 
 		if (fqn == null)
@@ -204,6 +221,6 @@ class EagerCoercionAnalysis {
 
 		String member = fqn.substring(lastDot + 1);
 
-		return COERCING_MEMBER_NAMES.contains(member) ? member : null;
+		return IMPOSING_MEMBER_NAMES.contains(member) ? member : null;
 	}
 }
