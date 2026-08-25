@@ -11018,6 +11018,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Graph metadata does not make the call unaccounted, so the pin fires as it does without it.",
 				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", named.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`named` hybridizes (P1).", P1, named.getPassingPrecondition());
+
+		// A call carrying an operand past the recognized two is unaccounted, so no dtype is imposed from it and the collection goes
+		// indeterminate. What that fallback then emits is the observed dtype, which for this shape is the fed one, and the arm pins
+		// that outcome rather than endorsing it: the emission raises where a pinned one runs, which is #909's subject and not this
+		// change's to settle.
+		Function unaccounted = getFunction("unaccounted");
+		assertEquals("The third operand puts the call past the recognized shape, so nothing is imposed and the fed float64 stands.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float64)]",
+				unaccounted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
