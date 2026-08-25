@@ -10468,8 +10468,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * that the front end materializes it: {@code with} lowers to {@code __begin__} and {@code __end__} invokes on the context manager the
 	 * guard produced, so the body is what the first dominates and the second does not.
 	 * <p>
-	 * Runtime-verified on the pinned TF 2.9.3: {@code tf.matmul} of a rank-1 tensor raises the {@code InvalidArgumentError} the guard
-	 * expects, while the square call returns a {@code (2, 2)} result.
+	 * {@code pytest_guard} repeats the shape under the pytest spelling, which shares the lowering because the region is a property of
+	 * {@code with} rather than of the context manager, and which no fixture pinned at all before this one.
+	 * <p>
+	 * Runtime-verified on the pinned TF 2.9.3: {@code tf.matmul} of a rank-1 tensor raises the {@code InvalidArgumentError} both guards
+	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results.
 	 */
 	@Test
 	public void testExpectedFailureGuardRegion() throws Exception {
@@ -10485,6 +10488,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
 				afterGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`after_guard` converts (P1).", P1, afterGuard.getPassingPrecondition());
+
+		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
+		// first arm to pin that guard form at all.
+		Function pytestGuard = findFunction(this.getFunctions(), "pytest_guard");
+		Parameter pytestParameter = pytestGuard.getParameters().get(0);
+
+		assertEquals("Both call sites are observed under the pytest spelling too.", 2, pytestParameter.getTensorTypes().size());
+		assertEquals("Only the call inside the `pytest.raises` block is set aside.", 1, pytestParameter.getConformingTensorTypes().size());
+		assertEquals("What survives is the square argument the call below that block passes.",
+				"[tf.TensorSpec(shape=(3, 3), dtype=tf.float32)]",
+				pytestGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**

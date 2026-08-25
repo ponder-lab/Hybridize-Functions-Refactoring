@@ -1,5 +1,6 @@
 import unittest
 
+import pytest
 import tensorflow as tf
 
 # Pins the guard region of #898: a guard covers its own `with` body, not everything written
@@ -8,7 +9,8 @@ import tensorflow as tf
 # square argument multiplies cleanly. Only the first is a declared failure, so only its
 # evidence is set aside and the surviving specification is the square one. Reading the guard
 # as dominance alone put both calls inside it, which left every node of the function guarded
-# and so excluded nothing at all.
+# and so excluded nothing at all. `pytest_guard` is the same shape under the pytest spelling,
+# which shares the lowering because it is a property of `with` rather than of the manager.
 
 case = unittest.TestCase()
 
@@ -21,3 +23,13 @@ with case.assertRaises(tf.errors.InvalidArgumentError):
     after_guard(tf.ones((3,)))
 
 assert after_guard(tf.ones((2, 2))).shape == (2, 2)
+
+
+def pytest_guard(x):
+    return tf.matmul(x, x)
+
+
+with pytest.raises(tf.errors.InvalidArgumentError):
+    pytest_guard(tf.ones((5,)))
+
+assert pytest_guard(tf.ones((3, 3))).shape == (3, 3)
