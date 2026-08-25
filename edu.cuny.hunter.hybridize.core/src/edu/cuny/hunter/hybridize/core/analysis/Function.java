@@ -1011,6 +1011,12 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
+	 * True iff this {@link Function} declares a rest-keyword ({@code **kwargs}) parameter. Read off the declaration in the constructor,
+	 * since an {@code input_signature} makes that slot inert and the reduction must decline rather than describe it (#902).
+	 */
+	private final boolean variableKeywordParameter;
+
+	/**
 	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
@@ -1219,6 +1225,10 @@ public class Function {
 			for (int i = 0; i < args.kwonlyargs.length; i++)
 				built.add(new Parameter(args, i, this, true));
 		this.parameters = Collections.unmodifiableList(built);
+
+		// The rest-keyword slot is read off the declaration rather than wrapped, since what the signature reduction needs from it is only
+		// whether it exists (#902). Wrapping it as a `Parameter` is #465.
+		this.variableKeywordParameter = args != null && args.kwarg != null;
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
@@ -1466,6 +1476,18 @@ public class Function {
 						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
 						 * the default precondition matrix unchanged.
 						 */
+						// A signature the developer already supplied has already disabled a rest-keyword slot, so a caller passing a
+						// keyword raises today, before this refactoring touches anything. Nothing here can repair that, and rewriting
+						// the signature would not: the report is the action. Warned rather than failed, since the function's
+						// hybridization is not what is wrong with it, and gated on inference like every other signature diagnostic
+						// (#902).
+						if (this.getInferInputSignatures() && this.hasVariableKeywordParameter()
+								&& this.getHybridizationParameters().hasInputSignatureParam())
+							this.addWarning("This hybrid function declares a `**kwargs` parameter alongside an input signature. The "
+									+ "signature fixes the arguments the function accepts, so that parameter absorbs nothing and any "
+									+ "caller passing a keyword argument raises; for a Keras layer that caller is Keras itself, which "
+									+ "passes `training`. Removing the input signature, or the `**kwargs` parameter, resolves it.");
+
 						// An unresolved statically-read axis blocks every reconfigure path: writing the inferred signature (adding or
 						// overwriting) would break the function at trace time (issue 811).
 						boolean unresolvedStaticallyReadAxes = this.getHasUnresolvedStaticallyReadAxes() != null
@@ -2066,6 +2088,16 @@ public class Function {
 	 *
 	 * @return True iff a tensor parameter is iterated, null if undetermined.
 	 */
+	/**
+	 * True iff this {@link Function} declares a rest-keyword ({@code **kwargs}) parameter, which is what makes an {@code input_signature}
+	 * unwritable for it (#902).
+	 *
+	 * @return True iff a {@code **kwargs} parameter is declared.
+	 */
+	public boolean hasVariableKeywordParameter() {
+		return this.variableKeywordParameter;
+	}
+
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
 	}
@@ -3393,6 +3425,22 @@ public class Function {
 		 * parameter, so the likely cause is analysis incompleteness rather than a genuinely non-tensor parameter. Report the honest reason
 		 * once instead. Verdict-neutral: the dispatch is already guaranteed to return `Absent` here (#783).
 		 */
+		/*
+		 * An `input_signature` fixes what the function accepts, so a rest-keyword slot stops absorbing anything and a caller passing a
+		 * keyword raises where it used to succeed. Keras is that caller for a layer, since it reads `call`'s declaration and passes
+		 * `training` precisely because `**kwargs` says it may. Decided here on the declaration rather than per parameter: the slot names no
+		 * parameter of its own, and the callers that make it fatal are outside the analyzed program, so no call-site evidence would settle
+		 * it. The function still converts with a bare decorator; only the specification is withheld (#902).
+		 */
+		if (this.hasVariableKeywordParameter()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` declares a `**kwargs` parameter. An input signature fixes the arguments the function accepts, so that "
+							+ "parameter would stop absorbing keyword arguments and any caller passing one would fail; for a Keras layer "
+							+ "that caller is Keras itself, which passes `training`. Input-signature inference is dropped and the function "
+							+ "is hybridized with a bare decorator.");
+			return new InferenceResult.Absent(AbsenceReason.VARIABLE_KEYWORD_PARAMETER);
+		}
+
 		if (this.tensorParameterFromSpeculation) {
 			this.addInfo(INPUT_SIGNATURE_INFERENCE,
 					"`" + this + "` is classified as having a tensor parameter from its context rather than from any particular parameter, "

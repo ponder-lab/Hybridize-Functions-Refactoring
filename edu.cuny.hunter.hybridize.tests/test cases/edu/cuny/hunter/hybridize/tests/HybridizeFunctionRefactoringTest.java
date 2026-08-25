@@ -10457,6 +10457,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the {@code **kwargs} decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/902. An
+	 * {@code input_signature} fixes the arguments a function accepts, so a declared rest-keyword slot stops absorbing anything and a caller
+	 * passing a keyword raises {@code TypeError} where it previously succeeded. Writing one is therefore not a coverage question but a
+	 * behavior-preserving one, and the decline is decided on the declaration alone, since the callers that make it fatal are outside the
+	 * analyzed program.
+	 * <p>
+	 * Keras is that caller for a layer. It reads {@code call}'s declaration, sees that {@code **kwargs} can accept {@code training}, and
+	 * passes it, so a signature on {@code Absorbing.call} would break a layer that runs today. Runtime-verified on the pinned TF 2.9.3: the
+	 * undecorated layer returns its result, and the same layer under
+	 * {@code @tf.function(input_signature=[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)])} raises with an unexpected keyword argument
+	 * {@code training}.
+	 * <p>
+	 * {@code Positional.call} declares no such slot and keeps its signature, which is what localizes the decline to the shape that needs
+	 * it. Both still convert at P1: hybridizing is behavior-preserving whether or not a specification may be written, and only the
+	 * specification is withheld. {@code absorbing_function} carries the slot without being a layer, pinning that the decline is read off
+	 * the declaration rather than off Keras membership, since an ordinary caller may pass a keyword too.
+	 */
+	@Test
+	public void testVariableKeywordParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("Absorbing.call", "absorbing_function")) {
+			Function function = findFunction(functions, name);
+
+			assertTrue("`" + name + "` declares a rest-keyword slot.", function.hasVariableKeywordParameter());
+			assertEquals("No signature is written for it, since one would stop that slot absorbing keywords.",
+					Optional.of(InferenceResult.AbsenceReason.VARIABLE_KEYWORD_PARAMETER),
+					function.getInferredInputSignatureAbsenceReason());
+			assertEquals("`" + name + "` still converts (P1); only the specification is withheld.", P1, function.getPassingPrecondition());
+		}
+
+		// Already hybrid with a signature the developer supplied, which has disabled the slot already. Nothing is written, and the
+		// warning is the whole action.
+		Function suppliedAndAbsorbing = findFunction(functions, "supplied_and_absorbing");
+		assertTrue("`supplied_and_absorbing` declares a rest-keyword slot beside its supplied signature.",
+				suppliedAndAbsorbing.hasVariableKeywordParameter());
+		assertTrue("It is warned about by name, since its own signature already stops that slot absorbing keywords.",
+				Arrays.stream(suppliedAndAbsorbing.getStatus().getEntries()).filter(e -> e.getSeverity() == RefactoringStatus.WARNING)
+						.anyMatch(e -> e.getMessage().contains("`**kwargs` parameter alongside an input signature")));
+
+		Function positional = findFunction(functions, "Positional.call");
+		assertFalse("`Positional.call` declares no rest-keyword slot.", positional.hasVariableKeywordParameter());
+		assertEquals("So its signature is untouched, which localizes the decline.", "[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				positional.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`Positional.call` converts (P1).", P1, positional.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the guard region of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/898: a guard covers its own
 	 * {@code with} body, not every call written after it in the same frame. {@code after_guard} is called twice, once inside the block with
 	 * a rank-1 argument the body rejects, and once below the block with a square one that multiplies cleanly. Only the first is a declared
