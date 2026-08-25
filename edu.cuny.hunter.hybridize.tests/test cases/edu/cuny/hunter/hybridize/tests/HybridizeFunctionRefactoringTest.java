@@ -11019,14 +11019,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", named.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`named` hybridizes (P1).", P1, named.getPassingPrecondition());
 
-		// A call carrying an operand past the recognized two is unaccounted, so no dtype is imposed from it and the collection goes
-		// indeterminate. What that fallback then emits is the observed dtype, which for this shape is the fed one, and the arm pins
-		// that outcome rather than endorsing it: the emission raises where a pinned one runs, which is #909's subject and not this
-		// change's to settle.
-		Function unaccounted = getFunction("unaccounted");
-		assertEquals("The third operand puts the call past the recognized shape, so nothing is imposed and the fed float64 stands.",
-				"[tf.TensorSpec(shape=(2,), dtype=tf.float64)]",
-				unaccounted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		// An equation-led operation takes any number of operands. Read as though two were its only form, the third refuses the call
+		// and the fed float64 is emitted, which raises where the pin runs (#909).
+		Function ternary = getFunction("ternary");
+		assertEquals("A third operand is read as an operand, so the partners still impose float32.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", ternary.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`ternary` hybridizes (P1).", P1, ternary.getPassingPrecondition());
+
+		// A trailing argument that is not an operand, and may be passed positionally or by keyword. Transposition does not change the
+		// dtype an operand is read at, so refusing the call over it loses the coercion for nothing.
+		Function transposed = getFunction("transposed");
+		assertEquals("A transposition flag is read as the non-operand it is, so the partner still imposes float32.",
+				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				transposed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`transposed` hybridizes (P1).", P1, transposed.getPassingPrecondition());
 	}
 
 	/**
@@ -11043,6 +11049,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				combine.getHasConflictingEagerDtypeCoercions());
 		assertNull("`combine` must not pass a precondition; any single signature breaks one multiply.", combine.getPassingPrecondition());
 		assertNotNull("`combine` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", combine.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
+
+		// The same divergence with one side reached through a contraction. `tensordot` enforces operand equality rather than
+		// converting, so a program that ran fixes the operand's dtype there just as firmly; reading its contraction axes as the
+		// non-operand argument they are is what lets that side count at all. Refused, the divergence goes unseen and the fed float64
+		// is emitted, which raises at the multiply (#909).
+		Function contracted = getFunction("contracted");
+		assertEquals("`contracted`'s parameter is fixed at float64 by the contraction and at float32 by the multiply.", Boolean.TRUE,
+				contracted.getHasConflictingEagerDtypeCoercions());
+		assertNull("`contracted` must not pass a precondition; every specification breaks one side, and so does a bare decorator.",
+				contracted.getPassingPrecondition());
+		assertNotNull("`contracted` fails with HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.", contracted.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS.getCode()));
 	}
 

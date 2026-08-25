@@ -28,8 +28,12 @@ def named(x):
     return tf.reduce_sum(tf.multiply(V, x, name="scaled"))
 
 
-def unaccounted(x):
+def ternary(x):
     return tf.reduce_sum(tf.einsum("i,i,i->", V, x, W))
+
+
+def transposed(x):
+    return tf.reduce_sum(tf.matmul(M, x, transpose_a=True))
 
 
 # Eagerly the float64 NumPy argument is converted at the multiply under V's float32; a
@@ -53,6 +57,9 @@ einsummed(X)
 named(X)
 
 
-# A third operand puts the call past the recognized shape, so nothing is imposed and the
-# fed dtype stands in the emission (#909).
-unaccounted(X)
+# An equation-led operation takes any number of operands, and a matrix product declares
+# trailing arguments that are not operands. Reading each at the positions the operation
+# declares is what keeps these from being refused as shapes the reader cannot place (#909).
+ternary(X)
+
+transposed(np.array([[1.5, 2.5], [3.5, 4.5]]))
