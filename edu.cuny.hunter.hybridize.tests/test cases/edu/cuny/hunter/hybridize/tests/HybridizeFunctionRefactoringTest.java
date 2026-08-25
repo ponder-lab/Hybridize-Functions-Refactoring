@@ -10462,7 +10462,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * property of the whole project rather than of any one of them. Each arm receives a two-element tuple and each is reduced to a nested
 	 * spec: a plain function taking tensors, the same taking {@code np.asarray(...).astype(np.float32)} arrays, a Keras {@code Layer.call}
 	 * taking either, that layer under {@code @tf.keras.utils.register_keras_serializable()}, and a call site inside a
-	 * {@code tf.test.TestCase} method rather than at module level.
+	 * {@code tf.test.TestCase} method rather than at module level. The layers declare no {@code **kwargs}, unlike the reported one: a
+	 * rest-keyword slot withholds the signature on its own grounds, which would confound what these arms are for.
 	 * <p>
 	 * The numpy arms pin a real difference, not an equivalence: an array reaches the reduction with its shape unresolved, so the arm's
 	 * elements are wildcard rather than concrete. What matters here is that the container is still recognized and the structure still

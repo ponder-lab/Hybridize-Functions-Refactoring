@@ -13,20 +13,20 @@ def plain_np(inputs):
 
 
 class LayerTf(tf.keras.layers.Layer):
-    def call(self, inputs, **kwargs):
+    def call(self, inputs):
         x0, x = inputs
         return tf.matmul(x0, x)
 
 
 @tf.keras.utils.register_keras_serializable()
 class LayerNp(tf.keras.layers.Layer):
-    def call(self, inputs, **kwargs):
+    def call(self, inputs):
         x0, x = inputs
         return tf.matmul(x0, x)
 
 
 class LayerInMethod(tf.keras.layers.Layer):
-    def call(self, inputs, **kwargs):
+    def call(self, inputs):
         x0, x = inputs
         return tf.matmul(x0, x)
 
