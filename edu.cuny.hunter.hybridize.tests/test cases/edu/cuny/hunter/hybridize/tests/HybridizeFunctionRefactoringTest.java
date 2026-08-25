@@ -10457,6 +10457,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins that a tuple parameter's container evidence survives the shapes the reported {@code CIN.call} of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899 is made of, which is what makes that subject's failure a
+	 * property of the whole project rather than of any one of them. Each arm receives a two-element tuple and each is reduced to a nested
+	 * spec: a plain function taking tensors, the same taking {@code np.asarray(...).astype(np.float32)} arrays, a Keras {@code Layer.call}
+	 * taking either, that layer under {@code @tf.keras.utils.register_keras_serializable()}, and a call site inside a
+	 * {@code tf.test.TestCase} method rather than at module level. The layers declare no {@code **kwargs}, unlike the reported one: a
+	 * rest-keyword slot withholds the signature on its own grounds, which would confound what these arms are for.
+	 * <p>
+	 * The numpy arms pin a real difference, not an equivalence: an array reaches the reduction with its shape unresolved, so the arm's
+	 * elements are wildcard rather than concrete. What matters here is that the container is still recognized and the structure still
+	 * emitted, since it is the structure, not the shape, that the subject loses.
+	 */
+	@Test
+	public void testContainerEvidenceShapes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("plain_tf", "LayerTf.call")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` reduces its tuple to the concrete two-element spec.",
+					"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		for (String name : List.of("plain_np", "LayerNp.call", "LayerInMethod.call")) {
+			Function function = findFunction(functions, name);
+			// By name rather than by position: `**kwargs` is not modeled as a parameter, so the last one happens to be the right one,
+			// which is luck rather than intent.
+			Parameter parameter = function.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+			assertEquals("`" + name + "` classifies its tuple as a container of tensors.", TRUE, parameter.isTensorContainer());
+			assertEquals("Its two element positions are surfaced.", 2, parameter.getContainerElementTypes().size());
+			assertEquals("An array carries no resolved shape, so the structure is emitted with wildcards.",
+					"[[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=None, dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * Pins the {@code **kwargs} decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/902. An
 	 * {@code input_signature} fixes the arguments a function accepts, so a declared rest-keyword slot stops absorbing anything and a caller
 	 * passing a keyword raises {@code TypeError} where it previously succeeded. Writing one is therefore not a coverage question but a
