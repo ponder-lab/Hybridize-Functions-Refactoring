@@ -10457,6 +10457,51 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the guard region of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/898: a guard covers its own
+	 * {@code with} body, not every call written after it in the same frame. {@code after_guard} is called twice, once inside the block with
+	 * a rank-1 argument the body rejects, and once below the block with a square one that multiplies cleanly. Only the first is a declared
+	 * failure, so only its evidence is set aside, and the specification that survives is the square argument's.
+	 * <p>
+	 * The pin is two-sided by construction, and fails in both directions on the dominance test it replaced. There the call below the block
+	 * counted as guarded too, which left <em>every</em> node of the function guarded, and since excluding every node counts as excluding
+	 * none, the rank-1 shape stayed in the conforming evidence and the parameter reduced over both. What made the region expressible is
+	 * that the front end materializes it: {@code with} lowers to {@code __begin__} and {@code __end__} invokes on the context manager the
+	 * guard produced, so the body is what the first dominates and the second does not.
+	 * <p>
+	 * {@code pytest_guard} repeats the shape under the pytest spelling, which shares the lowering because the region is a property of
+	 * {@code with} rather than of the context manager, and which no fixture pinned at all before this one.
+	 * <p>
+	 * Runtime-verified on the pinned TF 2.9.3: {@code tf.matmul} of a rank-1 tensor raises the {@code InvalidArgumentError} both guards
+	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results.
+	 */
+	@Test
+	public void testExpectedFailureGuardRegion() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function afterGuard = findFunction(this.getFunctions(), "after_guard");
+		Parameter x = afterGuard.getParameters().get(0);
+
+		assertEquals("Both call sites are observed, so both shapes are seen.", 2, x.getTensorTypes().size());
+		assertEquals("Only the call inside the block is a declared failure, so only its shape is set aside.", 1,
+				x.getConformingTensorTypes().size());
+		assertEquals("What survives is the square argument the call below the block passes.",
+				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				afterGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`after_guard` converts (P1).", P1, afterGuard.getPassingPrecondition());
+
+		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
+		// first arm to pin that guard form at all.
+		Function pytestGuard = findFunction(this.getFunctions(), "pytest_guard");
+		Parameter pytestParameter = pytestGuard.getParameters().get(0);
+
+		assertEquals("Both call sites are observed under the pytest spelling too.", 2, pytestParameter.getTensorTypes().size());
+		assertEquals("Only the call inside the `pytest.raises` block is set aside.", 1, pytestParameter.getConformingTensorTypes().size());
+		assertEquals("What survives is the square argument the call below that block passes.",
+				"[tf.TensorSpec(shape=(3, 3), dtype=tf.float32)]",
+				pytestGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * Pins the expected-failure exclusion of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reducing
 	 * deep_recommenders' {@code CIN.call}: {@code cin} receives a two-tensor tuple at its conforming call site and a bare tensor at a site
 	 * wrapped in {@code assertRaises}, which {@code unittest} enforces by failing the test if the call succeeds. That site is therefore an
