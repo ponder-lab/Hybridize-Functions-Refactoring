@@ -1147,6 +1147,18 @@ public final class Parameter {
 				if (this.hasTensorTypeHint(subMonitor.split(1))) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+
+					if (!nodes.isEmpty() && this.getConformingTensorTypes().isEmpty()) {
+						// A hint answers whether the parameter is tensor-like, not what specification may be written for it, and an
+						// annotation carries no dtype (#494). Where no conforming call-site evidence exists either, what the callers pass
+						// may still be a container whose elements do carry one, so ask rather than return on the hint alone (#899).
+						// Returning here is what kept the recovery of #888 from reaching an annotated parameter at all.
+						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+
+						if (this.tensorContainer)
+							this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
+					}
+
 					subMonitor.worked(2);
 					return this.tensor = TRUE;
 				}

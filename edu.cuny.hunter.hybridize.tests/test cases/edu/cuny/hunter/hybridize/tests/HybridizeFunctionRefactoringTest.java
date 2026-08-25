@@ -10546,6 +10546,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
+	 * parameter is tensor-like. It does not answer what specification may be written for it, and it carries no dtype of its own (#494), so
+	 * a hit was reported as {@code TYPE_HINT_WITHOUT_DTYPE} however much the callers supported. Classification returned on the hint before
+	 * the container question was put, which kept an annotated parameter out of reach of the recovery of #888 entirely.
+	 * <p>
+	 * The three arms separate what the annotated parameter's callers supply, which had been conflated. {@code Hinted} receives arrays,
+	 * whose shapes do not survive the reduction, so its spec is wildcard. {@code Symbolic} receives a pair of {@code tf.keras.layers.Input}
+	 * results, whose shapes do survive, so its spec is concrete: a symbolic pair is modeled, and the suspicion that it was not is what this
+	 * arm exists to refute.
+	 * <p>
+	 * {@code Unmodeled} is the one that blocks, and the cause is neither the annotation nor the symbolic form. One of its elements is
+	 * produced by {@code np.transpose}, which the analysis does not model, so the tuple carries no element evidence for that position and
+	 * the extraction declines the whole parameter. The outcome is right, since a position with no evidence could only reduce to a
+	 * specification nobody may write, and it is worth pinning that the reported reason is the unsupported form rather than the annotation.
+	 */
+	@Test
+	public void testHintedContainerEvidence() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function hinted = findFunction(functions, "Hinted.call");
+		Parameter hintedInputs = hinted.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+
+		assertEquals("An annotated parameter now reaches the container question.", TRUE, hintedInputs.isTensorContainer());
+		assertEquals("Its two element positions are surfaced.", 2, hintedInputs.getContainerElementTypes().size());
+		assertEquals("An array's shape does not survive, so the emitted structure is wildcard.",
+				"[[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=None, dtype=tf.float32)]]",
+				hinted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function symbolic = findFunction(functions, "Symbolic.call");
+		assertEquals("A pair of `Input` results is modeled, and its shapes do survive.",
+				"[[tf.TensorSpec(shape=(None, 12, 10), dtype=tf.float32), tf.TensorSpec(shape=(None, 12, 10), dtype=tf.float32)]]",
+				symbolic.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function unmodeled = findFunction(functions, "Unmodeled.call");
+		Parameter unmodeledInputs = unmodeled.getParameters().stream().filter(p -> p.getName().equals("inputs")).findFirst().orElseThrow();
+
+		assertEquals("Its container is recognized.", TRUE, unmodeledInputs.isTensorContainer());
+		assertNull("An element produced by an unmodeled call leaves the position without evidence, so the extraction declines.",
+				unmodeledInputs.getContainerElementTypes());
+		assertEquals("Reported as the unsupported form rather than as an absent annotation dtype.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				unmodeled.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the guard region of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/898: a guard covers its own
 	 * {@code with} body, not every call written after it in the same frame. {@code after_guard} is called twice, once inside the block with
 	 * a rank-1 argument the body rejects, and once below the block with a square one that multiplies cleanly. Only the first is a declared
