@@ -1,8 +1,10 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -83,17 +85,42 @@ class EagerCoercionAnalysis {
 			.concat(COERCING_MEMBER_NAMES.stream(), EQUALITY_ENFORCING_MEMBER_NAMES.stream()).collect(Collectors.toUnmodifiableSet());
 
 	/**
-	 * The imposing operations whose first positional argument is not an operand. {@code einsum} leads with its equation string, so its
-	 * operands start one slot later; reading its arity as though the equation were an operand would decline it always, which is the
-	 * listed-but-unreachable shape that looks like coverage and is not.
+	 * Where an imposing operation's operands sit among its arguments, so a call can be read rather than refused for carrying arguments the
+	 * operation has always taken.
+	 * <p>
+	 * Refusing is not free. An unreadable consumer is a consumer whose coercion is real and whose result cannot be named, and no
+	 * disposition available then preserves the function: a specification naming the fed dtype raises at the operation, and so does the bare
+	 * decorator, which materializes the argument at that same dtype (the reasoning
+	 * {@link PreconditionFailure#HAS_CONFLICTING_EAGER_DTYPE_COERCIONS} already records). Every argument shape read here is therefore a
+	 * decline that never has to fire, which is why the shapes are described rather than counted (#909).
+	 *
+	 * @param firstOperand The positional index of the first operand ({@code 0} is the callee).
+	 * @param variadic Whether every remaining positional argument is an operand, as {@code einsum}'s are.
+	 * @param trailingNonOperands How many non-operand positional arguments may follow the operands when not variadic.
+	 * @param nonOperandKeywords The keyword arguments that carry no operand.
 	 */
-	private static final Set<String> EQUATION_LED_MEMBER_NAMES = Set.of("einsum");
+	private record OperandShape(int firstOperand, boolean variadic, int trailingNonOperands, Set<String> nonOperandKeywords) {
+	}
+
+	/** An operation's {@code name} is graph metadata rather than a value it combines, so every shape tolerates it. */
+	private static final Set<String> UNIVERSAL_NON_OPERAND_KEYWORDS = Set.of("name");
+
+	/** Two operands, then whatever trailing metadata the operation declares. The shape of the elementwise family. */
+	private static final OperandShape BINARY_SHAPE = new OperandShape(1, false, 1, UNIVERSAL_NON_OPERAND_KEYWORDS);
 
 	/**
-	 * The keyword arguments that carry no operand and so do not make a call unaccounted. An operation's {@code name} is metadata for the
-	 * graph, not a value the operation combines.
+	 * The operations whose operands do not sit in the two slots straight after the callee. Anything absent takes {@link #BINARY_SHAPE}.
+	 * <p>
+	 * {@code einsum} leads with its equation string and then takes any number of operands, so its two-operand form is not its only form.
+	 * The rest declare trailing arguments that are not operands and that may be passed positionally: {@code tensordot}'s contraction axes,
+	 * and the transposition and sparsity flags of the two matrix products. None of them changes the dtype an operand is read at.
 	 */
-	private static final Set<String> NON_OPERAND_KEYWORDS = Set.of("name");
+	private static final Map<String, OperandShape> OPERAND_SHAPES = Map.of("einsum",
+			new OperandShape(2, true, 0, Set.of("name", "optimize")), "tensordot", new OperandShape(1, false, 2, Set.of("name", "axes")),
+			"matmul",
+			new OperandShape(1, false, 8,
+					Set.of("name", "transpose_a", "transpose_b", "adjoint_a", "adjoint_b", "a_is_sparse", "b_is_sparse", "output_type")),
+			"matvec", new OperandShape(1, false, 5, Set.of("name", "transpose_a", "adjoint_a", "a_is_sparse", "b_is_sparse")));
 
 	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
 	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
@@ -142,55 +169,53 @@ class EagerCoercionAnalysis {
 
 		for (Iterator<SSAInstruction> uses = defUse.getUses(parameterValue); uses.hasNext();) {
 			SSAInstruction use = uses.next();
-			int other;
+			List<Integer> partners;
 
 			if (use instanceof SSABinaryOpInstruction binary)
-				other = binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0);
+				partners = List.of(binary.getUse(0) == parameterValue ? binary.getUse(1) : binary.getUse(0));
 			else if (use instanceof PythonInvokeInstruction invoke
 					&& this.imposingMemberName(node, invoke, defUse) instanceof String member) {
-				// The call spelling of the same coercion. Only the binary shape is read: a call carrying a further operand, or a keyword
-				// that is not mere metadata, is unaccounted, and incompleteness declines the whole parameter rather than pinning from the
-				// operands it did understand.
-				int firstOperand = EQUATION_LED_MEMBER_NAMES.contains(member) ? 2 : 1;
+				// The call spelling of the same coercion, read at the operand positions the operation declares.
+				List<Integer> operands = operands(invoke, OPERAND_SHAPES.getOrDefault(member, BINARY_SHAPE));
 
-				if (invoke.getNumberOfPositionalParameters() != firstOperand + 2
-						|| !NON_OPERAND_KEYWORDS.containsAll(invoke.getKeywords())) {
+				if (operands == null) {
+					// A shape this reader does not account for. No pin is formed from the operands it did understand: a skipped
+					// consumer could leave a lone dtype unopposed.
 					indeterminate = true;
 					continue;
 				}
 
-				int first = invoke.getUse(firstOperand);
-				int second = invoke.getUse(firstOperand + 1);
-
-				if (first != parameterValue && second != parameterValue)
+				if (!operands.contains(parameterValue))
 					continue; // Reaches the call other than as a direct operand, so no dtype is imposed on it here.
 
-				other = first == parameterValue ? second : first;
+				partners = operands.stream().filter(operand -> operand != parameterValue).toList();
 			} else
 				continue;
 
-			// A partner that is itself a parameter (including a self-combination like x * x) imposes no dtype: each side of such a
-			// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
-			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878). The upstream parameter coercion excludes
-			// the same case (wala/ML#828), keeping the two implementations in agreement until #875 collapses this one into a read.
-			// A pair that is not a self-combination is recorded for the caller's evidence comparison: a definite dtype divergence
-			// between the two is a definite hazard no single signature (and no bare decorator) survives.
-			if (ir.getSymbolTable().isParameter(other)) {
-				if (other != parameterValue)
-					parameterPartners.add(other);
+			for (int other : partners) {
+				// A partner that is itself a parameter (including a self-combination like x * x) imposes no dtype: each side of such a
+				// pair would take its dtype from the other, a circular decision with no fixed point whose orientation is arbitrary
+				// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/878). The upstream parameter coercion excludes
+				// the same case (wala/ML#828), keeping the two implementations in agreement until #875 collapses this one into a read.
+				// A pair that is not a self-combination is recorded for the caller's evidence comparison: a definite dtype divergence
+				// between the two is a definite hazard no single signature (and no bare decorator) survives.
+				if (ir.getSymbolTable().isParameter(other)) {
+					if (other != parameterValue)
+						parameterPartners.add(other);
 
-				continue;
-			}
+					continue;
+				}
 
-			Set<TensorType> partnerTypes = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(other, Set.of());
+				Set<TensorType> partnerTypes = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(other, Set.of());
 
-			for (TensorType partnerType : partnerTypes) {
-				DType dtype = partnerType.getDType();
+				for (TensorType partnerType : partnerTypes) {
+					DType dtype = partnerType.getDType();
 
-				if (dtype == null || dtype == DType.UNKNOWN)
-					indeterminate = true;
-				else
-					dtypes.add(dtype);
+					if (dtype == null || dtype == DType.UNKNOWN)
+						indeterminate = true;
+					else
+						dtypes.add(dtype);
+				}
 			}
 		}
 
@@ -198,10 +223,39 @@ class EagerCoercionAnalysis {
 	}
 
 	/**
+	 * The value numbers of {@code invoke}'s operands under {@code shape}, or {@code null} if the call does not fit it. A call that does not
+	 * fit carries something this reader cannot place, and placing it wrongly would impose a dtype from a value the operation never
+	 * combines, so it is refused rather than guessed at.
+	 *
+	 * @param invoke The call.
+	 * @param shape Where the operation's operands sit among its arguments.
+	 * @return The operands' value numbers, or {@code null} if the call does not fit the shape.
+	 */
+	private static List<Integer> operands(PythonInvokeInstruction invoke, OperandShape shape) {
+		if (!shape.nonOperandKeywords().containsAll(invoke.getKeywords()))
+			return null;
+
+		int positional = invoke.getNumberOfPositionalParameters();
+		int last = shape.variadic() ? positional : shape.firstOperand() + 2;
+
+		// Variadic operations take every remaining positional argument as an operand and need at least two to combine anything. The
+		// rest take exactly two, optionally followed by the non-operand arguments they declare, which may be passed positionally.
+		if (last - shape.firstOperand() < 2 || (!shape.variadic() && positional > last + shape.trailingNonOperands()))
+			return null;
+
+		List<Integer> operands = new ArrayList<>(last - shape.firstOperand());
+
+		for (int operand = shape.firstOperand(); operand < last; operand++)
+			operands.add(invoke.getUse(operand));
+
+		return operands;
+	}
+
+	/**
 	 * The member name under which {@code invoke} calls an operation that imposes its tensor partner's dtype on the other operand, or
 	 * {@code null} if it calls no such operation. The callee's fully-qualified name is resolved and required to root at the TensorFlow
 	 * module, so a same-named method on an unrelated object imposes nothing. The name is returned rather than a verdict because the operand
-	 * positions depend on it ({@link #EQUATION_LED_MEMBER_NAMES}).
+	 * positions depend on it ({@link #OPERAND_SHAPES}).
 	 *
 	 * @param node The call-graph node containing the call.
 	 * @param invoke The call.
