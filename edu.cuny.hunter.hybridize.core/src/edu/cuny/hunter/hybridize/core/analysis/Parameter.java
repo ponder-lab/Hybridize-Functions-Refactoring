@@ -1181,17 +1181,21 @@ public final class Parameter {
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
 
-					if (this.getConformingTensorTypes().isEmpty()) {
-						// Every type observed here came from a call site the tests declare must fail, so the reduction has nothing of the
-						// parameter's own to read (#892). What the conforming callers pass may still be a container, and its element
-						// structure is the specification they do support, so ask Phase 3's question rather than leaving the reduction to
-						// choose between a spec derived from a rejected call and no spec at all (#888). The verdict below is TRUE either
-						// way, so this asks a further question about an already tensor-typed parameter and moves no precondition.
-						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					// A tensor typing does not settle whether the parameter is a container. A tuple of tensors reaching a parameter
+					// reports as the union of its elements' types, which is indistinguishable from a tensor parameter that several
+					// call sites type differently, so returning on the typing alone leaves the question unasked rather than answered
+					// (#888). It is worth asking of every tensor-typed parameter, not only where the parameter's own evidence is
+					// unusable (#892's case): the container catalog is built once per analysis, and the question resolves against the
+					// parameter's own instance keys, so it costs a points-to walk and answers no where no container is involved. The
+					// verdict below is TRUE either way, so this asks a further question about an already tensor-typed parameter and
+					// moves no precondition; what it changes is the specification the reduction may write.
+					this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 
-						if (this.tensorContainer)
-							this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
-					}
+					if (this.tensorContainer)
+						// The extraction reads the conforming nodes alone, on the same ground the tensor types do: a value passed by a
+						// call the tests declare must fail describes what the function rejects, so letting it stand beside the
+						// containers would report the form unsupported on the strength of a rejected call (#892).
+						this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
 
 					subMonitor.worked(2);
 					return this.tensor = TRUE;

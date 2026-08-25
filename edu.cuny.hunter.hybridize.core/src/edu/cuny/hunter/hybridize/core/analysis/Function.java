@@ -3528,6 +3528,35 @@ public class Function {
 			// so the container branch below runs first and only its failure reports the exclusion (#888).
 			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && !param.getTensorTypes().isEmpty();
 
+			// A container's element evidence outranks the parameter's own typing, and does so however much of the latter there is. A tuple
+			// of tensors reaching a parameter is reported as the union of its elements' types, so the flat typing here is those very
+			// elements flattened: reducing it writes one specification whose disagreeing members collapse to a wildcard, and binding a
+			// pair to that specification makes the body's unpacking raise. The elements are what the callers actually pass, position by
+			// position, so the nested structure is both the more precise answer and the only executable one (#888).
+			if (param.isTensorContainer() != null && param.isTensorContainer() && param.getContainerElementTypes() != null
+					&& !contexts.isEmpty()) {
+				List<Set<TensorType>> elements = param.getContainerElementTypes();
+				List<TensorType> reduced = new ArrayList<>(elements.size());
+				AbsenceReason elementReason = null;
+
+				for (int j = 0; j < elements.size() && elementReason == null; j++) {
+					Optional<TensorType> elementSpec = inferSpec(elements.get(j));
+
+					if (elementSpec.isPresent())
+						reduced.add(elementSpec.get());
+					else
+						elementReason = this.reportElementDrop(param, j, elements.get(j));
+				}
+
+				if (elementReason == null) {
+					specByParameter.put(param, new InputSignature.Sequence(reduced));
+					continue;
+				}
+
+				blocking.put(param, elementReason);
+				continue;
+			}
+
 			if (contexts.isEmpty()) {
 				/*
 				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence. The ways to land
