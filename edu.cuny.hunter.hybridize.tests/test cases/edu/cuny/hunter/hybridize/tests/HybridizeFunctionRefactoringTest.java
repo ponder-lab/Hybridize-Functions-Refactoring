@@ -10960,6 +10960,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the container question of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reduced from its batch-tuple
+	 * case. A tuple of tensors reaching a parameter reports as the <em>union</em> of its elements' types, which is indistinguishable from a
+	 * tensor parameter that several call sites type differently. Classification returned on that typing and put the container question only
+	 * where the parameter's own evidence was unusable (#892's case), so for an ordinary conforming parameter the question went unasked
+	 * rather than answered, the elements' structure went unread, and the reduction wrote one flat specification where the callers pass a
+	 * pair.
+	 * <p>
+	 * The flat specification is not merely imprecise. Bound to it, the parameter arrives as a single tensor and the body's unpacking
+	 * raises, which is why the emitted nested form is executed here rather than compared.
+	 */
+	@Test
+	public void testTensorTypedContainerParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function batched = getFunction("batched");
+		Parameter pair = batched.getParameters().get(0);
+
+		assertEquals("The parameter is tensor-typed by the union of its elements' types.", TRUE, pair.isTensor());
+		assertEquals("The container question is now put to it, and answered.", TRUE, pair.isTensorContainer());
+		assertEquals("Both element positions are surfaced.", 2, pair.getContainerElementTypes().size());
+		assertEquals("The parameter's own typing is the elements flattened, so it is the union of both.", 2, pair.getTensorTypes().size());
+		assertEquals("The emitted structure is nested, one specification per element, rather than one flat specification.",
+				"[[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None), dtype=tf.float32)]]",
+				batched.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`batched` hybridizes (P1).", P1, batched.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the repair direction of the implicitly-cast NumPy argument hazard
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): {@code scale} combines its {@code float64} NumPy
 	 * argument with a {@code float32} tensor-initialized variable, the detector's eager-effective set is the singleton {@code float32}, and

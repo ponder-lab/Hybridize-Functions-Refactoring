@@ -2323,6 +2323,36 @@ public class Function {
 	}
 
 	/**
+	 * Reduces a container parameter's per-position element evidence into a nested specification entry, or records the reason a position
+	 * could not be reduced. The sequence reduction of #781, shared by the two routes that reach it: a parameter whose own evidence is
+	 * unusable, and one whose own evidence exists but is outranked by the elements it is the union of (#888).
+	 *
+	 * @param param The container parameter whose elements to reduce. Its element types must be non-null.
+	 * @param specByParameter Receives the nested entry when every position reduces.
+	 * @param blocking Receives the first position's drop reason otherwise.
+	 */
+	private void reduceContainerElements(Parameter param, Map<Parameter, InputSignature.SpecEntry> specByParameter,
+			Map<Parameter, AbsenceReason> blocking) {
+		List<Set<TensorType>> elements = param.getContainerElementTypes();
+		List<TensorType> reduced = new ArrayList<>(elements.size());
+		AbsenceReason elementReason = null;
+
+		for (int j = 0; j < elements.size() && elementReason == null; j++) {
+			Optional<TensorType> elementSpec = inferSpec(elements.get(j));
+
+			if (elementSpec.isPresent())
+				reduced.add(elementSpec.get());
+			else
+				elementReason = this.reportElementDrop(param, j, elements.get(j));
+		}
+
+		if (elementReason == null)
+			specByParameter.put(param, new InputSignature.Sequence(reduced));
+		else
+			blocking.put(param, elementReason);
+	}
+
+	/**
 	 * The single concrete dtype of a parameter's own evidence, or {@code null} when the evidence is absent, plural, or ⊤.
 	 *
 	 * @param parameter The parameter whose evidence to reduce.
@@ -3528,6 +3558,17 @@ public class Function {
 			// so the container branch below runs first and only its failure reports the exclusion (#888).
 			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && !param.getTensorTypes().isEmpty();
 
+			// A container's element evidence outranks the parameter's own typing, and does so however much of the latter there is. A tuple
+			// of tensors reaching a parameter is reported as the union of its elements' types, so the flat typing here is those very
+			// elements flattened: reducing it writes one specification whose disagreeing members collapse to a wildcard, and binding a
+			// pair to that specification makes the body's unpacking raise. The elements are what the callers actually pass, position by
+			// position, so the nested structure is both the more precise answer and the only executable one (#888).
+			if (param.isTensorContainer() != null && param.isTensorContainer() && param.getContainerElementTypes() != null
+					&& !contexts.isEmpty()) {
+				this.reduceContainerElements(param, specByParameter, blocking);
+				continue;
+			}
+
 			if (contexts.isEmpty()) {
 				/*
 				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence. The ways to land
@@ -3542,27 +3583,8 @@ public class Function {
 				if (param.isTensorContainer() != null && param.isTensorContainer()) {
 					// The sequence reduction (#781): a list or tuple of tensors with a modeled element structure reduces each element
 					// position independently through `inferSpec`, and the parameter contributes a nested entry rather than blocking.
-					List<Set<TensorType>> elements = param.getContainerElementTypes();
-
-					if (elements != null) {
-						List<TensorType> reduced = new ArrayList<>(elements.size());
-						AbsenceReason elementReason = null;
-
-						for (int j = 0; j < elements.size() && elementReason == null; j++) {
-							Optional<TensorType> elementSpec = inferSpec(elements.get(j));
-
-							if (elementSpec.isPresent())
-								reduced.add(elementSpec.get());
-							else
-								elementReason = this.reportElementDrop(param, j, elements.get(j));
-						}
-
-						if (elementReason == null) {
-							specByParameter.put(param, new InputSignature.Sequence(reduced));
-							continue;
-						}
-
-						blocking.put(param, elementReason);
+					if (param.getContainerElementTypes() != null) {
+						this.reduceContainerElements(param, specByParameter, blocking);
 						continue;
 					}
 
