@@ -10330,6 +10330,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
 		this.setInferInputSignatures(true);
 
+		// A container parameter carrying a rank-sensitive read. The read comes from the modeled layer call applied to an unpacked
+		// element rather than from the unpack itself, which produces none; that distinction is what two earlier attempts at this
+		// arm got wrong, since both unpacked and then did plain arithmetic, so the check ran and found nothing either way. Every
+		// element here has a known rank, so the read is answered. Before #914 no read against a container was ever answered: the
+		// check could not attribute one to an element and refused, withholding a specification that stands.
+		Function unpacked = getFunction("unpacked");
+		assertEquals("The read against `unpacked`'s container is answered by its elements' known ranks.", Boolean.FALSE,
+				unpacked.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("So its nested specification stands rather than being withheld.", unpacked.getInferredInputSignature().isPresent());
+		assertEquals("`unpacked` hybridizes (P1).", P1, unpacked.getPassingPrecondition());
+
 		Function arith = getFunction("arith");
 		assertTrue("`arith` does integer arithmetic over `x.shape[-1]`, which its signature leaves unresolved.",
 				arith.getHasUnresolvedStaticallyReadAxes());

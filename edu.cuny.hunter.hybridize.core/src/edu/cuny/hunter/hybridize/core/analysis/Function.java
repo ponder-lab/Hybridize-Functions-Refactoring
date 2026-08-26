@@ -1915,7 +1915,14 @@ public class Function {
 	 */
 	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
 		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
-			// A container spec's per-element axes are not attributable to the read: conservative.
+			// Deliberately still refuses a container outright, where the rank arm below attributes the read across the elements
+			// instead. The two are asymmetric on purpose rather than by oversight. Relaxing a refusal is the direction that emits a
+			// specification where one was withheld, so it wants a witness, and the rank arm has one: a container parameter whose
+			// elements all answer the read, executed in both directions. No witness reaches this arm. A read is attributed to a
+			// parameter rather than to a value derived from one, so an extent read on an unpacked element does not present here, and
+			// three attempts to construct a case that does all resolved identically with the attribution removed. Whether this arm is
+			// reachable at all is the open question; until someone answers it, refusing costs precision on a path nobody has
+			// exhibited and risks nothing (#914).
 			if (!(entry instanceof InputSignature.Single single))
 				return true;
 
@@ -1957,10 +1964,26 @@ public class Function {
 	 */
 	private boolean isRankUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
 		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
-			if (!(entry instanceof InputSignature.Single single) || single.type().getDims() == null)
-				return true;
+			for (TensorType covered : coveredTypes(entry))
+				if (covered.getDims() == null)
+					return true;
 
 		return false;
+	}
+
+	/**
+	 * The tensor types a spec entry covers: the one type of a single-tensor entry, or every element type of a container's.
+	 * <p>
+	 * A read's provenance names a parameter rather than a position inside it, so a read against a container cannot be attributed to one
+	 * element. Requiring every element to satisfy the read is what that unattributability licenses, and it is strictly weaker than the
+	 * refusal it replaces: a container whose elements all answer the read resolves it, where before no container ever did, and one whose
+	 * elements do not still blocks (#914).
+	 *
+	 * @param entry The spec entry to expand.
+	 * @return Every tensor type the entry covers.
+	 */
+	private static List<TensorType> coveredTypes(InputSignature.SpecEntry entry) {
+		return entry instanceof InputSignature.Single single ? List.of(single.type()) : ((InputSignature.Sequence) entry).elementTypes();
 	}
 
 	/**
