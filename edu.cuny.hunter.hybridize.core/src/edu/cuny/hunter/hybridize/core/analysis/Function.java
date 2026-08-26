@@ -1914,34 +1914,31 @@ public class Function {
 	 * @return True iff the read consumes an axis the signature leaves unresolved.
 	 */
 	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
-		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
-			// A container spec's per-element axes are not attributable to the read: conservative.
-			if (!(entry instanceof InputSignature.Single single))
-				return true;
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
+			for (TensorType covered : coveredTypes(entry)) {
+				List<Dimension<?>> dims = covered.getDims();
 
-			List<Dimension<?>> dims = single.type().getDims();
+				// Shape-⊤ renders `shape=None`: every axis is wild.
+				if (dims == null)
+					return true;
 
-			// Shape-⊤ renders `shape=None`: every axis is wild.
-			if (dims == null)
-				return true;
+				if (read.axes() == null) {
+					for (Dimension<?> dim : dims)
+						if (!(dim instanceof NumericDim))
+							return true;
+				} else
+					for (int axis : read.axes()) {
+						int index = axis < 0 ? dims.size() + axis : axis;
 
-			if (read.axes() == null) {
-				for (Dimension<?> dim : dims)
-					if (!(dim instanceof NumericDim))
-						return true;
-			} else
-				for (int axis : read.axes()) {
-					int index = axis < 0 ? dims.size() + axis : axis;
+						// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
+						// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
+						if (index < 0 || index >= dims.size())
+							continue;
 
-					// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
-					// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
-					if (index < 0 || index >= dims.size())
-						continue;
-
-					if (!(dims.get(index) instanceof NumericDim))
-						return true;
-				}
-		}
+						if (!(dims.get(index) instanceof NumericDim))
+							return true;
+					}
+			}
 
 		return false;
 	}
@@ -1957,10 +1954,26 @@ public class Function {
 	 */
 	private boolean isRankUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
 		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
-			if (!(entry instanceof InputSignature.Single single) || single.type().getDims() == null)
-				return true;
+			for (TensorType covered : coveredTypes(entry))
+				if (covered.getDims() == null)
+					return true;
 
 		return false;
+	}
+
+	/**
+	 * The tensor types a spec entry covers: the one type of a single-tensor entry, or every element type of a container's.
+	 * <p>
+	 * A read's provenance names a parameter rather than a position inside it, so a read against a container cannot be attributed to one
+	 * element. Requiring every element to satisfy the read is what that unattributability licenses, and it is strictly weaker than the
+	 * refusal it replaces: a container whose elements all answer the read resolves it, where before no container ever did, and one whose
+	 * elements do not still blocks (#914).
+	 *
+	 * @param entry The spec entry to expand.
+	 * @return Every tensor type the entry covers.
+	 */
+	private static List<TensorType> coveredTypes(InputSignature.SpecEntry entry) {
+		return entry instanceof InputSignature.Single single ? List.of(single.type()) : ((InputSignature.Sequence) entry).elementTypes();
 	}
 
 	/**
