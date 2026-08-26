@@ -1914,31 +1914,41 @@ public class Function {
 	 * @return True iff the read consumes an axis the signature leaves unresolved.
 	 */
 	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
-		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
-			for (TensorType covered : coveredTypes(entry)) {
-				List<Dimension<?>> dims = covered.getDims();
+		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
+			// Deliberately still refuses a container outright, where the rank arm below attributes the read across the elements
+			// instead. The two are asymmetric on purpose rather than by oversight. Relaxing a refusal is the direction that emits a
+			// specification where one was withheld, so it wants a witness, and the rank arm has one: a container parameter whose
+			// elements all answer the read, executed in both directions. No witness reaches this arm. A read is attributed to a
+			// parameter rather than to a value derived from one, so an extent read on an unpacked element does not present here, and
+			// three attempts to construct a case that does all resolved identically with the attribution removed. Whether this arm is
+			// reachable at all is the open question; until someone answers it, refusing costs precision on a path nobody has
+			// exhibited and risks nothing (#914).
+			if (!(entry instanceof InputSignature.Single single))
+				return true;
 
-				// Shape-⊤ renders `shape=None`: every axis is wild.
-				if (dims == null)
-					return true;
+			List<Dimension<?>> dims = single.type().getDims();
 
-				if (read.axes() == null) {
-					for (Dimension<?> dim : dims)
-						if (!(dim instanceof NumericDim))
-							return true;
-				} else
-					for (int axis : read.axes()) {
-						int index = axis < 0 ? dims.size() + axis : axis;
+			// Shape-⊤ renders `shape=None`: every axis is wild.
+			if (dims == null)
+				return true;
 
-						// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
-						// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
-						if (index < 0 || index >= dims.size())
-							continue;
+			if (read.axes() == null) {
+				for (Dimension<?> dim : dims)
+					if (!(dim instanceof NumericDim))
+						return true;
+			} else
+				for (int axis : read.axes()) {
+					int index = axis < 0 ? dims.size() + axis : axis;
 
-						if (!(dims.get(index) instanceof NumericDim))
-							return true;
-					}
-			}
+					// An index beyond the spec's rank contributes no element at trace time (Python clamps a slice); a genuinely
+					// out-of-range subscript raises regardless of the signature and is not this precondition's concern.
+					if (index < 0 || index >= dims.size())
+						continue;
+
+					if (!(dims.get(index) instanceof NumericDim))
+						return true;
+				}
+		}
 
 		return false;
 	}
