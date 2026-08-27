@@ -11080,6 +11080,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A parameter fed a dtype its consumers do not impose needs that conversion reproduced at the trace boundary, and only an emitted
+	 * specification can carry it. With inference off nothing will be, so the conversion is declined rather than emitted as a bare decorator
+	 * that raises.
+	 * <p>
+	 * Verified by execution rather than asserted: bare, {@code changed} raises; a specification naming the imposed {@code float32} runs;
+	 * one naming the fed {@code float64} raises exactly as the bare decorator does. So the decline is refusing a form that breaks, and the
+	 * specification is the repair rather than a nicety.
+	 * <p>
+	 * {@code unchanged} is the ablation. It is fed the dtype its operation imposes, so nothing converts, it runs bare, and declining it
+	 * would cost a working function its transformation. {@code forwarded} takes a parameter coerced upstream and passed on unchanged, so
+	 * its fed side carries both dtypes; that is a disagreement rather than an absence of evidence and reads as changed however incomplete
+	 * the fed side is. Executed, it raises bare too, so the decline is right there as well.
+	 * <p>
+	 * This runs with inference off, which is one of the two routes to a bare decorator. The other, inference on with the specification
+	 * present, is asserted by {@link #testEagerDtypePin}: its {@code scale} is a parameter of exactly this kind, fed {@code float64}
+	 * against an imposed {@code float32}, and it is asserted to hybridize. So a written specification suppressing the decline is covered
+	 * there rather than duplicated here, and that test failing would catch this decline firing where a specification exists.
+	 * <p>
+	 * The remaining route, inference on with the specification absent for an unrelated reason, has no fixture yet. It needs a parameter
+	 * that is both fed a divergent dtype and withheld for a second cause, which no fixture currently combines.
+	 * <p>
+	 * No arm exercises an unresolved reading, and the omission is structural rather than an oversight. A fixture this size gives every
+	 * parameter explicit call sites, so every fed side resolves and the state cannot arise here at all; it needs the whole-program
+	 * uncertainty that only real projects supply, and there it occurs readily. So the coverage for it is the whole-project measurement
+	 * rather than a fourth arm, and adding one by folding an unresolved reading in with a changed one would not fill the gap: it would
+	 * decline functions that run.
+	 */
+	@Test
+	public void testUnwritableEagerDtypePin() throws Exception {
+		Function changed = getFunction("changed");
+		assertNotNull("`changed` is fed float64 where the multiply imposes float32, and no signature will carry the conversion.",
+				changed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
+
+		Function unchanged = getFunction("unchanged");
+		assertNull("`unchanged` is fed the dtype it is imposed, so nothing converts and the decline does not fire.", unchanged.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
+		assertEquals("`unchanged` hybridizes (P1).", P1, unchanged.getPassingPrecondition());
+
+		Function forwarded = getFunction("forwarded");
+		assertNotNull("A coerced parameter passed on unchanged leaves both dtypes on the fed side, which reads as a change.", forwarded
+				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
+	}
+
+	/**
 	 * Pins the decline fallback of the implicitly-cast NumPy argument hazard
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1): {@code combine}'s parameter is consumed in
 	 * parallel by a {@code float32} and a {@code float64} multiply, both of which succeed eagerly through per-op coercion, so the

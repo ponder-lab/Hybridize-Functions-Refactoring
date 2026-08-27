@@ -106,6 +106,8 @@ import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
+import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -1102,6 +1104,14 @@ public class Function {
 	private Map<Parameter, DType> eagerEffectiveDtypePins = new HashMap<>();
 
 	/**
+	 * The parameters whose applied dtype coercion resolves as {@link Resolution#CHANGED}, i.e. those the run feeds a dtype their consumers
+	 * do not impose. Distinct from {@link #eagerEffectiveDtypePins}, which compares a parameter's REPORTED dtype against the imposition and
+	 * is therefore empty for an operator spelling by construction: the analysis applies that coercion and reports its result, so the two
+	 * agree and the divergence with the FED dtype stays invisible (wala/ML#838).
+	 */
+	private Set<Parameter> changedDtypeCoercions = new HashSet<>();
+
+	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	private FunctionDefinition functionDefinition;
@@ -1332,6 +1342,16 @@ public class Function {
 										"Can't hybridize a function whose parameter combines with tensors of different dtypes; "
 												+ "eager execution coerces the argument per operation, so no single input signature "
 												+ "preserves its semantics.");
+							else if (this.requiresUnwritableEagerDtypePin())
+								// A parameter is fed a dtype its consumers do not impose, and no specification will be written to
+								// reproduce the conversion at the trace boundary. Eagerly the argument converts at the operation; under
+								// tracing it materializes at the dtype it was fed and the operation raises (#861, Case 1). Unlike the
+								// conflicting case above, a specification WOULD preserve this function exactly, naming the imposed dtype;
+								// what is missing is the specification, not the answer.
+								this.addFailure(PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN,
+										"Can't hybridize a function whose parameter is fed a dtype its consumers do not impose unless an "
+												+ "input signature is written: eager execution converts the argument at the operation, and "
+												+ "tracing without a signature carries the fed dtype in instead.");
 							else if (this.getHasKerasSymbolicArguments() != null && this.getHasKerasSymbolicArguments())
 								// A call site passes a Keras symbolic tensor (issue 887): tf.function is one of the APIs a KerasTensor
 								// refuses, so the decorator raises on the first call before anything is traced, bare or with a
@@ -2250,6 +2270,7 @@ public class Function {
 		List<Parameter> parameters = this.getParameters();
 		boolean conflicting = false;
 		Map<Parameter, DType> pins = new HashMap<>();
+		Set<Parameter> changed = new HashSet<>();
 
 		for (int position = 0; position < parameters.size(); position++) {
 			Parameter parameter = parameters.get(position);
@@ -2277,6 +2298,18 @@ public class Function {
 				// Value slot 0 is the callable itself; declared parameter `position` sits at `position + 1`.
 				if (position + 1 >= parameterValues.length)
 					continue;
+
+				// The fed-versus-imposed question, which the pin below cannot ask (wala/ML#838). UNRESOLVED is deliberately not
+				// folded in with CHANGED: it means the fed side could not be established, not that it diverges, and declining on it
+				// would cost a working function its transformation. Recorded, never treated as safe, never silently dropped.
+				PointerKey parameterKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, parameterValues[position + 1]);
+				AppliedDTypeCoercion coercion = tensorTypeAnalysis.getAppliedDTypeCoercions().get(parameterKey);
+
+				if (coercion != null && coercion.resolution() == Resolution.CHANGED) {
+					changed.add(parameter);
+					LOG.info("Parameter " + parameter.getName() + " of " + this + " is fed " + coercion.fed() + " where its consumers "
+							+ "impose " + coercion.imposed() + "; the conversion needs reproducing at the trace boundary.");
+				}
 
 				EagerCoercionAnalysis.Outcome outcome = analysis.eagerEffectiveDtypes(node, parameterValues[position + 1]);
 				dtypes.addAll(outcome.dtypes());
@@ -2343,6 +2376,7 @@ public class Function {
 
 		this.hasConflictingEagerDtypeCoercions = conflicting;
 		this.eagerEffectiveDtypePins = pins;
+		this.changedDtypeCoercions = changed;
 	}
 
 	/**
@@ -2373,6 +2407,23 @@ public class Function {
 			specByParameter.put(param, new InputSignature.Sequence(reduced));
 		else
 			blocking.put(param, elementReason);
+	}
+
+	/**
+	 * True iff some parameter is fed a dtype its consumers do not impose and no emitted specification will carry the conversion. The repair
+	 * lives in the specification, so it is unavailable exactly when none is written: inference is off, or inference is on and the
+	 * specification turns out to be absent.
+	 *
+	 * @return True iff a required boundary conversion cannot be written.
+	 */
+	private boolean requiresUnwritableEagerDtypePin() {
+		if (this.changedDtypeCoercions.isEmpty())
+			return false;
+
+		if (!this.getInferInputSignatures())
+			return true;
+
+		return !(this.inferInputSignature() instanceof InferenceResult.Inferred);
 	}
 
 	/**
