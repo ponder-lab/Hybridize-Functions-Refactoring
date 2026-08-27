@@ -129,7 +129,22 @@ public enum PreconditionFailure {
 	 * construction, taking the symbolic input and returning symbolic outputs, is an ordinary shape, so the decline is the only
 	 * behavior-preserving option. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
 	 */
-	HAS_KERAS_SYMBOLIC_ARGUMENTS(23);
+	HAS_KERAS_SYMBOLIC_ARGUMENTS(23),
+
+	/**
+	 * A parameter's direct consumers impose a single eager-effective dtype that differs from the dtype the parameter is fed, and no input
+	 * signature will be written to carry that difference. The repair for such a divergence is the pin: the emitted specification names the
+	 * imposed dtype, so the boundary cast reproduces what eager execution did per operation. Without a specification there is no boundary
+	 * to cast at, and tracing materializes the argument at its fed dtype, so the operation that converted it eagerly raises instead
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1).
+	 * <p>
+	 * Distinct from {@link #HAS_CONFLICTING_EAGER_DTYPE_COERCIONS} in what is available rather than in the hazard. There the consumers
+	 * disagree, so no specification exists that preserves them all and the conversion is refused however inference is configured. Here one
+	 * specification would preserve the function exactly, and the conversion is refused only because that specification is not going to be
+	 * written: inference is off, or it is on and the specification is absent for an unrelated reason. The same function converts safely the
+	 * moment a specification carrying the pin can be emitted.
+	 */
+	HAS_UNWRITABLE_EAGER_DTYPE_PIN(24);
 
 	static {
 		// check that the codes are unique.
