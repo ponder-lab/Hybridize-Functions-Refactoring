@@ -11093,6 +11093,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * its fed side carries both dtypes; that is a disagreement rather than an absence of evidence and reads as changed however incomplete
 	 * the fed side is. Executed, it raises bare too, so the decline is right there as well.
 	 * <p>
+	 * This runs with inference off, which is one of the two routes to a bare decorator. The other, inference on with the specification
+	 * present, is asserted by {@link #testEagerDtypePin}: its {@code scale} is a parameter of exactly this kind, fed {@code float64}
+	 * against an imposed {@code float32}, and it is asserted to hybridize. So a written specification suppressing the decline is covered
+	 * there rather than duplicated here, and that test failing would catch this decline firing where a specification exists.
+	 * <p>
+	 * The remaining route, inference on with the specification absent for an unrelated reason, has no fixture yet. It needs a parameter
+	 * that is both fed a divergent dtype and withheld for a second cause, which no fixture currently combines.
+	 * <p>
 	 * No arm exercises an unresolved reading, and the omission is structural rather than an oversight. A fixture this size gives every
 	 * parameter explicit call sites, so every fed side resolves and the state cannot arise here at all; it needs the whole-program
 	 * uncertainty that only real projects supply, and there it occurs readily. So the coverage for it is the whole-project measurement
