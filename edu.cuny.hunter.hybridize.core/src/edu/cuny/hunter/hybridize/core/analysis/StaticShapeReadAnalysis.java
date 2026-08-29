@@ -158,7 +158,7 @@ class StaticShapeReadAnalysis {
 	 * <p>
 	 * These were once excluded outright, on the reasoning that {@code x.shape[1] == 4} is {@code False} under a wildcard rather than a
 	 * raise. That is true of the comparison and false of the program. The comparison does not raise; its RESULT changes, and a changed
-	 * result that decides a branch can raise whatever the branch guards. A corpus function does exactly that:
+	 * result that decides a branch can raise whatever the branch guards. A Keras attention layer in the wild does exactly that:
 	 *
 	 * <pre>
 	 * if self.hidden_size != encoder_output.shape[-1]:
@@ -172,8 +172,9 @@ class StaticShapeReadAnalysis {
 	 * predicates, and the second is the one this precondition needs. Arithmetic, reshape targets and buffer shapes satisfy both; a
 	 * comparison satisfies only the second, accepting {@code None} and yielding the wrong answer, which is the quieter failure.
 	 * <p>
-	 * A comparison is a sink only when its result reaches a conditional branch. A comparison whose value is merely returned or stored
-	 * changes that value and decides nothing here, and flagging it would decline functions that are fine.
+	 * The sink is a dimension operand of a comparison BRANCH, not a comparison instruction: `if a != b` lowers to a conditional branch
+	 * carrying the operator, so no comparison instruction is produced. A comparison whose value is merely returned or stored does produce
+	 * one, and it decides no branch, so it stays unflagged; flagging it would decline functions that are fine.
 	 */
 	private static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
 
