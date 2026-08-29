@@ -27,6 +27,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSABinaryOpInstruction;
+import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
@@ -147,10 +148,35 @@ class StaticShapeReadAnalysis {
 
 	/**
 	 * Names of the binary operators constituting integer arithmetic over a dimension, matched by {@code toString()} since the operator
-	 * enums live in non-exported WALA packages. Comparisons are excluded: {@code x.shape[1] == 4} is {@code False} under a wildcard, not a
-	 * raise.
+	 * enums live in non-exported WALA packages. Comparisons are not arithmetic and are handled separately, by
+	 * {@link #COMPARISON_OPERATOR_NAMES}, because they break differently.
 	 */
 	private static final Set<String> ARITHMETIC_OPERATOR_NAMES = Set.of("add", "sub", "mul", "div", "rem", "mod", "floordiv", "pow");
+
+	/**
+	 * Names of the comparison operators, matched like {@link #ARITHMETIC_OPERATOR_NAMES}.
+	 * <p>
+	 * These were once excluded outright, on the reasoning that {@code x.shape[1] == 4} is {@code False} under a wildcard rather than a
+	 * raise. That is true of the comparison and false of the program. The comparison does not raise; its RESULT changes, and a changed
+	 * result that decides a branch can raise whatever the branch guards. A Keras attention layer in the wild does exactly that:
+	 *
+	 * <pre>
+	 * if self.hidden_size != encoder_output.shape[-1]:
+	 *     raise ValueError("Dim of {} and {} must equal".format(...))
+	 * </pre>
+	 *
+	 * Under a wildcard the read is {@code None}, {@code 100 != None} is {@code True}, and the guard raises on every call, while the same
+	 * function runs correctly with a bare decorator, where per-shape tracing makes the read concrete.
+	 * <p>
+	 * The general point the old rationale missed is that "requires a Python integer" and "is broken by {@code None}" are different
+	 * predicates, and the second is the one this precondition needs. Arithmetic, reshape targets and buffer shapes satisfy both; a
+	 * comparison satisfies only the second, accepting {@code None} and yielding the wrong answer, which is the quieter failure.
+	 * <p>
+	 * The sink is a dimension operand of a comparison BRANCH, not a comparison instruction: `if a != b` lowers to a conditional branch
+	 * carrying the operator, so no comparison instruction is produced. A comparison whose value is merely returned or stored does produce
+	 * one, and it decides no branch, so it stays unflagged; flagging it would decline functions that are fine.
+	 */
+	private static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
 
 	/** The unary-negation operator name (see {@link NumpyParameterFlowAnalysis}'s rationale for name matching). */
 	private static final String NEGATION_OPERATOR_NAME = "neg";
@@ -501,6 +527,28 @@ class StaticShapeReadAnalysis {
 					continue;
 				}
 
+				// A statically-read dimension decides a branch: a sink. The comparison itself does not raise under a wildcard, which
+				// is why comparisons were once excluded; it yields the wrong answer, and the branch it decides then does whatever it
+				// does, up to and including raising. See COMPARISON_OPERATOR_NAMES.
+				//
+				// The test is on the BRANCH rather than on a comparison instruction because `if a != b` lowers to a conditional
+				// branch carrying the operator, so the dimension is an operand of the branch and no comparison instruction is
+				// produced at all. Testing a comparison instruction instead finds nothing, which is what a first attempt here did.
+				// A comparison whose value is merely returned does produce one, and it decides no branch, so it stays unflagged.
+				// Restricted to a descriptor naming specific axes. Iterating a shape vector lowers to a conditional branch on the
+				// loop cursor, which carries the vector's taint with coverage lost (`axes` null, meaning any axis). That surface is
+				// rank-sensitive and extent-insensitive: it raises on an unknown rank and tolerates a known one with dynamic axes,
+				// which is why `ranked_iter` resolves. Branching on a whole shape vector is not branching on a dimension.
+				//
+				// The cost is a lost-coverage descriptor reaching a branch, which this does not flag. That direction is deliberate
+				// here even though the surrounding analysis widens toward declining elsewhere: a rank-only read is common and safe,
+				// so flagging it would decline working functions for a hazard they do not have.
+				if (use instanceof SSAConditionalBranchInstruction branch && isComparisonOperator(branch) && !valueColored
+						&& shapeDescriptors.containsKey(valueNumber) && shapeDescriptors.get(valueNumber).axes() != null) {
+					reads.add(shapeDescriptors.get(valueNumber));
+					continue;
+				}
+
 				// Any other instruction: a value-tainted operand escapes onward and the definitions inherit its color; a shape-tainted
 				// operand propagates its descriptor.
 				if (valueColored) {
@@ -785,6 +833,11 @@ class StaticShapeReadAnalysis {
 			shapeDescriptors.put(value, joined);
 			worklist.push(value);
 		}
+	}
+
+	/** True iff {@code branch} tests a comparison (see {@link #COMPARISON_OPERATOR_NAMES}). */
+	private static boolean isComparisonOperator(SSAConditionalBranchInstruction branch) {
+		return COMPARISON_OPERATOR_NAMES.contains(String.valueOf(branch.getOperator()).toLowerCase());
 	}
 
 	/** True iff {@code binary}'s operator is integer arithmetic (see {@link #ARITHMETIC_OPERATOR_NAMES}). */

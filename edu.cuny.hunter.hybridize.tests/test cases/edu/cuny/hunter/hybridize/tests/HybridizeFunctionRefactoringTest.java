@@ -10326,6 +10326,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * which its signature pins, so the per-axis condition admits it beside the wild axis 1; {@code bounded} feeds the wild axis into a
 	 * slice bound, the silent-misbehavior consumption, and is declined.
 	 */
+	/**
+	 * A comparison against a statically-read axis is a sink when its result decides a branch. Comparisons were once excluded from the sink
+	 * set outright, on the reasoning that {@code x.shape[1] == 4} is {@code False} under a wildcard rather than a raise. That is true of
+	 * the comparison and false of the program: the comparison's RESULT changes, and a changed result deciding a branch raises whatever the
+	 * branch guards. The corpus function that exposed it compares its own last dimension and raises in the guard, so it raised on every
+	 * call under an emitted signature while running correctly with a bare decorator.
+	 * <p>
+	 * The arms are the discrimination rather than the phenomenon. A comparison whose value is merely returned decides nothing and must not
+	 * be flagged, or the check declines functions that are fine, and a dynamic read is safe under any wildcard.
+	 */
+	@Test
+	public void testStaticallyReadAxisDecidingABranch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function guarded = getFunction("guarded");
+		assertTrue("`guarded` compares `x.shape[-1]`, and the result decides a branch that raises.",
+				guarded.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`guarded` still hybridizes bare (P1); only the signature was unwritable (#864).", P1,
+				guarded.getPassingPrecondition());
+		assertNull("`guarded` must not fail on the conversion path.", guarded.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
+		assertEquals("`guarded`'s signature is withheld rather than emitted.",
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES), guarded.getInferredInputSignatureAbsenceReason());
+
+		// The negative that matters: the same comparison, not deciding a branch. No assertion is made about its transformation,
+		// because it returns a Python bool rather than computing a tensor and so is not a candidate for reasons that have nothing to
+		// do with this precondition. Asserting P1 here would tie this test to an unrelated disposition.
+		Function comparedOnly = getFunction("compared_only");
+		assertFalse("`compared_only` returns its comparison rather than branching on it, so it decides nothing.",
+				comparedOnly.getHasUnresolvedStaticallyReadAxes());
+
+		Function dynamicGuard = getFunction("dynamic_guard");
+		assertFalse("`dynamic_guard` compares a `tf.shape` read, a tensor, which any wildcard admits.",
+				dynamicGuard.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`dynamic_guard` hybridizes (P1).", P1, dynamicGuard.getPassingPrecondition());
+	}
+
 	@Test
 	public void testUnresolvedStaticallyReadAxesBlockHybridization() throws Exception {
 		this.setInferInputSignatures(true);
