@@ -17,10 +17,10 @@
 #   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace \
 #     OUTDIR=/path/to/results PERFORM_ANALYSIS=true ./run-headless-evaluator.sh
 #
-# ECLIPSE, WORKSPACE, and OUTDIR are required and have no defaults. OUTDIR is
-# created if absent and is the working directory of the run: the evaluator writes
-# its CSVs and its own README.md manifest there, so pointing it at a checkout
-# overwrites that checkout's README.md.
+# ECLIPSE, WORKSPACE, and OUTDIR are required and have no defaults. OUTDIR must be
+# absolute (or `.`); it is created if absent and is the working directory of the
+# run, so the evaluator writes its CSVs and its own README.md manifest there, and
+# pointing it at a checkout overwrites that checkout's README.md.
 #
 # The remaining knobs are optional. The evaluator reads its configuration as JVM
 # system properties, every one defaulting to off. This script does not restate
@@ -54,8 +54,24 @@ WORKSPACE="${WORKSPACE:?Set WORKSPACE to the workspace holding the subjects as P
 # directory contains: any such rule still clobbers the layouts it does not recognize.
 # Pass OUTDIR=. to write to the current directory deliberately.
 OUTDIR="${OUTDIR:?Set OUTDIR to the directory for the CSVs and the evaluation README. There is no default: the evaluator overwrites a README.md in its working directory, so a run started inside a checkout destroys the README of that checkout. Pass OUTDIR=. to write to the current directory deliberately.}"
+# A relative OUTDIR is refused, because this cd composes with the caller's. A caller that has
+# already cd'd into its output directory and then passes a relative path applies it twice and
+# nests the results a level deeper than intended, silently: the run succeeds, and whatever reads
+# the CSVs afterward finds an empty directory and reports lost rows rather than a misplaced run.
+# `.` is exempt because applying it twice is the same as applying it once.
+case "$OUTDIR" in
+	.) OUTDIR="$PWD" ;;
+	/*) ;;
+	*)
+		echo "run-headless-evaluator.sh: OUTDIR must be an absolute path (or \`.\`), not \`$OUTDIR\`." >&2
+		echo "  This script changes into OUTDIR, so a relative path composes with any cd the caller" >&2
+		echo "  already made and nests the output a level deeper. Use \`\$PWD/$OUTDIR\` instead." >&2
+		exit 1
+		;;
+esac
 mkdir -p "$OUTDIR"
 cd "$OUTDIR"
+echo "run-headless-evaluator.sh: writing evaluator output to $PWD" >&2
 
 exec "$ECLIPSE" \
 	-application edu.cuny.hunter.hybridize.eval.evaluate \
