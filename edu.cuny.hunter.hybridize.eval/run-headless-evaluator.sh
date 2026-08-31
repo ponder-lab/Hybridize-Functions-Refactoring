@@ -4,7 +4,7 @@
 #
 # Runs the `edu.cuny.hunter.hybridize.eval.evaluate` application over the open
 # Python projects in a workspace, without the IDE, and writes the result CSVs to
-# the workspace's working directory (the same outputs as the in-IDE evaluator).
+# the directory named by OUTDIR (the same outputs as the in-IDE evaluator).
 #
 # Prerequisites:
 #   - The headless evaluator: either the self-contained product
@@ -15,11 +15,16 @@
 #
 # Usage:
 #   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace \
-#     PERFORM_ANALYSIS=true ./run-headless-evaluator.sh
+#     OUTDIR=/path/to/results PERFORM_ANALYSIS=true ./run-headless-evaluator.sh
 #
-# The evaluator reads its configuration as JVM system properties, every one
-# defaulting to off. This script does not restate those defaults; it forwards
-# only the flags you set in the environment and lets the tool default the rest,
+# ECLIPSE, WORKSPACE, and OUTDIR are required and have no defaults. OUTDIR is
+# created if absent and is the working directory of the run: the evaluator writes
+# its CSVs and its own README.md manifest there, so pointing it at a checkout
+# overwrites that checkout's README.md.
+#
+# The remaining knobs are optional. The evaluator reads its configuration as JVM
+# system properties, every one defaulting to off. This script does not restate
+# those defaults; it forwards only the flags you set in the environment and lets the tool default the rest,
 # so a useful run sets at least PERFORM_ANALYSIS=true. Recognized knobs:
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
 # CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, CHECK_STATIC_SHAPE_READS, CHECK_STALE_VARIABLE_READS, CHECK_TENSOR_ITERATION, PROCESS_IN_PARALLEL,
@@ -39,6 +44,18 @@ set -eu
 
 ECLIPSE="${ECLIPSE:?Set ECLIPSE to the headless evaluator launcher, e.g. the product hybridize-evaluator binary.}"
 WORKSPACE="${WORKSPACE:?Set WORKSPACE to the workspace holding the subjects as PyDev projects.}"
+
+# The output directory is required and has no default. The evaluator writes its CSVs and
+# its own README.md manifest into its working directory, so defaulting that to the caller's
+# working directory lets a run started inside a checkout overwrite that checkout's tracked
+# README.md -- silently, since nothing fails and the result looks like an ordinary edit.
+# The check lives here rather than in the callers because a direct invocation is exactly what
+# debugging the evaluator produces, and it deliberately tests nothing about what the working
+# directory contains: any such rule still clobbers the layouts it does not recognize.
+# Pass OUTDIR=. to write to the current directory deliberately.
+OUTDIR="${OUTDIR:?Set OUTDIR to the directory for the CSVs and the evaluation README. There is no default: the evaluator overwrites a README.md in its working directory, so a run started inside a checkout destroys the README of that checkout. Pass OUTDIR=. to write to the current directory deliberately.}"
+mkdir -p "$OUTDIR"
+cd "$OUTDIR"
 
 exec "$ECLIPSE" \
 	-application edu.cuny.hunter.hybridize.eval.evaluate \
