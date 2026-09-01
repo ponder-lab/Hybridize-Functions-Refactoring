@@ -3,3 +3,10 @@
 /spam.txt
 cachedir/
 image_at_epoch_*.png
+
+# PyDev interpreter and AST caches a test run writes into this module, at its root as well as
+# beside the fixtures. They record absolute paths from the machine that ran them. `resources`
+# already ignores `*.pydevinfo` and `v1_astmanager/` for the tree below it; these cover the
+# module root too, which is where a wildcard add picks them up.
+*.pydevinfo
+v2_indexcache/
