@@ -9929,6 +9929,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A function reached through {@code tf.distribute.Strategy.run} gets a bare decorator rather than a specified one (#928). The
+	 * specification would be accurate for the function as declared, and a direct call with it succeeds; the replica boundary unpacks the
+	 * single structured parameter into separate positional arguments, so the signature describes a calling convention the function will not
+	 * be called by and it raises on arity before any argument is examined. The bare decorator is what runs on that path, so the signature
+	 * is withheld and the conversion is kept, mirroring {@code WITHHELD_STATICALLY_READ_AXES}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+	 */
+	@Test
+	public void testReplicaInvokedSignature() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function step = getFunction("train_step");
+
+		// The conversion must survive: hybridizing this function is sound and beneficial, and only the specification is unsafe. A fix
+		// that declined the function instead would satisfy the absence assertion below while being the wrong disposition entirely.
+		assertTrue("`train_step` stays an eager->hybrid candidate; only its signature is withheld.",
+				step.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		assertTrue("`train_step` is reached through the replica dispatch.", TRUE.equals(step.getReplicaInvoked()));
+
+		assertFalse("No signature is emitted for a function whose arguments arrive through `Strategy.run`.",
+				step.getInferredInputSignature().isPresent());
+		assertEquals("The absence must name the replica dispatch, not a property of the specification.",
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_REPLICA_INVOKED), step.getInferredInputSignatureAbsenceReason());
+
+		// Control: the direct caller keeps its signature, so the withholding is scoped to the replica-invoked function rather than
+		// applied to the whole module. This is what distinguishes "the caller changed the convention" from "signatures are off here".
+		Function dist = getFunction("distributed_train_step");
+		assertTrue("`distributed_train_step` is invoked directly, so its signature stands.", dist.getInferredInputSignature().isPresent());
+
+		// A function nothing calls has no call-graph node, so no caller is visible. The verdict must stay undetermined rather than
+		// becoming FALSE: "no caller was seen" and "the callers seen are not the dispatch" are different facts, and only the second is
+		// evidence. Conflating them is what would let a genuinely replica-invoked function keep a signature on a thinner call graph.
+		Function uncalled = getFunction("never_called");
+		assertNull("A function with no call-graph node has no replica-dispatch verdict, not a negative one.", uncalled.getReplicaInvoked());
+	}
+
+	/**
 	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
 	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
 	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the

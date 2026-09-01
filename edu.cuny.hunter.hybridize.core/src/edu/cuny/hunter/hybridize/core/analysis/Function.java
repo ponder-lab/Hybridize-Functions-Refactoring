@@ -1051,6 +1051,11 @@ public class Function {
 	private Boolean hasUnresolvedStaticallyReadAxes;
 
 	/**
+	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
+	 */
+	private Boolean replicaInvoked;
+
+	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
 	 * feeds the snapshot to an optimizer or gradient computation, which raises under {@code tf.function} tracing when slot creation lands
 	 * on the variable-lifting re-trace. {@code null} when it could not be determined (no call-graph node), in which case the precondition
@@ -1393,6 +1398,20 @@ public class Function {
 									// both "hybridized with a signature" and "not hybridized". The reconfiguration path keeps
 									// declining with the precondition failure: there the decoration already exists, and changing its
 									// argument is the only action on the table.
+									// Issue 928: the function is reached through `tf.distribute.Strategy.run`, which does not preserve
+									// the declared argument structure. A signature accurate for a direct call therefore describes a
+									// calling convention this function will not be called by, and it raises on arity before any
+									// argument is examined. The bare decorator is what runs on that path, so withhold the signature
+									// and keep the conversion, exactly as for the statically-read-axis case below.
+									if (TRUE.equals(this.getReplicaInvoked()) && this.getInferredInputSignature().isPresent()) {
+										this.inferredInputSignature = new InferenceResult.Absent(
+												InferenceResult.AbsenceReason.WITHHELD_REPLICA_INVOKED);
+										this.addInfo(INPUT_SIGNATURE_INFERENCE,
+												"`" + this + "` is invoked through a distribution strategy, which does not preserve its "
+														+ "declared argument structure, so the signature is withheld and the function is "
+														+ "hybridized with a bare decorator instead.");
+									}
+
 									if (TRUE.equals(this.getHasUnresolvedStaticallyReadAxes())
 											&& this.getInferredInputSignature().isPresent()) {
 										this.inferredInputSignature = new InferenceResult.Absent(
@@ -1845,6 +1864,74 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * The declaring class of the synthetic node the engine uses to model {@code tf.distribute.Strategy.run}. A function invoked through
+	 * that node receives the arguments {@code run} distributes rather than the ones its declaration names.
+	 * <p>
+	 * Only the plain spelling is matched. The {@code $}-prefixed form elsewhere in this package is the method trampoline of a
+	 * <em>summarized</em> endpoint, and the dispatch is modeled as a synthetic node rather than a summary: no {@code $} variant of it
+	 * appears in the call graph. Should that modeling change, this check stops firing rather than failing, which is why the coupling is
+	 * stated on the issue rather than left implicit.
+	 */
+	private static final String DISTRIBUTE_RUN_CLASS_NAME = "Ltensorflow/distribute/run/run";
+
+	/**
+	 * Computes whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}, storing the result for
+	 * {@link #getReplicaInvoked()}. That call path does not preserve the declared argument structure: a single structured parameter arrives
+	 * as separate positional arguments, so an emitted signature describes a calling convention that will not be used and the function
+	 * raises on arity before any argument is examined. A direct call to the same function with the same signature succeeds, so this is a
+	 * property of the caller rather than of the specification.
+	 *
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+	 */
+	public void computeReplicaInvoked(CallGraph callGraph) {
+		// Without an emitted signature there is nothing to withhold, so the caller walk is not worth doing. The verdict is left UNSET
+		// rather than set to FALSE: no caller was examined, and "not examined" is not "examined and found not to be the dispatch".
+		// Setting FALSE here would report evidence that was never gathered, which is the distinction this check exists to preserve.
+		if (!this.getInferInputSignatures())
+			return;
+
+		Set<CGNode> nodes;
+
+		try {
+			// Queried directly rather than through the shared `getNodes` helper, which logs at ERROR when the set is empty. Here an
+			// empty set is the expected undetermined outcome for a function nothing calls, not a fault, and an error line for it
+			// would be noise on a path this check takes routinely.
+			nodes = callGraph.getNodes(this.getMethodReference());
+		} catch (CoreException e) {
+			// Undeterminable; leave the verdict unset so nothing is withheld on an unresolved reference.
+			LOG.warn("Can't determine whether " + this + " is reached through the replica dispatch.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node: no caller is visible, so absence of evidence is not evidence of absence.
+			LOG.info("Can't determine whether " + this + " is reached through the replica dispatch without a call graph node.");
+			return;
+		}
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node)))
+				if (DISTRIBUTE_RUN_CLASS_NAME.equals(predecessor.getMethod().getDeclaringClass().getName().toString())) {
+					this.replicaInvoked = TRUE;
+					return;
+				}
+
+		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * Whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}.
+	 *
+	 * @return {@code TRUE} when some caller is the replica dispatch, {@code FALSE} when none is, or {@code null} when no caller could be
+	 *         examined.
+	 * @see #computeReplicaInvoked(CallGraph)
+	 */
+	public Boolean getReplicaInvoked() {
+		return this.replicaInvoked;
 	}
 
 	/**

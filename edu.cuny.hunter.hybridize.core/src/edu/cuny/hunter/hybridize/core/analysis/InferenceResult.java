@@ -132,7 +132,17 @@ public sealed interface InferenceResult {
 		 * reconfiguration path is unaffected: there an existing signature's replacement is the only action on the table, and it still
 		 * declines with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}.
 		 */
-		WITHHELD_STATICALLY_READ_AXES
+		WITHHELD_STATICALLY_READ_AXES,
+
+		/**
+		 * The function is reached through {@code tf.distribute.Strategy.run}, which does not preserve the declared argument structure: a
+		 * single structured parameter arrives as separate positional arguments, so a signature written for the declaration describes a
+		 * calling convention the function will not be called by. The specification is accurate for a direct call and still breaks the
+		 * program, so it is withheld and the conversion is kept, the bare decorator being what runs on that path.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+		 */
+		WITHHELD_REPLICA_INVOKED
 	}
 
 	/**
