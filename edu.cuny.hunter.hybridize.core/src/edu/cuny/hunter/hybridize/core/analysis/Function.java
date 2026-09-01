@@ -1883,6 +1883,14 @@ public class Function {
 	 * not evidence that a function is safe to decorate, only that it does not return an Operation by one of these. The complete form is a
 	 * type query once the engine allocates {@code Operation} for its producers (wala/ML#864, where the class already exists and the
 	 * producers are what is missing); this check is written so that swap changes the mechanism and not the verdict.
+	 * <p>
+	 * Every entry was confirmed by decorating a function that returns it and observing the {@code TypeError}, rather than by reasoning
+	 * about which APIs sound operation-like. That distinction removed a member: {@code tf.summary.scalar} reads as an operation producer
+	 * and is not one, returning a boolean Tensor that decorates and runs, so excluding such a function would decline traceable work.
+	 * <p>
+	 * The entries other than {@code group} and {@code no_op} yield an operation only under tracing and {@code None} eagerly. They belong
+	 * here regardless, because decoration is what puts the function under tracing: the conditional branch is the one a hybridized function
+	 * takes.
 	 */
 	private static final Set<String> OPERATION_PRODUCING_CALLEES = Set.of("group", "no_op", "assert_equal", "print");
 
