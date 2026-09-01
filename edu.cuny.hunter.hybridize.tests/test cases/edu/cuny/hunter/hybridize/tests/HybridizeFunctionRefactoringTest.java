@@ -9975,6 +9975,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
 	 */
+	/**
+	 * Pins today's behavior for a function returning a {@code tf.Operation} (#929). TensorFlow accepts only Tensors, ExtensionTypes, or
+	 * {@code None} as the return of a traced function, so the decorator raises whatever signature accompanies it. The conversion itself is
+	 * therefore unsound, which makes this a decline rather than a withholding: there is no decoration of this function that works.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	@Test
+	public void testOperationReturn() throws Exception {
+		Function op = getFunction("returns_operation");
+
+		// Pins the defect so the fix has something to move: the tool selects a conversion that TensorFlow rejects.
+		assertTrue("`returns_operation` is currently selected for conversion (the defect).",
+				op.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// Control: the same body shape returning a Tensor must stay a candidate after the fix, so a decline cannot widen from the
+		// return type to the assignments the body performs.
+		Function tensor = getFunction("returns_tensor");
+		assertTrue("`returns_tensor` returns a Tensor and is a sound candidate.",
+				tensor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testColumnSliceRankInMethodBody() throws Exception {
 		this.setInferInputSignatures(true);
