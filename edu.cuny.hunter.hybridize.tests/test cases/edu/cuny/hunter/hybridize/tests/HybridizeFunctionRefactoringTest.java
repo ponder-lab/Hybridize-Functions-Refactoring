@@ -9968,14 +9968,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
-	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
-	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the
-	 * leaked shape rejects every call the function actually receives. The control pins that the method-body and module-scope forms agree.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
-	 */
-	/**
 	 * Pins today's behavior for a function returning a {@code tf.Operation} (#929). TensorFlow accepts only Tensors, ExtensionTypes, or
 	 * {@code None} as the return of a traced function, so the decorator raises whatever signature accompanies it. The conversion itself is
 	 * therefore unsound, which makes this a decline rather than a withholding: there is no decoration of this function that works.
@@ -10031,6 +10023,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				encloses.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 	}
 
+	/**
+	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
+	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
+	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the
+	 * leaked shape rejects every call the function actually receives. The control pins that the method-body and module-scope forms agree.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
+	 */
 	@Test
 	public void testColumnSliceRankInMethodBody() throws Exception {
 		this.setInferInputSignatures(true);

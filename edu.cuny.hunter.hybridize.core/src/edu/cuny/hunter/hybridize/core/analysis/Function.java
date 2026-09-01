@@ -2017,8 +2017,9 @@ public class Function {
 	}
 
 	/**
-	 * Whether control leaves the given suite on every path, rather than reaching its end. A suite control can run off the end of has a path
-	 * returning {@code None}, which the tracer accepts, so a function with one is not a function every return of which is an Operation.
+	 * Whether control leaves the given suite on every path, rather than reaching its end. Where control can reach the end, the function
+	 * returns {@code None} there, which the tracer accepts, so a function whose body can be run off the end is not a function every return
+	 * of which is an Operation.
 	 * <p>
 	 * The shapes decided here are a trailing {@code return} or {@code raise}, and a trailing {@code if} whose branches both leave. Every
 	 * other shape is reported as reaching the end. That is an approximation and not a control-flow analysis: a loop no iteration exits, or
