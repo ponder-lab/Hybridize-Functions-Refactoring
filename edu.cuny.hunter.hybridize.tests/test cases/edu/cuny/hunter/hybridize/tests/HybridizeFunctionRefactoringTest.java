@@ -10024,8 +10024,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private static String render(Function function) {
-		return function.getInferredInputSignature().isPresent() ? function.getInferredInputSignature().get().toTensorSpecList("tf.")
-				: "ABSENT";
+		return function.getInferredInputSignature().map(signature -> signature.toTensorSpecList("tf.")).orElse("ABSENT");
 	}
 
 	/**
