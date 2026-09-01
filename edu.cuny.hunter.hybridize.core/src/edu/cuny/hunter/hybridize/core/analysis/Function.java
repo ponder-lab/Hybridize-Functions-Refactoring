@@ -89,6 +89,7 @@ import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -1376,6 +1377,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_COVERED_CALLERS,
 										"Every known call path to this function comes from hybridized code, so its computation "
 												+ "is already traced; hybridizing it would add no benefit.");
+							else if (this.returnsOperation())
+								// Issue 929: the tracer accepts only Tensors, ExtensionTypes, or None as a return. A function returning
+								// an Operation therefore raises under any decorator, with or without a signature, so the conversion is
+								// declined rather than its specification withheld: there is no decoration of it that works.
+								this.addFailure(PreconditionFailure.RETURNS_OPERATION,
+										"Can't hybridize a function returning a tf.Operation: tf.function accepts only Tensors, "
+												+ "ExtensionTypes, or None as a return value, so the decorator raises regardless of "
+												+ "any input signature.");
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
@@ -1864,6 +1873,83 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * Callees whose result is a {@code tf.Operation} rather than a Tensor. A function returning one cannot be traced at all, so it is not a
+	 * hybridization candidate (issue 929).
+	 * <p>
+	 * This is an ENUMERATION AND IT IS NOT COMPLETE. An Operation reached by any route not named here passes unnoticed, so a green check is
+	 * not evidence that a function is safe to decorate, only that it does not return an Operation by one of these. The complete form is a
+	 * type query once the engine allocates {@code Operation} for its producers (wala/ML#864, where the class already exists and the
+	 * producers are what is missing); this check is written so that swap changes the mechanism and not the verdict.
+	 */
+	private static final Set<String> OPERATION_PRODUCING_CALLEES = Set.of("group", "no_op", "assert_equal", "print");
+
+	/**
+	 * Whether every value this {@link Function} can return is a {@code tf.Operation}.
+	 * <p>
+	 * The predicate is ALL rather than ANY, deliberately. A function whose returns are an Operation on one path and a Tensor on another is
+	 * not one this check can decide, and deciding it either way is worse than declining to: declaring it an Operation refuses a conversion
+	 * that may be sound, and declaring it a Tensor permits one that cannot work. Only a function returning nothing else is declined.
+	 * <p>
+	 * A function with no {@code return} statement returns {@code None}, which the tracer accepts, so it is not an Operation returner.
+	 *
+	 * @return {@code true} when the function returns an Operation on every returning path.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	private boolean returnsOperation() {
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		List<exprType> returned = new ArrayList<>();
+
+		try {
+			functionDef.traverse(new VisitorBase() {
+
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
+
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
+
+				@Override
+				public Object visitReturn(Return node) throws Exception {
+					if (node.value != null)
+						returned.add(node.value);
+
+					return super.visitReturn(node);
+				}
+			});
+		} catch (Exception e) {
+			LOG.warn("Can't walk the returns of: " + this + ".", e);
+			return false;
+		}
+
+		// A bare `return` or no return at all yields None, which the tracer accepts.
+		if (returned.isEmpty())
+			return false;
+
+		return returned.stream().allMatch(Function::isOperationValued);
+	}
+
+	/**
+	 * Whether the given returned expression is an Operation by one of the forms {@link #OPERATION_PRODUCING_CALLEES} names, or an
+	 * {@code .op} attribute read, which is how an assignment yields one.
+	 *
+	 * @param value The returned expression.
+	 * @return {@code true} when the expression is a recognized Operation producer.
+	 */
+	private static boolean isOperationValued(exprType value) {
+		if (value instanceof Attribute attribute && attribute.attr instanceof NameTok name && "op".equals(name.id))
+			return true;
+
+		if (value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name)
+			return OPERATION_PRODUCING_CALLEES.contains(name.id);
+
+		return false;
 	}
 
 	/**

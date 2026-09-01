@@ -9986,9 +9986,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testOperationReturn() throws Exception {
 		Function op = getFunction("returns_operation");
 
-		// Pins the defect so the fix has something to move: the tool selects a conversion that TensorFlow rejects.
-		assertTrue("`returns_operation` is currently selected for conversion (the defect).",
+		// The conversion is declined outright rather than its signature withheld: no decoration of this function works, so there is
+		// nothing to fall back to.
+		assertFalse("`returns_operation` must not be converted; the tracer rejects an Operation return.",
 				op.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("The decline must name the Operation return, not a neighboring property.",
+				op.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 
 		// Control: the same body shape returning a Tensor must stay a candidate after the fix, so a decline cannot widen from the
 		// return type to the assignments the body performs.

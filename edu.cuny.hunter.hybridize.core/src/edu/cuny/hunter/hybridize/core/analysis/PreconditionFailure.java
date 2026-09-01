@@ -144,7 +144,16 @@ public enum PreconditionFailure {
 	 * written: inference is off, or it is on and the specification is absent for an unrelated reason. The same function converts safely the
 	 * moment a specification carrying the pin can be emitted.
 	 */
-	HAS_UNWRITABLE_EAGER_DTYPE_PIN(24);
+	HAS_UNWRITABLE_EAGER_DTYPE_PIN(24),
+
+	/**
+	 * The function returns a {@code tf.Operation}. TensorFlow accepts only Tensors, ExtensionTypes, or {@code None} as the return of a
+	 * traced function, so the decorator raises whatever specification accompanies it. Unlike the withheld-signature cases, there is no
+	 * decoration of such a function that works, so the conversion is declined rather than the specification withheld.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	RETURNS_OPERATION(25);
 
 	static {
 		// check that the codes are unique.
