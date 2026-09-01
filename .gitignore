@@ -96,3 +96,9 @@ results
 
 # Per-developer Claude Code settings
 .claude/
+
+# PyDev interpreter and AST caches, written into the tests module and its fixture
+# directories by a test run. They embed absolute paths from the machine that ran them.
+*.pydevinfo
+v1_astmanager/
+v2_indexcache/
