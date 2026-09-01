@@ -1867,10 +1867,13 @@ public class Function {
 	}
 
 	/**
-	 * The declaring class of the synthetic node Ariadne uses to model {@code tf.distribute.Strategy.run}. A function invoked through that
-	 * node receives the arguments {@code run} distributes rather than the ones its declaration names.
+	 * The declaring classes of the synthetic node the engine uses to model {@code tf.distribute.Strategy.run}. A function invoked through
+	 * that node receives the arguments {@code run} distributes rather than the ones its declaration names. Both the plain and the
+	 * {@code $}-prefixed trampoline spellings are matched, as the modeled Keras endpoints are elsewhere: matching only one lets the check
+	 * fall silent rather than fail, which is the direction that hides.
 	 */
-	private static final String DISTRIBUTE_RUN_CLASS = "Ltensorflow/distribute/run/run";
+	private static final Set<String> DISTRIBUTE_RUN_CLASS_NAMES = Set.of("Ltensorflow/distribute/run/run",
+			"L$tensorflow/distribute/run/run");
 
 	/**
 	 * Computes whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}, storing the result for
@@ -1883,6 +1886,13 @@ public class Function {
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
 	 */
 	public void computeReplicaInvoked(CallGraph callGraph) {
+		// Without an emitted signature there is nothing to withhold, so the caller walk is not worth doing and its warnings are noise.
+		// Mirrors `computeUnresolvedStaticallyReadAxes`, which returns determinately safe under the same condition.
+		if (!this.getInferInputSignatures()) {
+			this.replicaInvoked = FALSE;
+			return;
+		}
+
 		Set<CGNode> nodes;
 
 		try {
@@ -1902,7 +1912,7 @@ public class Function {
 
 		for (CGNode node : nodes)
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node)))
-				if (DISTRIBUTE_RUN_CLASS.equals(predecessor.getMethod().getDeclaringClass().getName().toString())) {
+				if (DISTRIBUTE_RUN_CLASS_NAMES.contains(predecessor.getMethod().getDeclaringClass().getName().toString())) {
 					this.replicaInvoked = TRUE;
 					return;
 				}
