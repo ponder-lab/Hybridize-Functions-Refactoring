@@ -9993,6 +9993,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("The decline must name the Operation return, not a neighboring property.",
 				op.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 
+		// The issue's minimal reproduction, whose receiver is a variable rather than the TensorFlow module. Recognizing the `op`
+		// read only on a module-rooted attribute chain leaves the very case the issue reports uncaught.
+		Function dotOp = getFunction("returns_dot_op");
+		assertNotNull("Reading `op` on what an assignment returns is an Operation return and must decline the conversion.",
+				dotOp.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
 		// Control: the same body shape returning a Tensor must stay a candidate after the fix, so a decline cannot widen from the
 		// return type to the assignments the body performs.
 		Function tensor = getFunction("returns_tensor");

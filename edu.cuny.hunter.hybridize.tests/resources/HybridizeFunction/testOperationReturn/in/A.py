@@ -13,6 +13,13 @@ def returns_operation(x):
     return tf.group([v.assign_add(tf.reduce_sum(x)), w.assign_add(1.0)])
 
 
+def returns_dot_op(x):
+    # The issue's own minimal reproduction: reading `op` on what an assignment returns yields the
+    # Operation that performs it. The receiver is a plain variable rather than a TensorFlow-rooted
+    # expression, so a rule that reaches the module only by walking attribute links misses this.
+    return v.assign_add(tf.reduce_sum(x)).op
+
+
 def returns_tensor(x):
     # Control: same shape of body, but the value returned is a Tensor, so hybridizing
     # it is sound. If a decline widened from the return type to the assignments, this
@@ -23,6 +30,7 @@ def returns_tensor(x):
 
 returns_operation(tf.zeros((4,)))
 returns_tensor(tf.zeros((4,)))
+returns_dot_op(tf.zeros((4,)))
 
 
 def mixed_returns(x):

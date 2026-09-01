@@ -1895,6 +1895,21 @@ public class Function {
 	private static final Set<String> OPERATION_PRODUCING_CALLEES = Set.of("group", "no_op", "assert_equal", "print");
 
 	/**
+	 * The {@code tf.Variable} methods that perform an assignment. Reading {@code op} on what one of them returns yields the Operation that
+	 * carries the assignment out, which is the form issue 929 reports.
+	 * <p>
+	 * Every entry was confirmed the way {@link #OPERATION_PRODUCING_CALLEES}'s were, by decorating a function returning it and observing
+	 * the {@code TypeError}. As there, the list IS NOT COMPLETE.
+	 * <p>
+	 * Unlike that set, these are matched without reaching a TensorFlow root. The receiver is the variable being assigned, and its type is
+	 * not available here, so the spelling is all there is to go on: a non-TensorFlow object with a method of one of these names whose
+	 * result carries an {@code op} attribute would be refused a conversion that is sound. Requiring the trailing {@code op} read narrows
+	 * that considerably, but the residual is real, and it is what the type query in wala/ML#864 removes.
+	 */
+	private static final Set<String> ASSIGNMENT_CALLEES = Set.of("assign", "assign_add", "assign_sub", "scatter_add", "scatter_sub",
+			"scatter_update");
+
+	/**
 	 * Whether every value this {@link Function} can return is a {@code tf.Operation}.
 	 * <p>
 	 * The predicate is ALL rather than ANY, deliberately. A function whose returns are an Operation on one path and a Tensor on another is
@@ -1959,8 +1974,8 @@ public class Function {
 	}
 
 	/**
-	 * Whether the given returned expression is an Operation by one of the forms {@link #OPERATION_PRODUCING_CALLEES} names, or an
-	 * {@code .op} attribute read, which is how an assignment yields one.
+	 * Whether the given returned expression is an Operation, either by one of the forms {@link #OPERATION_PRODUCING_CALLEES} names or by an
+	 * {@code op} attribute read on something TensorFlow-rooted or on one of the assignments {@link #ASSIGNMENT_CALLEES} names.
 	 *
 	 * @param value The returned expression.
 	 * @return {@code true} when the expression is a recognized Operation producer.
@@ -1969,13 +1984,27 @@ public class Function {
 		// Both forms are scoped to TensorFlow-rooted expressions. Matching on the trailing name alone would decline a function
 		// returning any `group(...)` or `print(...)`, or reading any attribute named `op`, whatever library it belongs to, which
 		// refuses conversions that are perfectly sound. The rule is about what TensorFlow returns, not about a spelling.
+		// The rooted form alone would leave the reported case uncaught. Reaching the module by walking attribute links requires an
+		// unbroken chain of them, and an assignment interposes a call, so `v.assign_add(1.0).op` roots at the variable rather than at
+		// TensorFlow and no chain reaches it. That expression is the issue's own reproduction.
 		if (value instanceof Attribute attribute && attribute.attr instanceof NameTok name && "op".equals(name.id))
-			return isTensorFlowRooted(attribute.value);
+			return isTensorFlowRooted(attribute.value) || isAssignmentCall(attribute.value);
 
 		if (value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name)
 			return OPERATION_PRODUCING_CALLEES.contains(name.id) && isTensorFlowRooted(call.func);
 
 		return false;
+	}
+
+	/**
+	 * Whether the given expression is a call to one of the assignments {@link #ASSIGNMENT_CALLEES} names.
+	 *
+	 * @param value The expression to examine.
+	 * @return {@code true} when the expression performs an assignment.
+	 */
+	private static boolean isAssignmentCall(exprType value) {
+		return value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name
+				&& ASSIGNMENT_CALLEES.contains(name.id);
 	}
 
 	/**
