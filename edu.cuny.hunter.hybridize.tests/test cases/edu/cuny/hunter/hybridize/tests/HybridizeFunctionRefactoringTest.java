@@ -9968,6 +9968,62 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins today's behavior for a function returning a {@code tf.Operation} (#929). TensorFlow accepts only Tensors, ExtensionTypes, or
+	 * {@code None} as the return of a traced function, so the decorator raises whatever signature accompanies it. The conversion itself is
+	 * therefore unsound, which makes this a decline rather than a withholding: there is no decoration of this function that works.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	@Test
+	public void testOperationReturn() throws Exception {
+		Function op = getFunction("returns_operation");
+
+		// The conversion is declined outright rather than its signature withheld: no decoration of this function works, so there is
+		// nothing to fall back to.
+		assertFalse("`returns_operation` must not be converted; the tracer rejects an Operation return.",
+				op.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("The decline must name the Operation return, not a neighboring property.",
+				op.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// The issue's minimal reproduction, whose receiver is a variable rather than the TensorFlow module. Recognizing the `op`
+		// read only on a module-rooted attribute chain leaves the very case the issue reports uncaught.
+		Function dotOp = getFunction("returns_dot_op");
+		assertNotNull("Reading `op` on what an assignment returns is an Operation return and must decline the conversion.",
+				dotOp.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// Control: the same body shape returning a Tensor must stay a candidate after the fix, so a decline cannot widen from the
+		// return type to the assignments the body performs.
+		Function tensor = getFunction("returns_tensor");
+		assertTrue("`returns_tensor` returns a Tensor and is a sound candidate.",
+				tensor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A bare `return` yields None, which the tracer accepts, so a function returning None on one path and an Operation on another
+		// is not one whose every return is an Operation. Collecting only valued returns would let the Operation path decide it alone,
+		// which is the "any" rule wearing the "all" rule's name.
+		Function mixed = getFunction("mixed_returns");
+		assertNull("A path returning None means not every return is an Operation, so the decline must not fire.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// The same disagreement spelled without a bare `return`. Falling off the end of the body yields None just as `return` does,
+		// so the two spellings of one situation must reach the same verdict.
+		Function fallsThrough = getFunction("falls_through");
+		assertNull("A path falling through the end of the body returns None, so the decline must not fire.",
+				fallsThrough.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// The rule is about what TensorFlow returns, not about a spelling. A `group(...)` call or an `op` attribute belonging to some
+		// other library must not decline a conversion that is sound.
+		Function unrooted = getFunction("unrooted_names");
+		assertNull("A same-named call on a non-TensorFlow receiver must not decline the conversion.",
+				unrooted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// A return inside a nested definition belongs to that function. Attributing it to the enclosing one would decline a function
+		// on the strength of a return it does not make.
+		Function encloses = getFunction("encloses_a_returner");
+		assertNull("A nested definition's return must not be attributed to the enclosing function.",
+				encloses.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+	}
+
+	/**
 	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
 	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
 	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the

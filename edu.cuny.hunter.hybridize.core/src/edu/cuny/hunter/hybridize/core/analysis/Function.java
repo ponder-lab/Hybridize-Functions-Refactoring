@@ -85,10 +85,13 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Raise;
+import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -98,6 +101,7 @@ import org.python.pydev.parser.jython.ast.expr_contextType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.name_contextType;
 import org.python.pydev.parser.jython.ast.stmtType;
+import org.python.pydev.parser.jython.ast.suiteType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
 import com.google.common.collect.Maps;
@@ -1376,6 +1380,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_COVERED_CALLERS,
 										"Every known call path to this function comes from hybridized code, so its computation "
 												+ "is already traced; hybridizing it would add no benefit.");
+							else if (this.returnsOperation())
+								// Issue 929: the tracer accepts only Tensors, ExtensionTypes, or None as a return. A function returning
+								// an Operation therefore raises under any decorator, with or without a signature, so the conversion is
+								// declined rather than its specification withheld: there is no decoration of it that works.
+								this.addFailure(PreconditionFailure.RETURNS_OPERATION,
+										"Can't hybridize a function returning a tf.Operation: tf.function accepts only Tensors, "
+												+ "ExtensionTypes, or None as a return value, so the decorator raises regardless of "
+												+ "any input signature.");
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
@@ -1864,6 +1876,176 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * Callees whose result is a {@code tf.Operation} rather than a Tensor. A function returning one cannot be traced at all, so it is not a
+	 * hybridization candidate (issue 929).
+	 * <p>
+	 * This is an ENUMERATION AND IT IS NOT COMPLETE. An Operation reached by any route not named here passes unnoticed, so a green check is
+	 * not evidence that a function is safe to decorate, only that it does not return an Operation by one of these. The complete form is a
+	 * type query once the engine allocates {@code Operation} for its producers (wala/ML#864, where the class already exists and the
+	 * producers are what is missing); this check is written so that swap changes the mechanism and not the verdict.
+	 * <p>
+	 * Every entry was confirmed by decorating a function that returns it and observing the {@code TypeError}, rather than by reasoning
+	 * about which APIs sound operation-like. That distinction removed a member: {@code tf.summary.scalar} reads as an operation producer
+	 * and is not one, returning a boolean Tensor that decorates and runs, so excluding such a function would decline traceable work.
+	 * <p>
+	 * The entries other than {@code group} and {@code no_op} yield an operation only under tracing and {@code None} eagerly. They belong
+	 * here regardless, because decoration is what puts the function under tracing: the conditional branch is the one a hybridized function
+	 * takes.
+	 */
+	private static final Set<String> OPERATION_PRODUCING_CALLEES = Set.of("group", "no_op", "assert_equal", "print");
+
+	/**
+	 * The {@code tf.Variable} methods that perform an assignment. Reading {@code op} on what one of them returns yields the Operation that
+	 * carries the assignment out, which is the form issue 929 reports.
+	 * <p>
+	 * Every entry was confirmed the way {@link #OPERATION_PRODUCING_CALLEES}'s were, by decorating a function returning it and observing
+	 * the {@code TypeError}. As there, the list IS NOT COMPLETE.
+	 * <p>
+	 * Unlike that set, these are matched without reaching a TensorFlow root. The receiver is the variable being assigned, and its type is
+	 * not available here, so the spelling is all there is to go on: a non-TensorFlow object with a method of one of these names whose
+	 * result carries an {@code op} attribute would be refused a conversion that is sound. Requiring the trailing {@code op} read narrows
+	 * that considerably, but the residual is real, and it is what the type query in wala/ML#864 removes.
+	 */
+	private static final Set<String> ASSIGNMENT_CALLEES = Set.of("assign", "assign_add", "assign_sub", "scatter_add", "scatter_sub",
+			"scatter_update");
+
+	/**
+	 * Whether every value this {@link Function} can return is a {@code tf.Operation}.
+	 * <p>
+	 * The predicate is ALL rather than ANY, deliberately. A function whose returns are an Operation on one path and a Tensor on another is
+	 * not one this check can decide, and deciding it either way is worse than declining to: declaring it an Operation refuses a conversion
+	 * that may be sound, and declaring it a Tensor permits one that cannot work. Only a function returning nothing else is declined.
+	 * <p>
+	 * A path is a {@code return} statement or the end of the body, since control reaching the end returns {@code None}. Whether the end is
+	 * reachable is answered by {@link #terminates(stmtType[])}, which approximates rather than analyzes control flow, so a function this
+	 * reports on is one whose every <em>examined</em> path returns an Operation.
+	 * <p>
+	 * A function with no {@code return} statement returns {@code None}, which the tracer accepts, so it is not an Operation returner.
+	 *
+	 * @return {@code true} when the function returns an Operation on every returning path.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	private boolean returnsOperation() {
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		List<exprType> returned = new ArrayList<>();
+
+		// A bare `return` yields None, which is not an Operation. Recorded separately because it contributes no expression to test, and
+		// dropping it would let a function that returns None on one path and an Operation on another satisfy "all returns are
+		// Operations" on the strength of the paths that happen to carry a value.
+		boolean[] returnsNone = { false };
+
+		try {
+			functionDef.traverse(new VisitorBase() {
+
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
+
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
+
+				@Override
+				public Object visitFunctionDef(FunctionDef node) throws Exception {
+					// Do not descend: a `return` inside a nested definition belongs to that function, not this one. Counting it here
+					// would decline or clear the wrong function, and the outer one's own returns would be judged by the inner one's.
+					return node == functionDef ? super.visitFunctionDef(node) : null;
+				}
+
+				@Override
+				public Object visitReturn(Return node) throws Exception {
+					if (node.value != null)
+						returned.add(node.value);
+					else
+						returnsNone[0] = true;
+
+					return super.visitReturn(node);
+				}
+			});
+		} catch (Exception e) {
+			LOG.warn("Can't walk the returns of: " + this + ".", e);
+			return false;
+		}
+
+		// No valued return at all, or some path returning None, means not every return is an Operation. The tracer accepts None, so
+		// such a function is not one this check declines. Falling off the end of the body returns None just as a bare `return` does,
+		// and collecting `return` statements cannot see that path, so the body is asked separately whether control can reach its end.
+		// The two spellings of one situation have to reach the same verdict.
+		if (returned.isEmpty() || returnsNone[0] || !terminates(functionDef.body))
+			return false;
+
+		return returned.stream().allMatch(Function::isOperationValued);
+	}
+
+	/**
+	 * Whether the given returned expression is an Operation, either by one of the forms {@link #OPERATION_PRODUCING_CALLEES} names or by an
+	 * {@code op} attribute read on something TensorFlow-rooted or on one of the assignments {@link #ASSIGNMENT_CALLEES} names.
+	 *
+	 * @param value The returned expression.
+	 * @return {@code true} when the expression is a recognized Operation producer.
+	 */
+	private static boolean isOperationValued(exprType value) {
+		// Both forms are scoped to TensorFlow-rooted expressions. Matching on the trailing name alone would decline a function
+		// returning any `group(...)` or `print(...)`, or reading any attribute named `op`, whatever library it belongs to, which
+		// refuses conversions that are perfectly sound. The rule is about what TensorFlow returns, not about a spelling.
+		// The rooted form alone would leave the reported case uncaught. Reaching the module by walking attribute links requires an
+		// unbroken chain of them, and an assignment interposes a call, so `v.assign_add(1.0).op` roots at the variable rather than at
+		// TensorFlow and no chain reaches it. That expression is the issue's own reproduction.
+		if (value instanceof Attribute attribute && attribute.attr instanceof NameTok name && "op".equals(name.id))
+			return isTensorFlowRooted(attribute.value) || isAssignmentCall(attribute.value);
+
+		if (value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name)
+			return OPERATION_PRODUCING_CALLEES.contains(name.id) && isTensorFlowRooted(call.func);
+
+		return false;
+	}
+
+	/**
+	 * Whether the given expression is a call to one of the assignments {@link #ASSIGNMENT_CALLEES} names.
+	 *
+	 * @param value The expression to examine.
+	 * @return {@code true} when the expression performs an assignment.
+	 */
+	private static boolean isAssignmentCall(exprType value) {
+		return value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name
+				&& ASSIGNMENT_CALLEES.contains(name.id);
+	}
+
+	/**
+	 * Whether control leaves the given suite on every path, rather than reaching its end. Where control can reach the end, the function
+	 * returns {@code None} there, which the tracer accepts, so a function whose body can be run off the end is not a function every return
+	 * of which is an Operation.
+	 * <p>
+	 * The shapes decided here are a trailing {@code return} or {@code raise}, and a trailing {@code if} whose branches both leave. Every
+	 * other shape is reported as reaching the end. That is an approximation and not a control-flow analysis: a loop no iteration exits, or
+	 * a {@code try} whose handlers all return, leaves on every path and is reported as not doing so. The consequence is the check declining
+	 * to decide rather than deciding wrongly, which is the direction the ALL rule already takes when paths disagree.
+	 *
+	 * @param suite The statements to examine.
+	 * @return {@code true} when control cannot reach the end of the suite.
+	 */
+	private static boolean terminates(stmtType[] suite) {
+		if (suite == null || suite.length == 0)
+			return false;
+
+		stmtType last = suite[suite.length - 1];
+
+		if (last instanceof Return || last instanceof Raise)
+			return true;
+
+		// An `if` decides only when it has an `else`. Without one the untaken branch continues past the statement, and an `elif` chain
+		// is a nested `if` in that position, so the same question asked of it answers the whole chain.
+		if (last instanceof If branch) {
+			suiteType orelse = branch.orelse;
+			return orelse != null && terminates(branch.body) && terminates(orelse.body);
+		}
+
+		return false;
 	}
 
 	/**
