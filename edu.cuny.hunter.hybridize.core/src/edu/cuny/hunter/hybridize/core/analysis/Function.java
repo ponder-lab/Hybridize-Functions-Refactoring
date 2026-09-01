@@ -1888,17 +1888,19 @@ public class Function {
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
 	 */
 	public void computeReplicaInvoked(CallGraph callGraph) {
-		// Without an emitted signature there is nothing to withhold, so the caller walk is not worth doing and its warnings are noise.
-		// Mirrors `computeUnresolvedStaticallyReadAxes`, which returns determinately safe under the same condition.
-		if (!this.getInferInputSignatures()) {
-			this.replicaInvoked = FALSE;
+		// Without an emitted signature there is nothing to withhold, so the caller walk is not worth doing. The verdict is left UNSET
+		// rather than set to FALSE: no caller was examined, and "not examined" is not "examined and found not to be the dispatch".
+		// Setting FALSE here would report evidence that was never gathered, which is the distinction this check exists to preserve.
+		if (!this.getInferInputSignatures())
 			return;
-		}
 
 		Set<CGNode> nodes;
 
 		try {
-			nodes = this.getNodes(callGraph);
+			// Queried directly rather than through the shared `getNodes` helper, which logs at ERROR when the set is empty. Here an
+			// empty set is the expected undetermined outcome for a function nothing calls, not a fault, and an error line for it
+			// would be noise on a path this check takes routinely.
+			nodes = callGraph.getNodes(this.getMethodReference());
 		} catch (CoreException e) {
 			// Undeterminable; leave the verdict unset so nothing is withheld on an unresolved reference.
 			LOG.warn("Can't determine whether " + this + " is reached through the replica dispatch.", e);

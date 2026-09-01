@@ -9929,14 +9929,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
-	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
-	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the
-	 * leaked shape rejects every call the function actually receives. The control pins that the method-body and module-scope forms agree.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
-	 */
-	/**
 	 * A function reached through {@code tf.distribute.Strategy.run} gets a bare decorator rather than a specified one (#928). The
 	 * specification would be accurate for the function as declared, and a direct call with it succeeds; the replica boundary unpacks the
 	 * single structured parameter into separate positional arguments, so the signature describes a calling convention the function will not
@@ -9975,6 +9967,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("A function with no call-graph node has no replica-dispatch verdict, not a negative one.", uncalled.getReplicaInvoked());
 	}
 
+	/**
+	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
+	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
+	 * Over-ranking is the damaging direction: a rank-1 argument is not a subtype of a rank-2 specification, so a signature written from the
+	 * leaked shape rejects every call the function actually receives. The control pins that the method-body and module-scope forms agree.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
+	 */
 	@Test
 	public void testColumnSliceRankInMethodBody() throws Exception {
 		this.setInferInputSignatures(true);
