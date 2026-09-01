@@ -9936,6 +9936,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/856">Issue 856</a>
 	 */
+	/**
+	 * A function reached through {@code tf.distribute.Strategy.run} gets a bare decorator rather than a specified one (#928). The
+	 * specification would be accurate for the function as declared, and a direct call with it succeeds; the replica boundary unpacks the
+	 * single structured parameter into separate positional arguments, so the signature describes a calling convention the function will not
+	 * be called by and it raises on arity before any argument is examined. The bare decorator is what runs on that path, so the signature
+	 * is withheld and the conversion is kept, mirroring {@code WITHHELD_STATICALLY_READ_AXES}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+	 */
+	@Test
+	public void testReplicaInvokedSignature() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function step = getFunction("train_step");
+
+		// The conversion must survive: hybridizing this function is sound and beneficial, and only the specification is unsafe. A fix
+		// that declined the function instead would satisfy the absence assertion below while being the wrong disposition entirely.
+		assertTrue("`train_step` stays an eager->hybrid candidate; only its signature is withheld.",
+				step.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		assertTrue("`train_step` is reached through the replica dispatch.", TRUE.equals(step.getReplicaInvoked()));
+
+		assertFalse("No signature is emitted for a function whose arguments arrive through `Strategy.run`.",
+				step.getInferredInputSignature().isPresent());
+		assertEquals("The absence must name the replica dispatch, not a property of the specification.",
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_REPLICA_INVOKED), step.getInferredInputSignatureAbsenceReason());
+
+		// Control: the direct caller keeps its signature, so the withholding is scoped to the replica-invoked function rather than
+		// applied to the whole module. This is what distinguishes "the caller changed the convention" from "signatures are off here".
+		Function dist = getFunction("distributed_train_step");
+		assertTrue("`distributed_train_step` is invoked directly, so its signature stands.", dist.getInferredInputSignature().isPresent());
+	}
+
 	@Test
 	public void testColumnSliceRankInMethodBody() throws Exception {
 		this.setInferInputSignatures(true);

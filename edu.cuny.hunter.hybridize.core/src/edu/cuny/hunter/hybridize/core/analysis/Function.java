@@ -1051,6 +1051,11 @@ public class Function {
 	private Boolean hasUnresolvedStaticallyReadAxes;
 
 	/**
+	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
+	 */
+	private Boolean replicaInvoked;
+
+	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
 	 * feeds the snapshot to an optimizer or gradient computation, which raises under {@code tf.function} tracing when slot creation lands
 	 * on the variable-lifting re-trace. {@code null} when it could not be determined (no call-graph node), in which case the precondition
@@ -1393,6 +1398,20 @@ public class Function {
 									// both "hybridized with a signature" and "not hybridized". The reconfiguration path keeps
 									// declining with the precondition failure: there the decoration already exists, and changing its
 									// argument is the only action on the table.
+									// Issue 928: the function is reached through `tf.distribute.Strategy.run`, which does not preserve
+									// the declared argument structure. A signature accurate for a direct call therefore describes a
+									// calling convention this function will not be called by, and it raises on arity before any
+									// argument is examined. The bare decorator is what runs on that path, so withhold the signature
+									// and keep the conversion, exactly as for the statically-read-axis case below.
+									if (TRUE.equals(this.getReplicaInvoked()) && this.getInferredInputSignature().isPresent()) {
+										this.inferredInputSignature = new InferenceResult.Absent(
+												InferenceResult.AbsenceReason.WITHHELD_REPLICA_INVOKED);
+										this.addInfo(INPUT_SIGNATURE_INFERENCE,
+												"`" + this + "` is invoked through a distribution strategy, which does not preserve its "
+														+ "declared argument structure, so the signature is withheld and the function is "
+														+ "hybridized with a bare decorator instead.");
+									}
+
 									if (TRUE.equals(this.getHasUnresolvedStaticallyReadAxes())
 											&& this.getInferredInputSignature().isPresent()) {
 										this.inferredInputSignature = new InferenceResult.Absent(
@@ -1845,6 +1864,61 @@ public class Function {
 	 */
 	public Boolean getHasNumpyCallsOnParameters() {
 		return this.hasNumpyCallsOnParameters;
+	}
+
+	/**
+	 * The declaring class of the synthetic node Ariadne uses to model {@code tf.distribute.Strategy.run}. A function invoked through that
+	 * node receives the arguments {@code run} distributes rather than the ones its declaration names.
+	 */
+	private static final String DISTRIBUTE_RUN_CLASS = "Ltensorflow/distribute/run/run";
+
+	/**
+	 * Computes whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}, storing the result for
+	 * {@link #getReplicaInvoked()}. That call path does not preserve the declared argument structure: a single structured parameter arrives
+	 * as separate positional arguments, so an emitted signature describes a calling convention that will not be used and the function
+	 * raises on arity before any argument is examined. A direct call to the same function with the same signature succeeds, so this is a
+	 * property of the caller rather than of the specification.
+	 *
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+	 */
+	public void computeReplicaInvoked(CallGraph callGraph) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// The function's method reference could not be resolved, so no caller is visible and no verdict is available.
+			LOG.warn("Can't resolve nodes for: " + this + " while checking for replica dispatch.", e);
+			this.replicaInvoked = null;
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// No node, so no caller is visible and no verdict is available, mirroring the sibling safety checks.
+			this.replicaInvoked = null;
+			return;
+		}
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node)))
+				if (DISTRIBUTE_RUN_CLASS.equals(predecessor.getMethod().getDeclaringClass().getName().toString())) {
+					this.replicaInvoked = TRUE;
+					return;
+				}
+
+		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * Whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}.
+	 *
+	 * @return {@code TRUE} when some caller is the replica dispatch, {@code FALSE} when none is, or {@code null} when no caller could be
+	 *         examined.
+	 * @see #computeReplicaInvoked(CallGraph)
+	 */
+	public Boolean getReplicaInvoked() {
+		return this.replicaInvoked;
 	}
 
 	/**

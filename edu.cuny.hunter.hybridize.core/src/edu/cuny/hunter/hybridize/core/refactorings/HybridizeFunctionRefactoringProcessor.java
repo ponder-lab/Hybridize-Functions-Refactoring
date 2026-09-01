@@ -536,6 +536,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
 
+				// Whether the replica dispatch is a caller decides if an emitted signature would describe a calling convention
+				// the function is never called by (issue 928). Cheap: a caller-direction walk with no points-to query.
+				func.computeReplicaInvoked(callGraph);
+
 				// Check whether the function snapshots a model's variables before the model's first call (issue 822). Same
 				// reachable region, same gate; overridable independently via alwaysCheckStaleVariableReads.
 				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
