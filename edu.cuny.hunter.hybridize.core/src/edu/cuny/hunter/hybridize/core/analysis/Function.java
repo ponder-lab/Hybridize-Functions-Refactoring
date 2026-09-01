@@ -1867,13 +1867,15 @@ public class Function {
 	}
 
 	/**
-	 * The declaring classes of the synthetic node the engine uses to model {@code tf.distribute.Strategy.run}. A function invoked through
-	 * that node receives the arguments {@code run} distributes rather than the ones its declaration names. Both the plain and the
-	 * {@code $}-prefixed trampoline spellings are matched, as the modeled Keras endpoints are elsewhere: matching only one lets the check
-	 * fall silent rather than fail, which is the direction that hides.
+	 * The declaring class of the synthetic node the engine uses to model {@code tf.distribute.Strategy.run}. A function invoked through
+	 * that node receives the arguments {@code run} distributes rather than the ones its declaration names.
+	 * <p>
+	 * Only the plain spelling is matched. The {@code $}-prefixed form elsewhere in this package is the method trampoline of a
+	 * <em>summarized</em> endpoint, and the dispatch is modeled as a synthetic node rather than a summary: no {@code $} variant of it
+	 * appears in the call graph. Should that modeling change, this check stops firing rather than failing, which is why the coupling is
+	 * stated on the issue rather than left implicit.
 	 */
-	private static final Set<String> DISTRIBUTE_RUN_CLASS_NAMES = Set.of("Ltensorflow/distribute/run/run",
-			"L$tensorflow/distribute/run/run");
+	private static final String DISTRIBUTE_RUN_CLASS_NAME = "Ltensorflow/distribute/run/run";
 
 	/**
 	 * Computes whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}, storing the result for
@@ -1911,7 +1913,7 @@ public class Function {
 
 		for (CGNode node : nodes)
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node)))
-				if (DISTRIBUTE_RUN_CLASS_NAMES.contains(predecessor.getMethod().getDeclaringClass().getName().toString())) {
+				if (DISTRIBUTE_RUN_CLASS_NAME.equals(predecessor.getMethod().getDeclaringClass().getName().toString())) {
 					this.replicaInvoked = TRUE;
 					return;
 				}
