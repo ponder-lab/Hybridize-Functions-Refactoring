@@ -1898,15 +1898,14 @@ public class Function {
 		try {
 			nodes = this.getNodes(callGraph);
 		} catch (CoreException e) {
-			// The function's method reference could not be resolved, so no caller is visible and no verdict is available.
-			LOG.warn("Can't resolve nodes for: " + this + " while checking for replica dispatch.", e);
-			this.replicaInvoked = null;
+			// Undeterminable; leave the verdict unset so nothing is withheld on an unresolved reference.
+			LOG.warn("Can't determine whether " + this + " is reached through the replica dispatch.", e);
 			return;
 		}
 
 		if (nodes.isEmpty()) {
-			// No node, so no caller is visible and no verdict is available, mirroring the sibling safety checks.
-			this.replicaInvoked = null;
+			// Undeterminable without a call-graph node: no caller is visible, so absence of evidence is not evidence of absence.
+			LOG.info("Can't determine whether " + this + " is reached through the replica dispatch without a call graph node.");
 			return;
 		}
 

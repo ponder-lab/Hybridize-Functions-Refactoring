@@ -9967,6 +9967,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// applied to the whole module. This is what distinguishes "the caller changed the convention" from "signatures are off here".
 		Function dist = getFunction("distributed_train_step");
 		assertTrue("`distributed_train_step` is invoked directly, so its signature stands.", dist.getInferredInputSignature().isPresent());
+
+		// A function nothing calls has no call-graph node, so no caller is visible. The verdict must stay undetermined rather than
+		// becoming FALSE: "no caller was seen" and "the callers seen are not the dispatch" are different facts, and only the second is
+		// evidence. Conflating them is what would let a genuinely replica-invoked function keep a signature on a thinner call graph.
+		Function uncalled = getFunction("never_called");
+		assertNull("A function with no call-graph node has no replica-dispatch verdict, not a negative one.", uncalled.getReplicaInvoked());
 	}
 
 	@Test

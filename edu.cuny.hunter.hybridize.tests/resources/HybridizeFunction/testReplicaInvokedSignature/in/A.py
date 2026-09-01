@@ -17,3 +17,9 @@ def distributed_train_step(dataset_inputs):
 
 
 distributed_train_step((tf.zeros((8, 4)), tf.zeros((8, 2))))
+
+
+def never_called(x):
+    # Nothing calls this, so it has no call-graph node and no caller is visible. The verdict must stay
+    # undetermined rather than becoming "not replica-invoked", which would be evidence of absence.
+    return tf.reduce_sum(x)
