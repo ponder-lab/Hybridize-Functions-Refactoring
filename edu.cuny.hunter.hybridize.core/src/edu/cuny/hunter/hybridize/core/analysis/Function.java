@@ -1884,8 +1884,9 @@ public class Function {
 	 * <p>
 	 * This is an ENUMERATION AND IT IS NOT COMPLETE. An Operation reached by any route not named here passes unnoticed, so a green check is
 	 * not evidence that a function is safe to decorate, only that it does not return an Operation by one of these. The complete form is a
-	 * type query once the engine allocates {@code Operation} for its producers (wala/ML#864, where the class already exists and the
-	 * producers are what is missing); this check is written so that swap changes the mechanism and not the verdict.
+	 * type query, and wala/ML#864 supplies it for exactly these four callees as of Ariadne 0.52.91: the swap there changes the mechanism
+	 * and not the verdict. It does not remove this set, because a producer the engine does not model still passes silently and this
+	 * enumeration is what catches one.
 	 * <p>
 	 * Every entry was confirmed by decorating a function that returns it and observing the {@code TypeError}, rather than by reasoning
 	 * about which APIs sound operation-like. That distinction removed a member: {@code tf.summary.scalar} reads as an operation producer
@@ -1907,7 +1908,13 @@ public class Function {
 	 * Unlike that set, these are matched without reaching a TensorFlow root. The receiver is the variable being assigned, and its type is
 	 * not available here, so the spelling is all there is to go on: a non-TensorFlow object with a method of one of these names whose
 	 * result carries an {@code op} attribute would be refused a conversion that is sound. Requiring the trailing {@code op} read narrows
-	 * that considerably, but the residual is real, and it is what the type query in wala/ML#864 removes.
+	 * that considerably, but the residual is real.
+	 * <p>
+	 * DO NOT DELETE THIS ARM FOR wala/ML#864. That issue models {@code group}, {@code no_op}, {@code print}, and {@code assert_equal}, and
+	 * none of the methods named here: as of Ariadne 0.52.91 the assignment family is unmodeled entirely, so {@code v.assign_add(1.0)}
+	 * resolves to nothing at all rather than to something whose {@code op} field could be read. Issue 929's own minimal reproduction is
+	 * {@code return v.assign_add(1.0).op}, so swapping this arm for that type query would stop the check catching the case it was written
+	 * for. A separate change to model these six is in progress upstream; until a release carries it, this is the only arm that sees them.
 	 */
 	private static final Set<String> ASSIGNMENT_CALLEES = Set.of("assign", "assign_add", "assign_sub", "scatter_add", "scatter_sub",
 			"scatter_update");
