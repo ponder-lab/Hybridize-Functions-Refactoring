@@ -10023,6 +10023,82 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				encloses.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 	}
 
+	private static String render(Function function) {
+		return function.getInferredInputSignature().isPresent() ? function.getInferredInputSignature().get().toTensorSpecList("tf.")
+				: "ABSENT";
+	}
+
+	/**
+	 * Pins that a parameter's dtype is read from the allocation of the array it receives, rather than from the arrays it is passed
+	 * alongside or from a value assigned into it. NumPy casts to the destination on assignment, so an int64 array filled from a float64
+	 * source stays int64, and a signature naming any other dtype rejects the calls the function actually receives.
+	 * <p>
+	 * The three candidates are made distinct deliberately: the destination allocation says int64, the partners say float32, and the
+	 * assigned value says float64, so a wrong emission names its own source rather than being ambiguous between two of them. The cases vary
+	 * how far the value travels before landing, since an allocation is easiest to lose across a container boundary.
+	 */
+	@Test
+	public void testDestinationDtypeUnderPartners() throws Exception {
+		this.setInferInputSignatures(true);
+
+		// Float32 partners on both sides of an int64 parameter. Imposing a partner's dtype would say float32 and taking the assigned
+		// value's would say float64, so the correct answer is distinguishable from both at once.
+		assertEquals("A parameter's dtype comes from its own allocation, not from the arrays it is passed alongside.",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float32), tf.TensorSpec(shape=(4, 3), dtype=tf.float32), "
+						+ "tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]",
+				render(getFunction("three_way")));
+
+		// The same array with no partner at all, which isolates the assigned value's dtype as the only competing answer.
+		assertEquals("With no partner to impose from, the destination allocation still decides.",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]", render(getFunction("alone")));
+
+		// The value crosses a container: it is an element of a tuple a call returned, rather than a plain array.
+		assertEquals("Indexing a returned tuple does not lose the destination's allocation.",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]", render(getFunction("via_tuple")));
+
+		// A second crossing: the destination is filled inside a generator, yielded, and taken by `next`.
+		assertEquals("A generator boundary does not lose the destination's allocation.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]",
+				render(getFunction("via_generator")));
+
+		// Today's behavior, pinned rather than endorsed: through a class implementing the iterator protocol, filled in a loop indexed by
+		// a variable, no signature is emitted at all. Whether the evidence is lost on that path or never reaches the parameter here has
+		// not been separated, so this asserts what happens and claims nothing about what should.
+		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
+				render(getFunction("via_loader")));
+
+		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution turns out to be
+		// per-spelling and incomplete, and every miss lands on float64. The misses are pinned as today's behavior, not endorsed: an
+		// emission naming float64 for an int64 or boolean array rejects the calls the function receives.
+		//
+		// There is no rule separating these. `np.bool` resolves where the builtin `bool` does not, and the builtin `int` resolves where
+		// `np.int` does not, which is inverted between the two types, so neither a deprecated-alias rule nor a `np.`-attribute rule
+		// accounts for them. They are listed rather than characterized deliberately.
+
+		assertEquals("`np.int32` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int32)]", render(getFunction("via_int32")));
+
+		assertEquals("The builtin `int` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]", render(getFunction("via_builtin")));
+
+		assertEquals("`np.bool` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.bool)]", render(getFunction("via_bool_alias")));
+
+		assertEquals("`np.bool_` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.bool)]", render(getFunction("via_bool")));
+
+		// Correct, but only because the value a miss falls back to is the one this allocation intended. A pass here is no evidence
+		// that the spelling resolved, which is what makes this the spelling under which the defect is invisible.
+		assertEquals("`np.float` agrees with the fallback, so it cannot distinguish resolution from failure.",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_float_alias")));
+
+		// Pinned defects. Each names float64 definitely rather than degrading to unknown, so nothing downstream can tell a resolved
+		// float64 from an unresolved one.
+		assertEquals("Pins today's behavior: `np.int` does not resolve and falls back to float64 (real dtype int64).",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_alias")));
+
+		assertEquals("Pins today's behavior: `np.long` does not resolve and falls back to float64 (real dtype int64).",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_long")));
+
+		assertEquals("Pins today's behavior: the builtin `bool` does not resolve and falls back to float64 (real dtype bool).",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_builtin_bool")));
+	}
+
 	/**
 	 * Guards the emitted signature's rank for a column slice taken in a method body (#856): a column sliced out of a parameter inside a
 	 * method body used to keep the receiver's rank (fixed by https://github.com/wala/ML/issues/824, released in Ariadne 0.52.81 via #855).
