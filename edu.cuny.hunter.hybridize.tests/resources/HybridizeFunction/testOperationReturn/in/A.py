@@ -35,3 +35,38 @@ def mixed_returns(x):
 
 
 mixed_returns(tf.zeros((4,)))
+
+
+class Collector:
+    def group(self, xs):
+        return xs
+
+    @property
+    def op(self):
+        return 0
+
+
+collector = Collector()
+
+
+def unrooted_names(x):
+    # The sole return is a `group` call that is not TensorFlow's. Matching on the trailing name
+    # alone declines this, refusing a conversion that is sound, so the check must be rooted. The
+    # return has to be the only one: a second, tensor-valued return would make the all-rule fail
+    # for an unrelated reason and the case would not isolate the rooting.
+    return collector.group([1, 2])
+
+
+def encloses_a_returner(x):
+    # This function has no return of its own, so it yields None, which the tracer accepts. The
+    # nested definition returns an Operation. A walk that descends into inner definitions sees
+    # only that return, concludes every return is an Operation, and declines this function for a
+    # return it does not make.
+    def inner():
+        return tf.group([v.assign_add(1.0)])
+
+    inner()
+
+
+unrooted_names(tf.zeros((4,)))
+encloses_a_returner(tf.zeros((4,)))

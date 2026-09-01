@@ -10005,6 +10005,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function mixed = getFunction("mixed_returns");
 		assertNull("A path returning None means not every return is an Operation, so the decline must not fire.",
 				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// The rule is about what TensorFlow returns, not about a spelling. A `group(...)` call or an `op` attribute belonging to some
+		// other library must not decline a conversion that is sound.
+		Function unrooted = getFunction("unrooted_names");
+		assertNull("A same-named call on a non-TensorFlow receiver must not decline the conversion.",
+				unrooted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
+		// A return inside a nested definition belongs to that function. Attributing it to the enclosing one would decline a function
+		// on the strength of a return it does not make.
+		Function encloses = getFunction("encloses_a_returner");
+		assertNull("A nested definition's return must not be attributed to the enclosing function.",
+				encloses.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 	}
 
 	@Test

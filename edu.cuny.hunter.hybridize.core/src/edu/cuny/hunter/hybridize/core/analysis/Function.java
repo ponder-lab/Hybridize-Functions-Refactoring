@@ -1929,6 +1929,13 @@ public class Function {
 				}
 
 				@Override
+				public Object visitFunctionDef(FunctionDef node) throws Exception {
+					// Do not descend: a `return` inside a nested definition belongs to that function, not this one. Counting it here
+					// would decline or clear the wrong function, and the outer one's own returns would be judged by the inner one's.
+					return node == functionDef ? super.visitFunctionDef(node) : null;
+				}
+
+				@Override
 				public Object visitReturn(Return node) throws Exception {
 					if (node.value != null)
 						returned.add(node.value);
@@ -1959,11 +1966,14 @@ public class Function {
 	 * @return {@code true} when the expression is a recognized Operation producer.
 	 */
 	private static boolean isOperationValued(exprType value) {
+		// Both forms are scoped to TensorFlow-rooted expressions. Matching on the trailing name alone would decline a function
+		// returning any `group(...)` or `print(...)`, or reading any attribute named `op`, whatever library it belongs to, which
+		// refuses conversions that are perfectly sound. The rule is about what TensorFlow returns, not about a spelling.
 		if (value instanceof Attribute attribute && attribute.attr instanceof NameTok name && "op".equals(name.id))
-			return true;
+			return isTensorFlowRooted(attribute.value);
 
 		if (value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name)
-			return OPERATION_PRODUCING_CALLEES.contains(name.id);
+			return OPERATION_PRODUCING_CALLEES.contains(name.id) && isTensorFlowRooted(call.func);
 
 		return false;
 	}
