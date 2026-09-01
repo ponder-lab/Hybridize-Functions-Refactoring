@@ -1910,6 +1910,11 @@ public class Function {
 		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
 		List<exprType> returned = new ArrayList<>();
 
+		// A bare `return` yields None, which is not an Operation. Recorded separately because it contributes no expression to test, and
+		// dropping it would let a function that returns None on one path and an Operation on another satisfy "all returns are
+		// Operations" on the strength of the paths that happen to carry a value.
+		boolean[] returnsNone = { false };
+
 		try {
 			functionDef.traverse(new VisitorBase() {
 
@@ -1927,6 +1932,8 @@ public class Function {
 				public Object visitReturn(Return node) throws Exception {
 					if (node.value != null)
 						returned.add(node.value);
+					else
+						returnsNone[0] = true;
 
 					return super.visitReturn(node);
 				}
@@ -1936,8 +1943,9 @@ public class Function {
 			return false;
 		}
 
-		// A bare `return` or no return at all yields None, which the tracer accepts.
-		if (returned.isEmpty())
+		// No valued return at all, or some path returning None, means not every return is an Operation. The tracer accepts None, so
+		// such a function is not one this check declines.
+		if (returned.isEmpty() || returnsNone[0])
 			return false;
 
 		return returned.stream().allMatch(Function::isOperationValued);

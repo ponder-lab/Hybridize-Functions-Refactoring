@@ -23,3 +23,15 @@ def returns_tensor(x):
 
 returns_operation(tf.zeros((4,)))
 returns_tensor(tf.zeros((4,)))
+
+
+def mixed_returns(x):
+    # One path yields None, which the tracer accepts, and the other an Operation. The paths
+    # disagree, so this is not a function every return of which is an Operation, and the
+    # all-not-any rule must not decline it on the strength of the valued path alone.
+    if tf.reduce_sum(x) > 0:
+        return
+    return tf.group([v.assign_add(1.0)])
+
+
+mixed_returns(tf.zeros((4,)))

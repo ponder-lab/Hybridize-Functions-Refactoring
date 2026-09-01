@@ -9998,6 +9998,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function tensor = getFunction("returns_tensor");
 		assertTrue("`returns_tensor` returns a Tensor and is a sound candidate.",
 				tensor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A bare `return` yields None, which the tracer accepts, so a function returning None on one path and an Operation on another
+		// is not one whose every return is an Operation. Collecting only valued returns would let the Operation path decide it alone,
+		// which is the "any" rule wearing the "all" rule's name.
+		Function mixed = getFunction("mixed_returns");
+		assertNull("A path returning None means not every return is an Operation, so the decline must not fire.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 	}
 
 	@Test
