@@ -10095,6 +10095,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Pins today's behavior: `np.long` does not resolve and falls back to float64 (real dtype int64).",
 				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_long")));
 
+		// Neither of these is a deprecated alias. The model defines a field for `uint8` and none for `int16`, and int16 differs from
+		// the value a miss falls back to, so this is a spelling whose failure is visible without being an alias or a builtin. The pair
+		// is what shows the field list predicts the behavior rather than merely agreeing with it.
+		assertEquals("`np.uint8` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.uint8)]", render(getFunction("via_uint8")));
+
+		assertEquals("Pins today's behavior: `np.int16` does not resolve and falls back to float64 (real dtype int16).",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_int16")));
+
 		assertEquals("Pins today's behavior: the builtin `bool` does not resolve and falls back to float64 (real dtype bool).",
 				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_builtin_bool")));
 	}

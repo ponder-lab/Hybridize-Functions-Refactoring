@@ -177,3 +177,22 @@ def via_builtin_bool(m):
 via_long(long_dest)
 via_float_alias(float_alias_dest)
 via_builtin_bool(builtin_bool_dest)
+
+
+# Neither of these is a deprecated alias, which is the point of testing them: `np.uint8` has a
+# field in the model and `np.int16` does not, and int16 differs from the fallback, so it is a
+# spelling whose failure is visible without being an alias at all.
+u8_dest = np.zeros(shape=[4, 3], dtype=np.uint8)
+i16_dest = np.zeros(shape=[4, 3], dtype=np.int16)
+
+
+def via_uint8(m):
+    return tf.reduce_sum(tf.cast(m, tf.float32))
+
+
+def via_int16(m):
+    return tf.reduce_sum(tf.cast(m, tf.float32))
+
+
+via_uint8(u8_dest)
+via_int16(i16_dest)
