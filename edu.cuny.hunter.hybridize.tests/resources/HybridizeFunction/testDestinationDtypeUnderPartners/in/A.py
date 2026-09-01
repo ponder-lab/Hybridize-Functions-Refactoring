@@ -109,9 +109,10 @@ via_loader(l_scores, l_boxes, l_masks)
 
 
 # How the allocation spells its dtype, which is the one thing the cases above never varied: they
-# all say `np.int64`. The subject says `np.int`, the alias deprecated in NumPy 1.20 and removed in
-# 1.24, which is why it pins 1.23.5. Three spellings of one request, so a wrong emission names
-# which lookup failed rather than only that one did.
+# all say `np.int64`. `np.int` is the alias deprecated in NumPy 1.20 and removed in 1.24, so this
+# fixture pins a NumPy below that: above it, the name does not exist and the file raises rather
+# than being analyzed. Three spellings of one request, so a wrong emission names which lookup
+# failed rather than only that one did.
 alias_dest = np.zeros(shape=[4, 3], dtype=np.int)
 i32_dest = np.zeros(shape=[4, 3], dtype=np.int32)
 builtin_dest = np.zeros(shape=[4, 3], dtype=int)
