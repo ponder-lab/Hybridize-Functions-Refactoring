@@ -20,6 +20,14 @@ def returns_dot_op(x):
     return v.assign_add(tf.reduce_sum(x)).op
 
 
+def falls_through(x):
+    # The same disagreement as `mixed_returns`, spelled without a bare `return`: reaching the end of
+    # the body yields None, so not every path returns an Operation. Collecting only `return`
+    # statements cannot see that path, and the two spellings of one situation must agree.
+    if x is not None:
+        return tf.group([v.assign_add(1.0)])
+
+
 def returns_tensor(x):
     # Control: same shape of body, but the value returned is a Tensor, so hybridizing
     # it is sound. If a decline widened from the return type to the assignments, this
@@ -31,6 +39,7 @@ def returns_tensor(x):
 returns_operation(tf.zeros((4,)))
 returns_tensor(tf.zeros((4,)))
 returns_dot_op(tf.zeros((4,)))
+falls_through(tf.zeros((4,)))
 
 
 def mixed_returns(x):

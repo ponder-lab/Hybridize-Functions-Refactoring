@@ -10012,6 +10012,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("A path returning None means not every return is an Operation, so the decline must not fire.",
 				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
 
+		// The same disagreement spelled without a bare `return`. Falling off the end of the body yields None just as `return` does,
+		// so the two spellings of one situation must reach the same verdict.
+		Function fallsThrough = getFunction("falls_through");
+		assertNull("A path falling through the end of the body returns None, so the decline must not fire.",
+				fallsThrough.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_OPERATION.getCode()));
+
 		// The rule is about what TensorFlow returns, not about a spelling. A `group(...)` call or an `op` attribute belonging to some
 		// other library must not decline a conversion that is sound.
 		Function unrooted = getFunction("unrooted_names");

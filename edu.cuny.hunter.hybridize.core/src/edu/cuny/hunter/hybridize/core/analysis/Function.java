@@ -85,10 +85,12 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Raise;
 import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.VisitorBase;
@@ -99,6 +101,7 @@ import org.python.pydev.parser.jython.ast.expr_contextType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.name_contextType;
 import org.python.pydev.parser.jython.ast.stmtType;
+import org.python.pydev.parser.jython.ast.suiteType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
 import com.google.common.collect.Maps;
@@ -1916,6 +1919,10 @@ public class Function {
 	 * not one this check can decide, and deciding it either way is worse than declining to: declaring it an Operation refuses a conversion
 	 * that may be sound, and declaring it a Tensor permits one that cannot work. Only a function returning nothing else is declined.
 	 * <p>
+	 * A path is a {@code return} statement or the end of the body, since control reaching the end returns {@code None}. Whether the end is
+	 * reachable is answered by {@link #terminates(stmtType[])}, which approximates rather than analyzes control flow, so a function this
+	 * reports on is one whose every <em>examined</em> path returns an Operation.
+	 * <p>
 	 * A function with no {@code return} statement returns {@code None}, which the tracer accepts, so it is not an Operation returner.
 	 *
 	 * @return {@code true} when the function returns an Operation on every returning path.
@@ -1966,8 +1973,10 @@ public class Function {
 		}
 
 		// No valued return at all, or some path returning None, means not every return is an Operation. The tracer accepts None, so
-		// such a function is not one this check declines.
-		if (returned.isEmpty() || returnsNone[0])
+		// such a function is not one this check declines. Falling off the end of the body returns None just as a bare `return` does,
+		// and collecting `return` statements cannot see that path, so the body is asked separately whether control can reach its end.
+		// The two spellings of one situation have to reach the same verdict.
+		if (returned.isEmpty() || returnsNone[0] || !terminates(functionDef.body))
 			return false;
 
 		return returned.stream().allMatch(Function::isOperationValued);
@@ -2005,6 +2014,37 @@ public class Function {
 	private static boolean isAssignmentCall(exprType value) {
 		return value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name
 				&& ASSIGNMENT_CALLEES.contains(name.id);
+	}
+
+	/**
+	 * Whether control leaves the given suite on every path, rather than reaching its end. A suite control can run off the end of has a path
+	 * returning {@code None}, which the tracer accepts, so a function with one is not a function every return of which is an Operation.
+	 * <p>
+	 * The shapes decided here are a trailing {@code return} or {@code raise}, and a trailing {@code if} whose branches both leave. Every
+	 * other shape is reported as reaching the end. That is an approximation and not a control-flow analysis: a loop no iteration exits, or
+	 * a {@code try} whose handlers all return, leaves on every path and is reported as not doing so. The consequence is the check declining
+	 * to decide rather than deciding wrongly, which is the direction the ALL rule already takes when paths disagree.
+	 *
+	 * @param suite The statements to examine.
+	 * @return {@code true} when control cannot reach the end of the suite.
+	 */
+	private static boolean terminates(stmtType[] suite) {
+		if (suite == null || suite.length == 0)
+			return false;
+
+		stmtType last = suite[suite.length - 1];
+
+		if (last instanceof Return || last instanceof Raise)
+			return true;
+
+		// An `if` decides only when it has an `else`. Without one the untaken branch continues past the statement, and an `elif` chain
+		// is a nested `if` in that position, so the same question asked of it answers the whole chain.
+		if (last instanceof If branch) {
+			suiteType orelse = branch.orelse;
+			return orelse != null && terminates(branch.body) && terminates(orelse.body);
+		}
+
+		return false;
 	}
 
 	/**
