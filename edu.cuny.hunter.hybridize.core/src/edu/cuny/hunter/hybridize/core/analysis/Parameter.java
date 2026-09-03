@@ -923,15 +923,26 @@ public final class Parameter {
 		 * judge other unrepresentable members such as strings or numbers, so adopting it would replace this test and not the surrounding
 		 * decision.
 		 */
-		for (PointerKey elementKey : builder.getPointerAnalysis().getPointerKeys())
-			if (elementKey instanceof InstanceFieldKey fieldKey && reaching.contains(fieldKey.getInstanceKey()))
-				for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(elementKey))
-					if (elementValue instanceof ConstantKey<?> constant && constant.getValue() == null) {
-						LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
-								+ "; withholding the signature.");
-						this.containerHoldsUnrepresentableElement = true;
-						return;
-					}
+		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
+			// Swept over the analysis's own evaluations rather than every pointer key in the program: the containers of interest are
+			// exactly those the element sweep already visits, and a global scan would repeat that cost for every container parameter of
+			// every candidate.
+			if (!(pair.fst instanceof InstanceFieldKey fieldKey) || !reaching.contains(fieldKey.getInstanceKey()))
+				continue;
+
+			// Skipped for the same reason the arity computation skips it: the synthetic append channel names no element position, so a
+			// null there is not an element of the sequence being specified.
+			if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldKey.getField().getName().toString()))
+				continue;
+
+			for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(fieldKey))
+				if (elementValue instanceof ConstantKey<?> constant && constant.getValue() == null) {
+					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
+							+ "; withholding the signature.");
+					this.containerHoldsUnrepresentableElement = true;
+					return;
+				}
+		}
 
 		// Arity per container, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported.
 		int arity = -1;
