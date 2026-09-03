@@ -3841,6 +3841,22 @@ public class Function {
 		Set<Parameter> omittable = new LinkedHashSet<>();
 
 		for (Parameter param : nonSelfParameters) {
+			/*
+			 * A container reaching this parameter holds an element no `TensorSpec` admits, Python `None` being the case this covers. A
+			 * specification is a universal claim over the values that arrive, so one such member defeats it regardless of how many
+			 * legitimate tensor members sit beside it, and regardless of whether the branch that would supply a tensor ever runs. Asked
+			 * before the tensor classification below, because the parameter IS a tensor container by that classification and would
+			 * otherwise reduce to a specification whose leading position cannot match the call it was derived from (wala/ML#867).
+			 */
+			if (param.holdsUnrepresentableContainerElement()) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"A container reaching parameter `" + param.getName() + "` of `" + this + "` holds an element that is not a "
+								+ "tensor, so no specification can describe what arrives; input-signature inference is dropped and the "
+								+ "function is hybridized with a bare decorator.");
+				blocking.put(param, AbsenceReason.WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT);
+				continue;
+			}
+
 			Boolean classified = param.isTensor();
 			if (classified == null || !classified) {
 				/*
