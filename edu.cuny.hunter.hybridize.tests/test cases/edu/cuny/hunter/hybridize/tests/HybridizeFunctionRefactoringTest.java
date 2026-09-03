@@ -10134,13 +10134,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
 				render(getFunction("via_loader")));
 
-		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution turns out to be
-		// per-spelling and incomplete, and every miss lands on float64. The misses are pinned as today's behavior, not endorsed: an
-		// emission naming float64 for an int64 or boolean array rejects the calls the function receives.
+		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling
+		// and incomplete, and a spelling the model does not define is not recovered here. What changed is what a miss emits: it used
+		// to name float64 definitely, so nothing downstream could tell a resolved float64 from an unresolved one, and it now emits
+		// nothing at all. That is honesty rather than precision, and the split below is the evidence the correction was surgical.
 		//
-		// There is no rule separating these. `np.bool` resolves where the builtin `bool` does not, and the builtin `int` resolves where
-		// `np.int` does not, which is inverted between the two types, so neither a deprecated-alias rule nor a `np.`-attribute rule
-		// accounts for them. They are listed rather than characterized deliberately.
+		// There is no rule separating which spellings resolve. `np.bool` resolves where the builtin `bool` does not, and the builtin
+		// `int` resolves where `np.int` does not, which is inverted between the two types, so neither a deprecated-alias rule nor a
+		// `np.`-attribute rule accounts for them. They are listed rather than characterized deliberately.
 
 		assertEquals("`np.int32` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int32)]", render(getFunction("via_int32")));
 
@@ -10150,29 +10151,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("`np.bool_` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.bool)]", render(getFunction("via_bool")));
 
-		// Correct, but only because the value a miss falls back to is the one this allocation intended. A pass here is no evidence
-		// that the spelling resolved, which is what makes this the spelling under which the defect is invisible.
-		assertEquals("`np.float` agrees with the fallback, so it cannot distinguish resolution from failure.",
-				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_float_alias")));
+		// This spelling is the one that proves the mechanism. It emitted float64 before the absent-versus-unresolved change and looked
+		// correct, and the message here said it could not distinguish resolution from failure. It is absent now, which settles the
+		// question the older message left open: the spelling never resolved, and the fallback had merely coincided with what the
+		// allocation meant.
+		assertEquals("`np.float` does not resolve, and no longer has a default stamped over it.", "ABSENT",
+				render(getFunction("via_float_alias")));
 
-		// Pinned defects. Each names float64 definitely rather than degrading to unknown, so nothing downstream can tell a resolved
-		// float64 from an unresolved one.
-		assertEquals("Pins today's behavior: `np.int` does not resolve and falls back to float64 (real dtype int64).",
-				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_alias")));
+		// These spellings still do not resolve, but the miss no longer names float64 definitely. Nothing is recovered, so this is
+		// honesty rather than precision: the emission says it does not know instead of saying something confidently wrong, and a
+		// reader can now tell an unresolved dtype from a resolved float64.
+		assertEquals("`np.int` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_alias")));
 
-		assertEquals("Pins today's behavior: `np.long` does not resolve and falls back to float64 (real dtype int64).",
-				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_long")));
+		assertEquals("`np.long` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_long")));
 
 		// Neither of these is a deprecated alias. The model defines a field for `uint8` and none for `int16`, and int16 differs from
 		// the value a miss falls back to, so this is a spelling whose failure is visible without being an alias or a builtin. The pair
 		// is what shows the field list predicts the behavior rather than merely agreeing with it.
 		assertEquals("`np.uint8` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.uint8)]", render(getFunction("via_uint8")));
 
-		assertEquals("Pins today's behavior: `np.int16` does not resolve and falls back to float64 (real dtype int16).",
-				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_int16")));
+		assertEquals("`np.int16` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_int16")));
 
-		assertEquals("Pins today's behavior: the builtin `bool` does not resolve and falls back to float64 (real dtype bool).",
-				"[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]", render(getFunction("via_builtin_bool")));
+		assertEquals("The builtin `bool` does not resolve, and no longer falls back to float64.", "ABSENT",
+				render(getFunction("via_builtin_bool")));
 	}
 
 	/**
