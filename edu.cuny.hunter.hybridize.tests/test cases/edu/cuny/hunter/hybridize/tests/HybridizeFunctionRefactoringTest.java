@@ -10049,6 +10049,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The control, and the point of the pair. Same shape with both elements allocated unconditionally and no None anywhere, so
 		// omitting nothing is sound and the signature stands. Before the fix these two emitted byte-identical specifications, so a
 		// change that blocked both would have looked like a success while destroying a correct emission.
+		// Filtering the None out does NOT rescue the signature, and this is the subject shape the report was filed from. The
+		// comprehension's variable ranges over the source including the null, so the null reaches the output's ELEMENT positions and not
+		// merely the analysis-internal append channel. The filter is a run-time fact the analysis cannot see, so withholding is right
+		// here: the specification would still be claiming that no None arrives.
+		//
+		// Written as a negative control, expecting the signature to stand, and it failed. The expectation was wrong rather than the
+		// rule. Kept as a positive case because it records that the filter is not a way out, which is the question anyone reading the
+		// report would ask first.
+		assertEquals("Filtering the None at run time does not make the element representable.", "ABSENT",
+				render(getFunction("concatenate_filtered")));
+
 		assertEquals("A container with no unrepresentable element keeps its signature.",
 				"[[tf.TensorSpec(shape=(2, 2), dtype=tf.float64), tf.TensorSpec(shape=(2, 1), dtype=tf.float64)]]",
 				render(getFunction("concatenate_all")));

@@ -45,3 +45,21 @@ def concatenate_all(seq):
 
 concatenate_present(build_pair())
 concatenate_all(build_pair_without_none())
+
+
+def build_filtered():
+    # A comprehension whose SOURCE holds a None that the filter removes. A comprehension-built
+    # container carries the analysis-internal append channel beside its numeric indices, and the
+    # null can reach that channel even though no element position holds it. Blocking on a null
+    # found anywhere on the container would withhold this signature, which is sound.
+    values = [None, np.array([[1.0, 2.0], [3.0, 4.0]]), np.array([[5.0], [6.0]])]
+    return [v for v in values if v is not None]
+
+
+def concatenate_filtered(seq):
+    return tf.reduce_sum(tf.cast(seq[0], tf.float32)) + tf.reduce_sum(
+        tf.cast(seq[1], tf.float32)
+    )
+
+
+concatenate_filtered(build_filtered())
