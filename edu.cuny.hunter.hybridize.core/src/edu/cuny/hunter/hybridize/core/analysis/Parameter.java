@@ -862,6 +862,23 @@ public final class Parameter {
 	 * @param builder The propagation-call-graph builder for the project.
 	 * @param monitor Progress monitor for the sub-work.
 	 */
+	/**
+	 * Whether a container reaching this parameter holds an element that cannot be represented as a tensor, Python {@code None} being the
+	 * case this was written for. Set by {@link #extractContainerElements}, read when the signature is reduced.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/867">wala/ML issue 867</a>
+	 */
+	private boolean containerHoldsUnrepresentableElement;
+
+	/**
+	 * Whether a container reaching this parameter holds an element that cannot be represented as a tensor.
+	 *
+	 * @return {@code true} when an element defeats any specification written for this parameter.
+	 */
+	public boolean holdsUnrepresentableContainerElement() {
+		return this.containerHoldsUnrepresentableElement;
+	}
+
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		Map<InstanceKey, Map<String, Set<TensorType>>> containers = getTensorContainerElements(tensorAnalysis, monitor);
@@ -895,6 +912,37 @@ public final class Parameter {
 
 		if (reaching.isEmpty())
 			return;
+
+		/*
+		 * An element whose points-to set holds a null constant cannot be represented by any `TensorSpec`, and a specification is a
+		 * universal claim over arriving values, so one such member defeats it however many tensor members sit beside it. The tensor state
+		 * on the same field is true may-information with other consumers, so the refusal belongs here at emission rather than upstream at
+		 * the channel. The two live on ONE field key when a variable is initialized to `None` and only conditionally reassigned, which is
+		 * why the element's own type evidence never reveals it and the key's points-to set has to be asked separately (wala/ML#867). This
+		 * is the local form of the engine-side `anyNullConstant` predicate. That predicate answers the None question ONLY; it does not
+		 * judge other unrepresentable members such as strings or numbers, so adopting it would replace this test and not the surrounding
+		 * decision.
+		 */
+		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
+			// Swept over the analysis's own evaluations rather than every pointer key in the program: the containers of interest are
+			// exactly those the element sweep already visits, and a global scan would repeat that cost for every container parameter of
+			// every candidate.
+			if (!(pair.fst instanceof InstanceFieldKey fieldKey) || !reaching.contains(fieldKey.getInstanceKey()))
+				continue;
+
+			// Skipped for the same reason the arity computation skips it: the synthetic append channel names no element position, so a
+			// null there is not an element of the sequence being specified.
+			if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldKey.getField().getName().toString()))
+				continue;
+
+			for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(fieldKey))
+				if (elementValue instanceof ConstantKey<?> constant && constant.getValue() == null) {
+					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
+							+ "; withholding the signature.");
+					this.containerHoldsUnrepresentableElement = true;
+					return;
+				}
+		}
 
 		// Arity per container, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported.
 		int arity = -1;

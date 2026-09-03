@@ -142,7 +142,23 @@ public sealed interface InferenceResult {
 		 *
 		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
 		 */
-		WITHHELD_REPLICA_INVOKED
+		WITHHELD_REPLICA_INVOKED,
+
+		/**
+		 * A container reaching the parameter holds an element that cannot be represented as a tensor. Python {@code None} is the case this
+		 * was written for: no {@code TensorSpec} admits it, and a specification is a universal claim over the values that arrive, so a
+		 * single unrepresentable member defeats it however many legitimate tensor members sit beside it.
+		 * <p>
+		 * The whole function is blocked rather than the position narrowed or dropped. A specification covering fewer positions than the
+		 * call supplies is rejected on arity, and one naming a tensor where {@code None} arrives is rejected on type, so either would be a
+		 * different unsatisfiable artifact rather than a repair.
+		 * <p>
+		 * Branch liveness does not enter into it. The element carries the null because a variable is initialized to {@code None} and only
+		 * conditionally reassigned, so the null is in the field's points-to set whether or not the reassigning branch ever runs.
+		 *
+		 * @see <a href="https://github.com/wala/ML/issues/867">wala/ML issue 867</a>
+		 */
+		WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT
 	}
 
 	/**
