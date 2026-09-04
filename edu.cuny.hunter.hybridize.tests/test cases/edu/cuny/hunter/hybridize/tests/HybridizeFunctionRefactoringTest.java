@@ -10134,14 +10134,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
 				render(getFunction("via_loader")));
 
-		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling
-		// and incomplete, and a spelling the model does not define is not recovered here. What changed is what a miss emits: it used
-		// to name float64 definitely, so nothing downstream could tell a resolved float64 from an unresolved one, and it now emits
-		// nothing at all. That is honesty rather than precision, and the split below is the evidence the correction was surgical.
+		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling,
+		// and the model now defines the alias family that previously reached nothing.
 		//
-		// There is no rule separating which spellings resolve. `np.bool` resolves where the builtin `bool` does not, and the builtin
-		// `int` resolves where `np.int` does not, which is inverted between the two types, so neither a deprecated-alias rule nor a
-		// `np.`-attribute rule accounts for them. They are listed rather than characterized deliberately.
+		// The route here was two releases long and neither half is sufficient alone. First the unconditional float64 default was
+		// withdrawn, so an unmodeled spelling emitted nothing instead of a definite wrong answer; that made the gap visible without
+		// closing it. Then the field list gained the missing spellings, so they resolve to what they mean.
+		//
+		// `np.int` is the case that proves the second half happened. Its truth is int64 while the withdrawn default was float64, so
+		// int64 cannot be the default coming back. Contrast `np.float`, which is float64 either way and therefore cannot distinguish
+		// resolution from a restored default on its own; it is pinned here for coverage, not as evidence.
+		//
+		// Two spellings still reach nothing, and both are deliberate rather than unexplained. `np.int16` has no dtype enum value to
+		// map to at all, so no field reference can be written for it. The builtin `bool` is not in the modeled family, where `np.bool`
+		// and `np.bool_` are. Those are known absences: a change that made either resolve would be news, not noise.
 
 		assertEquals("`np.int32` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int32)]", render(getFunction("via_int32")));
 
@@ -10155,15 +10161,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// correct, and the message here said it could not distinguish resolution from failure. It is absent now, which settles the
 		// question the older message left open: the spelling never resolved, and the fallback had merely coincided with what the
 		// allocation meant.
-		assertEquals("`np.float` does not resolve, and no longer has a default stamped over it.", "ABSENT",
+		assertEquals("`np.float` resolves to float64 because the model now defines it.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.float64)]",
 				render(getFunction("via_float_alias")));
 
 		// These spellings still do not resolve, but the miss no longer names float64 definitely. Nothing is recovered, so this is
 		// honesty rather than precision: the emission says it does not know instead of saying something confidently wrong, and a
 		// reader can now tell an unresolved dtype from a resolved float64.
-		assertEquals("`np.int` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_alias")));
+		// The discriminating case for the whole family. Its truth is int64 and the old fallback was float64, so reading int64 here
+		// cannot be the default coming back: it is the model resolving the spelling.
+		assertEquals("`np.int` resolves to int64, which the float64 default could not have produced.",
+				"[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]", render(getFunction("via_alias")));
 
-		assertEquals("`np.long` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_long")));
+		assertEquals("`np.long` resolves to int64.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]", render(getFunction("via_long")));
 
 		// Neither of these is a deprecated alias. The model defines a field for `uint8` and none for `int16`, and int16 differs from
 		// the value a miss falls back to, so this is a spelling whose failure is visible without being an alias or a builtin. The pair
