@@ -10065,6 +10065,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				render(getFunction("concatenate_all")));
 	}
 
+	/**
+	 * Pins where a defaulted non-tensor parameter may be left out of an emitted signature. Such a parameter carries no spec, so covering it
+	 * is impossible and omitting it is sound only when nothing supplies it: omitting one that a caller passes cuts the decorated function's
+	 * arity below the call, and the call is then rejected on arity before any argument is examined.
+	 * <p>
+	 * The three supplying shapes here are all recognized today. They are pinned because the natural repair for a function where this is NOT
+	 * recognized is to widen the rule, and widening it far enough would withhold a signature from every {@code call} override declaring
+	 * such a parameter, including the last case, where omitting it is correct and the signature is worth having.
+	 */
+	@Test
+	public void testDefaultedParameterSuppliedThroughLayerCall() throws Exception {
+		this.setInferInputSignatures(true);
+
+		// Supplied through the layer object, so the dispatch passes it and a scan for calls naming the method would miss it.
+		assertEquals("A keyword supplied through the dispatch blocks the signature.", "ABSENT", render(getFunction("Index.call")));
+
+		// Supplied by naming the method, which is the form a call-site scan sees most directly.
+		assertEquals("A keyword supplied by naming the method blocks the signature.", "ABSENT", render(getFunction("Named.call")));
+
+		// Supplied through a layer that arrived as a constructor argument rather than being built in place.
+		assertEquals("A keyword supplied through an injected layer blocks the signature.", "ABSENT", render(getFunction("Injected.call")));
+
+		// Nothing supplies it, so leaving it out is behavior-preserving and the signature stands. This is what a widened rule would cost.
+		assertEquals("An unsupplied defaulted parameter is omittable, so the signature is emitted.",
+				"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]", render(getFunction("Unsupplied.call")));
+	}
+
 	private static String render(Function function) {
 		return function.getInferredInputSignature().map(signature -> signature.toTensorSpecList("tf.")).orElse("ABSENT");
 	}
