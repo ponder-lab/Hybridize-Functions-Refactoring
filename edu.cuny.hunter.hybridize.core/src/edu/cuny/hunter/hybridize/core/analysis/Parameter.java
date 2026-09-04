@@ -923,7 +923,7 @@ public final class Parameter {
 		 * judge other unrepresentable members such as strings or numbers, so adopting it would replace this test and not the surrounding
 		 * decision.
 		 */
-		for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
+		detection: for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
 			// Swept over the analysis's own evaluations rather than every pointer key in the program: the containers of interest are
 			// exactly those the element sweep already visits, and a global scan would repeat that cost for every container parameter of
 			// every candidate.
@@ -940,7 +940,10 @@ public final class Parameter {
 					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
 							+ "; withholding the signature.");
 					this.containerHoldsUnrepresentableElement = true;
-					return;
+					// Only the scan ends here, not the method. The flag decides whether a specification is withheld, while the element
+					// types extracted below are evidence of what the analysis saw; returning would blank that evidence for exactly the
+					// containers the flag describes, which is a loss the withholding decision does not require.
+					break detection;
 				}
 		}
 
