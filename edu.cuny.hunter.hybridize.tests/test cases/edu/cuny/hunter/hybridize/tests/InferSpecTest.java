@@ -14,6 +14,7 @@ import org.junit.Test;
 
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
+import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 
@@ -65,5 +66,60 @@ public class InferSpecTest {
 		Optional<TensorType> spec = Function.inferSpec(Set.of(dense, sparse));
 
 		assertTrue("A mixed sparse/dense parameter has no sound single spec, so it abandons to bottom (#642).", spec.isEmpty());
+	}
+
+	/**
+	 * A concrete extent at a position loses to a symbolic twin at that same position. The reduction takes per-position CONSENSUS, not the
+	 * more precise member: a {@link NumericDim} beside a {@link SymbolicDim} is a disagreement, and a disagreement wildcards the axis.
+	 * <p>
+	 * This is the contract an upstream precision fix has to satisfy to reach the specification surface. A fix that ADDS the concrete member
+	 * beside an existing placeholder changes nothing here, because the placeholder still disagrees with it; only a fix that ELIMINATES the
+	 * placeholder moves the emitted axis. Pinning it so the distinction is not rediscovered from a whole-project run.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/875">wala/ML issue 875</a>
+	 */
+	@Test
+	public void testConcreteDimLosesToSymbolicTwin() {
+		TensorType concrete = new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(100), new NumericDim(46)));
+		TensorType twin = new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(100), new SymbolicDim("?")));
+		Optional<TensorType> spec = Function.inferSpec(Set.of(concrete, twin));
+
+		assertFalse("Dtype and rank agree, so the reduction yields a spec rather than bottom.", spec.isEmpty());
+		assertEquals("The agreeing leading axes survive and the disputed trailing axis wildcards.",
+				new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(100), new SymbolicDim("?"))), spec.get());
+	}
+
+	/**
+	 * The witness for the test above: with the symbolic twin removed, the same concrete extents survive the reduction. Without this, a
+	 * wildcarded trailing axis is equally consistent with the reduction never keeping any extent, and the pin above would assert nothing
+	 * about the twin specifically.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/875">wala/ML issue 875</a>
+	 */
+	@Test
+	public void testAgreeingConcreteDimsSurvive() {
+		TensorType concrete = new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(100), new NumericDim(46)));
+		Optional<TensorType> spec = Function.inferSpec(Set.of(concrete));
+
+		assertFalse("A concrete singleton reduces to a spec.", spec.isEmpty());
+		assertEquals("Every axis is concrete and agreed, so every axis survives.", concrete, spec.get());
+	}
+
+	/**
+	 * Contexts that disagree on a concrete extent wildcard only the disputed position. Distinguishes the twin case above from ordinary
+	 * multi-context disagreement: both wildcard, but this one has no placeholder involved, so a fold that removes a placeholder cannot
+	 * recover it. The trailing axis agrees across both contexts and survives, which is what makes an upstream fold worth making.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/875">wala/ML issue 875</a>
+	 */
+	@Test
+	public void testDisagreeingConcreteDimsWildcardOnlyThatAxis() {
+		TensorType first = new TensorType(FLOAT32, List.of(new NumericDim(16), new NumericDim(100), new NumericDim(46)));
+		TensorType second = new TensorType(FLOAT32, List.of(new NumericDim(8), new NumericDim(10), new NumericDim(46)));
+		Optional<TensorType> spec = Function.inferSpec(Set.of(first, second));
+
+		assertFalse("Dtype and rank agree, so the reduction yields a spec rather than bottom.", spec.isEmpty());
+		assertEquals("The disputed leading axes wildcard and the agreed trailing extent survives.",
+				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new NumericDim(46))), spec.get());
 	}
 }
