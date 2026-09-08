@@ -4,6 +4,8 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -444,6 +446,18 @@ public class Util {
 	private static final Set<TensorOrigin> NUMPY_ONLY = Set.of(TensorOrigin.NUMPY);
 
 	/**
+	 * Origin markers that record where a type came from rather than what produced the value, so they say nothing about whether a def is a
+	 * TensorFlow computation. {@link TensorOrigin#ANNOTATION} marks a type supplied by a user annotation (wala/ML#370); a numpy value does
+	 * not become a TensorFlow computation because someone wrote its type down.
+	 * <p>
+	 * These are removed before the numpy-only comparison below. Comparing the raw set against {@code {NUMPY}} was a claim that the origin
+	 * vocabulary is closed over producers, which stopped holding when {@code ANNOTATION} joined it: an annotated numpy value carries
+	 * {@code {NUMPY, ANNOTATION}}, which is not equal to {@code {NUMPY}}, so the def counted as a computation on the strength of its type
+	 * having been annotated. An exact-match test against a set is a closed-vocabulary claim and grows wrong silently.
+	 */
+	private static final Set<TensorOrigin> NON_PRODUCER_ORIGINS = Set.of(TensorOrigin.ANNOTATION);
+
+	/**
 	 * True iff {@code instruction} defines a tensor-typed value whose origin is not numpy-only. A def is a TensorFlow computation when it
 	 * is tensor-typed (its pointer key is in {@code tensorTypedKeys}) and its origins are anything other than exactly {@code {NUMPY}}: a
 	 * TensorFlow origin, a parameter origin (a tensor parameter is a symbolic tensor under tracing regardless of its eager feeds,
@@ -457,11 +471,32 @@ public class Util {
 			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, instruction.getDef(i));
 			Set<TensorOrigin> origins = tensorTypedKeys.get(pointerKey);
 
-			if (origins != null && !origins.equals(NUMPY_ONLY))
+			if (origins != null && !producerOrigins(origins).equals(NUMPY_ONLY))
 				return true;
 		}
 
 		return false;
+	}
+
+	/**
+	 * The given origins less the markers that record type provenance rather than production, so the numpy-only test compares producers
+	 * against producers. Returns the argument itself when nothing is removed, which is the overwhelmingly common case.
+	 * <p>
+	 * Public (rather than {@code private}) so the vocabulary rule can be exercised with a hand-built origin set, the same seam
+	 * {@link Function#inferSpec(Set)} uses. {@link #performsTensorFlowOp} cannot stand in: reaching it needs a call graph, and the
+	 * {@code {NUMPY, ANNOTATION}} case additionally needs a type-annotation sidecar seeding a numpy value, which no fixture can currently
+	 * supply.
+	 *
+	 * @param origins A value's recorded origins.
+	 * @return The producer-bearing subset.
+	 */
+	public static Set<TensorOrigin> producerOrigins(Set<TensorOrigin> origins) {
+		if (Collections.disjoint(origins, NON_PRODUCER_ORIGINS))
+			return origins;
+
+		Set<TensorOrigin> producers = EnumSet.copyOf(origins);
+		producers.removeAll(NON_PRODUCER_ORIGINS);
+		return producers;
 	}
 
 	private static boolean invokesTensorFlowOp(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
