@@ -11252,6 +11252,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * and being a Python bool it has no spec (#508), so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function
 	 * still hybridizes bare (P1); the corpus original runs under the bare decorator.
 	 */
+	/**
+	 * Pins the {@code mask} arm of the framework-supplied parameter rule (#881), which {@link #testKerasFrameworkSuppliedParameters()} does
+	 * not reach. The name set behind that rule holds {@code training} and {@code mask}, and only {@code training} had ever exercised it:
+	 * the one other fixture declaring a {@code mask} parameter types it as a tensor, so it contributes a spec and never enters the
+	 * non-tensor branch the gate lives in, and the remaining candidate names the parameter {@code lookup_mask}, which the set does not
+	 * contain. An unexercised arm of a guard reads exactly like a working one, and this gate fires on the first {@code mask} parameter that
+	 * appears whether or not anyone has watched it do so.
+	 * <p>
+	 * Keras reserves {@code mask} on {@code call} as it reserves {@code training} and supplies it from {@code Layer.__call__}, so the
+	 * parameter cannot be omitted from an all-or-nothing {@code input_signature} and, not being a tensor, has no spec; inference is dropped
+	 * with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasFrameworkSuppliedMask() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Masked.call");
+		assertEquals("`Masked.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `mask`, and `None` has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block, reached through the `mask` name.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
 	@Test
 	public void testKerasFrameworkSuppliedParameters() throws Exception {
 		this.setInferInputSignatures(true);
