@@ -1596,8 +1596,15 @@ public class Function {
 							// The one emission issue 865 removes: this function is NOT already optimal, since a signature
 							// improvement existed and was withheld as unwritable, so the already-optimal verdict would be false
 							// here. The unresolved axis is the operative failure and reports alone (issue 811).
+							// This branch is reached whether or not a signature is supplied: `canReconfigure` is false whenever the axis
+							// is unresolved, so neither the add path nor the adjudication path above can have run. A single sentence
+							// naming an `input_signature` would therefore name one the function may not have, which reads as though an
+							// existing signature were being preserved (issue 953). Describe the effect on the program instead of the
+							// transformation's name, which is `RECONFIGURE` in both cases because it acts on the decorator.
 							this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
-									"Can't reconfigure this function's input signature: "
+									(this.getHybridizationParameters().hasInputSignatureParam()
+											? "Can't reconfigure this function's input signature: "
+											: "Can't add an input signature to this function: ")
 											+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
 						} else {
 							// The pre-inference terminal, unchanged: no signature flow resolved anything here, so the already-optimal
