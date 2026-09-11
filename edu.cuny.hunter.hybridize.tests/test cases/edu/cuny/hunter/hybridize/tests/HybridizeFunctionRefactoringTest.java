@@ -1876,6 +1876,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code HAS_NO_PRIMITIVE_PARAMETERS}) would be false here, since an improvement existed and was withheld as unwritable. The faithful
 	 * supplied-signature reproducer is {@link #testReconfigureBlockedAxes}; this twin pins the same arm's other entry route.
 	 */
+	/**
+	 * The definition ordinal is a join key that survives the transformation, unlike the beginning line, which moves when a decorator is
+	 * inserted above a definition (Input-Signature-Evaluation#123). This pins the counting rule's clauses that the two sides computing the
+	 * ordinal could otherwise answer differently, which is the failure mode: rows that join and are wrong rather than rows that go missing.
+	 */
+	@Test
+	public void testDefinitionOrdinal() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// Clause 1: two definitions of one name are ordinals 1 and 2 in source order.
+		List<Function> twins = functions.stream().filter(f -> f.getIdentifier().equals("twin"))
+				.sorted(Comparator.comparingInt(Function::getBeginningLineNumber)).toList();
+		assertEquals("`twin` is defined twice at module level.", 2, twins.size());
+		assertEquals("The earlier `twin` is ordinal 1.", 1, twins.get(0).getDefinitionOrdinal());
+		assertEquals("The later `twin` is ordinal 2.", 2, twins.get(1).getDefinitionOrdinal());
+
+		// Clause 2, the clause most often got wrong: counting is per QUALIFIED name, not per file. `C.twin` is its own sequence and
+		// starts at 1. Were the rule per file, this would be 3 and the two sides would desynchronize silently.
+		Function method = this.getFunction("C.twin");
+		assertEquals("`C.twin` is a separate sequence from `twin` and starts at 1.", 1, method.getDefinitionOrdinal());
+
+		// Clause 4: both arms of a branch count, whether or not the arm executes.
+		List<Function> forked = functions.stream().filter(f -> f.getIdentifier().equals("forked"))
+				.sorted(Comparator.comparingInt(Function::getBeginningLineNumber)).toList();
+		assertEquals("Both conditionally-defined `forked` arms are counted.", 2, forked.size());
+		assertEquals("The first arm's `forked` is ordinal 1.", 1, forked.get(0).getDefinitionOrdinal());
+		assertEquals("The second arm's `forked` is ordinal 2.", 2, forked.get(1).getDefinitionOrdinal());
+
+		// Clause 3: a nested definition is counted, under its own qualified name.
+		assertEquals("The nested `outer.inner` is ordinal 1.", 1, this.getFunction("outer.inner").getDefinitionOrdinal());
+
+		// Clause 5: an assignment rebinding a name is not a definition, so `solo` has one.
+		assertEquals("`solo` has one definition despite the rebinding assignment.", 1,
+				functions.stream().filter(f -> f.getIdentifier().equals("solo")).count());
+		assertEquals("`solo` is ordinal 1.", 1, this.getFunction("solo").getDefinitionOrdinal());
+	}
+
 	@Test
 	public void testReconfigureBlockedAxesAdd() throws Exception {
 		this.setInferInputSignatures(true);
