@@ -121,8 +121,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String BLOCKED_PARAMETERS_CSV_FILENAME = "blocked_parameters.csv";
 
 	/**
-	 * One row per {@code TensorSpec} of an emitted input signature (#854). Signature absence is recorded in {@code signature_absences.csv},
+	 * One row per {@code TensorSpec} of a modeled input signature (#854). Signature absence is recorded in {@code signature_absences.csv},
 	 * not here.
+	 * <p>
+	 * MODELED, not emitted, and the distinction is the one readers get wrong. A row means the analysis built a {@code TensorSpec} for that
+	 * parameter, not that the tool wrote a signature into the source. The loop is over every considered function, with no optimizability
+	 * gate, so a function that fails a precondition still contributes rows. Whether a modeled spec belongs to a function the tool would
+	 * passes the preconditions is {@code optimizable.csv} and {@code nonoptimizable.csv}'s question, answerable by joining on the primary
+	 * key columns every emitted CSV shares. In a tool whose purpose is emitting signatures into code, "emitted" reads as "written into the
+	 * source", which is what this file does not record; {@code UNMODELED} in {@code signature_absences.csv} is the same vocabulary from the
+	 * other side (#958).
 	 */
 	private static final String TENSOR_SPECS_CSV_FILENAME = "tensor_specs.csv";
 
@@ -690,7 +698,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				| `blocked_parameters.csv` | parameter that blocked input-signature inference, with its absence reason. |
 				| `tensor_specs.csv` | `TensorSpec` of a modeled input signature, keyed by (function, source, param index). A signature \
 				spans one row per non-`self` parameter, so per-signature facts (content, relation to a supplied signature, and absence \
-				reason) are in `functions.csv`, not here. |
+				reason) are in `functions.csv`, not here. Modeled, not written into source: every considered function is included, \
+				with no optimizability gate, so a function that failed a precondition still contributes rows. Join on the primary key \
+				columns against `optimizable.csv` to restrict to functions that pass the preconditions. |
 				| `signature_absences.csv` | recorded input-signature absence: a blocking parameter, a function-level reason, inference \
 				that never ran (`NOT_ATTEMPTED`), or a supplied signature that could not be modeled (`UNMODELED`). Together with \
 				`tensor_specs.csv`, every considered function contributes at least one row. |
