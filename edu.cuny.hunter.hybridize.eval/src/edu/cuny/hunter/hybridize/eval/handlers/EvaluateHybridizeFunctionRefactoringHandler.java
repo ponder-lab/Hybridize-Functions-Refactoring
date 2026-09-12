@@ -126,11 +126,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 * <p>
 	 * MODELED, not emitted, and the distinction is the one readers get wrong. A row means the analysis built a {@code TensorSpec} for that
 	 * parameter, not that the tool wrote a signature into the source. The loop is over every considered function, with no optimizability
-	 * gate, so a function that fails a precondition still contributes rows. Whether a modeled spec belongs to a function the tool would
-	 * passes the preconditions is {@code optimizable.csv} and {@code nonoptimizable.csv}'s question, answerable by joining on the primary
-	 * key columns every emitted CSV shares. In a tool whose purpose is emitting signatures into code, "emitted" reads as "written into the
-	 * source", which is what this file does not record; {@code UNMODELED} in {@code signature_absences.csv} is the same vocabulary from the
-	 * other side (#958).
+	 * gate, so a function that fails a precondition still contributes rows. Whether a modeled spec belongs to a function that passes the
+	 * preconditions is {@code optimizable.csv} and {@code nonoptimizable.csv}'s question, answerable by joining on the primary key columns
+	 * every emitted CSV shares. In a tool whose purpose is emitting signatures into code, "emitted" reads as "written into the source",
+	 * which is what this file does not record; {@code UNMODELED} in {@code signature_absences.csv} is the same vocabulary from the other
+	 * side (#958).
 	 */
 	private static final String TENSOR_SPECS_CSV_FILENAME = "tensor_specs.csv";
 
