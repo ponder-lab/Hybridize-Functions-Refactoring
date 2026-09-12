@@ -155,9 +155,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String TARGETED_CFA_DEPTH_KEY = EvaluationOption.PREFIX + TARGETED_CFA_DEPTH_PROPERTY_KEY;
 
 	private static String[] buildAttributeColumnNames(String... additionalColumnNames) {
-		// The beginning line is a KEY column, not an informational one: Python legally rebinds one name in one module, and without
-		// it the identity columns cannot tell the twin definitions apart (#860).
-		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path", "beginning line" };
+		// The beginning line and the definition ordinal are both KEY columns, not informational ones: Python legally rebinds one name
+		// in one module, and without them the identity columns cannot tell the twin definitions apart (#860). They are kept side by
+		// side because they fail differently. The line is where a person looks and is stable while a file is not transformed; the
+		// ordinal survives the transformation, which inserts decorator lines above definitions and so moves every line below them
+		// (Input-Signature-Evaluation#123). A consumer joining against a transformed tree must key on the ordinal.
+		String[] primaryColumns = new String[] { "subject", "function", "module", "relative path", "beginning line", "definition ordinal" };
 		List<String> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnNames));
 		return ret.toArray(String[]::new);
@@ -167,7 +170,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		IProject project = function.getProject();
 		Path relativePath = project.getLocation().toFile().toPath().relativize(function.getContainingFile().toPath());
 		Object[] primaryColumns = new Object[] { project.getName(), function.getIdentifier(), function.getContainingModuleName(),
-				relativePath, function.getBeginningLineNumber() };
+				relativePath, function.getBeginningLineNumber(), function.getDefinitionOrdinal() };
 		List<Object> ret = new ArrayList<>(Arrays.asList(primaryColumns));
 		ret.addAll(Arrays.asList(additionalColumnValues));
 		return ret.toArray(Object[]::new);

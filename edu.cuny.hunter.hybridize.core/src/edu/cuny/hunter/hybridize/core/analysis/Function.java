@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -3204,6 +3205,60 @@ public class Function {
 	 */
 	public int getBeginningLineNumber() {
 		return this.getFunctionDefinition().getFunctionDef().beginLine;
+	}
+
+	/**
+	 * This {@link Function}'s one-based index among the definitions in its containing file that share its {@link #getIdentifier()}
+	 * qualified name, in source order. A name defined once has ordinal 1, so the ordinal never weakens a key it joins.
+	 * <p>
+	 * It exists because {@link #getBeginningLineNumber()} is a function of the file content <em>above</em> what it identifies, and the
+	 * transformation inserts decorator lines above definitions. So the line moves under exactly the operation this tool performs, while an
+	 * ordinal does not: decorator insertion adds lines, not definitions. A consumer joining emitted rows against anything captured on a
+	 * transformed tree needs a key that survives that.
+	 * <p>
+	 * The counting rule is shared with the runtime side that also computes it, and is written once in the evaluation repository's
+	 * {@code union-emission.py} rather than restated here. The clauses this implementation satisfies, and how: definitions are collected
+	 * with {@link FunctionExtractor}, which visits only {@code FunctionDef} nodes and traverses every body, so nested and
+	 * conditionally-defined functions are counted whether or not their branch executes, functions inside {@code with}, {@code if} and
+	 * {@code try} bodies are reached, and a name rebound by assignment is not counted because an assignment is not a {@code FunctionDef}.
+	 * Counting is per qualified name rather than per file, so a module-level {@code f} and a method {@code C.f} are separate sequences that
+	 * each start at 1.
+	 * <p>
+	 * Counted from the module's AST rather than from the rows this evaluator emits. Deriving it from emitted rows would be sound only while
+	 * every definition of an emitted name also produces a row, and would fail by renumbering rather than by going missing.
+	 * <p>
+	 * THE ASSUMPTION THIS RESTS ON, stated because nothing fails loudly when it breaks: the ordinal is a join key only while the
+	 * transformation neither adds, removes, nor reorders definitions. It inserts decorators today. If the tool ever synthesizes or moves a
+	 * function, rows join and are <em>wrong</em> rather than going missing, which is the misattribution the beginning line was added to
+	 * prevent, reintroduced from the other end.
+	 *
+	 * @return The one-based definition ordinal, which is at least 1.
+	 * @see #getBeginningLineNumber()
+	 * @see #getIdentifier()
+	 */
+	public int getDefinitionOrdinal() {
+		FunctionDefinition definition = this.getFunctionDefinition();
+		FunctionDef thisDefinition = definition.getFunctionDef();
+		String identifier = this.getIdentifier();
+
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+
+		try {
+			definition.getContainingModule().accept(functionExtractor);
+		} catch (Exception e) {
+			throw new IllegalStateException("Can't walk the module of: " + identifier + ".", e);
+		}
+
+		List<FunctionDef> sameName = functionExtractor.getDefinitions().stream().filter(d -> identifier.equals(Util.getQualifiedName(d)))
+				.sorted(Comparator.comparingInt(d -> d.beginLine)).toList();
+
+		for (int i = 0; i < sameName.size(); i++)
+			if (sameName.get(i) == thisDefinition)
+				return i + 1;
+
+		// The walk starts at this function's own module, so its own definition is always among those found. Failing loudly beats
+		// returning a plausible 1, which would silently key two definitions the same.
+		throw new IllegalStateException("Definition of " + identifier + " not found in its own module.");
 	}
 
 	public Boolean getHasPythonSideEffects() {
