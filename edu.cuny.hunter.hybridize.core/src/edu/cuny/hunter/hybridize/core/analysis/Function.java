@@ -1031,6 +1031,17 @@ public class Function {
 	private InferenceResult inferredInputSignature;
 
 	/**
+	 * Memoizes {@link #getDefinitionOrdinal()}. {@code null} means "not yet computed". The ordinal is a function of the containing module's
+	 * AST, which does not change while this {@link Function} exists, so computing it once per function rather than once per caller is
+	 * behaviour-preserving.
+	 * <p>
+	 * It is memoized because the accessor walks the WHOLE containing module, and {@code buildAttributeColumnValues} calls it while building
+	 * the primary key columns that every emitted CSV shares. Unmemoized that is one full module walk per row of every file, for a value
+	 * fixed per function, so the cost scales as rows times module size and the largest modules are the ones with the most rows (#960).
+	 */
+	private Integer definitionOrdinal;
+
+	/**
 	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
 	 * inference produced a signature, was never run, or was blocked at the function level by
 	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
@@ -3237,6 +3248,9 @@ public class Function {
 	 * @see #getIdentifier()
 	 */
 	public int getDefinitionOrdinal() {
+		if (this.definitionOrdinal != null)
+			return this.definitionOrdinal;
+
 		FunctionDefinition definition = this.getFunctionDefinition();
 		FunctionDef thisDefinition = definition.getFunctionDef();
 		String identifier = this.getIdentifier();
@@ -3253,8 +3267,11 @@ public class Function {
 				.sorted(Comparator.comparingInt(d -> d.beginLine)).toList();
 
 		for (int i = 0; i < sameName.size(); i++)
-			if (sameName.get(i) == thisDefinition)
-				return i + 1;
+			if (sameName.get(i) == thisDefinition) {
+				// Assigned only on success, so a failed walk is retried rather than cached as an answer.
+				this.definitionOrdinal = i + 1;
+				return this.definitionOrdinal;
+			}
 
 		// The walk starts at this function's own module, so its own definition is always among those found. Failing loudly beats
 		// returning a plausible 1, which would silently key two definitions the same.

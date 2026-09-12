@@ -1911,6 +1911,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`solo` has one definition despite the rebinding assignment.", 1,
 				functions.stream().filter(f -> f.getIdentifier().equals("solo")).count());
 		assertEquals("`solo` is ordinal 1.", 1, this.getFunction("solo").getDefinitionOrdinal());
+
+		// Memoization of the ordinal (#960) needs no assertion of its own here. The realistic failure is a memo shared between
+		// functions rather than held per function, and the twin assertions above already catch exactly that: a shared cell makes the
+		// later `twin` answer the earlier one's 1. Verified by ablation rather than assumed -- making the field static fails
+		// "The later `twin` is ordinal 2. expected:<2> but was:<1>" on the assertion above, before any added check would run.
 	}
 
 	@Test
