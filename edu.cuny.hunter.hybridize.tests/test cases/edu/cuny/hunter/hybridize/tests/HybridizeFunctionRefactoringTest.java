@@ -10493,6 +10493,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * top-level {@code compute(t).numpy()} call exercises the caller side: an eager-only call on a function's <em>result</em> must not be
 	 * attributed to the function itself.
 	 */
+	@Test
+	public void testEagerOnlyCallsBlockHybridization() throws Exception {
+		Function fetch = getFunction("fetch");
+		assertTrue("`fetch` calls `numpy()` on its reduced tensor.", fetch.getHasEagerOnlyCalls());
+		assertNull("`fetch` must not pass a precondition; it calls an eager-only API.", fetch.getPassingPrecondition());
+		assertNotNull("`fetch` fails with HAS_EAGER_ONLY_CALLS.",
+				fetch.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function outer = getFunction("outer");
+		assertTrue("`outer` reaches `numpy()` transitively through `fetch`.", outer.getHasEagerOnlyCalls());
+		assertNull("`outer` must not pass a precondition; it transitively calls an eager-only API.", outer.getPassingPrecondition());
+		assertNotNull("`outer` fails with HAS_EAGER_ONLY_CALLS.",
+				outer.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function compute = getFunction("compute");
+		assertFalse("`compute` makes no eager-only calls; the `numpy()` call on its result belongs to the caller.",
+				compute.getHasEagerOnlyCalls());
+		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
 	/**
 	 * Pins {@code Layer.get_weights()} as eager-only, and {@code Layer.set_weights()} as NOT eager-only
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/962). A tool-added decorator over a body reaching
@@ -10520,26 +10540,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`set_weights()` is not eager-only: batch_set_value builds assign ops under tracing.", writes.getHasEagerOnlyCalls());
 		assertNull("`Writer.writes` must not fail with HAS_EAGER_ONLY_CALLS.",
 				writes.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
-	}
-
-	@Test
-	public void testEagerOnlyCallsBlockHybridization() throws Exception {
-		Function fetch = getFunction("fetch");
-		assertTrue("`fetch` calls `numpy()` on its reduced tensor.", fetch.getHasEagerOnlyCalls());
-		assertNull("`fetch` must not pass a precondition; it calls an eager-only API.", fetch.getPassingPrecondition());
-		assertNotNull("`fetch` fails with HAS_EAGER_ONLY_CALLS.",
-				fetch.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
-
-		Function outer = getFunction("outer");
-		assertTrue("`outer` reaches `numpy()` transitively through `fetch`.", outer.getHasEagerOnlyCalls());
-		assertNull("`outer` must not pass a precondition; it transitively calls an eager-only API.", outer.getPassingPrecondition());
-		assertNotNull("`outer` fails with HAS_EAGER_ONLY_CALLS.",
-				outer.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
-
-		Function compute = getFunction("compute");
-		assertFalse("`compute` makes no eager-only calls; the `numpy()` call on its result belongs to the caller.",
-				compute.getHasEagerOnlyCalls());
-		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+		// Not redundant with the two above, and it is what makes the javadoc's claim true rather than narrower than it sounds. Those
+		// assert only that THIS check does not block; this asserts the hybridization is actually available, so blocking `set_weights`
+		// would decline something safe. It is also reachable by a failure the others are not: an unrelated precondition starting to
+		// block `writes` leaves both of them passing.
+		assertNotNull("`Writer.writes` passes a precondition, so blocking `set_weights` would decline a safe hybridization.",
+				writes.getPassingPrecondition());
 	}
 
 	/**
