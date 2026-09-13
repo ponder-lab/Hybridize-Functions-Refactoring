@@ -1930,6 +1930,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
 		assertNull("The already-optimal verdict must not co-issue: an improvement was withheld (#865).",
 				wild.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertTrue(
+				"With no signature supplied, the message must name adding one rather than reconfiguring one the function does not have (#953).",
+				wild.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode())
+						.getMessage().startsWith("Can't add an input signature to this function:"));
 	}
 
 	/**
@@ -1956,6 +1960,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode()));
 		assertNull("The already-optimal verdict must not co-issue: an improvement was withheld (#865).",
 				wild.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertTrue("With a signature supplied, the message must name reconfiguring it (#953).",
+				wild.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES.getCode())
+						.getMessage().startsWith("Can't reconfigure this function's input signature:"));
 	}
 
 	/**
