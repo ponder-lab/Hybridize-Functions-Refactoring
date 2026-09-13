@@ -10514,6 +10514,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins {@code Layer.get_weights()} as eager-only, and {@code Layer.set_weights()} as NOT eager-only
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/962). A tool-added decorator over a body reaching
+	 * {@code get_weights()} makes a working program raise {@code Cannot get value inside Tensorflow graph function}, because the call
+	 * reaches {@code batch_get_value} and tracing has no concrete value to read.
+	 * <p>
+	 * The receiver is an ATTRIBUTE rather than a local, deliberately. That is the shape found in the wild, and it is the shape the
+	 * unconditional name set exists for: the receiver's tensor typing is unavailable, so nothing but the callee name can catch it. A
+	 * reduced fixture calling {@code get_weights()} on a local would pass while leaving that path unexercised.
+	 * <p>
+	 * The {@code set_weights} half is the more valuable assertion, because it guards a MEASURED fact rather than a data structure.
+	 * {@code batch_set_value} builds assign ops under tracing and does not raise, so blocking it would decline a safe hybridization. This
+	 * fails if someone later adds {@code set_weights} to the eager-only names for symmetry, which is a mistake this issue's own text nearly
+	 * made before the two were run inside a {@code tf.function} and found to differ.
+	 */
+	@Test
+	public void testEagerOnlyWeightAccess() throws Exception {
+		Function reads = getFunction("Reader.reads");
+		assertTrue("`Reader.reads` calls `get_weights()` on an attribute receiver.", reads.getHasEagerOnlyCalls());
+		assertNull("`Reader.reads` must not pass a precondition; `get_weights()` raises under tracing.", reads.getPassingPrecondition());
+		assertNotNull("`Reader.reads` fails with HAS_EAGER_ONLY_CALLS.",
+				reads.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function writes = getFunction("Writer.writes");
+		assertFalse("`set_weights()` is not eager-only: batch_set_value builds assign ops under tracing.", writes.getHasEagerOnlyCalls());
+		assertNull("`Writer.writes` must not fail with HAS_EAGER_ONLY_CALLS.",
+				writes.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+		// Not redundant with the two above, and it is what makes the javadoc's claim true rather than narrower than it sounds. Those
+		// assert only that THIS check does not block; this asserts the hybridization is actually available, so blocking `set_weights`
+		// would decline something safe. It is also reachable by a failure the others are not: an unrelated precondition starting to
+		// block `writes` leaves both of them passing.
+		assertNotNull("`Writer.writes` passes a precondition, so blocking `set_weights` would decline a safe hybridization.",
+				writes.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
 	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
 	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
