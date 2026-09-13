@@ -1046,9 +1046,11 @@ public class Function {
 	 * discovery neither adds, removes, nor reorders definitions. Resetting it there would discard a provably valid cache and reintroduce
 	 * the per-row module walk this field exists to remove.
 	 * <p>
-	 * The assumption is the one {@link #getDefinitionOrdinal()} already documents for the value itself: the ordinal is stable only while
-	 * nothing adds, removes, or reorders definitions. Memoizing does not weaken that, because a change violating it invalidates the ordinal
-	 * whether or not it was cached.
+	 * The stronger reason not to reset, which does not rest on predicting whether the definition set can change: resetting would not help
+	 * if it did. Anything adding, removing, or reordering definitions mid-lifetime invalidates {@link #getBeginningLineNumber()} and every
+	 * other cached derivation on this object at the same moment, so clearing this one field would remove a single symptom of a broken
+	 * invariant and leave the rest. Memoizing therefore does not weaken the assumption {@link #getDefinitionOrdinal()} already documents
+	 * for the value itself, because a change violating it invalidates the ordinal whether or not it was cached.
 	 */
 	private Integer definitionOrdinal;
 
@@ -3259,8 +3261,16 @@ public class Function {
 	 * @see #getIdentifier()
 	 */
 	public int getDefinitionOrdinal() {
-		if (this.definitionOrdinal != null)
-			return this.definitionOrdinal;
+		// READ ONCE into a local. Two reads of a non-volatile field is the racy-single-check shape, and it is unsafe for a reason that
+		// outlives the current caller: the second read is UNBOXED, so a reader that saw non-null and then null throws a
+		// NullPointerException rather than recomputing. That cannot happen while the field only ever goes null-to-value, which is true
+		// today and is exactly the invariant the field's own comment asks a future maintainer not to break. One local removes the
+		// dependence on it, and on this accessor having a single caller reached only from sequential loops, which is a fact about today
+		// rather than anything enforced.
+		Integer memo = this.definitionOrdinal;
+
+		if (memo != null)
+			return memo;
 
 		FunctionDefinition definition = this.getFunctionDefinition();
 		FunctionDef thisDefinition = definition.getFunctionDef();
