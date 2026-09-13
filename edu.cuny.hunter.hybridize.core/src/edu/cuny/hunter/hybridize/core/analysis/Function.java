@@ -1038,6 +1038,17 @@ public class Function {
 	 * It is memoized because the accessor walks the WHOLE containing module, and {@code buildAttributeColumnValues} calls it while building
 	 * the primary key columns that every emitted CSV shares. Unmemoized that is one full module walk per row of every file, for a value
 	 * fixed per function, so the cost scales as rows times module size and the largest modules are the ones with the most rows (#960).
+	 * <p>
+	 * DELIBERATELY NOT RESET by {@link #computeHybridization(IProgressMonitor)} alongside {@code hybridDecorator} and
+	 * {@code hybridizationParameters}, and the asymmetry is intentional rather than an oversight. Those two are reset because they are
+	 * derived from the decorators that method re-reads, so a stale value could survive a re-computation that changed them. This one is
+	 * derived from the set of {@code FunctionDef}s in the module, which that method cannot change: it discovers decorators, and decorator
+	 * discovery neither adds, removes, nor reorders definitions. Resetting it there would discard a provably valid cache and reintroduce
+	 * the per-row module walk this field exists to remove.
+	 * <p>
+	 * The assumption is the one {@link #getDefinitionOrdinal()} already documents for the value itself: the ordinal is stable only while
+	 * nothing adds, removes, or reorders definitions. Memoizing does not weaken that, because a change violating it invalidates the ordinal
+	 * whether or not it was cached.
 	 */
 	private Integer definitionOrdinal;
 
