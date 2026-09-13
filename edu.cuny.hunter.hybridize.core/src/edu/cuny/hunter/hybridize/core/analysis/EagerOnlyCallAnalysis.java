@@ -41,8 +41,21 @@ class EagerOnlyCallAnalysis {
 		this.pointerAnalysis = pointerAnalysis;
 	}
 
-	/** Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}). */
-	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy");
+	/**
+	 * Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}).
+	 * <p>
+	 * Both members fail the same way and neither is guarded by Keras's {@code _disallow_inside_tf_function}: they extract concrete values
+	 * out of tensors, which tracing cannot do. {@code Tensor.numpy()} is the definitional case, and {@code Layer.get_weights()} reaches
+	 * {@code batch_get_value} and raises {@code Cannot get value inside Tensorflow graph function}; its own documentation describes it as
+	 * returning the weights "as NumPy arrays". That shared mechanism, rather than how collision-prone a name looks, is what separates this
+	 * set from {@link #EAGER_ONLY_MODEL_METHOD_NAMES}: those are the training-loop orchestrators the guard protects.
+	 * <p>
+	 * {@code set_weights} is deliberately ABSENT, and the asymmetry is measured rather than assumed. Run inside a {@code tf.function} on
+	 * the pinned TensorFlow, {@code get_weights} raises and {@code set_weights} does not, because {@code batch_set_value} builds assign ops
+	 * under tracing while {@code batch_get_value} has nothing to read. Adding {@code set_weights} for symmetry would decline a
+	 * hybridization that is safe (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/962).
+	 */
+	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy", "get_weights");
 
 	/** The Keras {@code Model.fit} member. */
 	private static final String FIT_MEMBER_NAME = "fit";
