@@ -1031,6 +1031,30 @@ public class Function {
 	private InferenceResult inferredInputSignature;
 
 	/**
+	 * Memoizes {@link #getDefinitionOrdinal()}. {@code null} means "not yet computed". The ordinal is a function of the containing module's
+	 * AST, which does not change while this {@link Function} exists, so computing it once per function rather than once per caller is
+	 * behaviour-preserving.
+	 * <p>
+	 * It is memoized because the accessor walks the WHOLE containing module, and {@code buildAttributeColumnValues} calls it while building
+	 * the primary key columns that every emitted CSV shares. Unmemoized that is one full module walk per row of every file, for a value
+	 * fixed per function, so the cost scales as rows times module size and the largest modules are the ones with the most rows (#960).
+	 * <p>
+	 * DELIBERATELY NOT RESET by {@link #computeHybridization(IProgressMonitor)} alongside {@code hybridDecorator} and
+	 * {@code hybridizationParameters}, and the asymmetry is intentional rather than an oversight. Those two are reset because they are
+	 * derived from the decorators that method re-reads, so a stale value could survive a re-computation that changed them. This one is
+	 * derived from the set of {@code FunctionDef}s in the module, which that method cannot change: it discovers decorators, and decorator
+	 * discovery neither adds, removes, nor reorders definitions. Resetting it there would discard a provably valid cache and reintroduce
+	 * the per-row module walk this field exists to remove.
+	 * <p>
+	 * The stronger reason not to reset, which does not rest on predicting whether the definition set can change: resetting would not help
+	 * if it did. Anything adding, removing, or reordering definitions mid-lifetime invalidates {@link #getBeginningLineNumber()} and every
+	 * other cached derivation on this object at the same moment, so clearing this one field would remove a single symptom of a broken
+	 * invariant and leave the rest. Memoizing therefore does not weaken the assumption {@link #getDefinitionOrdinal()} already documents
+	 * for the value itself, because a change violating it invalidates the ordinal whether or not it was cached.
+	 */
+	private Integer definitionOrdinal;
+
+	/**
 	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
 	 * inference produced a signature, was never run, or was blocked at the function level by
 	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
@@ -3237,6 +3261,17 @@ public class Function {
 	 * @see #getIdentifier()
 	 */
 	public int getDefinitionOrdinal() {
+		// READ ONCE into a local. Two reads of a non-volatile field is the racy-single-check shape, and it is unsafe for a reason that
+		// outlives the current caller: the second read is UNBOXED, so a reader that saw non-null and then null throws a
+		// NullPointerException rather than recomputing. That cannot happen while the field only ever goes null-to-value, which is true
+		// today and is exactly the invariant the field's own comment asks a future maintainer not to break. One local removes the
+		// dependence on it, and on this accessor having a single caller reached only from sequential loops, which is a fact about today
+		// rather than anything enforced.
+		Integer memo = this.definitionOrdinal;
+
+		if (memo != null)
+			return memo;
+
 		FunctionDefinition definition = this.getFunctionDefinition();
 		FunctionDef thisDefinition = definition.getFunctionDef();
 		String identifier = this.getIdentifier();
@@ -3253,8 +3288,11 @@ public class Function {
 				.sorted(Comparator.comparingInt(d -> d.beginLine)).toList();
 
 		for (int i = 0; i < sameName.size(); i++)
-			if (sameName.get(i) == thisDefinition)
-				return i + 1;
+			if (sameName.get(i) == thisDefinition) {
+				// Assigned only on success, so a failed walk is retried rather than cached as an answer.
+				this.definitionOrdinal = i + 1;
+				return this.definitionOrdinal;
+			}
 
 		// The walk starts at this function's own module, so its own definition is always among those found. Failing loudly beats
 		// returning a plausible 1, which would silently key two definitions the same.
