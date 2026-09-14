@@ -400,6 +400,12 @@ class NumpyParameterFlowAnalysis {
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueTainted.contains(valueNumber);
 
+			// The two colors are disjoint by construction: colorValue() evicts the value from shapeTainted, and colorShape() and
+			// colorShapeFrom() both decline a value already in valueTainted. The two slice branches below partition on exactly this,
+			// so a dual-colored value would send a shape-tainted receiver down the value path and silently skip the dimension-aware
+			// narrowing. Assert it rather than rely on reading the three coloring methods together.
+			assert !(valueColored && shapeTainted.contains(valueNumber)) : "value " + valueNumber + " is both value- and shape-tainted";
+
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
 
@@ -434,6 +440,25 @@ class NumpyParameterFlowAnalysis {
 							if (descriptor != null && this.numpyOverShapeStaticness(descriptor) == ShapeStaticness.DYNAMIC)
 								sink = true;
 						}
+
+						continue;
+					}
+
+					// A slice DERIVES its result from its receiver, and that derivation is asserted here rather than inferred from the
+					// callee. Until Ariadne 0.52.102 the `slice` builtin's summary body returned its receiver, so this walk carried
+					// the taint out through the callee's SSAReturnInstruction for free. wala/ML#916 made the body return nothing,
+					// supplying an identical points-to result through a builder constraint instead, which leaves the points-to set
+					// unchanged and DELETES the def-use edge this analysis walks. The derivation is a property of slicing, not of how
+					// the builtin happens to be summarized, so it belongs here
+					// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/967).
+					//
+					// Both shapes regressed and both are pinned: `np.maximum(boxes[:2], 0.0)`, where the slice is a direct operand of
+					// the numpy call, and `h = bboxA[:,3] - bboxA[:,1]; np.maximum(w, h)`, where the slice is consumed by arithmetic
+					// first and no slice appears at the call site. The second does not follow from the first, so each has its own fixture.
+					if (valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+							&& invoke.getUse(1) == valueNumber) {
+						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+							colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
 
 						continue;
 					}
