@@ -171,6 +171,9 @@ public final class Parameter {
 	 */
 	private Boolean tensor;
 
+	/** What {@link #tensor} rests on, so a determined non-tensor can be told from a defaulted one (#971). */
+	private TensorClassificationBasis tensorClassificationBasis;
+
 	/**
 	 * Cached per-position element types of a sequence-container parameter, populated by {@link #extractContainerElements} when Phase 3
 	 * classifies this parameter as a tensor container and the container form is one the nested-spec reduction models: every value reaching
@@ -1176,8 +1179,10 @@ public final class Parameter {
 
 		try {
 			// don't consider `self` as a tensor.
-			if (this.isSelf())
+			if (this.isSelf()) {
+				this.tensorClassificationBasis = TensorClassificationBasis.SELF;
 				return this.tensor = FALSE;
+			}
 
 			// Populate the tensor-types cache up front whenever Ariadne has anything to say about this parameter, so subsequent reads via
 			// `getTensorTypes()` (no-arg) see a consistent value regardless of which classification phase below fires. In particular, the
@@ -1211,6 +1216,7 @@ public final class Parameter {
 					}
 
 					subMonitor.worked(2);
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_TYPE_HINT;
 					return this.tensor = TRUE;
 				}
 			} else
@@ -1249,6 +1255,7 @@ public final class Parameter {
 						this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
 
 					subMonitor.worked(2);
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_ANALYSIS;
 					return this.tensor = TRUE;
 				}
 
@@ -1266,10 +1273,18 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_CONTAINER;
 					return this.tensor = TRUE;
 				}
 			} else
 				subMonitor.worked(2);
+
+			// The two situations that reach this one verdict. With the function in the call graph, both phases above ran and neither
+			// classified the parameter as tensor-like, which under contract-compliant generators is the analysis's bottom and so a
+			// determination. With the function absent from it, both phases were SKIPPED and nothing was concluded at all. They are
+			// indistinguishable in the verdict, which is what #971 is about, so the basis records which one happened.
+			this.tensorClassificationBasis = nodes.isEmpty() ? TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN
+					: TensorClassificationBasis.ANALYZED_NOT_TENSOR;
 
 			return this.tensor = FALSE;
 		} finally {
@@ -1284,6 +1299,16 @@ public final class Parameter {
 	 */
 	public Boolean isTensor() {
 		return this.tensor;
+	}
+
+	/**
+	 * What {@link #isTensor()}'s verdict rests on. A {@code FALSE} verdict alone does not say whether the analysis ran and concluded that
+	 * the parameter is not a tensor, or did not run at all, and those call for opposite work (#971).
+	 *
+	 * @return The basis, or {@code null} if {@link #classifyAsTensor} has not yet run.
+	 */
+	public TensorClassificationBasis getTensorClassificationBasis() {
+		return this.tensorClassificationBasis;
 	}
 
 	/**

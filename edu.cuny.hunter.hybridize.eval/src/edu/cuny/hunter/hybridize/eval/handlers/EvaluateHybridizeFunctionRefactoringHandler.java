@@ -297,8 +297,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter signatureAbsencesPrinter = createCSVPrinter(SIGNATURE_ABSENCES_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "source", "absence reason"));
 				CSVPrinter parametersPrinter = createCSVPrinter(PARAMETERS_CSV_FILENAME,
-						buildAttributeColumnNames("param index", "param name", "is tensor", "is container", "tensor types",
-								"container element types"));
+						buildAttributeColumnNames("param index", "param name", "is tensor", "is tensor basis", "is container",
+								"tensor types", "container element types"));
 				CSVPrinter parameterDimensionsPrinter = createCSVPrinter(PARAMETER_DIMENSIONS_CSV_FILENAME,
 						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
 								"dim index", "dim class", "dtype", "dtype top"));
@@ -840,7 +840,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				continue;
 
 			printer.printRecord(buildAttributeColumnValues(function, parameter.getIndex(), parameter.getName(), parameter.isTensor(),
-					parameter.isTensorContainer(), parameter.getRenderedTensorTypes(), parameter.getRenderedContainerElementTypes()));
+					parameter.getTensorClassificationBasis(), parameter.isTensorContainer(), parameter.getRenderedTensorTypes(),
+					parameter.getRenderedContainerElementTypes()));
 		}
 	}
 
