@@ -107,13 +107,26 @@ public sealed interface InferenceResult {
 		TYPE_HINT_WITHOUT_DTYPE,
 
 		/**
-		 * A parameter receives tensors with conflicting dtypes across call sites, so its dtype set has size {@code > 1} ({@code |D| ≠ 1}).
+		 * A parameter receives tensors with conflicting <em>concrete</em> dtypes across call sites, so its dtype set has more than one
+		 * member once {@code UNKNOWN} is excluded. The exclusion is the point: {@code UNKNOWN} is not a dtype the callers chose, so
+		 * counting it as one reported a conflict where a context merely failed to resolve. That case is {@link #PARTIAL_DTYPE} (#969).
 		 */
 		HETEROGENEOUS_DTYPE,
 
 		/**
+		 * A parameter is observed with exactly one concrete dtype, and with {@code UNKNOWN} at one or more other contexts. The reduction
+		 * still bottoms, because {@code UNKNOWN} is not a valid runtime dtype for {@code tf.function(input_signature=...)} (#494), but the
+		 * cause is a limit of the analysis rather than a property of the program: the callers do not disagree, one context simply did not
+		 * resolve. Distinct from {@link #HETEROGENEOUS_DTYPE}, where two concrete dtypes genuinely conflict and no engine improvement
+		 * removes the drop, and from {@link #UNKNOWN_DTYPE}, where no context resolved at all. Resolving the unresolved context collapses
+		 * the set to the single concrete dtype and the parameter becomes specifiable, so this names addressable work (#969).
+		 */
+		PARTIAL_DTYPE,
+
+		/**
 		 * A parameter receives a tensor whose dtype cannot be determined (dtype-⊤: a single agreed {@code UNKNOWN}), which is not a valid
-		 * runtime dtype for {@code tf.function(input_signature=...)} (#494).
+		 * runtime dtype for {@code tf.function(input_signature=...)} (#494). Every context is {@code UNKNOWN}; a mix of one concrete dtype
+		 * and {@code UNKNOWN} is {@link #PARTIAL_DTYPE}.
 		 */
 		UNKNOWN_DTYPE,
 

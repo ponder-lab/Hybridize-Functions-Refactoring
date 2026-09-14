@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.tests;
 
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.FLOAT32;
+import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.INT32;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.UNKNOWN;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -17,6 +18,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 
 import edu.cuny.hunter.hybridize.core.analysis.Function;
+import edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason;
 
 /**
  * Synthesized-input tests for {@link Function#inferSpec(Set)}, the per-parameter multi-context reduction. Inputs are hand-built
@@ -121,5 +123,94 @@ public class InferSpecTest {
 		assertFalse("Dtype and rank agree, so the reduction yields a spec rather than bottom.", spec.isEmpty());
 		assertEquals("The disputed leading axes wildcard and the agreed trailing extent survives.",
 				new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new SymbolicDim("?"), new NumericDim(46))), spec.get());
+	}
+
+	/**
+	 * One concrete dtype alongside an unresolved context is not a conflict among the callers. Before
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969 the set was sized with {@code UNKNOWN} counted as a member,
+	 * so this took the heterogeneous branch and the emitted reason asserted that the call sites disagreed about the dtype. They do not: one
+	 * of them did not resolve, and resolving it collapses the set to {@code INT32}.
+	 */
+	@Test
+	public void testOneConcreteDtypeWithUnknownIsPartialRatherThanConflicting() {
+		AbsenceReason reason = Function.classifyDtypeBottom(
+				Set.of(new TensorType(INT32, List.of(new NumericDim(3))), new TensorType(UNKNOWN, List.of(new NumericDim(3)))));
+		assertEquals("One concrete dtype plus an unresolved context is a precision gap, not a caller conflict.",
+				AbsenceReason.PARTIAL_DTYPE, reason);
+	}
+
+	/**
+	 * The neighbouring branch must keep its meaning: two concrete dtypes genuinely conflict, and no engine improvement removes the drop.
+	 * Witnesses that {@link #testOneConcreteDtypeWithUnknownIsPartialRatherThanConflicting()} narrowed the heterogeneous branch rather than
+	 * emptying it.
+	 */
+	@Test
+	public void testTwoConcreteDtypesRemainHeterogeneous() {
+		AbsenceReason reason = Function.classifyDtypeBottom(
+				Set.of(new TensorType(INT32, List.of(new NumericDim(3))), new TensorType(FLOAT32, List.of(new NumericDim(3)))));
+		assertEquals("Two concrete dtypes are a genuine conflict.", AbsenceReason.HETEROGENEOUS_DTYPE, reason);
+	}
+
+	/**
+	 * Two concrete dtypes stay heterogeneous even when a third context is unresolved. Excluding {@code UNKNOWN} from the set must not
+	 * demote a real conflict that happens to be accompanied by an unresolved context.
+	 */
+	@Test
+	public void testTwoConcreteDtypesWithUnknownRemainHeterogeneous() {
+		AbsenceReason reason = Function.classifyDtypeBottom(Set.of(new TensorType(INT32, List.of(new NumericDim(3))),
+				new TensorType(FLOAT32, List.of(new NumericDim(3))), new TensorType(UNKNOWN, List.of(new NumericDim(3)))));
+		assertEquals("A real conflict is not demoted by an accompanying unresolved context.", AbsenceReason.HETEROGENEOUS_DTYPE, reason);
+	}
+
+	/**
+	 * Every context unresolved remains {@link AbsenceReason#UNKNOWN_DTYPE}: there is no concrete dtype to agree on, so the new branch must
+	 * not swallow this one.
+	 */
+	@Test
+	public void testAllUnknownRemainsUnknownDtype() {
+		AbsenceReason reason = Function.classifyDtypeBottom(
+				Set.of(new TensorType(UNKNOWN, List.of(new NumericDim(3))), new TensorType(UNKNOWN, List.of(new NumericDim(4)))));
+		assertEquals("No concrete dtype anywhere is still the dtype-top case.", AbsenceReason.UNKNOWN_DTYPE, reason);
+	}
+
+	/**
+	 * A single agreed concrete dtype reaches neither dtype branch, so the bottom is attributed to the remaining axis. Pins that excluding
+	 * {@code UNKNOWN} did not make the dtype branches fire on a set they should not claim.
+	 */
+	@Test
+	public void testSingleConcreteDtypeFallsThroughToSparseness() {
+		AbsenceReason reason = Function.classifyDtypeBottom(
+				Set.of(new TensorType(INT32, List.of(new NumericDim(3))), new TensorType(INT32, List.of(new NumericDim(4)))));
+		assertEquals("One agreed concrete dtype leaves sparseness as the only remaining reason.", AbsenceReason.HETEROGENEOUS_SPARSITY,
+				reason);
+	}
+
+	/**
+	 * Each reason carries its own sentence, and the two that are easiest to confuse say different things. A reader of the diagnostic must
+	 * be able to tell a caller conflict from an unresolved context, which is the whole point of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969, so the wording is pinned rather than left to drift.
+	 */
+	@Test
+	public void testEachDropReasonHasItsOwnMessage() {
+		String heterogeneous = Function.dropMessage(AbsenceReason.HETEROGENEOUS_DTYPE);
+		String partial = Function.dropMessage(AbsenceReason.PARTIAL_DTYPE);
+		String unknown = Function.dropMessage(AbsenceReason.UNKNOWN_DTYPE);
+		String sparsity = Function.dropMessage(AbsenceReason.HETEROGENEOUS_SPARSITY);
+
+		assertEquals("Four reasons must produce four distinct sentences.", 4, Set.of(heterogeneous, partial, unknown, sparsity).size());
+
+		assertTrue("Only a real conflict may say the call sites conflict.", heterogeneous.contains("conflicting dtypes"));
+		assertFalse("An unresolved context must not be reported as a conflict.", partial.contains("conflicting dtypes"));
+		assertTrue("The partial case must say the call sites do not disagree.", partial.contains("do not disagree"));
+		assertTrue("The dtype-top case names an undeterminable dtype.", unknown.contains("cannot be determined"));
+		assertTrue("The sparseness case names the layout.", sparsity.contains("sparse at some call sites"));
+	}
+
+	/** Wizard-facing diagnostic text must not cite an issue tracker, mirroring the fixture-level assertion. */
+	@Test
+	public void testDropMessagesCiteNoIssueTracker() {
+		for (AbsenceReason reason : List.of(AbsenceReason.HETEROGENEOUS_DTYPE, AbsenceReason.PARTIAL_DTYPE, AbsenceReason.UNKNOWN_DTYPE,
+				AbsenceReason.HETEROGENEOUS_SPARSITY))
+			assertFalse("Wizard-facing status text must not cite an issue tracker.", Function.dropMessage(reason).matches(".*#\\d+.*"));
 	}
 }
