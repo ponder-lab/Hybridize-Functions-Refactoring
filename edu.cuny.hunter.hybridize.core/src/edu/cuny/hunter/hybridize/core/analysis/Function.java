@@ -4126,22 +4126,20 @@ public class Function {
 				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
-				boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
-				AbsenceReason reason;
-				if (heterogeneousDtype) {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.HETEROGENEOUS_DTYPE;
-				} else if (unknownDtype) {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.UNKNOWN_DTYPE;
-				} else {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.HETEROGENEOUS_SPARSITY;
+				AbsenceReason reason = classifyDtypeBottom(contexts);
+				String prefix = "Parameter `" + param.getName() + "` of `" + this + "` ";
+
+				switch (reason) {
+				case HETEROGENEOUS_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+						+ "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
+				case PARTIAL_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+						+ "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.");
+				case UNKNOWN_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+						+ "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
+				default -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+						+ "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
 				}
+
 				blocking.put(param, reason);
 				continue;
 			}
@@ -4212,23 +4210,55 @@ public class Function {
 	 * @return The blocking {@link AbsenceReason} for the parameter.
 	 */
 	private AbsenceReason reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
-		boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
-		boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
+		AbsenceReason reason = classifyDtypeBottom(contexts);
+		String prefix = "Element " + element + " of parameter `" + param.getName() + "` of `" + this + "` ";
 
-		if (heterogeneousDtype) {
-			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-					+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
+		switch (reason) {
+		case HETEROGENEOUS_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+				+ "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
+		case PARTIAL_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+				+ "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.");
+		case UNKNOWN_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+				+ "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
+		default -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
+				+ "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
+		}
+
+		return reason;
+	}
+
+	/**
+	 * Classifies why {@link #inferSpec} reduced to bottom for one parameter or container element position, in {@code inferSpec}'s own
+	 * precedence order: the dtype axis before the sparseness axis.
+	 * <p>
+	 * {@code UNKNOWN} is excluded from the concrete dtype set before the set is sized, which is the whole content of this method. Counting
+	 * it as a member made {@code {INT32, UNKNOWN}} report a conflict among the callers, when in fact the callers agree and one context did
+	 * not resolve. The two call for different work: a genuine conflict is a fact about the program that no engine improvement removes,
+	 * while an unresolved context is a precision gap whose repair collapses the set to one dtype and makes the parameter specifiable. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969.
+	 * <p>
+	 * Shared by the flat-parameter and container-element paths. They previously carried the predicate separately and so carried the same
+	 * defect twice, which is the reason it lives here rather than at either call site.
+	 *
+	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
+	 * @return {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
+	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, {@link AbsenceReason#UNKNOWN_DTYPE} when no context resolved,
+	 *         and otherwise {@link AbsenceReason#HETEROGENEOUS_SPARSITY}, the remaining reason {@code inferSpec} bottoms for.
+	 */
+	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
+		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
+		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();
+
+		if (concrete > 1)
 			return AbsenceReason.HETEROGENEOUS_DTYPE;
-		}
 
-		if (unknownDtype) {
-			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-					+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
+		if (concrete == 1 && anyUnknown)
+			return AbsenceReason.PARTIAL_DTYPE;
+
+		if (concrete == 0 && anyUnknown)
 			return AbsenceReason.UNKNOWN_DTYPE;
-		}
 
-		this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-				+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
 		return AbsenceReason.HETEROGENEOUS_SPARSITY;
 	}
 
