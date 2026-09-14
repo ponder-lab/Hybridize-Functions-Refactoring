@@ -184,4 +184,33 @@ public class InferSpecTest {
 		assertEquals("One agreed concrete dtype leaves sparseness as the only remaining reason.", AbsenceReason.HETEROGENEOUS_SPARSITY,
 				reason);
 	}
+
+	/**
+	 * Each reason carries its own sentence, and the two that are easiest to confuse say different things. A reader of the diagnostic must
+	 * be able to tell a caller conflict from an unresolved context, which is the whole point of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969, so the wording is pinned rather than left to drift.
+	 */
+	@Test
+	public void testEachDropReasonHasItsOwnMessage() {
+		String heterogeneous = Function.dropMessage(AbsenceReason.HETEROGENEOUS_DTYPE);
+		String partial = Function.dropMessage(AbsenceReason.PARTIAL_DTYPE);
+		String unknown = Function.dropMessage(AbsenceReason.UNKNOWN_DTYPE);
+		String sparsity = Function.dropMessage(AbsenceReason.HETEROGENEOUS_SPARSITY);
+
+		assertEquals("Four reasons must produce four distinct sentences.", 4, Set.of(heterogeneous, partial, unknown, sparsity).size());
+
+		assertTrue("Only a real conflict may say the call sites conflict.", heterogeneous.contains("conflicting dtypes"));
+		assertFalse("An unresolved context must not be reported as a conflict.", partial.contains("conflicting dtypes"));
+		assertTrue("The partial case must say the call sites do not disagree.", partial.contains("do not disagree"));
+		assertTrue("The dtype-top case names an undeterminable dtype.", unknown.contains("cannot be determined"));
+		assertTrue("The sparseness case names the layout.", sparsity.contains("sparse at some call sites"));
+	}
+
+	/** Wizard-facing diagnostic text must not cite an issue tracker, mirroring the fixture-level assertion. */
+	@Test
+	public void testDropMessagesCiteNoIssueTracker() {
+		for (AbsenceReason reason : List.of(AbsenceReason.HETEROGENEOUS_DTYPE, AbsenceReason.PARTIAL_DTYPE, AbsenceReason.UNKNOWN_DTYPE,
+				AbsenceReason.HETEROGENEOUS_SPARSITY))
+			assertFalse("Wizard-facing status text must not cite an issue tracker.", Function.dropMessage(reason).matches(".*#\\d+.*"));
+	}
 }

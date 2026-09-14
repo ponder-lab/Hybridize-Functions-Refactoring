@@ -4129,16 +4129,7 @@ public class Function {
 				AbsenceReason reason = classifyDtypeBottom(contexts);
 				String prefix = "Parameter `" + param.getName() + "` of `" + this + "` ";
 
-				switch (reason) {
-				case HETEROGENEOUS_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-						+ "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-				case PARTIAL_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-						+ "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.");
-				case UNKNOWN_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-						+ "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-				default -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-						+ "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
-				}
+				this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
 
 				blocking.put(param, reason);
 				continue;
@@ -4213,18 +4204,29 @@ public class Function {
 		AbsenceReason reason = classifyDtypeBottom(contexts);
 		String prefix = "Element " + element + " of parameter `" + param.getName() + "` of `" + this + "` ";
 
-		switch (reason) {
-		case HETEROGENEOUS_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-				+ "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-		case PARTIAL_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-				+ "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.");
-		case UNKNOWN_DTYPE -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-				+ "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-		default -> this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix
-				+ "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
-		}
+		this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
 
 		return reason;
+	}
+
+	/**
+	 * The sentence naming why {@link #inferSpec} reduced to bottom, for one {@link AbsenceReason}. Appended to a prefix that identifies the
+	 * parameter or the element position, so the flat and container paths share one wording per reason and cannot drift apart.
+	 * <p>
+	 * Kept as data keyed by the reason rather than as a branch beside each emission. The two emission sites previously each carried their
+	 * own copy of the same four-way choice, which is the shape that let one defect live at both of them
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969).
+	 *
+	 * @param reason The classified reason, from {@link #classifyDtypeBottom(Set)}.
+	 * @return The sentence for that reason, without the identifying prefix.
+	 */
+	public static String dropMessage(AbsenceReason reason) {
+		return switch (reason) {
+		case HETEROGENEOUS_DTYPE -> "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.";
+		case PARTIAL_DTYPE -> "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.";
+		case UNKNOWN_DTYPE -> "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.";
+		default -> "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.";
+		};
 	}
 
 	/**
