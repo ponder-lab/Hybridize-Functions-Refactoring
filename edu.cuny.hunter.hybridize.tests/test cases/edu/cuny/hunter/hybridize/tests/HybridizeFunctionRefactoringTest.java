@@ -154,6 +154,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
+import edu.cuny.hunter.hybridize.core.analysis.TensorClassificationBasis;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.refactorings.HybridizeFunctionRefactoringProcessor;
@@ -11877,6 +11878,80 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`chained_slice` must not pass a precondition.", chained.getPassingPrecondition());
 		assertNotNull("`chained_slice` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				chained.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * A parameter whose tensor classification actually ran and concluded <em>not a tensor</em> records that it did, rather than leaving a
+	 * bare {@code false} indistinguishable from a verdict that was never reached
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/971).
+	 * <p>
+	 * `clip_slice` is analyzed, so `boxes` is classified by the tensor analysis and `limit`, a plain literal parameter, is classified by it
+	 * as well and found not to be a tensor. The two verdicts differ and so must their bases.
+	 */
+	@Test
+	public void testTensorClassificationBasisIsRecorded() throws Exception {
+		Function scale = getFunction("scale");
+
+		for (Parameter parameter : scale.getParameters()) {
+			assertNotNull("An analyzed parameter must record what its verdict rests on: " + parameter.getName(),
+					parameter.getTensorClassificationBasis());
+			assertNotEquals("`scale` is in the call graph, so no parameter of it may report that classification did not run.",
+					TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN, parameter.getTensorClassificationBasis());
+		}
+	}
+
+	/**
+	 * The basis must track the verdict rather than being constant. `scale` is analyzed and its two parameters reach opposite verdicts, so
+	 * the two bases must differ and must each name the phase that decided them. Guards against a fix that records a basis everywhere but
+	 * always the same one, which would satisfy {@link #testTensorClassificationBasisIsRecorded()} while leaving the two situations exactly
+	 * as indistinguishable as before.
+	 * <p>
+	 * Both are determinations. That is deliberate: the pair this pins is a determined non-tensor against a tensor, and the harder pair, a
+	 * determined non-tensor against a parameter whose classification never ran, cannot be built here because a fixture's functions are all
+	 * in the call graph by construction.
+	 */
+	@Test
+	public void testTensorClassificationBasisTracksTheVerdict() throws Exception {
+		Function scale = getFunction("scale");
+
+		Parameter x = scale.getParameters().stream().filter(p -> "x".equals(p.getName())).findFirst().orElseThrow();
+		Parameter factor = scale.getParameters().stream().filter(p -> "factor".equals(p.getName())).findFirst().orElseThrow();
+
+		assertEquals("`x` is tensor-typed by the tensor analysis.", TensorClassificationBasis.TENSOR_ANALYSIS,
+				x.getTensorClassificationBasis());
+		assertEquals("`factor` is an integer at every call site, so the analysis ran and concluded it is not a tensor.",
+				TensorClassificationBasis.ANALYZED_NOT_TENSOR, factor.getTensorClassificationBasis());
+	}
+
+	/**
+	 * The pair the defect is about, in one fixture: two parameters carrying the SAME {@code false} verdict for opposite reasons
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/971).
+	 * <p>
+	 * `scale` is called, so its `factor` is classified by an analysis that ran and concluded the parameter is not a tensor. `never_called`
+	 * is absent from the call graph, so its `z` reaches the same verdict with the tensor-type and container phases never having run at all.
+	 * Before the basis was recorded these two produced byte-identical rows, and the emitted data could not tell a parameter that is outside
+	 * the mechanism from one nothing was ever asked about.
+	 * <p>
+	 * The distinction is load-bearing because a signature covers every parameter or none: a determined non-tensor suppresses its function's
+	 * signature for a reason no engine change removes, while a defaulted one suppresses it for a reason that may simply be a precision
+	 * limit.
+	 */
+	@Test
+	public void testTensorClassificationBasisDidNotRun() throws Exception {
+		Function scale = getFunction("scale");
+		Function neverCalled = getFunction("never_called");
+
+		Parameter factor = scale.getParameters().stream().filter(p -> "factor".equals(p.getName())).findFirst().orElseThrow();
+		Parameter z = neverCalled.getParameters().stream().filter(p -> "z".equals(p.getName())).findFirst().orElseThrow();
+
+		assertEquals("Both parameters must carry the same verdict; that is what makes the basis necessary.", factor.isTensor(),
+				z.isTensor());
+		assertEquals("`factor`'s classification ran and concluded not-a-tensor.", TensorClassificationBasis.ANALYZED_NOT_TENSOR,
+				factor.getTensorClassificationBasis());
+		assertEquals("`never_called` is outside the call graph, so its classification never ran.",
+				TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN, z.getTensorClassificationBasis());
+		assertNotEquals("The two must be distinguishable, which is the whole of the fix.", factor.getTensorClassificationBasis(),
+				z.getTensorClassificationBasis());
 	}
 
 	/**
