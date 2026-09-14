@@ -400,6 +400,12 @@ class NumpyParameterFlowAnalysis {
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueTainted.contains(valueNumber);
 
+			// The two colors are disjoint by construction: colorValue() evicts the value from shapeTainted, and colorShape() and
+			// colorShapeFrom() both decline a value already in valueTainted. The two slice branches below partition on exactly this,
+			// so a dual-colored value would send a shape-tainted receiver down the value path and silently skip the dimension-aware
+			// narrowing. Assert it rather than rely on reading the three coloring methods together.
+			assert !(valueColored && shapeTainted.contains(valueNumber)) : "value " + valueNumber + " is both value- and shape-tainted";
+
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
 

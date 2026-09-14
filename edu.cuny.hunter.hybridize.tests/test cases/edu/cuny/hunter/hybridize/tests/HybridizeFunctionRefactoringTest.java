@@ -11862,6 +11862,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Chained slices, which neither {@link #testNumpyOnSlicedTensorValue()} nor {@link #testNumpyOnSlicedTensorArithmetic()} reaches: both
+	 * slice a bare parameter exactly once, whereas here the outer slice's receiver is the inner slice's <em>result</em>.
+	 * <p>
+	 * That makes this a test of the worklist rather than of the slice branch alone. The taint arrives at numpy only if coloring the inner
+	 * slice's def re-enqueues it and the outer slice then re-matches on it, so a derivation asserted for a parameter but not re-entered
+	 * would pass the other two fixtures and fail here.
+	 */
+	@Test
+	public void testNumpyOnChainedSlice() throws Exception {
+		Function chained = getFunction("chained_slice");
+		assertTrue("`chained_slice`'s numpy operates on a slice of a slice of a tensor parameter, which remains a sink.",
+				chained.getHasNumpyCallsOnParameters());
+		assertNull("`chained_slice` must not pass a precondition.", chained.getPassingPrecondition());
+		assertNotNull("`chained_slice` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				chained.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
 	 * Pins the argument side of interprocedural shape-descriptor propagation
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code via_arg} passes {@code get_shape(x)} to
 	 * {@code prod_of}, which applies {@code np.prod} to it. The descriptor (source tensor plus covered dimensions) is seeded onto the
