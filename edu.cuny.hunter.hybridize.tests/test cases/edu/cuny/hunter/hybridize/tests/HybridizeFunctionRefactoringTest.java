@@ -11839,6 +11839,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The arithmetic-mediated slice path, which {@link #testNumpyOnSlicedTensorValue()} does not reach. There the slice result is a DIRECT
+	 * operand of the numpy call; here it is consumed by arithmetic first and numpy is applied to the result, so no slice appears at the
+	 * call site.
+	 * <p>
+	 * Both are sinks, and that is measured rather than assumed: run under {@code tf.function}, this shape raises
+	 * {@code NotImplementedError: Cannot convert a symbolic tf.Tensor (sub_1:0) to a numpy array}, so a function reaching it cannot be
+	 * hybridized and the precondition must fire.
+	 * <p>
+	 * This shape does not follow from the direct-operand one, so it needs its own fixture: a change severing the derivation only at a
+	 * direct operand would leave this test passing while {@link #testNumpyOnSlicedTensorValue()} regressed, and a change severing it
+	 * everywhere would take both. Neither fixture alone distinguishes those cases.
+	 */
+	@Test
+	public void testNumpyOnSlicedTensorArithmetic() throws Exception {
+		Function rerec = getFunction("rerec_arith");
+		assertTrue("`rerec_arith`'s numpy operates on arithmetic over slices of a tensor parameter, which remains a sink.",
+				rerec.getHasNumpyCallsOnParameters());
+		assertNull("`rerec_arith` must not pass a precondition.", rerec.getPassingPrecondition());
+		assertNotNull("`rerec_arith` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				rerec.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
 	 * Pins the argument side of interprocedural shape-descriptor propagation
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756): {@code via_arg} passes {@code get_shape(x)} to
 	 * {@code prod_of}, which applies {@code np.prod} to it. The descriptor (source tensor plus covered dimensions) is seeded onto the

@@ -438,6 +438,25 @@ class NumpyParameterFlowAnalysis {
 						continue;
 					}
 
+					// A slice DERIVES its result from its receiver, and that derivation is asserted here rather than inferred from the
+					// callee. Until Ariadne 0.52.102 the `slice` builtin's summary body returned its receiver, so this walk carried
+					// the taint out through the callee's SSAReturnInstruction for free. wala/ML#916 made the body return nothing,
+					// supplying an identical points-to result through a builder constraint instead, which leaves the points-to set
+					// unchanged and DELETES the def-use edge this analysis walks. The derivation is a property of slicing, not of how
+					// the builtin happens to be summarized, so it belongs here
+					// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/967).
+					//
+					// Both shapes regressed and both are pinned: `np.maximum(boxes[:2], 0.0)`, where the slice is a direct operand of
+					// the numpy call, and `h = bboxA[:,3] - bboxA[:,1]; np.maximum(w, h)`, where the slice is consumed by arithmetic
+					// first and no slice appears at the call site. The second does not follow from the first, so each has its own fixture.
+					if (valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+							&& invoke.getUse(1) == valueNumber) {
+						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+							colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
+
+						continue;
+					}
+
 					// A Python `x[a:b:c]` subscript is modeled as `slice(x, a, b, c)`. Only a slice of a shape-tainted vector stays shape
 					// metadata (covering the sliced dimensions); slicing a tensor VALUE yields a sub-tensor value (e.g. `boxes1[..., :2]`),
 					// which must remain value-tainted so numpy over it is still a sink. Guard on the receiver being shape-, not value-,
