@@ -8851,6 +8851,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * An unmodeled container that also carries flat tensor evidence (#976): `adjacency_lists` receives a bare edge tensor at one call site
+	 * and a list of differently shaped edge tensors at another. The list makes the parameter a container, the mix leaves its element
+	 * structure unmodeled, and the bare tensor gives it flat evidence. Reducing that flat evidence would emit one `TensorSpec`, and on the
+	 * pinned TF 2.9.3 both callers then raise: the list cannot bind to it, and iterating a shapeless tensor is not allowed in a graph. The
+	 * signature drops with `TENSOR_CONTAINER_UNSUPPORTED` although the sibling `node_embeddings` resolves.
+	 */
+	@Test
+	public void testInputSignatureContainerUnmodeledWithFlatEvidence() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "count_edges");
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter adjacencyLists = parameters.get(1);
+		assertEquals("adjacency_lists", adjacencyLists.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, adjacencyLists.isTensorContainer());
+		assertNull("An append-built list has no extractable element structure.", adjacencyLists.getContainerElementTypes());
+		assertFalse("The parameter nonetheless carries flat tensor evidence, which is the case under test.",
+				adjacencyLists.getConformingTensorTypes().isEmpty());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("An unmodeled container blocks the signature even with flat evidence.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported container form.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+		assertEquals("Only the container blocks; the sibling reduces.",
+				Map.of(adjacencyLists, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), function.getBlockingParameterReasons());
+	}
+
+	/**
 	 * The per-element bottom of the sequence reduction (#781): `xs` receives a singleton list at both call sites, but the element is
 	 * {@code float32} at one and {@code int32} at the other, so the container form is modeled (arity 1 everywhere) and the reduction
 	 * bottoms at the element position with a heterogeneous dtype union, exactly as a flat parameter's would. The diagnostic cites the
