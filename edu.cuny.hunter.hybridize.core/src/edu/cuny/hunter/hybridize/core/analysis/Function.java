@@ -4035,14 +4035,23 @@ public class Function {
 				continue;
 			}
 
-			if (contexts.isEmpty()) {
+			// A container whose element structure is not modeled blocks even when flat evidence is present. That flat evidence is at best
+			// the elements' types mixed with non-container arguments from other call sites, so no single specification admits the sequence,
+			// and binding the sequence to one raises on the first call (#976). Only the modeled form above has a reduction. The container
+			// must reach from a conforming call site: one passed only by a call the tests declare must fail is evidence of what the
+			// function rejects, and the flat reduction of the conforming evidence stands (#892).
+			boolean unmodeledContainer = TRUE.equals(param.isConformingTensorContainer()) && param.getContainerElementTypes() == null;
+
+			if (contexts.isEmpty() || unmodeledContainer) {
 				/*
-				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence. The ways to land
-				 * here have different evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase
-				 * 3 (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before the container question is asked,
-				 * leaving it null. FALSE reaches here only on the expected-failure route (#888), where a Phase 2 hit whose every type was
-				 * excluded asked the container question and got no for an answer; on the Phase 3 route a FALSE verdict falls through to
-				 * `tensor = FALSE`, i.e. category (a).
+				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence, or classified as a
+				 * container whose element structure is not modeled whatever flat evidence it carries (#976). The ways to land here have
+				 * different evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
+				 * (container) leaves `isTensorContainer()` TRUE, and so does a Phase 2 hit that also asked the container question, which is
+				 * how an unmodeled container with flat evidence arrives here; Phase 1 (type hint) returns before the container question is
+				 * asked, leaving it null. FALSE reaches here only on the expected-failure route (#888), where a Phase 2 hit whose every
+				 * type was excluded asked the container question and got no for an answer; on the Phase 3 route a FALSE verdict falls
+				 * through to `tensor = FALSE`, i.e. category (a).
 				 */
 				AbsenceReason reason;
 

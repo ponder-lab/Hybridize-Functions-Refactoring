@@ -158,6 +158,14 @@ public final class Parameter {
 	private Boolean tensorContainer;
 
 	/**
+	 * Whether a container reaches this parameter from a call-graph node that is <em>not</em> an expected-failure context. Set beside
+	 * {@link #containerElementTypes} whenever the element structure is extracted, and {@code null} otherwise. {@link #tensorContainer}
+	 * reads every node, so a container passed only by a call the tests declare must fail makes it {@code TRUE} while the conforming callers
+	 * pass something else; this separates the two (#976, #892).
+	 */
+	private Boolean conformingTensorContainer;
+
+	/**
 	 * This parameter's {@link TensorType}s from the call-graph nodes that are <em>not</em> expected-failure contexts
 	 * ({@link Function#getExpectedFailureNodes()}), which is the evidence a specification may be derived from (#888). Equal to
 	 * {@link #getTensorTypes()} whenever no node is excluded, which is the overwhelmingly common case. Populated alongside it by
@@ -349,6 +357,18 @@ public final class Parameter {
 	 */
 	public Boolean isTensorContainer() {
 		return this.tensorContainer;
+	}
+
+	/**
+	 * Returns whether a container reaches this parameter from a conforming call site, i.e. one the tests do not declare must fail. Differs
+	 * from {@link #isTensorContainer()} only where every container reaching the parameter comes from an expected-failure call, which is
+	 * evidence of what the function rejects rather than of what it accepts (#892).
+	 *
+	 * @return {@code TRUE} if a conforming call site passes a container, {@code FALSE} if none does, or {@code null} if the element
+	 *         structure was not extracted.
+	 */
+	public Boolean isConformingTensorContainer() {
+		return this.conformingTensorContainer;
 	}
 
 	/**
@@ -882,6 +902,28 @@ public final class Parameter {
 		return this.containerHoldsUnrepresentableElement;
 	}
 
+	/**
+	 * Extracts the element structure from the conforming nodes and records whether a container reaches the parameter from them at all. The
+	 * second answer reuses {@link #tensorContainer} when no node is excluded, and otherwise asks {@link #hasTensorContainer} of the
+	 * conforming nodes alone, since a container passed only by a call the tests declare must fail is no container the function accepts
+	 * (#976, #892).
+	 *
+	 * @param tensorAnalysis Ariadne's analysis result.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 */
+	private void extractConformingContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, 2);
+		Set<CGNode> conforming = this.conformingNodes(nodes);
+
+		this.conformingTensorContainer = conforming.size() == nodes.size() ? this.tensorContainer
+				: Boolean.valueOf(this.hasTensorContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
+
+		this.extractContainerElements(tensorAnalysis, conforming, builder, subMonitor.split(1));
+	}
+
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		Map<InstanceKey, Map<String, Set<TensorType>>> containers = getTensorContainerElements(tensorAnalysis, monitor);
@@ -1212,7 +1254,7 @@ public final class Parameter {
 						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 
 						if (this.tensorContainer)
-							this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
+							this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
 					}
 
 					subMonitor.worked(2);
@@ -1252,7 +1294,7 @@ public final class Parameter {
 						// The extraction reads the conforming nodes alone, on the same ground the tensor types do: a value passed by a
 						// call the tests declare must fail describes what the function rejects, so letting it stand beside the
 						// containers would report the form unsupported on the strength of a rejected call (#892).
-						this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
+						this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
 
 					subMonitor.worked(2);
 					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_ANALYSIS;
@@ -1269,7 +1311,7 @@ public final class Parameter {
 					// the container form is one the reduction models. The extraction reads the conforming nodes alone, on the same ground
 					// the tensor types do: a value passed by a call the tests declare must fail describes what the function rejects, so
 					// letting it stand beside the containers would report the form unsupported on the strength of a rejected call (#888).
-					this.extractContainerElements(tensorAnalysis, this.conformingNodes(nodes), builder, subMonitor.split(1));
+					this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");

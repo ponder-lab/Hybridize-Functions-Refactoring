@@ -8851,6 +8851,58 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * An unmodeled container that also carries flat tensor evidence (#976): `adjacency_lists` receives a bare edge tensor at one call site
+	 * and a list of differently shaped edge tensors at another. The list makes the parameter a container, the mix leaves its element
+	 * structure unmodeled, and the bare tensor gives it flat evidence. Reducing that flat evidence would emit one `TensorSpec`, and on the
+	 * pinned TF 2.9.3 both callers then raise: the list cannot bind to it, and iterating a shapeless tensor is not allowed in a graph. The
+	 * signature drops with `TENSOR_CONTAINER_UNSUPPORTED` although the sibling `node_embeddings` resolves.
+	 */
+	@Test
+	public void testInputSignatureContainerUnmodeledWithFlatEvidence() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "count_edges");
+
+		List<Parameter> parameters = function.getParameters();
+		assertEquals(2, parameters.size());
+		Parameter adjacencyLists = parameters.get(1);
+		assertEquals("adjacency_lists", adjacencyLists.getName());
+
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, adjacencyLists.isTensorContainer());
+		assertNull("An append-built list has no extractable element structure.", adjacencyLists.getContainerElementTypes());
+		assertFalse("The parameter nonetheless carries flat tensor evidence, which is the case under test.",
+				adjacencyLists.getConformingTensorTypes().isEmpty());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("An unmodeled container blocks the signature even with flat evidence.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported container form.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+		assertEquals("Only the container blocks; the sibling reduces.",
+				Map.of(adjacencyLists, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), function.getBlockingParameterReasons());
+	}
+
+	/**
+	 * The boundary of #976 that #892 draws: `x` receives a bare tensor at its conforming call site and a list of tensors only at a call the
+	 * tests declare must fail. The container verdict over every node is TRUE, but no conforming caller passes a container, so the flat
+	 * reduction of the conforming evidence stands. Blocking the parameter as an unmodeled container would report the form unsupported on
+	 * the strength of a rejected call.
+	 */
+	@Test
+	public void testInputSignatureContainerOnlyFromExpectedFailure() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function function = findFunction(this.getFunctions(), "scale");
+		Parameter x = function.getParameters().get(0);
+		assertEquals("x", x.getName());
+
+		assertEquals("The rejected call's list makes the verdict over every node a container.", TRUE, x.isTensorContainer());
+		assertEquals("No conforming caller passes a container.", FALSE, x.isConformingTensorContainer());
+		assertFalse("The conforming caller's tensor is flat evidence.", x.getConformingTensorTypes().isEmpty());
+
+		assertTrue("The flat reduction of the conforming evidence stands.", function.getInferredInputSignature().isPresent());
+		assertTrue("Nothing blocks.", function.getBlockingParameterReasons().isEmpty());
+	}
+
+	/**
 	 * The per-element bottom of the sequence reduction (#781): `xs` receives a singleton list at both call sites, but the element is
 	 * {@code float32} at one and {@code int32} at the other, so the container form is modeled (arity 1 everywhere) and the reduction
 	 * bottoms at the element position with a heterogeneous dtype union, exactly as a flat parameter's would. The diagnostic cites the
