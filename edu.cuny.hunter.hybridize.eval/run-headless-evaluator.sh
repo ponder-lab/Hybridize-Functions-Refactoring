@@ -11,7 +11,8 @@
 #     (`edu.cuny.hunter.hybridize.eval.product`; set ECLIPSE to its materialized
 #     `hybridize-evaluator` launcher), or an Eclipse install containing the eval
 #     bundle and its runtime (the ponder-lab PyDev fork, WALA, Ariadne).
-#   - A workspace already populated with the subjects as PyDev projects.
+#   - A workspace holding the subjects as PyDev projects, or one whose PyDev
+#     interpreters are configured, with IMPORT_PROJECTS naming the subjects.
 #
 # Usage:
 #   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace \
@@ -29,11 +30,15 @@
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
 # CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, CHECK_STATIC_SHAPE_READS, CHECK_STALE_VARIABLE_READS, CHECK_TENSOR_ITERATION, PROCESS_IN_PARALLEL,
 # FOLLOW_TYPE_HINTS, SPECULATIVE,
-# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
+# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
 # (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
 # (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
-# subset; unset evaluates all open Python projects.
+# subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
+# comma-separated list of absolute subject directories, each with a committed
+# .project, to register in the workspace before the run (issue 658). It imports
+# the projects but does not restrict the run to them; pair it with PROJECTS for
+# that. The run exits 4 if one cannot be imported or has no usable interpreter.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
@@ -95,4 +100,5 @@ exec "$ECLIPSE" \
 	${SPECULATIVE+-Dedu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis="$SPECULATIVE"} \
 	${TEST_ENTRYPOINTS+-Dedu.cuny.hunter.hybridize.eval.useTestEntrypoints="$TEST_ENTRYPOINTS"} \
 	${OUTPUT_CALLS+-Dedu.cuny.hunter.hybridize.eval.outputCalls="$OUTPUT_CALLS"} \
-	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"}
+	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"} \
+	${IMPORT_PROJECTS+-Dedu.cuny.hunter.hybridize.eval.importProjects="$IMPORT_PROJECTS"}
