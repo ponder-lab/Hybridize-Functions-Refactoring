@@ -139,7 +139,6 @@ import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
-import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.python.pydev.analysis.additionalinfo.AbstractAdditionalDependencyInfo;
 import com.python.pydev.analysis.additionalinfo.AdditionalProjectInterpreterInfo;
 
@@ -9932,7 +9931,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (b) Barren-eager benefit precondition (#709/#712): {@code OutputLayer.call} performs tensor operations ({@code tf.matmul},
 	 * {@code tf.reshape}, {@code tf.shape}), but the {@code tf} module global has an empty points-to set in this whole-program context, so
 	 * the tensor-op detector must recognize the op via the import-alias fallback ({@link edu.cuny.hunter.hybridize.core.analysis.Util})
-	 * rather than misreport the function as performing no tensor computation and block its hybridization.
+	 * rather than misreport the function as performing no tensor computation and block its hybridization. As of Ariadne 0.52.103 that site
+	 * is dead (wala/ML#968 suppresses it, since {@code OutputLayer} is built only when {@code rev_embedding_projection} is false), so the
+	 * function is no longer a candidate and this fixture no longer exercises the fallback.
 	 */
 	@Test
 	public void testGpt2GetLossVendored() throws Exception {
@@ -9949,14 +9950,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// dropped, `pred` became `float32` throughout, and the batch/sequence axes became the evidence-based `Dynamic`.
 		// The 0.52.76 bump improves `pred` the same way as `real`: the batch axis is the concrete extent (or symbolic where the
 		// context does not recover it) rather than `Dynamic`, and the spurious rank-4 `(Dynamic, Dynamic, 8, 8)` member (the
-		// attention-internal d_model shape leaking into the call result) no longer appears.
+		// attention-internal d_model shape leaking into the call result) no longer appears. As of Ariadne 0.52.103 the
+		// less-resolved `(Unresolved, Unresolved, 10)` member no longer appears either: it is `OutputLayer.call`'s result, which
+		// reached `pred` along the arm that the `rev_embedding_projection` guard folds dead. Two changes in that release cut such
+		// an arm, the dead-call-site suppression of wala/ML#968 and the phi-arm pruning of wala/ML#970, and which of them removes
+		// this member was not isolated. The two resolved members remain.
 		assertEquals("`get_loss`'s `pred` types via the keras call result; batch axis concrete as of Ariadne 0.52.76.",
 				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(32), DynamicDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE, new NumericDim(10))),
-						new TensorType(FLOAT32, List.of(UnresolvedDim.INSTANCE, UnresolvedDim.INSTANCE, new NumericDim(10)))),
+						new TensorType(FLOAT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE, new NumericDim(10)))),
 				findParameter(fns, "pred").getTensorTypes());
-		assertEquals("`OutputLayer.call` performs a tensor computation (`tf.matmul`), recognized via the import-alias fallback (#712).",
-				Boolean.TRUE, findFunction(fns, "OutputLayer.call").getHasTensorComputation());
+		// As of Ariadne 0.52.103, `OutputLayer` is never built: it is constructed only under `not self.rev_embedding_projection`,
+		// whose default is True and which no caller overrides, and the dead-call-site suppression of wala/ML#968 cuts that site. Its
+		// `call` is therefore not a candidate and its tensor-computation question is never asked.
+		assertNull("`OutputLayer.call` is unreachable, so its tensor computation is not evaluated.",
+				findFunction(fns, "OutputLayer.call").getHasTensorComputation());
+		// That call was the only site in this fixture whose `tf` global had an empty points-to set, so the import-alias fallback
+		// (#712) no longer has a witness here: with the fallback disabled the whole suite still passes. A live function's tensor
+		// computation is detected through points-to directly.
+		assertEquals("`get_padded_accuracy` performs a tensor computation (`tf.cast`, `tf.argmax`, `tf.equal`).", Boolean.TRUE,
+				findFunction(fns, "Gpt2.get_padded_accuracy").getHasTensorComputation());
 	}
 
 	/**
