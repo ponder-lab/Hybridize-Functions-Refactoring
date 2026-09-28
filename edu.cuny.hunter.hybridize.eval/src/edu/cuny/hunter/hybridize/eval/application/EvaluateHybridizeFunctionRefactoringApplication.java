@@ -241,13 +241,16 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 				return unregister(project, created);
 			}
 
-			nature.getProjectInterpreter();
+			try {
+				nature.getProjectInterpreter();
+			} catch (MisconfigurationException | PythonNatureWithoutProjectException e) {
+				LOG.error("Imported project " + project.getName()
+						+ " has no usable PyDev interpreter; configure it in the workspace before evaluating. PyDev reports: "
+						+ e.getMessage());
+				return unregister(project, created);
+			}
+
 			return true;
-		} catch (MisconfigurationException | PythonNatureWithoutProjectException e) {
-			LOG.error("Imported project " + project.getName()
-					+ " has no usable PyDev interpreter; configure it in the workspace before evaluating. PyDev reports: "
-					+ e.getMessage());
-			return unregister(project, created);
 		} catch (CoreException | IOException e) {
 			LOG.error("Cannot import " + directory + ": " + e.getMessage(), e);
 			return unregister(project, created);
