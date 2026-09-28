@@ -9952,9 +9952,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// context does not recover it) rather than `Dynamic`, and the spurious rank-4 `(Dynamic, Dynamic, 8, 8)` member (the
 		// attention-internal d_model shape leaking into the call result) no longer appears. As of Ariadne 0.52.103 the
 		// less-resolved `(Unresolved, Unresolved, 10)` member no longer appears either: it is `OutputLayer.call`'s result, which
-		// reached `pred` along the arm that the `rev_embedding_projection` guard folds dead. Two changes in that release cut such
-		// an arm, the dead-call-site suppression of wala/ML#968 and the phi-arm pruning of wala/ML#970, and which of them removes
-		// this member was not isolated. The two resolved members remain.
+		// reached `pred` along the arm that the `rev_embedding_projection` guard folds dead. The phi-arm pruning of wala/ML#970
+		// removes it: that change, measured on a base without wala/ML#968, drops this same member from Ariadne's own vendored gpt-2
+		// test. The dead-call-site suppression of wala/ML#968 cuts the same arm's result edge and is expected to suffice alone, but
+		// that was not measured. The two resolved members remain.
 		assertEquals("`get_loss`'s `pred` types via the keras call result; batch axis concrete as of Ariadne 0.52.76.",
 				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(32), DynamicDim.INSTANCE, new NumericDim(10))),
 						new TensorType(FLOAT32, List.of(new SymbolicDim("?"), DynamicDim.INSTANCE, new NumericDim(10)))),
