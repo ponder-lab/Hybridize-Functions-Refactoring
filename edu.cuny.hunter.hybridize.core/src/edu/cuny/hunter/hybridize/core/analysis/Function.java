@@ -4732,6 +4732,12 @@ public class Function {
 			// parenthesis. A trailing keyword argument is always valid Python, whereas front-insertion would place the keyword before any
 			// existing positional argument (e.g. `@tf.function(None)`), producing a syntax error. Handles the empty-parentheses
 			// (`@tf.function()`) and non-empty (`@tf.function(reduce_retracing=True)`) forms uniformly.
+			//
+			// An existing `reduce_retracing` (or its deprecated alias `experimental_relax_shapes`) is kept on purpose. Under a signature
+			// it has no effect: in TensorFlow 2.9.3, the flag's only use is the cache-key generalization at `function.py:2707` (in
+			// `tensorflow/python/eager`), guarded by `self._reduce_retracing and self.input_signature is None`. So removing it would be
+			// an edit that changes nothing, while keeping it preserves the developer's retracing behavior should the signature later be
+			// dropped. That reading covers 2.9.3 only.
 			Call call = (Call) decorator.func;
 
 			// Find the open parenthesis, tolerating any whitespace between the callee and `(`.
