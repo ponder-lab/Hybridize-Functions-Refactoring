@@ -321,7 +321,7 @@ public record InputSignature(List<SpecEntry> entries) {
 	 * @param inferred The inferred entry.
 	 * @return How the supplied entry relates to the inferred one.
 	 */
-	private static Relation relate(SpecEntry supplied, SpecEntry inferred) {
+	static Relation relate(SpecEntry supplied, SpecEntry inferred) {
 		if (supplied instanceof Single s && inferred instanceof Single i)
 			return relate(s.type(), i.type());
 
@@ -378,7 +378,7 @@ public record InputSignature(List<SpecEntry> entries) {
 	 * @param inferred The inferred dtype.
 	 * @return How the supplied dtype relates to the inferred one.
 	 */
-	private static Relation relateDType(DType supplied, DType inferred) {
+	static Relation relateDType(DType supplied, DType inferred) {
 		if (supplied == inferred)
 			return Relation.AGREEMENT;
 		if (supplied == DType.UNKNOWN)
@@ -396,7 +396,7 @@ public record InputSignature(List<SpecEntry> entries) {
 	 * @param inferred The inferred dimension list, or {@code null} for unknown rank.
 	 * @return How the supplied shape relates to the inferred one.
 	 */
-	private static Relation relateShape(List<Dimension<?>> supplied, List<Dimension<?>> inferred) {
+	static Relation relateShape(List<Dimension<?>> supplied, List<Dimension<?>> inferred) {
 		if (supplied == null && inferred == null)
 			return Relation.AGREEMENT;
 		if (supplied == null)

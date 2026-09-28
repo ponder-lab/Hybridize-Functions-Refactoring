@@ -508,6 +508,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
+				// A supplied input signature that disagrees with its reachable calls is reported per parameter, and a dtype disagreement
+				// behaves differently by the kind of argument the calls pass (issue 808). Only a modeled supplied signature, compared under
+				// inference, can disagree, so the kinds are computed only there.
+				if (Boolean.TRUE.equals(func.isHybrid()) && func.getInferInputSignatures() && func.getHybridizationParameters() != null
+						&& func.getHybridizationParameters().getSuppliedInputSignature().isPresent())
+					func.computeArgumentKinds(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
+
 				// Check whether the function calls an eager-only API (issue 363). Its failure is reachable in exactly the same
 				// precondition region as the barren check, so it shares the gate; overridable independently via
 				// alwaysCheckEagerOnlyCalls.

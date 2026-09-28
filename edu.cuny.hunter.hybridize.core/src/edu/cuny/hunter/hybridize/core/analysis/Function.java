@@ -9,6 +9,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -34,6 +35,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -69,6 +71,7 @@ import org.eclipse.text.edits.DeleteEdit;
 import org.eclipse.text.edits.InsertEdit;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
+import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
@@ -1080,6 +1083,35 @@ public class Function {
 	private Boolean hasUnresolvedStaticallyReadAxes;
 
 	/**
+	 * The statically read shape surfaces {@link #computeUnresolvedStaticallyReadAxes} collected over this function's call-graph nodes, kept
+	 * so that narrowing a supplied input signature can ask whether it changes a shape the function reads (issue 808). {@code null} when the
+	 * reads were not computed or could not be determined.
+	 */
+	private StaticShapeReadAnalysis.StaticShapeReads staticShapeReads;
+
+	/**
+	 * How a reachable call site's argument reaches a parameter, which decides what a dtype disagreement with a supplied input signature
+	 * does at runtime (issue 808): a tensor of the wrong dtype raises, while a non-tensor value (a NumPy array or a Python list or scalar)
+	 * is silently cast to the declared dtype.
+	 */
+	enum ArgumentKind {
+		/** The argument is a tensor produced by a TensorFlow operation. */
+		TENSOR,
+
+		/** The argument is not a TensorFlow tensor: a NumPy array, or a value the analysis does not type as a tensor at all. */
+		NON_TENSOR,
+
+		/** The argument's kind could not be decided, for example a parameter passed through from the caller. */
+		UNKNOWN
+	}
+
+	/**
+	 * The kinds of argument each non-{@code self} parameter receives at this function's reachable call sites, computed by
+	 * {@link #computeArgumentKinds} (issue 808). {@code null} until computed.
+	 */
+	private Map<Parameter, Set<ArgumentKind>> argumentKinds;
+
+	/**
 	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
 	 */
 	private Boolean replicaInvoked;
@@ -1585,38 +1617,24 @@ public class Function {
 							this.setPassingPrecondition(P4);
 						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
 								&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
-							// Adjudication path: an existing, fully-modeled `input_signature` is present. Compare it against the
-							// inferred one and REPORT; no relation rewrites the signature (issue 808). Since the inferred signature is
-							// the join over the observed call sites, the tighter and incomparable relations can only arise when some
-							// observed call violates the existing signature, i.e., the original program raises at that site; rewriting
-							// the signature to admit those calls would repair rather than refactor, with zero retracing benefit (a
-							// present signature already pins one trace). The rewrite is a sanctioned future find-and-fix
-							// transformation, not this refactoring. `canReconfigure` implies inference succeeded (it gates on
-							// `canEmitInferredInputSignature`), so the pattern always binds here; a hypothetical `Absent` falls
-							// through to the no-primitive-parameter failure below.
+							// Adjudication path: an existing, fully-modeled `input_signature` is present, and it is compared against the
+							// inferred one (issue 808). Under the closed-world assumption the reachable call sites are all the callers,
+							// and the inferred signature is their join. A broader supplied signature is therefore narrowed: every caller
+							// already conforms to the inferred one. A tighter or incomparable one means some reachable call already
+							// violates it, so rewriting it would repair the program rather than refactor it; that is a failing
+							// precondition, reported per parameter. `canReconfigure` implies inference succeeded (it gates on
+							// `canEmitInferredInputSignature`), so the pattern always binds here.
 							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
 
 							switch (supplied.relate(inferred)) {
-							case SUPPLIED_TIGHTER -> this
-									.addWarning("This hybrid function's input signature is narrower than its call sites require; "
-											+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
-											+ "admitting those calls would change program behavior rather than preserve it.");
-							case INCOMPARABLE -> this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-									+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
-									+ "reconciling it would change the inputs the function accepts.");
-							case SUPPLIED_BROADER -> this
-									.addInfo("This hybrid function's input signature is broader than its call sites require; "
-											+ "it is left unchanged in case the broader signature is intentional.");
-							case AGREEMENT -> {
-								// Nothing to report: the supplied signature matches the call-site evidence.
+							case SUPPLIED_BROADER -> this.adjudicateBroaderSuppliedSignature(supplied, inferred);
+							case SUPPLIED_TIGHTER, INCOMPARABLE -> this.reportSuppliedSignatureDisagreement(supplied, inferred);
+							case AGREEMENT ->
+									// No transformation applies, so the already-optimal verdict reports (issue 865's model: a function the
+									// refactoring cannot further improve "fails" it, benignly).
+									this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+											"Functions with no Python literal arguments may benefit from hybridization.");
 							}
-							}
-
-							// No transformation applies, so the already-optimal verdict reports (issue 865's model: a function the
-							// refactoring cannot further improve "fails" it, benignly): staying hybrid is this function's best form,
-							// and the relation entries above inform beside the verdict.
-							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-									"Functions with no Python literal arguments may benefit from hybridization.");
 						} else if (reconfigureOtherwiseViable && unresolvedStaticallyReadAxes) {
 							// The one emission issue 865 removes: this function is NOT already optimal, since a signature
 							// improvement existed and was withheld as unwritable, so the already-optimal verdict would be false
@@ -2222,6 +2240,8 @@ public class Function {
 			rankReads.addAll(nodeReads.rankReads());
 		}
 
+		this.staticShapeReads = new StaticShapeReadAnalysis.StaticShapeReads(reads, rankReads);
+
 		// An extent-sensitive read blocks on any non-concrete covered axis; a rank-sensitive-only read (`as_list`, `rank`/`ndims`,
 		// `len`; #809) blocks only when the affected spec's rank itself is unknown (`shape=None`), which every such surface breaks on.
 		boolean unresolved = reads.stream().anyMatch(this::isUnresolvedRead) || rankReads.stream().anyMatch(this::isRankUnresolvedRead);
@@ -2279,6 +2299,262 @@ public class Function {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Adjudicates a supplied input signature that is strictly broader than the inferred one (issue 808). Every reachable caller conforms to
+	 * the inferred signature, so narrowing to it preserves behavior, and the decorator is reconfigured ({@link PreconditionSuccess#P5}).
+	 * The narrowing is declined in three cases, each leaving the supplied signature unchanged:
+	 * <ul>
+	 * <li>The signature is given by name rather than as a literal. The name may be shared with other decorators, and rewriting it for this
+	 * function alone would split it ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}).</li>
+	 * <li>A supplied dtype is {@link DType#UNKNOWN}. The narrowing would then replace a dtype that was never read, which can change how
+	 * non-tensor arguments are cast. The supplied-signature parser declines to model any dtype it cannot read, so this is a defensive check
+	 * rather than a reachable case.</li>
+	 * <li>The narrowing changes a shape the function reads statically at trace time, so it changes the traced program
+	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}).</li>
+	 * </ul>
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature, which {@code supplied} is strictly broader than.
+	 */
+	private void adjudicateBroaderSuppliedSignature(InputSignature supplied, InputSignature inferred) {
+		exprType suppliedNode = this.getHybridizationParameters().getSuppliedInputSignatureNode();
+
+		if (!(suppliedNode instanceof org.python.pydev.parser.jython.ast.List || suppliedNode instanceof Tuple)) {
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME,
+					"This hybrid function's input signature is broader than its call sites require, but it is given by name and may be "
+							+ "shared with other functions, so it is left unchanged.");
+			return;
+		}
+
+		boolean unreadDType = supplied.entries().stream().flatMap(entry -> coveredTypes(entry).stream())
+				.anyMatch(type -> type.getDType() == DType.UNKNOWN);
+
+		if (unreadDType) {
+			this.addWarning("This hybrid function's input signature is broader than its call sites require, but it declares a dtype that "
+					+ "could not be read, so it is left unchanged.");
+			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+					"Functions with no Python literal arguments may benefit from hybridization.");
+			return;
+		}
+
+		if (this.narrowingChangesStaticallyReadShape(supplied, inferred)) {
+			this.addFailure(PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE,
+					"This hybrid function's input signature is broader than its call sites require, but narrowing it would change a shape "
+							+ "the function reads while it is traced, so it is left unchanged.");
+			return;
+		}
+
+		this.addInfo("This hybrid function's input signature is broader than its call sites require and will be narrowed to the inferred "
+				+ "one; every reachable call already conforms to it.");
+		this.addTransformation(RECONFIGURE);
+		this.setPassingPrecondition(P5);
+	}
+
+	/**
+	 * Reports a supplied input signature that is strictly tighter than the inferred one, or incomparable with it (issue 808). Some
+	 * reachable call violates the supplied signature, so rewriting it would repair the program rather than refactor it, and the
+	 * precondition {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS} fails. Each disagreeing parameter gets a
+	 * warning saying what the violating call does at runtime: a shape mismatch raises; a dtype mismatch raises for a tensor argument and is
+	 * silently cast for a non-tensor one, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites.
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature.
+	 */
+	private void reportSuppliedSignatureDisagreement(InputSignature supplied, InputSignature inferred) {
+		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
+		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
+
+		if (suppliedEntries.size() != inferredEntries.size())
+			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size()
+					+ " parameters, but its reachable calls pass " + inferredEntries.size() + "; such a call raises at runtime.");
+		else {
+			List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+					.toList();
+
+			for (int i = 0; i < suppliedEntries.size(); i++) {
+				InputSignature.SpecEntry suppliedEntry = suppliedEntries.get(i);
+				InputSignature.SpecEntry inferredEntry = inferredEntries.get(i);
+				InputSignature.Relation relation = InputSignature.relate(suppliedEntry, inferredEntry);
+
+				if (relation != InputSignature.Relation.SUPPLIED_TIGHTER && relation != InputSignature.Relation.INCOMPARABLE)
+					continue;
+
+				Parameter parameter = i < covered.size() ? covered.get(i) : null;
+				String subject = parameter == null ? "Parameter " + (i + 1) : "Parameter `" + parameter.getName() + "`";
+
+				if (!(suppliedEntry instanceof InputSignature.Single suppliedSingle
+						&& inferredEntry instanceof InputSignature.Single inferredSingle)) {
+					this.addWarning(subject + " is declared with a different structure than a reachable call passes; that call raises at "
+							+ "runtime.");
+					continue;
+				}
+
+				TensorType suppliedType = suppliedSingle.type();
+				TensorType inferredType = inferredSingle.type();
+				InputSignature.Relation shapeRelation = InputSignature.relateShape(suppliedType.getDims(), inferredType.getDims());
+				InputSignature.Relation dtypeRelation = InputSignature.relateDType(suppliedType.getDType(), inferredType.getDType());
+
+				if (shapeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || shapeRelation == InputSignature.Relation.INCOMPARABLE)
+					this.addWarning(subject + " is declared with shape " + describeShape(suppliedType.getDims())
+							+ ", which a reachable call does not match; that call raises at runtime.");
+
+				if (dtypeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || dtypeRelation == InputSignature.Relation.INCOMPARABLE) {
+					String declared = suppliedType.getDType().name().toLowerCase(Locale.ROOT);
+					String passed = inferredType.getDType().name().toLowerCase(Locale.ROOT);
+					Set<ArgumentKind> kinds = parameter == null || this.argumentKinds == null ? null : this.argumentKinds.get(parameter);
+
+					if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.TENSOR)))
+						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a tensor of dtype "
+								+ passed + "; that call raises at runtime.");
+					else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NON_TENSOR)))
+						this.addWarning(subject + " is declared with dtype " + declared
+								+ ", but a reachable call passes a non-tensor value of dtype " + passed
+								+ ", which TensorFlow silently casts to " + declared + ".");
+					else
+						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a value of dtype "
+								+ passed + "; that call raises at runtime if the value is a tensor, and is silently cast to " + declared
+								+ " otherwise.");
+				}
+			}
+		}
+
+		this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
+				"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
+						+ "calls would repair the program rather than refactor it.");
+	}
+
+	/**
+	 * Renders a shape the way {@code tf.TensorSpec} spells it: {@code None} for an unknown rank, otherwise a tuple with {@code None} for
+	 * each axis that is not a concrete extent.
+	 *
+	 * @param dims The dimensions, or {@code null} for an unknown rank.
+	 * @return The rendered shape.
+	 */
+	private static String describeShape(List<Dimension<?>> dims) {
+		if (dims == null)
+			return "None";
+
+		List<String> parts = dims.stream().map(dim -> dim instanceof NumericDim numeric ? String.valueOf(numeric.value()) : "None")
+				.toList();
+
+		return "(" + String.join(", ", parts) + (parts.size() == 1 ? ",)" : ")");
+	}
+
+	/**
+	 * Whether narrowing the supplied input signature to the inferred one would change a shape this function reads statically at trace time
+	 * (issue 808). Under a signature, a statically read axis is whatever the signature declares; narrowing changes the program the function
+	 * traces wherever a read touches an axis, or a rank, on which the two signatures differ. Lost provenance widens to every parameter and
+	 * lost coverage to every axis, and reads that were never collected count as a change, so the answer errs toward declining.
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature, which {@code supplied} is broader than.
+	 * @return True iff some static read touches a position where the two signatures differ, or the reads are unknown.
+	 */
+	private boolean narrowingChangesStaticallyReadShape(InputSignature supplied, InputSignature inferred) {
+		if (this.staticShapeReads == null)
+			return true;
+
+		// The positions a read's parameter ordinals name: the index of each named non-`self` parameter among those the inferred signature
+		// covers, which is also the supplied signature's index for that parameter, since the two relate position by position.
+		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+				.toList();
+		List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
+		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
+
+		java.util.function.Function<StaticShapeReadAnalysis.AxisRead, List<Integer>> positions = read -> {
+			if (read.parameterOrdinals() == null)
+				return java.util.stream.IntStream.range(0, Math.min(suppliedEntries.size(), inferredEntries.size())).boxed().toList();
+
+			List<Integer> ret = new ArrayList<>();
+
+			for (int ordinal : read.parameterOrdinals())
+				if (ordinal < nonSelfParameters.size()) {
+					int position = covered.indexOf(nonSelfParameters.get(ordinal));
+
+					if (position >= 0 && position < suppliedEntries.size() && position < inferredEntries.size())
+						ret.add(position);
+				}
+
+			return ret;
+		};
+
+		for (StaticShapeReadAnalysis.AxisRead read : this.staticShapeReads.rankReads())
+			for (int position : positions.apply(read))
+				if (!sameRanks(suppliedEntries.get(position), inferredEntries.get(position)))
+					return true;
+
+		for (StaticShapeReadAnalysis.AxisRead read : this.staticShapeReads.axisReads())
+			for (int position : positions.apply(read))
+				if (!sameAxes(suppliedEntries.get(position), inferredEntries.get(position), read.axes()))
+					return true;
+
+		return false;
+	}
+
+	/**
+	 * Whether two spec entries declare the same rank for every tensor they cover. Entries of different structure never do.
+	 *
+	 * @param a One entry.
+	 * @param b The other entry.
+	 * @return True iff the entries cover the same number of tensors and each pair has equal ranks (both unknown counts as equal).
+	 */
+	private static boolean sameRanks(InputSignature.SpecEntry a, InputSignature.SpecEntry b) {
+		List<TensorType> as = coveredTypes(a);
+		List<TensorType> bs = coveredTypes(b);
+
+		if (a.getClass() != b.getClass() || as.size() != bs.size())
+			return false;
+
+		for (int i = 0; i < as.size(); i++) {
+			List<Dimension<?>> ad = as.get(i).getDims();
+			List<Dimension<?>> bd = bs.get(i).getDims();
+
+			if (ad == null || bd == null ? ad != bd : ad.size() != bd.size())
+				return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Whether two spec entries declare the same extent on the given axes of every tensor they cover, which requires the same ranks too.
+	 *
+	 * @param a One entry.
+	 * @param b The other entry.
+	 * @param axes The axes read, or {@code null} when coverage was lost and any axis may be read.
+	 * @return True iff the entries agree on every read axis.
+	 */
+	private static boolean sameAxes(InputSignature.SpecEntry a, InputSignature.SpecEntry b, Set<Integer> axes) {
+		if (!sameRanks(a, b))
+			return false;
+
+		List<TensorType> as = coveredTypes(a);
+		List<TensorType> bs = coveredTypes(b);
+
+		for (int i = 0; i < as.size(); i++) {
+			List<Dimension<?>> ad = as.get(i).getDims();
+			List<Dimension<?>> bd = bs.get(i).getDims();
+
+			if (ad == null)
+				continue; // Both unknown rank (sameRanks): no axis is declared by either.
+
+			if (axes == null) {
+				if (!ad.equals(bd))
+					return false;
+			} else
+				for (int axis : axes) {
+					int index = axis < 0 ? ad.size() + axis : axis;
+
+					if (index >= 0 && index < ad.size() && !ad.get(index).equals(bd.get(index)))
+						return false;
+				}
+		}
+
+		return true;
 	}
 
 	/**
@@ -3805,6 +4081,102 @@ public class Function {
 	}
 
 	/**
+	 * Computes, for each non-{@code self} parameter, the kinds of argument its reachable call sites pass, storing the result for the
+	 * supplied-signature adjudication (issue 808). A dtype disagreement with a supplied signature behaves differently by argument kind: a
+	 * tensor of the wrong dtype raises, while a non-tensor value is silently cast to the declared dtype. A call site whose argument cannot
+	 * be aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
+	 * {@link ArgumentKind#UNKNOWN}; a call site that omits the parameter contributes nothing. When the function has no call-graph node, the
+	 * result is left {@code null}.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeArgumentKinds(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine the argument kinds of " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			LOG.info("Can't determine the argument kinds of " + this + " without a call graph node.");
+			return;
+		}
+
+		Map<Parameter, Set<ArgumentKind>> kinds = new HashMap<>();
+
+		for (Parameter parameter : this.getParameters()) {
+			if (parameter.isSelf())
+				continue;
+
+			// The callee occupies positional slot 0 of the invoke, so the parameter at declaration index i (self at 0) is the invoke's
+			// positional argument i + 1, as in `isSuppliedAtAnyCallSite`.
+			int positionalSlot = parameter.getIndex() + 1;
+			Set<ArgumentKind> parameterKinds = EnumSet.noneOf(ArgumentKind.class);
+
+			for (CGNode node : nodes)
+				for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+					IR ir = predecessor.getIR();
+
+					if (ir == null) {
+						parameterKinds.add(ArgumentKind.UNKNOWN);
+						continue;
+					}
+
+					for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+						for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+							if (!(instruction instanceof PythonInvokeInstruction invoke)
+									|| hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
+								parameterKinds.add(ArgumentKind.UNKNOWN);
+								continue;
+							}
+
+							int use;
+
+							if (invoke.getKeywords().contains(parameter.getName()))
+								use = invoke.getUse(parameter.getName());
+							else if (invoke.getNumberOfPositionalParameters() > positionalSlot)
+								use = invoke.getUse(positionalSlot);
+							else
+								continue; // This call site omits the parameter.
+
+							PointerKey argumentKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, use);
+							parameterKinds.add(argumentKind(tensorTypedKeys.get(argumentKey)));
+						}
+				}
+
+			kinds.put(parameter, parameterKinds);
+		}
+
+		this.argumentKinds = kinds;
+	}
+
+	/**
+	 * Classifies an argument by the producing-library origins of its tensor type. A value the analysis does not type as a tensor at all, or
+	 * one produced only by NumPy, is a non-tensor that TensorFlow converts (and so casts) at the signature boundary; one produced only by
+	 * TensorFlow is a tensor, whose dtype must match. A parameter passed through from the caller, an annotation-typed value, or a value of
+	 * mixed provenance is undecided.
+	 *
+	 * @param origins The argument's origins, or {@code null} when it is not tensor-typed.
+	 * @return The argument's kind.
+	 */
+	private static ArgumentKind argumentKind(Set<TensorOrigin> origins) {
+		if (origins == null || origins.isEmpty() || origins.equals(EnumSet.of(TensorOrigin.NUMPY)))
+			return ArgumentKind.NON_TENSOR;
+
+		if (origins.equals(EnumSet.of(TensorOrigin.TENSORFLOW)))
+			return ArgumentKind.TENSOR;
+
+		return ArgumentKind.UNKNOWN;
+	}
+
+	/**
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
 	 * tensor-type analysis associated with at least one tensor type. Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the
 	 * values are computed during {@link #inferTensorParameters} (which caches per-parameter tensor types on each {@link Parameter}), and
@@ -4706,8 +5078,6 @@ public class Function {
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
 		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
-		assert this.getHybridizationParameters() == null || !this.getHybridizationParameters()
-				.hasInputSignatureParam() : "RECONFIGURE is selected only for a decorator without an input_signature (issue 808).";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -4716,6 +5086,22 @@ public class Function {
 
 		if (ctx == null)
 			return ret;
+
+		if (this.getHybridizationParameters() != null && this.getHybridizationParameters().hasInputSignatureParam()) {
+			// Narrowing path (P5, issue 808): replace the supplied literal signature in place with the inferred one. Only a literal is
+			// narrowed (a named signature declines in `check`), so the node is the list or tuple itself.
+			exprType suppliedNode = this.getHybridizationParameters().getSuppliedInputSignatureNode();
+			assert suppliedNode instanceof org.python.pydev.parser.jython.ast.List
+					|| suppliedNode instanceof Tuple : "Only a literal input signature is narrowed (issue 808).";
+
+			Optional<String> replacement = this.inferInputSignature().signature().map(sig -> sig.toTensorSpecList(ctx.prefix()));
+			int[] span = literalSpan(doc, suppliedNode);
+
+			if (replacement.isPresent() && span != null)
+				ret.add(new ReplaceEdit(span[0], span[1] - span[0], replacement.get()));
+
+			return ret;
+		}
 
 		decoratorsType decorator = this.hybridDecorator;
 
@@ -4777,6 +5163,41 @@ public class Function {
 			ret.add(mte);
 
 		return ret;
+	}
+
+	/**
+	 * The text span of a list or tuple literal in the document: from its opening bracket through its matching closing bracket. PyDev
+	 * positions both a list and a parenthesized tuple at their opening bracket. Bracket nesting is tracked without regard to string
+	 * literals, which an input signature's specs do not contain in a way that would unbalance it.
+	 *
+	 * @param doc The document.
+	 * @param node The list or tuple literal.
+	 * @return The start and end offsets (end exclusive), or {@code null} if the node does not start at a bracket or no balanced pair is
+	 *         found.
+	 * @throws BadLocationException If an offset cannot be resolved.
+	 */
+	private static int[] literalSpan(IDocument doc, exprType node) throws BadLocationException {
+		int start = getOffset(doc, node);
+
+		if (start < 0 || start >= doc.getLength() || doc.getChar(start) != '[' && doc.getChar(start) != '(')
+			return null;
+
+		int depth = 0;
+
+		for (int offset = start; offset < doc.getLength(); offset++) {
+			char c = doc.getChar(offset);
+
+			if (c == '(' || c == '[' || c == '{')
+				++depth;
+			else if (c == ')' || c == ']' || c == '}') {
+				--depth;
+
+				if (depth == 0)
+					return new int[] { start, offset + 1 };
+			}
+		}
+
+		return null;
 	}
 
 	/**

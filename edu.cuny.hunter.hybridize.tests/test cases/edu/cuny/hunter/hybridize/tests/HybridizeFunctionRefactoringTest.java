@@ -12,12 +12,16 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -2074,7 +2078,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigurePreserveTighter() throws Exception {
-		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which a reachable call does not match");
 	}
 
 	/**
@@ -2084,7 +2088,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigurePreserveNameReference() throws Exception {
-		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which a reachable call does not match");
 	}
 
 	/**
@@ -2096,7 +2100,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigurePreserveIncomparable() throws Exception {
-		helperAssertAdjudicationReportsOnly("disagrees with its call sites");
+		helperAssertAdjudicationReportsOnly("passes a tensor of dtype int32; that call raises at runtime");
 	}
 
 	/**
@@ -2122,27 +2126,121 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		boolean found = Arrays.stream(f.getStatus().getEntries()).anyMatch(e -> e.isWarning() && e.getMessage().contains(messageFragment));
 		assertTrue("Expected an adjudication warning containing: " + messageFragment, found);
 
-		assertNotNull("The adjudicated function terminates in the no-primitive-parameters failure.",
-				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNotNull("A disagreeing supplied signature fails its precondition (#808).",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
 	}
 
 	/**
-	 * Modify path (#596), supplied-broader: the existing {@code input_signature} (an unknown-rank shape) is broader than the call sites
-	 * require, so it is preserved (not overwritten) and the divergence is reported informationally.
+	 * Narrowing path (#808), supplied-broader: the existing {@code input_signature} (an unknown-rank shape) is broader than the call sites
+	 * require. Under the closed-world assumption every reachable caller conforms to the inferred signature, so the supplied one is narrowed
+	 * to it ({@code P5}) and the decorator's literal is replaced in place.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
-	public void testReconfigurePreserveBroader() throws Exception {
+	public void testReconfigureNarrowBroader() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Tuple-literal variant of {@link #testReconfigureNarrowBroader()} (#808): the supplied signature is a parenthesized tuple, and the
+	 * whole tuple, parentheses included, is replaced by the inferred signature.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderTuple() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Shared assertion for the narrowing tests (#808): the single hybrid fixture function selects {@code RECONFIGURE} with the {@code P5}
+	 * passing precondition, and applying its edits yields the expected output, in which the supplied literal is replaced by the inferred
+	 * signature.
+	 */
+	private void helperAssertNarrowing() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertFalse("A broader supplied signature must not be overwritten.", f.getTransformations().contains(RECONFIGURE));
-		assertTrue("Expected an informational status about preserving the broader signature.", Arrays.stream(f.getStatus().getEntries())
-				.anyMatch(e -> e.isInfo() && e.getMessage().contains("broader than its call sites require")));
+		assertEquals("A broader supplied signature is narrowed.", singleton(RECONFIGURE), f.getTransformations());
+		assertEquals("Narrowing sets the P5 passing precondition.", P5, f.getPassingPrecondition());
+
+		IDocument doc = f.getContainingDocument();
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
+	 * Shared assertion for the declined-narrowing tests (#808): the supplied signature is broader than the call sites require, but the
+	 * narrowing is declined with the given failure, no transformation is selected, and the supplied signature stays modeled and untouched.
+	 *
+	 * @param failure The failure the declined narrowing reports.
+	 */
+	private void helperAssertNarrowingDeclined(PreconditionFailure failure) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on a declined narrowing.", f.getPassingPrecondition());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+		assertNotNull("The declined narrowing reports " + failure + ".", f.getEntryMatchingFailure(failure));
+	}
+
+	/**
+	 * A broader supplied signature given by name rather than as a literal (#808): the name's binding may be shared with other decorators,
+	 * so rewriting it for one function would split it, and the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderNameReference() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME);
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would change a shape the function reads statically (#808): the body passes an axis read
+	 * into a reshape target, which the supplied signature leaves unknown and the inferred one fixes, so the narrowing would change the
+	 * traced program and is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticRead() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature whose dtype cannot be read (#808): the supplied-signature parser declines to model it, so it never
+	 * reaches the narrowing at all. This pins the invariant that makes the narrowing's defensive unknown-dtype check unreachable: a dtype
+	 * the tool did not read is never replaced.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreadDType() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A signature whose dtype was not read is not modeled.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
+		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * Incomparable dtype with a non-tensor argument (#808): the supplied signature declares float32, but the reachable call passes a NumPy
+	 * array of dtype int64, which TensorFlow silently casts at the signature boundary rather than rejecting. The precondition fails and the
+	 * warning says the value is cast, not that the call raises.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpy() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a non-tensor value of dtype int64, which TensorFlow silently casts to float32");
 	}
 
 	/**
