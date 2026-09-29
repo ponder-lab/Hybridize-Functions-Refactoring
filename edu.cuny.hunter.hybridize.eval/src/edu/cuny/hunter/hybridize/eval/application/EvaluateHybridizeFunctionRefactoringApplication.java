@@ -312,8 +312,8 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 	/**
 	 * Imports one project from the given directory, which must be absolute. A directory with a committed {@code .project} is imported from
-	 * it, and its {@code .pydevproject}, if any, comes along unchanged; source folders may not be given for it, since that file already
-	 * decides them. A directory without one is created as a PyDev project by {@link #createProject(IWorkspace, File, List)}. The project
+	 * it, and its {@code .pydevproject}, if any, comes along unchanged; source folders given for it must be the ones that file names, since
+	 * it decides them. A directory without one is created as a PyDev project by {@link #createProject(IWorkspace, File, List)}. The project
 	 * keeps the location its description loads with: its directory, or the default location when that directory is the workspace's own
 	 * directory for the project's name. A directory elsewhere under the workspace root is refused by the workspace, which this reports as a
 	 * failure rather than redirecting the project to an empty default location.
@@ -350,6 +350,12 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 		try {
 			directory = directory.getCanonicalFile();
+
+			if (!directory.isDirectory()) {
+				LOG.error("Cannot import " + directory + ": it is not an existing directory.");
+				return false;
+			}
+
 			File descriptionFile = new File(directory, PROJECT_DESCRIPTION_FILE);
 
 			if (!descriptionFile.isFile()) {
@@ -361,7 +367,8 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 				List<String> folders = sourceFolders != null ? sourceFolders : sourceFoldersFromPackaging(directory);
 
-				if (folders == null)
+				// Validated before anything in the workspace changes.
+				if (folders == null || sourcePath(directory, folders) == null)
 					return false;
 
 				project = workspace.getRoot().getProject(directory.getName());
