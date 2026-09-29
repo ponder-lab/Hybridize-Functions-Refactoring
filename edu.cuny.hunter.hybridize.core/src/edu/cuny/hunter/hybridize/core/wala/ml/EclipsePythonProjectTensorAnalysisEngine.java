@@ -51,29 +51,12 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		}
 	}
 
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) {
-		super(pythonPath);
-		this.initialize(project, Collections.emptySet());
-	}
-
 	/**
 	 * Constructs an engine that selects framework methods, {@code tf.keras.Model} subclasses, and user model-forward methods with the given
 	 * targeted k-CFA depth, rather than the default {@link PythonTensorAnalysisEngine#DEFAULT_TARGETED_CFA_DEPTH}. A deeper depth recovers
 	 * precise per-context tensor shapes for the model-forward archetype (chained-layer calls), at a cost confined to those targeted methods
-	 * (#600).
-	 *
-	 * @param project The project to analyze.
-	 * @param pythonPath The Python path entries.
-	 * @param targetedCfaDepth The targeted k-CFA depth to forward to the analysis engine.
-	 */
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath, int targetedCfaDepth) {
-		this(project, pythonPath, targetedCfaDepth, Collections.emptySet());
-	}
-
-	/**
-	 * Constructs an engine as {@link #EclipsePythonProjectTensorAnalysisEngine(IProject, List, int)} does, leaving the given scripts out of
-	 * the analysis: scripts under no PYTHONPATH entry that the caller chose to skip rather than fail on
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/990).
+	 * (#600). The given scripts are left out of the analysis: scripts under no PYTHONPATH entry that the caller chose to skip rather than
+	 * fail on (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/990).
 	 *
 	 * @param project The project to analyze.
 	 * @param pythonPath The Python path entries.
@@ -84,10 +67,6 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 			Collection<IPath> excludedScripts) {
 		super(pythonPath, TENSORFLOW, targetedCfaDepth);
 		this.initialize(project, excludedScripts);
-	}
-
-	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
-		this.initialize(project, Collections.emptySet());
 	}
 
 	private void initialize(IProject project, Collection<IPath> excludedScripts) {

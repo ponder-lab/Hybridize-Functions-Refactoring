@@ -32,4 +32,5 @@ Import-Package: com.ibm.wala.cast.python.client;version="0.1.0",
  org.python.pydev.ast.interpreter_managers,
  org.python.pydev.core,
  org.python.pydev.shared_core.preferences,
+ org.python.pydev.shared_core.resource_stubs,
  org.python.pydev.shared_ui.bundle

@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
@@ -949,17 +950,17 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * Resolves a script name the analysis reports to a path relative to the project's directory.
 	 *
 	 * @param project The project.
-	 * @param script The script's name, as the analysis reports it: absolute, or relative to the project's directory.
+	 * @param script The script's name, as the analysis reports it: absolute, or relative to the directory the engine collects the project's
+	 *        scripts from.
 	 * @return The script's path relative to the project's directory, or {@code null} if it is not within the project.
 	 */
 	private static IPath projectRelative(IProject project, String script) {
-		IPath location = project.getLocation();
+		// The directory the engine collects the project's scripts from, which the analysis names them against.
+		IPath location = getPath(project);
 		IPath path = org.eclipse.core.runtime.Path.fromOSString(script);
+		IPath absolute = path.isAbsolute() ? path : location.append(path);
 
-		if (!path.isAbsolute())
-			return location == null || location.append(path).toFile().isFile() ? path : null;
-
-		return location != null && location.isPrefixOf(path) ? path.makeRelativeTo(location) : null;
+		return location.isPrefixOf(absolute) && absolute.toFile().isFile() ? absolute.makeRelativeTo(location) : null;
 	}
 
 	/**
