@@ -598,13 +598,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	/**
-	 * Returns a {@link Stream} of {@link Function}s. Properties of the stream are dependent on the state of this
-	 * {@link HybridizeFunctionRefactoringProcessor}.
-	 *
-	 * @param functions The {@link Set} of {@link Function}s from which to derive a {@link Stream}.
-	 * @return A potentially parallel {@link Stream} of {@link Function}s.
-	 */
-	/**
 	 * Whether the function has a supplied input signature that the adjudication compares with the inferred one (issue 808): it is hybrid,
 	 * inference is on, and the supplied signature is modeled.
 	 *
@@ -616,6 +609,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				&& func.getHybridizationParameters().getSuppliedInputSignature().isPresent();
 	}
 
+	/**
+	 * Returns a {@link Stream} of {@link Function}s. Properties of the stream are dependent on the state of this
+	 * {@link HybridizeFunctionRefactoringProcessor}.
+	 *
+	 * @param functions The {@link Set} of {@link Function}s from which to derive a {@link Stream}.
+	 * @return A potentially parallel {@link Stream} of {@link Function}s.
+	 */
 	private Stream<Function> getStream(Set<Function> functions) {
 		Stream<Function> stream = functions.stream();
 		return this.getProcessFunctionsInParallel() ? stream.parallel() : stream;

@@ -269,19 +269,19 @@ public record InputSignature(List<SpecEntry> entries) {
 
 		/**
 		 * The supplied signature is strictly more specific than the inferred one (it would reject inputs the call-site evidence shows the
-		 * function receives). The inferred signature should replace it.
+		 * function receives). Some reachable call violates it, so it is reported and left unchanged.
 		 */
 		SUPPLIED_TIGHTER,
 
 		/**
-		 * The supplied signature is strictly more general than the inferred one (it admits more inputs than the evidence requires). The
-		 * supplied signature should be preserved, as the broader contract may be intentional and invisible to the static analysis.
+		 * The supplied signature is strictly more general than the inferred one (it admits more inputs than the evidence requires). Under
+		 * the closed-world assumption it is narrowed to the inferred one, unless a precondition declines the narrowing.
 		 */
 		SUPPLIED_BROADER,
 
 		/**
 		 * The supplied and inferred signatures are incomparable—each is more specific than the other on some axis (or they differ in shape
-		 * rank, parameter count, entry structure, or concrete dtype). The inferred signature should replace it.
+		 * rank, parameter count, entry structure, or concrete dtype). It is reported and left unchanged.
 		 */
 		INCOMPARABLE
 	}
@@ -291,9 +291,9 @@ public record InputSignature(List<SpecEntry> entries) {
 	 * {@link Function#inferInputSignature}. See {@link Relation} for the partial order. A {@link Single} against a {@link Sequence} (in
 	 * either direction) is {@link Relation#INCOMPARABLE}: the two admit disjoint call structures, since TensorFlow enforces the declared
 	 * nesting. Two {@link Sequence}s of different arity are likewise incomparable (no wildcard arity exists); at equal arity they relate by
-	 * folding the element relations. Used by {@link Function#check()} to decide whether an existing {@code input_signature} should be
-	 * overwritten ({@link Relation#SUPPLIED_TIGHTER}, {@link Relation#INCOMPARABLE}), preserved ({@link Relation#SUPPLIED_BROADER}), or
-	 * left untouched ({@link Relation#AGREEMENT}).
+	 * folding the element relations. Used by {@link Function#check()} to decide whether an existing {@code input_signature} is narrowed
+	 * ({@link Relation#SUPPLIED_BROADER}), reported as disagreeing with the calls ({@link Relation#SUPPLIED_TIGHTER},
+	 * {@link Relation#INCOMPARABLE}), or left untouched ({@link Relation#AGREEMENT}).
 	 *
 	 * @param inferred The signature inferred from call-site evidence.
 	 * @return How this (supplied) signature relates to {@code inferred}.

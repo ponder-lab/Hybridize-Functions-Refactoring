@@ -159,8 +159,8 @@ public enum PreconditionFailure {
 	 * The function's supplied {@code input_signature} disagrees with its reachable call sites: it is strictly tighter than the inferred
 	 * signature, or incomparable with it. Since the inferred signature is the join over those call sites, some reachable call already
 	 * violates the supplied one: it raises at runtime (a shape mismatch, or a tensor of the wrong dtype), or TensorFlow silently casts it
-	 * to the declared dtype (a non-tensor value such as a NumPy array or a Python list). Rewriting the signature to admit the call would
-	 * repair the program rather than refactor it, so the signature is left unchanged and the disagreement is reported.
+	 * to the declared dtype (a NumPy array). Rewriting the signature to admit the call would repair the program rather than refactor it, so
+	 * the signature is left unchanged and the disagreement is reported.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
@@ -188,15 +188,26 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but the function is part of an
-	 * interface the program exports: a SavedModel written by {@code tf.saved_model.save} (as a {@code signatures} entry, or as a
-	 * {@code tf.function} of the saved object), or a TensorFlow Lite model converted from it. The exported interface fixes the signature
-	 * for its consumers as well as for the reachable callers, so narrowing it could reject inputs the exported model is meant to accept.
-	 * This is a stated relaxation of the closed-world assumption, taken only for true exports: a {@code get_concrete_function} call that
-	 * only forces a trace does not count. The supplied signature is left unchanged.
+	 * interface the program exports, or whether it is could not be determined. The exports recognized are a SavedModel written by
+	 * {@code tf.saved_model.save}, a model's {@code save}, or {@code tf.keras.models.save_model} (as a {@code signatures} value, directly
+	 * or through {@code get_concrete_function}, or as a function of the saved object or its class hierarchy, including one assigned to an
+	 * attribute), and a TensorFlow Lite model converted by {@code from_concrete_functions} or {@code from_keras_model}. The exported
+	 * interface fixes the signature for its consumers as well as for the reachable callers, so narrowing it could reject inputs the
+	 * exported model is meant to accept. This is a stated relaxation of the closed-world assumption, taken only for true exports: a
+	 * {@code get_concrete_function} call that only forces a trace does not count. The supplied signature is left unchanged.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
-	SUPPLIED_INPUT_SIGNATURE_EXPORTED(29);
+	SUPPLIED_INPUT_SIGNATURE_EXPORTED(29),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but its literal carries text the
+	 * narrowed signature would drop: a spec argument other than the shape and dtype (most often a {@code name}, which changes the traced
+	 * placeholders and the function's structured input signature), a comment, or a string. The supplied signature is left unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	NARROWING_WOULD_DROP_SPEC_TEXT(30);
 
 	static {
 		// check that the codes are unique.

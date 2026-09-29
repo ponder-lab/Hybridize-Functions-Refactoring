@@ -10,7 +10,11 @@ class M(tf.Module):
         return t + 1
 
 
+class N(tf.Module):
+    pass
+
+
 if __name__ == "__main__":
     m = M()
     m.f(tf.constant(2.0))
-    tf.saved_model.save(tf.Module(), "exported", signatures=m.f)
+    tf.saved_model.save(N(), "exported", signatures=m.f)

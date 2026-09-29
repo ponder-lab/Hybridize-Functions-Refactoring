@@ -14,8 +14,10 @@ public enum PreconditionSuccess {
 	 * A hybrid function whose existing {@code input_signature} is strictly broader than its reachable call sites require: narrow it to the
 	 * inferred signature. Under the closed-world assumption the reachable call sites are all the callers, and every one of them already
 	 * conforms to the inferred signature, so narrowing preserves behavior and yields a tighter signature. The narrowing is taken only for a
-	 * literal signature (a named one may be shared; {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}) whose narrowing
-	 * changes no statically read shape ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}).
+	 * literal signature (a named one may be shared; {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}) of a function the
+	 * program does not export ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_EXPORTED}), whose literal carries nothing the narrowing
+	 * would drop ({@link PreconditionFailure#NARROWING_WOULD_DROP_SPEC_TEXT}), and whose narrowing changes no statically read shape
+	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}).
 	 * <p>
 	 * The other relations are never rewritten. A supplied signature strictly tighter than the inferred one, or incomparable with it, means
 	 * some reachable call already violates it, and rewriting to admit that call would repair the program rather than refactor it

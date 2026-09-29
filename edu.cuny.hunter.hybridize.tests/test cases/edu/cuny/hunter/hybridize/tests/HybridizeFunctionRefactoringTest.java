@@ -13,6 +13,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PR
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME;
@@ -2073,13 +2074,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Adjudication path (#596, made report-only by #808), supplied-tighter: the existing {@code input_signature} is more specific than the
 	 * call-site evidence (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the
 	 * inferred signature is the join over the observed call sites, this relation means a nonconforming observed call raises at runtime;
-	 * rewriting the signature would repair rather than preserve behavior, so it is preserved and the finding surfaces as a warning.
+	 * rewriting the signature would repair rather than preserve behavior, so it is left unchanged, the finding surfaces as a warning, and
+	 * the disagreement precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
 	public void testReconfigurePreserveTighter() throws Exception {
-		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which a reachable call does not match");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which the reachable calls' evidence does not fit");
 	}
 
 	/**
@@ -2089,13 +2091,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigurePreserveNameReference() throws Exception {
-		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which a reachable call does not match");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which the reachable calls' evidence does not fit");
 	}
 
 	/**
 	 * Adjudication path (#596, made report-only by #808), incomparable: the existing {@code input_signature} is incomparable with the
-	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is
-	 * preserved and the finding surfaces as a warning.
+	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is left
+	 * unchanged, the finding surfaces as a warning, and the disagreement precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
@@ -2289,13 +2291,166 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A broader supplied signature on a method of a class the program does not export, while it saves an instance of another class (#808):
+	 * the export is matched by class, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnrelatedExport() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model saved through the model's own {@code save} (#808): the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedModelSave() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model saved through {@code tf.keras.models.save_model} (#808): the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSaveModel() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a SavedModel {@code signatures} value through its concrete function (#808):
+	 * the {@code get_concrete_function} receiver is the exported function, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedConcreteSignature() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a method a saved object inherits (#808): the saved object's class hierarchy is exported, so the
+	 * narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedInherited() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a function assigned to an attribute of a saved object (#808): the saved object's fields are exported,
+	 * so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedAttribute() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves an object the analysis cannot resolve (#808): what the save exports is unknown,
+	 * so the function may be exported, and the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolved() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a method of an object saved through an imported alias of the SavedModel module, from inside a
+	 * function (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedAlias() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertNotNull("The declined narrowing reports the export.", f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_EXPORTED));
+	}
+
+	/**
+	 * A broader supplied signature whose spec carries a {@code name} (#808): the narrowed signature would drop it, so the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderSpecName() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_WOULD_DROP_SPEC_TEXT);
+	}
+
+	/**
+	 * A broader supplied signature with a comment inside its literal (#808): the narrowed signature would drop it, so the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderComment() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_WOULD_DROP_SPEC_TEXT);
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing changes only an axis the function does not read statically (#808): the static-read
+	 * comparison is per axis, so the narrowing applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreadAxis() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A supplied signature declaring more parameters than are inferred from the reachable calls (#808): the inferred one leaves out a
+	 * defaulted parameter no call passes, so the two cannot be compared parameter by parameter. The signature is left unchanged with a
+	 * warning, and the disagreement precondition does not fail, since no call is shown to violate it.
+	 */
+	@Test
+	public void testReconfigurePreserveCountMismatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A signature of a different parameter count selects no transformation.", f.getTransformations().isEmpty());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+
+		boolean found = Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> e.isWarning() && e.getMessage().contains("cannot be compared parameter by parameter"));
+		assertTrue("Expected a warning that the signatures cannot be compared.", found);
+
+		assertNull("A count mismatch does not claim that a call violates the signature.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+	}
+
+	/**
+	 * Keyword variant of {@link #testReconfigurePreserveIncomparableNumpy()} (#808): the NumPy array is passed by keyword.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpyKeyword() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
+	}
+
+	/**
+	 * Method variant of {@link #testReconfigurePreserveIncomparableNumpy()} (#808): the NumPy array is passed to a method.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpyMethod() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
+	}
+
+	/**
+	 * A dtype disagreement whose call sites pass both a tensor and a NumPy array (#808): one raises and the other is cast, so the warning
+	 * says both.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableMixed() throws Exception {
+		helperAssertAdjudicationReportsOnly("depending on the kind of value, that call raises at runtime or is silently cast to float32");
+	}
+
+	/**
 	 * Incomparable dtype with a non-tensor argument (#808): the supplied signature declares float32, but the reachable call passes a NumPy
 	 * array of dtype int64, which TensorFlow silently casts at the signature boundary rather than rejecting. The precondition fails and the
 	 * warning says the value is cast, not that the call raises.
 	 */
 	@Test
 	public void testReconfigurePreserveIncomparableNumpy() throws Exception {
-		helperAssertAdjudicationReportsOnly("passes a non-tensor value of dtype int64, which TensorFlow silently casts to float32");
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
 	}
 
 	/**

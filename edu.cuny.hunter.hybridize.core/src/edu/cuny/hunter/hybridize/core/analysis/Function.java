@@ -1090,18 +1090,22 @@ public class Function {
 	private StaticShapeReadAnalysis.StaticShapeReads staticShapeReads;
 
 	/**
-	 * How a reachable call site's argument reaches a parameter, which decides what a dtype disagreement with a supplied input signature
-	 * does at runtime (issue 808): a tensor of the wrong dtype raises, while a non-tensor value (a NumPy array or a Python list or scalar)
-	 * is silently cast to the declared dtype.
+	 * The kind of argument a reachable call site passes a parameter, which decides what a dtype disagreement with a supplied input
+	 * signature does at runtime (issue 808). On the pinned TensorFlow, a tensor of the wrong dtype raises, while a NumPy array is silently
+	 * cast to the declared dtype in either direction. Other values, such as Python lists and scalars, raise or are cast depending on the
+	 * direction.
 	 */
 	enum ArgumentKind {
 		/** The argument is a tensor produced by a TensorFlow operation. */
 		TENSOR,
 
-		/** The argument is not a TensorFlow tensor: a NumPy array, or a value the analysis does not type as a tensor at all. */
-		NON_TENSOR,
+		/** The argument is a NumPy array. */
+		NUMPY,
 
-		/** The argument's kind could not be decided, for example a parameter passed through from the caller. */
+		/**
+		 * The argument's kind is not decided: it is not tensor-typed at all (a Python list or scalar, say), it is a parameter passed
+		 * through from the caller, or its provenance is mixed.
+		 */
 		UNKNOWN
 	}
 
@@ -2310,15 +2314,21 @@ public class Function {
 	/**
 	 * Adjudicates a supplied input signature that is strictly broader than the inferred one (issue 808). Every reachable caller conforms to
 	 * the inferred signature, so narrowing to it preserves behavior, and the decorator is reconfigured ({@link PreconditionSuccess#P5}).
-	 * The narrowing is declined in three cases, each leaving the supplied signature unchanged:
+	 * The narrowing is declined in these cases, each leaving the supplied signature unchanged:
 	 * <ul>
 	 * <li>The signature is given by name rather than as a literal. The name may be shared with other decorators, and rewriting it for this
 	 * function alone would split it ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}).</li>
+	 * <li>The function is part of an interface the program exports, or whether it is could not be determined
+	 * ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_EXPORTED}).</li>
+	 * <li>The literal carries text the narrowed signature would drop, such as a spec's {@code name}, a comment, or a string
+	 * ({@link PreconditionFailure#NARROWING_WOULD_DROP_SPEC_TEXT}).</li>
 	 * <li>A supplied dtype is {@link DType#UNKNOWN}. The narrowing would then replace a dtype that was never read, which can change how
 	 * non-tensor arguments are cast. The supplied-signature parser declines to model any dtype it cannot read, so this is a defensive check
 	 * rather than a reachable case.</li>
 	 * <li>The narrowing changes a shape the function reads statically at trace time, so it changes the traced program
-	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}).</li>
+	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}). The reads are those collected for the static-shape-read check
+	 * (issue 811): a {@code .shape} or {@code get_shape()} read of a parameter flowing into a shape-consuming operation in the function
+	 * itself. A read reached only through a callee, or consumed by plain Python code, is not seen.</li>
 	 * </ul>
 	 *
 	 * @param supplied The supplied input signature.
@@ -2334,10 +2344,19 @@ public class Function {
 			return;
 		}
 
-		if (TRUE.equals(this.exported)) {
-			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED,
-					"This hybrid function's input signature is broader than its call sites require, but the function is part of an "
+		if (!FALSE.equals(this.exported)) {
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED, this.exported == null
+					? "This hybrid function's input signature is broader than its call sites require, but whether the function is part of "
+							+ "an exported interface could not be determined, so it is left unchanged."
+					: "This hybrid function's input signature is broader than its call sites require, but the function is part of an "
 							+ "interface the program exports, which fixes the signature for its consumers too, so it is left unchanged.");
+			return;
+		}
+
+		if (this.narrowingWouldDropSpecText(suppliedNode)) {
+			this.addFailure(PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT,
+					"This hybrid function's input signature is broader than its call sites require, but it carries text the narrowed "
+							+ "signature would drop (a spec argument such as a name, a comment, or a string), so it is left unchanged.");
 			return;
 		}
 
@@ -2370,7 +2389,9 @@ public class Function {
 	 * reachable call violates the supplied signature, so rewriting it would repair the program rather than refactor it, and the
 	 * precondition {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS} fails. Each disagreeing parameter gets a
 	 * warning saying what the violating call does at runtime: a shape mismatch raises; a dtype mismatch raises for a tensor argument and is
-	 * silently cast for a non-tensor one, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites.
+	 * silently cast for a NumPy array, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites. When the two
+	 * signatures have different parameter counts, as when the inferred one leaves out a defaulted parameter no call passes, they cannot be
+	 * compared parameter by parameter, and the signature is left unchanged without failing this precondition.
 	 *
 	 * @param supplied The supplied input signature.
 	 * @param inferred The inferred input signature.
@@ -2379,10 +2400,21 @@ public class Function {
 		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
 		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
 
-		if (suppliedEntries.size() != inferredEntries.size())
-			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size()
-					+ " parameters, but its reachable calls pass " + inferredEntries.size() + "; such a call raises at runtime.");
-		else {
+		if (suppliedEntries.size() != inferredEntries.size()) {
+			// The inferred signature leaves out a defaulted parameter no reachable call passes (#787), so the two need not disagree:
+			// TensorFlow
+			// fills in the default and converts it against the supplied signature. They cannot be compared parameter by parameter, so the
+			// signature is left unchanged without claiming that a call violates it.
+			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but "
+					+ inferredEntries.size()
+					+ " are inferred from its reachable calls, so the two cannot be compared parameter by parameter; "
+					+ "the signature is left unchanged.");
+			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+					"Functions with no Python literal arguments may benefit from hybridization.");
+			return;
+		}
+
+		{
 			List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
 					.toList();
 
@@ -2411,7 +2443,7 @@ public class Function {
 
 				if (shapeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || shapeRelation == InputSignature.Relation.INCOMPARABLE)
 					this.addWarning(subject + " is declared with shape " + describeShape(suppliedType.getDims())
-							+ ", which a reachable call does not match; that call raises at runtime.");
+							+ ", which the reachable calls' evidence does not fit; a call whose argument does not match it raises at runtime.");
 
 				if (dtypeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || dtypeRelation == InputSignature.Relation.INCOMPARABLE) {
 					String declared = suppliedType.getDType().name().toLowerCase(Locale.ROOT);
@@ -2421,14 +2453,14 @@ public class Function {
 					if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.TENSOR)))
 						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a tensor of dtype "
 								+ passed + "; that call raises at runtime.");
-					else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NON_TENSOR)))
-						this.addWarning(subject + " is declared with dtype " + declared
-								+ ", but a reachable call passes a non-tensor value of dtype " + passed
-								+ ", which TensorFlow silently casts to " + declared + ".");
+					else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NUMPY)))
+						this.addWarning(
+								subject + " is declared with dtype " + declared + ", but a reachable call passes a NumPy array of dtype "
+										+ passed + ", which TensorFlow silently casts to " + declared + ".");
 					else
 						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a value of dtype "
-								+ passed + "; that call raises at runtime if the value is a tensor, and is silently cast to " + declared
-								+ " otherwise.");
+								+ passed + "; depending on the kind of value, that call raises at runtime or is silently cast to "
+								+ declared + ".");
 				}
 			}
 		}
@@ -2436,6 +2468,46 @@ public class Function {
 		this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
 				"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
 						+ "calls would repair the program rather than refactor it.");
+	}
+
+	/**
+	 * Whether replacing the supplied literal would drop text the developer wrote (issue 808). The supplied-signature parser reads only each
+	 * spec's shape and dtype, so a spec carrying anything else, most often a {@code name}, would lose it, and a name changes the traced
+	 * placeholders and the function's structured input signature. A comment or a string inside the literal would be lost too. The literal's
+	 * span is found by bracket matching that ignores strings, so a string there can also end it early; declining on any quote covers that.
+	 *
+	 * @param suppliedNode The supplied literal, a list or a tuple.
+	 * @return True iff narrowing would drop developer text, or the literal's text cannot be read.
+	 */
+	private boolean narrowingWouldDropSpecText(exprType suppliedNode) {
+		exprType[] elements = suppliedNode instanceof org.python.pydev.parser.jython.ast.List list ? list.elts
+				: ((Tuple) suppliedNode).elts;
+
+		if (elements != null)
+			for (exprType element : elements) {
+				if (!(element instanceof Call call) || call.args != null && call.args.length > 2 || call.starargs != null
+						|| call.kwargs != null)
+					return true;
+
+				if (call.keywords != null)
+					for (keywordType keyword : call.keywords)
+						if (!(keyword.arg instanceof NameTok name) || !"shape".equals(name.id) && !"dtype".equals(name.id))
+							return true;
+			}
+
+		try {
+			IDocument doc = this.getContainingDocument();
+			int[] span = literalSpan(doc, suppliedNode);
+
+			if (span == null)
+				return true;
+
+			String text = doc.get(span[0], span[1] - span[0]);
+			return text.indexOf('#') >= 0 || text.indexOf('"') >= 0 || text.indexOf('\'') >= 0;
+		} catch (BadLocationException e) {
+			LOG.warn("Can't read the supplied input signature of " + this + ".", e);
+			return true;
+		}
 	}
 
 	/**
@@ -4096,8 +4168,8 @@ public class Function {
 	/**
 	 * Computes, for each non-{@code self} parameter, the kinds of argument its reachable call sites pass, storing the result for the
 	 * supplied-signature adjudication (issue 808). A dtype disagreement with a supplied signature behaves differently by argument kind: a
-	 * tensor of the wrong dtype raises, while a non-tensor value is silently cast to the declared dtype. A call site whose argument cannot
-	 * be aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
+	 * tensor of the wrong dtype raises, while a NumPy array is silently cast to the declared dtype. A call site whose argument cannot be
+	 * aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
 	 * {@link ArgumentKind#UNKNOWN}; a call site that omits the parameter contributes nothing. When the function has no call-graph node, the
 	 * result is left {@code null}.
 	 *
@@ -4172,8 +4244,8 @@ public class Function {
 
 	/**
 	 * Computes whether this function is part of an interface the program exports (issue 808): its own object, or a {@code tf.function}
-	 * wrapping it, is exported as a function, or it is a method of a class whose instance is exported whole. The function's own object has
-	 * the type of its declaring-class reference, and a method's class is that reference's enclosing scope.
+	 * wrapping it, is exported as a function, or is stored on an object exported whole, as a method of the object's class hierarchy or as
+	 * an attribute. The function's own object has the type of its declaring-class reference.
 	 *
 	 * @param exportAnalysis The program's exports.
 	 */
@@ -4187,35 +4259,30 @@ public class Function {
 			return;
 		}
 
-		TypeReference classType = null;
-
-		if (this.isMethod()) {
-			String name = functionType.getName().toString();
-			int separator = name.lastIndexOf('/');
-
-			if (separator > 0)
-				classType = TypeReference.findOrCreate(functionType.getClassLoader(), name.substring(0, separator));
-		}
-
-		this.exported = exportAnalysis.isExported(functionType, classType);
-		LOG.info(this + (this.exported ? " is" : " is not") + " part of an exported interface.");
+		this.exported = exportAnalysis.isExported(functionType);
+		LOG.info(this + (this.exported == null ? " may be" : this.exported ? " is" : " is not") + " part of an exported interface.");
 	}
 
 	/**
-	 * Classifies an argument by the producing-library origins of its tensor type. A value the analysis does not type as a tensor at all, or
-	 * one produced only by NumPy, is a non-tensor that TensorFlow converts (and so casts) at the signature boundary; one produced only by
-	 * TensorFlow is a tensor, whose dtype must match. A parameter passed through from the caller, an annotation-typed value, or a value of
-	 * mixed provenance is undecided.
+	 * Classifies an argument by the producing-library origins of its tensor type, disregarding annotation origins, which name no producing
+	 * library ({@link Util#producerOrigins}). A value produced only by TensorFlow is a tensor, and one produced only by NumPy is an array.
+	 * A value the analysis does not type as a tensor, one with no origin evidence, a parameter passed through from the caller, and a value
+	 * of mixed provenance are undecided.
 	 *
 	 * @param origins The argument's origins, or {@code null} when it is not tensor-typed.
 	 * @return The argument's kind.
 	 */
 	private static ArgumentKind argumentKind(Set<TensorOrigin> origins) {
-		if (origins == null || origins.isEmpty() || origins.equals(EnumSet.of(TensorOrigin.NUMPY)))
-			return ArgumentKind.NON_TENSOR;
+		if (origins == null)
+			return ArgumentKind.UNKNOWN;
 
-		if (origins.equals(EnumSet.of(TensorOrigin.TENSORFLOW)))
+		Set<TensorOrigin> producers = Util.producerOrigins(origins);
+
+		if (producers.equals(EnumSet.of(TensorOrigin.TENSORFLOW)))
 			return ArgumentKind.TENSOR;
+
+		if (producers.equals(EnumSet.of(TensorOrigin.NUMPY)))
+			return ArgumentKind.NUMPY;
 
 		return ArgumentKind.UNKNOWN;
 	}
