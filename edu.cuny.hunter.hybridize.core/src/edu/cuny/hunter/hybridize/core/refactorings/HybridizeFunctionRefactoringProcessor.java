@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -68,6 +69,7 @@ import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
+import edu.cuny.hunter.hybridize.core.analysis.ExportAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
@@ -406,6 +408,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			Set<Function> projectFunctions = projectToFunctions.get(project);
 
+			// The program's exported interfaces (SavedModels and TensorFlow Lite conversions), computed at most once per project and shared
+			// across its functions, and only when some function has a supplied input signature that the adjudication could narrow (issue
+			// 808). Built on first use rather than up front, since whether a function qualifies is known only once it has been analyzed.
+			AtomicReference<ExportAnalysis> exportAnalysis = new AtomicReference<>();
+
 			// analyze Python functions.
 			LOG.info("Analyzing " + projectFunctions.size() + " function" + (allFunctions.size() > 1 ? "s" : "") + ".");
 			subMonitor.beginTask(Messages.AnalyzingFunctions, projectFunctions.size());
@@ -511,9 +518,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// A supplied input signature that disagrees with its reachable calls is reported per parameter, and a dtype disagreement
 				// behaves differently by the kind of argument the calls pass (issue 808). Only a modeled supplied signature, compared under
 				// inference, can disagree, so the kinds are computed only there.
-				if (Boolean.TRUE.equals(func.isHybrid()) && func.getInferInputSignatures() && func.getHybridizationParameters() != null
-						&& func.getHybridizationParameters().getSuppliedInputSignature().isPresent())
+				if (hasAdjudicableSignature(func)) {
 					func.computeArgumentKinds(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
+					func.computeExported(exportAnalysis.updateAndGet(
+							existing -> existing != null ? existing : new ExportAnalysis(callGraph, builder.getPointerAnalysis())));
+				}
 
 				// Check whether the function calls an eager-only API (issue 363). Its failure is reachable in exactly the same
 				// precondition region as the barren check, so it shares the gate; overridable independently via
@@ -595,6 +604,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * @param functions The {@link Set} of {@link Function}s from which to derive a {@link Stream}.
 	 * @return A potentially parallel {@link Stream} of {@link Function}s.
 	 */
+	/**
+	 * Whether the function has a supplied input signature that the adjudication compares with the inferred one (issue 808): it is hybrid,
+	 * inference is on, and the supplied signature is modeled.
+	 *
+	 * @param func The function.
+	 * @return True iff the function's supplied signature is adjudicated.
+	 */
+	private static boolean hasAdjudicableSignature(Function func) {
+		return Boolean.TRUE.equals(func.isHybrid()) && func.getInferInputSignatures() && func.getHybridizationParameters() != null
+				&& func.getHybridizationParameters().getSuppliedInputSignature().isPresent();
+	}
+
 	private Stream<Function> getStream(Set<Function> functions) {
 		Stream<Function> stream = functions.stream();
 		return this.getProcessFunctionsInParallel() ? stream.parallel() : stream;

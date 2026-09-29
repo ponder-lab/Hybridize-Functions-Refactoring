@@ -1112,6 +1112,12 @@ public class Function {
 	private Map<Parameter, Set<ArgumentKind>> argumentKinds;
 
 	/**
+	 * Whether this function is part of an interface the program exports through a SavedModel or a TensorFlow Lite conversion, computed by
+	 * {@link #computeExported} (issue 808). {@code null} until computed.
+	 */
+	private Boolean exported;
+
+	/**
 	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
 	 */
 	private Boolean replicaInvoked;
@@ -2325,6 +2331,13 @@ public class Function {
 			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME,
 					"This hybrid function's input signature is broader than its call sites require, but it is given by name and may be "
 							+ "shared with other functions, so it is left unchanged.");
+			return;
+		}
+
+		if (TRUE.equals(this.exported)) {
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED,
+					"This hybrid function's input signature is broader than its call sites require, but the function is part of an "
+							+ "interface the program exports, which fixes the signature for its consumers too, so it is left unchanged.");
 			return;
 		}
 
@@ -4155,6 +4168,37 @@ public class Function {
 		}
 
 		this.argumentKinds = kinds;
+	}
+
+	/**
+	 * Computes whether this function is part of an interface the program exports (issue 808): its own object, or a {@code tf.function}
+	 * wrapping it, is exported as a function, or it is a method of a class whose instance is exported whole. The function's own object has
+	 * the type of its declaring-class reference, and a method's class is that reference's enclosing scope.
+	 *
+	 * @param exportAnalysis The program's exports.
+	 */
+	public void computeExported(ExportAnalysis exportAnalysis) {
+		TypeReference functionType;
+
+		try {
+			functionType = this.getDeclaringClass();
+		} catch (CoreException e) {
+			LOG.warn("Can't determine whether " + this + " is exported.", e);
+			return;
+		}
+
+		TypeReference classType = null;
+
+		if (this.isMethod()) {
+			String name = functionType.getName().toString();
+			int separator = name.lastIndexOf('/');
+
+			if (separator > 0)
+				classType = TypeReference.findOrCreate(functionType.getClassLoader(), name.substring(0, separator));
+		}
+
+		this.exported = exportAnalysis.isExported(functionType, classType);
+		LOG.info(this + (this.exported ? " is" : " is not") + " part of an exported interface.");
 	}
 
 	/**

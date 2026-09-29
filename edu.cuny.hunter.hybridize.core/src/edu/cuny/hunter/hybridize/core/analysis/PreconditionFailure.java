@@ -184,7 +184,19 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
-	SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME(28);
+	SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME(28),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but the function is part of an
+	 * interface the program exports: a SavedModel written by {@code tf.saved_model.save} (as a {@code signatures} entry, or as a
+	 * {@code tf.function} of the saved object), or a TensorFlow Lite model converted from it. The exported interface fixes the signature
+	 * for its consumers as well as for the reachable callers, so narrowing it could reject inputs the exported model is meant to accept.
+	 * This is a stated relaxation of the closed-world assumption, taken only for true exports: a {@code get_concrete_function} call that
+	 * only forces a trace does not count. The supplied signature is left unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	SUPPLIED_INPUT_SIGNATURE_EXPORTED(29);
 
 	static {
 		// check that the codes are unique.

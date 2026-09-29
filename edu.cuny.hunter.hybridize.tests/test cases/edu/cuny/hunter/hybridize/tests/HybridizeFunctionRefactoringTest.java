@@ -14,6 +14,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PY
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
@@ -2231,6 +2232,60 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("A signature whose dtype was not read is not modeled.",
 				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
 		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a SavedModel {@code signatures} entry (#808): the exported interface fixes the
+	 * signature for its consumers too, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignatures() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * Dictionary variant of {@link #testReconfigureNarrowBroaderExportedSignatures()} (#808): the method is exported as an entry of a
+	 * {@code signatures} dictionary, whose elements are resolved as exported functions.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesDict() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a method of an object saved as a SavedModel (#808): saving the object exports its {@code tf.function}
+	 * attributes, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedObject() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function is converted to a TensorFlow Lite model (#808): the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedTFLite() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model converted to a TensorFlow Lite model (#808): converting the model exports
+	 * it, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedKeras() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function is only traced (#808): a {@code get_concrete_function} call that
+	 * reaches no export fixes no external interface, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderTraceOnly() throws Exception {
+		helperAssertNarrowing();
 	}
 
 	/**
