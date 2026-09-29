@@ -158,7 +158,7 @@ public class ExportAnalysis {
 	 */
 	private void resolveTypes() {
 		for (InstanceKey instance : this.exportedFunctions)
-			this.exportedFunctionTypes.add(typeName(instance.getConcreteType().getReference()));
+			this.exportedFunctionTypes.add(typeName(instance.concreteType().getReference()));
 
 		if (this.exportedFunctions.isEmpty() && this.exportedContainers.isEmpty() && this.exportedObjects.isEmpty()
 				&& this.possiblyExportedObjects.isEmpty())
@@ -210,7 +210,7 @@ public class ExportAnalysis {
 		while (!worklist.isEmpty())
 			for (InstanceFieldPointerKey field : fields.getOrDefault(worklist.pop(), List.of()))
 				for (InstanceKey value : this.pointerAnalysis.getPointsToSet(field)) {
-					into.add(typeName(value.getConcreteType().getReference()));
+					into.add(typeName(value.concreteType().getReference()));
 
 					if (visited.add(value))
 						worklist.push(value);
@@ -227,7 +227,7 @@ public class ExportAnalysis {
 		boolean any = false;
 
 		for (InstanceKey value : this.pointerAnalysis.getPointsToSet(field)) {
-			this.exportedFunctionTypes.add(typeName(value.getConcreteType().getReference()));
+			this.exportedFunctionTypes.add(typeName(value.concreteType().getReference()));
 			any = true;
 		}
 
@@ -462,7 +462,7 @@ public class ExportAnalysis {
 		PointerKey key = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
 
 		for (InstanceKey instance : this.pointerAnalysis.getPointsToSet(key))
-			if (Util.isContainerType(instance.getConcreteType().getReference()))
+			if (Util.isContainerType(instance.concreteType().getReference()))
 				this.exportedContainers.add(instance);
 			else
 				into.add(instance);
