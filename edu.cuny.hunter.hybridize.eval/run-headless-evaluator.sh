@@ -11,8 +11,9 @@
 #     (`edu.cuny.hunter.hybridize.eval.product`; set ECLIPSE to its materialized
 #     `hybridize-evaluator` launcher), or an Eclipse install containing the eval
 #     bundle and its runtime (the ponder-lab PyDev fork, WALA, Ariadne).
-#   - A workspace holding the subjects as PyDev projects, or one whose PyDev
-#     interpreters are configured, with IMPORT_PROJECTS naming the subjects.
+#   - A workspace holding the subjects as PyDev projects, or any workspace, with
+#     IMPORT_PROJECTS naming the subjects and, unless the workspace already has a
+#     PyDev interpreter configured, PYTHON_INTERPRETER naming one.
 #
 # Usage:
 #   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace \
@@ -30,15 +31,25 @@
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
 # CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, CHECK_STATIC_SHAPE_READS, CHECK_STALE_VARIABLE_READS, CHECK_TENSOR_ITERATION, PROCESS_IN_PARALLEL,
 # FOLLOW_TYPE_HINTS, SPECULATIVE,
-# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS.
+# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS, PYTHON_INTERPRETER,
+# SOURCE_FOLDERS_FROM_PACKAGING.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
 # (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
 # (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
 # subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
-# comma-separated list of absolute subject directories, each with a committed
-# .project, to register in the workspace before the run (issue 658). It imports
-# the projects but does not restrict the run to them; pair it with PROJECTS for
-# that. The run exits 4 if one cannot be imported or has no usable interpreter.
+# comma-separated list of entries to register in the workspace before the run
+# (issue 658). An entry is an absolute subject directory; one with a committed
+# .project is imported from it. One without is created as a PyDev project, which
+# needs its source folders: name them in the entry as DIR=FOLDER:FOLDER, relative
+# to DIR (`.` for DIR itself), or set SOURCE_FOLDERS_FROM_PACKAGING=true to read
+# them from its setup.cfg, pyproject.toml, or setup.py. They are never guessed.
+# Creating a project writes .project and .pydevproject into its directory.
+# IMPORT_PROJECTS imports the projects but does not restrict the run to them; pair
+# it with PROJECTS for that. The run exits 4 if one cannot be imported or has no
+# usable interpreter. PYTHON_INTERPRETER is the absolute path of a Python
+# executable to make the workspace's default PyDev interpreter, the one committed
+# metadata names as `Default`, before importing; the run exits 5 if it cannot be
+# configured.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
@@ -101,4 +112,6 @@ exec "$ECLIPSE" \
 	${TEST_ENTRYPOINTS+-Dedu.cuny.hunter.hybridize.eval.useTestEntrypoints="$TEST_ENTRYPOINTS"} \
 	${OUTPUT_CALLS+-Dedu.cuny.hunter.hybridize.eval.outputCalls="$OUTPUT_CALLS"} \
 	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"} \
-	${IMPORT_PROJECTS+-Dedu.cuny.hunter.hybridize.eval.importProjects="$IMPORT_PROJECTS"}
+	${IMPORT_PROJECTS+-Dedu.cuny.hunter.hybridize.eval.importProjects="$IMPORT_PROJECTS"} \
+	${PYTHON_INTERPRETER+-Dedu.cuny.hunter.hybridize.eval.pythonInterpreter="$PYTHON_INTERPRETER"} \
+	${SOURCE_FOLDERS_FROM_PACKAGING+-Dedu.cuny.hunter.hybridize.eval.sourceFoldersFromPackaging="$SOURCE_FOLDERS_FROM_PACKAGING"}
