@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.eval.application;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -21,8 +22,9 @@ import java.util.regex.Pattern;
  * project with none of the three files yields nothing, since there is then nothing the developer wrote to go on.
  * <p>
  * The files are read by pattern rather than parsed, so only the common spellings are recognized: setuptools' {@code package_dir} and
- * {@code where}, in all three files, and Poetry's {@code from}. A declaration the patterns miss yields the root alone, which the caller
- * reports.
+ * {@code where}, in all three files, and Poetry's {@code from}. Commented-out lines are ignored, and a declared directory counts only if it
+ * exists. A declaration the patterns miss, such as Hatch's or PDM's, yields the root alone; the caller logs the folders it uses, so a miss
+ * shows there. This is why reading them is opt-in.
  */
 final class PackagingSourceFolders {
 
@@ -42,12 +44,16 @@ final class PackagingSourceFolders {
 			Pattern.compile("package[_-]dir\\s*=\\s*\\{\\s*(['\"])\\1\\s*[:=]\\s*['\"]([^'\"]+)['\"]"),
 			// setup.cfg: package_dir = =src, possibly on the next line.
 			Pattern.compile("(?m)^\\s*package_dir\\s*=\\s*(?:\\n\\s*)?=\\s*(\\S+)"),
-			// setup.py: find_packages(where="src"), find_packages("src"), find_namespace_packages(...).
-			Pattern.compile("find_(?:namespace_)?packages\\(\\s*(?:where\\s*=\\s*)?['\"]([^'\"]+)['\"]"),
-			// setup.cfg: where = src; pyproject.toml: where = ["src"].
-			Pattern.compile("(?m)^\\s*where\\s*=\\s*\\[?\\s*['\"]?([^'\"\\],\\s]+)"),
-			// pyproject.toml (Poetry): packages = [{ include = "x", from = "src" }].
-			Pattern.compile("\\bfrom\\s*=\\s*['\"]([^'\"]+)['\"]") };
+			// setup.py: find_packages("src"), find_namespace_packages("src").
+			Pattern.compile("find_(?:namespace_)?packages\\(\\s*['\"]([^'\"]+)['\"]"),
+			// setup.py: find_packages(..., where="src", ...), in any argument position.
+			Pattern.compile("find_(?:namespace_)?packages\\([^)]*?\\bwhere\\s*=\\s*['\"]([^'\"]+)['\"]"),
+			// setup.cfg: where = src.
+			Pattern.compile("(?m)^\\s*where\\s*=\\s*([^\\s'\"\\[,]+)\\s*$"),
+			// pyproject.toml: where = ["src", "lib"], each entry.
+			Pattern.compile("(?:^\\s*where\\s*=\\s*\\[|\\G\\s*,)\\s*['\"]([^'\"]+)['\"]", Pattern.MULTILINE),
+			// pyproject.toml (Poetry): packages = [{ include = "x", from = "src" }], an inline table naming what it includes.
+			Pattern.compile("\\{[^}]*\\binclude\\s*=[^}]*\\bfrom\\s*=\\s*['\"]([^'\"]+)['\"]") };
 
 	private PackagingSourceFolders() {
 	}
@@ -71,7 +77,8 @@ final class PackagingSourceFolders {
 				continue;
 
 			anyPackagingFile = true;
-			String text = Files.readString(file.toPath());
+			// Decoded leniently, since a packaging file need not be UTF-8, and a comment line dropped, since it declares nothing.
+			String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).replaceAll("(?m)^\\s*[#;].*$", "");
 
 			for (Pattern pattern : PACKAGE_DIRECTORY_PATTERNS) {
 				Matcher matcher = pattern.matcher(text);

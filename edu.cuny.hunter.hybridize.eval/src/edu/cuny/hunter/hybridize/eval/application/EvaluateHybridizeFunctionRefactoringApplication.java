@@ -5,6 +5,8 @@ import static org.python.pydev.plugin.nature.PythonNature.PYTHON_NATURE_ID;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -12,7 +14,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
@@ -97,6 +100,13 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	/** Separates the entries of a PyDev source path. */
 	private static final String PYDEV_PATH_SEPARATOR = "|";
 
+	/** The source path property of a {@code .pydevproject}, whose {@code path} elements are the project's source folders. */
+	private static final Pattern PYDEV_SOURCE_PATH = Pattern
+			.compile("name=\"org\\.python\\.pydev\\.PROJECT_SOURCE_PATH\">(.*?)</pydev_pathproperty>", Pattern.DOTALL);
+
+	/** One source folder in a {@code .pydevproject} source path. */
+	private static final Pattern PYDEV_PATH = Pattern.compile("<path>([^<]*)</path>");
+
 	@Override
 	public Object start(IApplicationContext context) throws Exception {
 		if (!applyArguments(context))
@@ -176,7 +186,8 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	 * {@code Default} to the first configured interpreter, so the executable is moved to the front of the list, and added to it first if
 	 * the workspace does not have it yet; the interpreters already configured are kept. An executable already first is left alone, so
 	 * repeating the option is harmless. PyDev reads the new interpreter's library paths by running it, choosing the paths it would select
-	 * by default rather than asking.
+	 * by default rather than asking. One exception is PyDev's own: a project with a {@code Pipfile} whose pipenv interpreter is configured
+	 * resolves {@code Default} to that interpreter instead.
 	 *
 	 * @return True iff no interpreter is named, or the named one is now the workspace's default.
 	 */
@@ -188,14 +199,14 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 		File file = new File(executable.strip());
 
-		if (!file.isAbsolute() || !file.canExecute()) {
+		if (!file.isAbsolute() || !file.isFile() || !file.canExecute()) {
 			LOG.error("Cannot configure the Python interpreter " + file + ": it must be the absolute path of an executable.");
 			return false;
 		}
 
 		IInterpreterManager manager = InterpreterManagersAPI.getPythonInterpreterManager();
 		List<IInterpreterInfo> infos = new ArrayList<>(Arrays.asList(manager.getInterpreterInfos()));
-		Optional<IInterpreterInfo> existing = infos.stream().filter(info -> sameFile(new File(info.getExecutableOrJar()), file))
+		Optional<IInterpreterInfo> existing = infos.stream().filter(info -> samePath(new File(info.getExecutableOrJar()), file))
 				.findFirst();
 
 		if (existing.isPresent() && infos.indexOf(existing.get()) == 0) {
@@ -231,6 +242,18 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 		manager.setInfos(infos.toArray(IInterpreterInfo[]::new), toRestore, new NullProgressMonitor());
 		LOG.info("Configured " + file + " as the workspace's default Python interpreter.");
 		return true;
+	}
+
+	/**
+	 * Whether two paths name the same file without resolving symbolic links. An interpreter is compared this way, since a virtual
+	 * environment's {@code python} is a link to its base interpreter, and resolving it would take two environments for one.
+	 *
+	 * @param a One path.
+	 * @param b The other path.
+	 * @return True iff they are the same absolute, normalized path.
+	 */
+	private static boolean samePath(File a, File b) {
+		return a.toPath().toAbsolutePath().normalize().equals(b.toPath().toAbsolutePath().normalize());
 	}
 
 	/**
@@ -302,8 +325,10 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	 * The project must also resolve its PyDev interpreter. A {@code .pydevproject} names its interpreter (usually {@code Default}) without
 	 * defining it, and the definition lives in the workspace, so a fresh workspace imports the project but cannot analyze it. That is
 	 * checked here, where it can fail loudly, rather than left to surface as an empty analysis. A project this call created that fails the
-	 * check is removed from the workspace again, leaving its directory untouched, so that a later run without the import does not evaluate
-	 * it unchecked.
+	 * check is removed from the workspace again, so that a later run without the import does not evaluate it unchecked. An imported
+	 * project's directory is left untouched, while a created one's loses the metadata this call wrote, so that a later run does not take it
+	 * for committed metadata. Repeating a creation entry is harmless too: the directory then has the metadata the first run wrote, which is
+	 * imported when its source folders are the ones the entry names.
 	 *
 	 * @param workspace The workspace to import into.
 	 * @param path The project's directory.
@@ -328,7 +353,7 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 			File descriptionFile = new File(directory, PROJECT_DESCRIPTION_FILE);
 
 			if (!descriptionFile.isFile()) {
-				if (new File(directory, PYDEV_PROJECT_FILE).exists()) {
+				if (new File(directory, PYDEV_PROJECT_FILE).isFile()) {
 					LOG.error("Cannot import " + directory + ": it has a " + PYDEV_PROJECT_FILE + " but no " + PROJECT_DESCRIPTION_FILE
 							+ ". Commit both, or neither, so that its source folders have one source.");
 					return false;
@@ -342,9 +367,18 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 				project = workspace.getRoot().getProject(directory.getName());
 
 				if (project.exists()) {
-					LOG.error("Cannot create a project for " + directory + ": the workspace already has a project named "
-							+ project.getName() + " at " + project.getLocationURI() + ".");
-					return false;
+					IPath location = project.getLocation();
+
+					if (location == null || !sameFile(location.toFile(), directory)) {
+						LOG.error("Cannot create a project for " + directory + ": the workspace already has a project named "
+								+ project.getName() + " at " + project.getLocationURI() + ".");
+						return false;
+					}
+
+					// Registered here before, and its metadata since removed (as by `git clean`): forget the registration and start over.
+					LOG.info("Recreating project " + project.getName() + ", registered at " + directory + " without its "
+							+ PROJECT_DESCRIPTION_FILE + ".");
+					project.delete(IResource.NEVER_DELETE_PROJECT_CONTENT | IResource.FORCE, new NullProgressMonitor());
 				}
 
 				// Marked before the attempt, so a failure partway through still removes what was made.
@@ -359,9 +393,20 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 			}
 
 			if (sourceFolders != null) {
-				LOG.error("Cannot import " + directory + " with the source folders " + sourceFolders + ": it has a committed "
-						+ PROJECT_DESCRIPTION_FILE + ", whose .pydevproject decides its source folders. Drop them from the entry.");
-				return false;
+				// Metadata an earlier run created from this same entry is imported; any other decides its own source folders.
+				List<String> requested = sourcePath(directory, sourceFolders);
+
+				if (requested == null)
+					return false;
+
+				Set<String> existing = committedSourcePath(directory);
+
+				if (!new HashSet<>(requested).equals(existing)) {
+					LOG.error("Cannot import " + directory + " with the source folders " + sourceFolders + ": it has a committed "
+							+ PROJECT_DESCRIPTION_FILE + ", whose " + PYDEV_PROJECT_FILE + " names the source path " + existing
+							+ " instead. Drop the folders from the entry, or change the committed metadata.");
+					return false;
+				}
 			}
 
 			IProjectDescription description = workspace.loadProjectDescription(new Path(descriptionFile.getPath()));
@@ -386,7 +431,8 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 				project.open(new NullProgressMonitor());
 
 			return verifyPyDevProject(project, created);
-		} catch (CoreException | IOException e) {
+		} catch (CoreException | IOException | RuntimeException e) {
+			// A runtime failure inside PyDev or the workspace must still undo what this call made.
 			LOG.error("Cannot import " + directory + ": " + e.getMessage(), e);
 			unregister(project, created);
 			return writesMetadata ? removeWrittenMetadata(directory) : false;
@@ -463,25 +509,10 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	 */
 	private static boolean createProject(IWorkspace workspace, File directory, List<String> sourceFolders)
 			throws CoreException, IOException {
-		if (sourceFolders.isEmpty()) {
-			LOG.error("Cannot create a project for " + directory + ": its entry names no source folders.");
+		List<String> sourcePath = sourcePath(directory, sourceFolders);
+
+		if (sourcePath == null)
 			return false;
-		}
-
-		List<String> sourcePath = new ArrayList<>();
-
-		for (String folder : sourceFolders) {
-			File resolved = new File(folder).isAbsolute() ? null : new File(directory, folder).getCanonicalFile();
-
-			if (resolved == null || !resolved.toPath().startsWith(directory.toPath()) || !resolved.isDirectory()) {
-				LOG.error("Cannot create a project for " + directory + ": the source folder " + folder
-						+ " is not an existing directory within it, relative to it.");
-				return false;
-			}
-
-			String relative = directory.toPath().relativize(resolved.toPath()).toString().replace(File.separatorChar, '/');
-			sourcePath.add(relative.isEmpty() ? PROJECT_DIR_VARIABLE : PROJECT_DIR_VARIABLE + "/" + relative);
-		}
 
 		IProject project = workspace.getRoot().getProject(directory.getName());
 		IProjectDescription description = workspace.newProjectDescription(project.getName());
@@ -494,10 +525,72 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 		project.create(description, new NullProgressMonitor());
 		project.open(new NullProgressMonitor());
 		PythonNature.addNature(project, new NullProgressMonitor(), IPythonNature.PYTHON_VERSION_INTERPRETER,
-				sourcePath.stream().distinct().collect(Collectors.joining(PYDEV_PATH_SEPARATOR)), null, IPythonNature.DEFAULT_INTERPRETER,
-				null);
+				String.join(PYDEV_PATH_SEPARATOR, sourcePath), null, IPythonNature.DEFAULT_INTERPRETER, null);
 		LOG.info("Created project " + project.getName() + " for " + directory + " with the source folders " + sourceFolders + ".");
 		return true;
+	}
+
+	/**
+	 * Resolves an entry's source folders to the PyDev source path a created project is given: each folder relative to the project's
+	 * directory, written with {@code ${PROJECT_DIR_NAME}} so the file stays valid if the directory moves. Each folder must be an existing
+	 * directory within the project's.
+	 *
+	 * @param directory The project's directory, canonical.
+	 * @param sourceFolders The source folders, relative to the directory.
+	 * @return The source path's entries, without duplicates, or {@code null} if a folder is invalid or none is given.
+	 * @throws IOException If a source folder cannot be resolved.
+	 */
+	private static List<String> sourcePath(File directory, List<String> sourceFolders) throws IOException {
+		if (sourceFolders.isEmpty()) {
+			LOG.error("Cannot create a project for " + directory + ": its entry names no source folders.");
+			return null;
+		}
+
+		List<String> ret = new ArrayList<>();
+
+		for (String folder : sourceFolders) {
+			File resolved = new File(folder).isAbsolute() ? null : new File(directory, folder).getCanonicalFile();
+
+			if (resolved == null || !resolved.toPath().startsWith(directory.toPath()) || !resolved.isDirectory()) {
+				LOG.error("Cannot create a project for " + directory + ": the source folder " + folder
+						+ " is not an existing directory within it, relative to it.");
+				return null;
+			}
+
+			String relative = directory.toPath().relativize(resolved.toPath()).toString().replace(File.separatorChar, '/');
+			String entry = relative.isEmpty() ? PROJECT_DIR_VARIABLE : PROJECT_DIR_VARIABLE + "/" + relative;
+
+			if (!ret.contains(entry))
+				ret.add(entry);
+		}
+
+		return ret;
+	}
+
+	/**
+	 * Reads the source path a directory's {@code .pydevproject} names.
+	 *
+	 * @param directory The project's directory.
+	 * @return The source path's entries, empty if the file is absent or names none.
+	 * @throws IOException If the file cannot be read.
+	 */
+	private static Set<String> committedSourcePath(File directory) throws IOException {
+		File file = new File(directory, PYDEV_PROJECT_FILE);
+		Set<String> ret = new HashSet<>();
+
+		if (!file.isFile())
+			return ret;
+
+		Matcher property = PYDEV_SOURCE_PATH.matcher(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+
+		if (property.find()) {
+			Matcher path = PYDEV_PATH.matcher(property.group(1));
+
+			while (path.find())
+				ret.add(path.group(1).strip());
+		}
+
+		return ret;
 	}
 
 	/**
@@ -511,7 +604,7 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	 */
 	private static boolean verifyPyDevProject(IProject project, boolean created) throws CoreException {
 		if (!project.hasNature(PYTHON_NATURE_ID)) {
-			LOG.error("Imported project " + project.getName() + " is not a PyDev project: its " + PROJECT_DESCRIPTION_FILE
+			LOG.error("Project " + project.getName() + " is not a PyDev project: its " + PROJECT_DESCRIPTION_FILE
 					+ " lacks the Python nature.");
 			return unregister(project, created);
 		}
@@ -519,14 +612,14 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 		PythonNature nature = PythonNature.getPythonNature(project);
 
 		if (nature == null) {
-			LOG.error("Imported project " + project.getName() + " has the Python nature, but PyDev could not load it.");
+			LOG.error("Project " + project.getName() + " has the Python nature, but PyDev could not load it.");
 			return unregister(project, created);
 		}
 
 		try {
 			nature.getProjectInterpreter();
 		} catch (MisconfigurationException | PythonNatureWithoutProjectException e) {
-			LOG.error("Imported project " + project.getName()
+			LOG.error("Project " + project.getName()
 					+ " has no usable PyDev interpreter; configure it in the workspace, or pass --python-interpreter, before evaluating. PyDev reports: "
 					+ e.getMessage());
 			return unregister(project, created);
