@@ -254,9 +254,8 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} argument's value—the {@code [tf.TensorSpec(...)]} list/tuple, or
 		 * the bare name referencing one (#834)—whether supplied by keyword or by position, or {@code null} when none was supplied. Always
-		 * the node at the decorator site, never a resolved referent. Retained for reporting and for the sanctioned future find-and-fix
-		 * signature rewrite (issue 808); the refactoring itself never edits an existing signature. See
-		 * {@link #getSuppliedInputSignatureNode()}.
+		 * the node at the decorator site, never a resolved referent. Retained for reporting and for narrowing a broader literal signature
+		 * (issue 808); a signature given by name is never edited. See {@link #getSuppliedInputSignatureNode()}.
 		 */
 		private exprType suppliedInputSignatureNode;
 
@@ -429,8 +428,8 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple, or the bare
 		 * name referencing one; #834), or {@code null} when none was supplied. Always the node at the decorator site, never a resolved
-		 * referent. Retained for reporting and for the sanctioned future find-and-fix signature rewrite (issue 808); the refactoring itself
-		 * never edits an existing signature.
+		 * referent. Retained for reporting and for narrowing a broader literal signature (issue 808); a signature given by name is never
+		 * edited.
 		 *
 		 * @return The supplied {@code input_signature} value node, or {@code null}.
 		 */
@@ -1589,10 +1588,10 @@ public class Function {
 						 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature
 						 * inference is enabled, the function is side-effect-free and non-recursive, and a signature can be inferred and
 						 * emitted, the decorator is reconfigured: if it carries no `input_signature` yet, add the inferred one (the add
-						 * path); if it carries one that is more specific than, or incomparable with, the inferred one, overwrite it; if it
-						 * carries one broader than the inferred one, preserve it (the broader signature may be intentional); if they agree,
-						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
-						 * the default precondition matrix unchanged.
+						 * path); if it carries one broader than the inferred one, narrow it unless a precondition declines (issue 808); if
+						 * it carries one more specific than, or incomparable with, the inferred one, report the disagreement and leave it
+						 * unchanged; if they agree, do nothing. A supplied signature whose content could not be modeled is left untouched.
+						 * Gating on the flag keeps the default precondition matrix unchanged.
 						 */
 						// A signature the developer already supplied has already disabled a rest-keyword slot, so a caller passing a
 						// keyword raises today, before this refactoring touches anything. Nothing here can repair that, and rewriting
@@ -2389,9 +2388,10 @@ public class Function {
 	 * reachable call violates the supplied signature, so rewriting it would repair the program rather than refactor it, and the
 	 * precondition {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS} fails. Each disagreeing parameter gets a
 	 * warning saying what the violating call does at runtime: a shape mismatch raises; a dtype mismatch raises for a tensor argument and is
-	 * silently cast for a NumPy array, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites. When the two
-	 * signatures have different parameter counts, as when the inferred one leaves out a defaulted parameter no call passes, they cannot be
-	 * compared parameter by parameter, and the signature is left unchanged without failing this precondition.
+	 * silently cast for a NumPy array, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites. A supplied
+	 * signature declaring fewer parameters than the reachable calls pass disagrees with them too, since such a call raises. One declaring
+	 * more, as when the inferred signature leaves out a defaulted parameter no call passes, cannot be compared parameter by parameter, and
+	 * is left unchanged without failing this precondition.
 	 *
 	 * @param supplied The supplied input signature.
 	 * @param inferred The inferred input signature.
@@ -2400,68 +2400,75 @@ public class Function {
 		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
 		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
 
-		if (suppliedEntries.size() != inferredEntries.size()) {
+		if (suppliedEntries.size() < inferredEntries.size()) {
+			// Every inferred entry is a parameter some reachable call passes, so a call passes an argument the signature does not cover.
+			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but its "
+					+ "reachable calls pass " + inferredEntries.size()
+					+ "; a call passing an argument the signature does not declare raises " + "at runtime.");
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
+					"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
+							+ "calls would repair the program rather than refactor it.");
+			return;
+		}
+
+		if (suppliedEntries.size() > inferredEntries.size()) {
 			// The inferred signature leaves out a defaulted parameter no reachable call passes (#787), so the two need not disagree:
-			// TensorFlow
-			// fills in the default and converts it against the supplied signature. They cannot be compared parameter by parameter, so the
-			// signature is left unchanged without claiming that a call violates it.
+			// TensorFlow fills in the default and converts it against the supplied signature. They cannot be compared parameter by
+			// parameter, so the signature is left unchanged without claiming that a call violates it.
 			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but "
-					+ inferredEntries.size()
-					+ " are inferred from its reachable calls, so the two cannot be compared parameter by parameter; "
-					+ "the signature is left unchanged.");
+					+ inferredEntries.size() + " are inferred from its reachable calls, so the two cannot be compared parameter by "
+					+ "parameter; the signature is left unchanged.");
 			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
 					"Functions with no Python literal arguments may benefit from hybridization.");
 			return;
 		}
 
-		{
-			List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
-					.toList();
+		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+				.toList();
 
-			for (int i = 0; i < suppliedEntries.size(); i++) {
-				InputSignature.SpecEntry suppliedEntry = suppliedEntries.get(i);
-				InputSignature.SpecEntry inferredEntry = inferredEntries.get(i);
-				InputSignature.Relation relation = InputSignature.relate(suppliedEntry, inferredEntry);
+		for (int i = 0; i < suppliedEntries.size(); i++) {
+			InputSignature.SpecEntry suppliedEntry = suppliedEntries.get(i);
+			InputSignature.SpecEntry inferredEntry = inferredEntries.get(i);
+			InputSignature.Relation relation = InputSignature.relate(suppliedEntry, inferredEntry);
 
-				if (relation != InputSignature.Relation.SUPPLIED_TIGHTER && relation != InputSignature.Relation.INCOMPARABLE)
-					continue;
+			if (relation != InputSignature.Relation.SUPPLIED_TIGHTER && relation != InputSignature.Relation.INCOMPARABLE)
+				continue;
 
-				Parameter parameter = i < covered.size() ? covered.get(i) : null;
-				String subject = parameter == null ? "Parameter " + (i + 1) : "Parameter `" + parameter.getName() + "`";
+			Parameter parameter = i < covered.size() ? covered.get(i) : null;
+			String subject = parameter == null ? "Parameter " + (i + 1) : "Parameter `" + parameter.getName() + "`";
 
-				if (!(suppliedEntry instanceof InputSignature.Single suppliedSingle
-						&& inferredEntry instanceof InputSignature.Single inferredSingle)) {
-					this.addWarning(subject + " is declared with a different structure than a reachable call passes; that call raises at "
-							+ "runtime.");
-					continue;
-				}
+			if (!(suppliedEntry instanceof InputSignature.Single suppliedSingle
+					&& inferredEntry instanceof InputSignature.Single inferredSingle)) {
+				this.addWarning(subject + " is declared with a different structure than a reachable call passes; that call raises at "
+						+ "runtime.");
+				continue;
+			}
 
-				TensorType suppliedType = suppliedSingle.type();
-				TensorType inferredType = inferredSingle.type();
-				InputSignature.Relation shapeRelation = InputSignature.relateShape(suppliedType.getDims(), inferredType.getDims());
-				InputSignature.Relation dtypeRelation = InputSignature.relateDType(suppliedType.getDType(), inferredType.getDType());
+			TensorType suppliedType = suppliedSingle.type();
+			TensorType inferredType = inferredSingle.type();
+			InputSignature.Relation shapeRelation = InputSignature.relateShape(suppliedType.getDims(), inferredType.getDims());
+			InputSignature.Relation dtypeRelation = InputSignature.relateDType(suppliedType.getDType(), inferredType.getDType());
 
-				if (shapeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || shapeRelation == InputSignature.Relation.INCOMPARABLE)
-					this.addWarning(subject + " is declared with shape " + describeShape(suppliedType.getDims())
-							+ ", which the reachable calls' evidence does not fit; a call whose argument does not match it raises at runtime.");
+			if (shapeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || shapeRelation == InputSignature.Relation.INCOMPARABLE)
+				this.addWarning(subject + " is declared with shape " + describeShape(suppliedType.getDims())
+						+ ", which the reachable calls' evidence does not fit; a call whose argument does not match it raises at runtime.");
 
-				if (dtypeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || dtypeRelation == InputSignature.Relation.INCOMPARABLE) {
-					String declared = suppliedType.getDType().name().toLowerCase(Locale.ROOT);
-					String passed = inferredType.getDType().name().toLowerCase(Locale.ROOT);
-					Set<ArgumentKind> kinds = parameter == null || this.argumentKinds == null ? null : this.argumentKinds.get(parameter);
+			if (dtypeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || dtypeRelation == InputSignature.Relation.INCOMPARABLE) {
+				String declared = suppliedType.getDType().name().toLowerCase(Locale.ROOT);
+				String passed = inferredType.getDType().name().toLowerCase(Locale.ROOT);
+				Set<ArgumentKind> kinds = parameter == null || this.argumentKinds == null ? null : this.argumentKinds.get(parameter);
 
-					if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.TENSOR)))
-						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a tensor of dtype "
-								+ passed + "; that call raises at runtime.");
-					else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NUMPY)))
-						this.addWarning(
-								subject + " is declared with dtype " + declared + ", but a reachable call passes a NumPy array of dtype "
-										+ passed + ", which TensorFlow silently casts to " + declared + ".");
-					else
-						this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a value of dtype "
-								+ passed + "; depending on the kind of value, that call raises at runtime or is silently cast to "
-								+ declared + ".");
-				}
+				if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.TENSOR)))
+					this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a tensor of dtype "
+							+ passed + "; that call raises at runtime.");
+				else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NUMPY)))
+					this.addWarning(
+							subject + " is declared with dtype " + declared + ", but a reachable call passes a NumPy array of dtype "
+									+ passed + ", which TensorFlow silently casts to " + declared + ".");
+				else
+					this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a value of dtype "
+							+ passed + "; depending on the kind of value, that call raises at runtime or is silently cast to " + declared
+							+ ".");
 			}
 		}
 
@@ -5174,17 +5181,19 @@ public class Function {
 
 	/**
 	 * Reconfigures this already-hybrid function's {@code @tf.function} decorator to carry the inferred {@code input_signature} (the
-	 * {@code RECONFIGURE} transformation). Only the add path exists: {@link #check()} selects {@code RECONFIGURE} solely for a decorator
-	 * with no {@code input_signature}; an existing signature is adjudicated report-only and never rewritten, since the rewrite would repair
-	 * a nonconforming observed call rather than preserve behavior (issue 808; the sanctioned rewrite is a future find-and-fix
-	 * transformation, not this refactoring). Reuses the existing import-shape resolution ({@link #getImportContext(IDocument)}) and
-	 * emission gate ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function
-	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null}
-	 * check below is defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's
-	 * import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is
-	 * produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * {@code RECONFIGURE} transformation). {@link #check()} selects {@code RECONFIGURE} for a decorator with no {@code input_signature},
+	 * which gains the inferred one, and for one whose literal signature is strictly broader than the inferred one and whose narrowing no
+	 * precondition declines ({@link PreconditionSuccess#P5}), whose literal is replaced by the inferred one (issue 808). A tighter or
+	 * incomparable signature is never rewritten, since the rewrite would repair a nonconforming call rather than preserve behavior. Reuses
+	 * the existing import-shape resolution ({@link #getImportContext(IDocument)}) and emission gate
+	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function necessarily
+	 * imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null} check below is
+	 * defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's import shape (e.g.
+	 * {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching
+	 * {@link #convertToHybrid()}'s silent skip.
 	 *
-	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
+	 * @return The edits adding {@code input_signature=[...]} to the decorator or replacing its broader literal, or an empty list when
+	 *         emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
@@ -5279,7 +5288,8 @@ public class Function {
 	/**
 	 * The text span of a list or tuple literal in the document: from its opening bracket through its matching closing bracket. PyDev
 	 * positions both a list and a parenthesized tuple at their opening bracket. Bracket nesting is tracked without regard to string
-	 * literals, which an input signature's specs do not contain in a way that would unbalance it.
+	 * literals, so a bracket inside a string can end the span early; the narrowing declines any literal containing a quote for that reason
+	 * ({@link #narrowingWouldDropSpecText}).
 	 *
 	 * @param doc The document.
 	 * @param node The list or tuple literal.

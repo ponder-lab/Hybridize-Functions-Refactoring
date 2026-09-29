@@ -2071,11 +2071,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Adjudication path (#596, made report-only by #808), supplied-tighter: the existing {@code input_signature} is more specific than the
-	 * call-site evidence (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the
-	 * inferred signature is the join over the observed call sites, this relation means a nonconforming observed call raises at runtime;
-	 * rewriting the signature would repair rather than preserve behavior, so it is left unchanged, the finding surfaces as a warning, and
-	 * the disagreement precondition fails.
+	 * Adjudication path (#596; #808), supplied-tighter: the existing {@code input_signature} is more specific than the call-site evidence
+	 * (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the inferred signature is
+	 * the join over the observed call sites, this relation means a nonconforming observed call raises at runtime; rewriting the signature
+	 * would repair rather than preserve behavior, so it is left unchanged, the finding surfaces as a warning, and the disagreement
+	 * precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
@@ -2086,8 +2086,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Name-referenced variant of {@link #testReconfigurePreserveTighter()} (#834): the tighter signature is referenced through a
-	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same report-only
-	 * warning with the constant untouched.
+	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same warning and
+	 * failure, with the constant untouched.
 	 */
 	@Test
 	public void testReconfigurePreserveNameReference() throws Exception {
@@ -2095,9 +2095,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Adjudication path (#596, made report-only by #808), incomparable: the existing {@code input_signature} is incomparable with the
-	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is left
-	 * unchanged, the finding surfaces as a warning, and the disagreement precondition fails.
+	 * Adjudication path (#596; #808), incomparable: the existing {@code input_signature} is incomparable with the inferred one (a float32
+	 * dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is left unchanged, the finding
+	 * surfaces as a warning, and the disagreement precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
@@ -2107,10 +2107,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Shared assertion for the report-only adjudication tests (#808): the single hybrid fixture function selects no transformation and no
-	 * passing precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing
-	 * {@code messageFragment}, and terminates in the same {@code HAS_NO_PRIMITIVE_PARAMETERS} failure as the other unmodified-signature
-	 * outcomes.
+	 * Shared assertion for the disagreement tests (#808): the single hybrid fixture function selects no transformation and no passing
+	 * precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing {@code messageFragment},
+	 * and fails {@code SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS}.
 	 *
 	 * @param messageFragment A fragment the adjudication warning must contain.
 	 */
@@ -2121,8 +2120,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertTrue("The adjudication is report-only: no transformation is selected.", f.getTransformations().isEmpty());
-		assertNull("No passing precondition on the report-only path.", f.getPassingPrecondition());
+		assertTrue("A disagreeing signature selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on a disagreeing signature.", f.getPassingPrecondition());
 		assertTrue("The supplied signature remains modeled and untouched.",
 				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
 
@@ -2184,8 +2183,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * narrowing is declined with the given failure, no transformation is selected, and the supplied signature stays modeled and untouched.
 	 *
 	 * @param failure The failure the declined narrowing reports.
+	 * @return The fixture function.
 	 */
-	private void helperAssertNarrowingDeclined(PreconditionFailure failure) throws Exception {
+	private Function helperAssertNarrowingDeclined(PreconditionFailure failure) throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
@@ -2197,6 +2197,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("The supplied signature remains modeled and untouched.",
 				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
 		assertNotNull("The declined narrowing reports " + failure + ".", f.getEntryMatchingFailure(failure));
+		return f;
+	}
+
+	/**
+	 * Shared assertion for the export-declined tests (#808): the narrowing is declined as {@link #helperAssertNarrowingDeclined} checks,
+	 * with the export failure, and its message says whether the function was found exported or its export status is undetermined.
+	 *
+	 * @param determined True iff the function is expected to be found exported, rather than possibly exported.
+	 */
+	private void helperAssertExportDeclined(boolean determined) throws Exception {
+		assertExportFailure(helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED), determined);
+	}
+
+	/**
+	 * Asserts that the function's export failure says whether it was found exported or its export status is undetermined.
+	 *
+	 * @param f The function.
+	 * @param determined True iff the function is expected to be found exported, rather than possibly exported.
+	 */
+	private static void assertExportFailure(Function f, boolean determined) {
+		RefactoringStatusEntry entry = f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		assertNotNull("The declined narrowing reports the export.", entry);
+		assertEquals("The export failure says whether the function was found exported.", determined,
+				entry.getMessage().contains("is part of an interface the program exports"));
+		assertEquals("The export failure says whether the export status is undetermined.", !determined,
+				entry.getMessage().contains("could not be determined"));
 	}
 
 	/**
@@ -2242,7 +2268,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedSignatures() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2251,7 +2277,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedSignaturesDict() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2260,7 +2286,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedObject() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2269,7 +2295,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedTFLite() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2278,7 +2304,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedKeras() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2292,7 +2318,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A broader supplied signature on a method of a class the program does not export, while it saves an instance of another class (#808):
-	 * the export is matched by class, so the narrowing still applies.
+	 * only functions stored on the saved object count, so the narrowing still applies.
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderUnrelatedExport() throws Exception {
@@ -2305,7 +2331,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedModelSave() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2314,7 +2340,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedSaveModel() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2323,7 +2349,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedConcreteSignature() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2332,7 +2358,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedInherited() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2341,7 +2367,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedAttribute() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(true);
 	}
 
 	/**
@@ -2350,7 +2376,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedUnresolved() throws Exception {
-		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		helperAssertExportDeclined(false);
 	}
 
 	/**
@@ -2363,7 +2389,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function f = this.getFunction("M.f");
 		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
-		assertNotNull("The declined narrowing reports the export.", f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_EXPORTED));
+		assertExportFailure(f, true);
 	}
 
 	/**
@@ -2441,6 +2467,86 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testReconfigurePreserveIncomparableMixed() throws Exception {
 		helperAssertAdjudicationReportsOnly("depending on the kind of value, that call raises at runtime or is silently cast to float32");
+	}
+
+	/**
+	 * A broader supplied signature on a function exported through a {@code signatures} dictionary whose entry is a concrete function
+	 * (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedConcreteSignaturesDict() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a submodule the saved object tracks (#808): the saved object's fields are followed
+	 * transitively, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedChild() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("Encoder.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, true);
+	}
+
+	/**
+	 * A broader supplied signature in a program whose SavedModel {@code signatures} entry is a concrete function of an unmodeled object
+	 * (#808): what the save exports is unknown, so the narrowing is declined as possibly exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolvedSignature() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function enters a {@code signatures} dictionary built in another function
+	 * (#808): the dictionary's entries point to nothing, so what the save exports is unknown, and the narrowing is declined as possibly
+	 * exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesBuiltElsewhere() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves another object with an explicit {@code signatures=None} (#808): None exports
+	 * nothing and leaves the export status determined, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderSignaturesNone() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves an array with NumPy (#808): no TensorFlow interface is exported, so the
+	 * narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnrelatedSave() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature whose spec passes its shape and dtype positionally (#808): nothing is dropped, so the narrowing applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderPositional() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A supplied signature declaring fewer parameters than the reachable calls pass (#808): a call passes an argument the signature does
+	 * not declare, which raises, so the disagreement precondition fails.
+	 */
+	@Test
+	public void testReconfigurePreserveCountShorter() throws Exception {
+		helperAssertAdjudicationReportsOnly("a call passing an argument the signature does not declare raises at runtime");
 	}
 
 	/**

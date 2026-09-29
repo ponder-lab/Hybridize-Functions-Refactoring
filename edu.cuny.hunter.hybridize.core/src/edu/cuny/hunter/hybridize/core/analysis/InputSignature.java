@@ -302,7 +302,8 @@ public record InputSignature(List<SpecEntry> entries) {
 		List<SpecEntry> supplied = this.entries();
 		List<SpecEntry> evidence = inferred.entries();
 
-		// A parameter-count mismatch has no meaningful per-parameter order; treat it as incomparable so the inferred signature wins.
+		// A parameter-count mismatch has no meaningful per-parameter order, so it is incomparable. The adjudication then tells the two
+		// directions apart: a signature shorter than the calls disagrees with them, while a longer one is left unchanged.
 		if (supplied.size() != evidence.size())
 			return Relation.INCOMPARABLE;
 

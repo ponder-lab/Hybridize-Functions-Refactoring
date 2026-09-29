@@ -1,6 +1,12 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
@@ -24,19 +30,21 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
  * Finds the values a program exports through a TensorFlow interface that outlives it: a SavedModel written by {@code tf.saved_model.save},
- * or a TensorFlow Lite model converted by {@code tf.lite.TFLiteConverter}. A function exported this way has its input signature fixed by
- * the exported interface as well as by its callers, so narrowing a supplied signature there is declined even under the closed-world
- * assumption (issue 808).
+ * a model's own {@code save}, or {@code tf.keras.models.save_model}, or a TensorFlow Lite model converted by
+ * {@code tf.lite.TFLiteConverter}. A function exported this way has its input signature fixed by the exported interface as well as by its
+ * callers, so narrowing a supplied signature there is declined even under the closed-world assumption (issue 808).
  * <p>
  * Only true exports count. A {@code get_concrete_function} call that only forces a trace fixes no external interface, so it is not an
  * export unless its result reaches a TensorFlow Lite conversion.
  * <p>
  * The analysis does not rely on call-graph edges into the export APIs, which the TensorFlow summaries do not model. It recognizes each call
- * in a reachable node by its attribute names ({@code saved_model.save}, {@code TFLiteConverter.from_concrete_functions},
- * {@code TFLiteConverter.from_keras_model}) and reads what each argument points to. When an export call's exported argument points to
- * nothing the analysis can see, as for an instance of a class the summaries do not model, what it exports is unknown, and every function
- * not otherwise found exported is reported as possibly exported. A {@code save} call on another receiver is recognized as a Keras model
- * saving itself only when the receiver resolves, since such calls are common on other objects.
+ * in a reachable node by its attribute names ({@code saved_model.save}, {@code save}, {@code models.save_model},
+ * {@code TFLiteConverter.from_concrete_functions}, {@code TFLiteConverter.from_keras_model}) and reads what each argument points to. The
+ * module is matched by the name it is read through, so an alias that renames it, or a function imported from it by name, is not recognized.
+ * When an export call's exported argument points to nothing the analysis can see, as for an instance of a class the summaries do not model,
+ * what it exports is unknown, and every function not otherwise found exported is reported as possibly exported. A {@code save} call on
+ * another receiver is recognized as a Keras model saving itself only when the receiver resolves, since such calls are common on other
+ * objects.
  */
 public class ExportAnalysis {
 
@@ -122,10 +130,10 @@ public class ExportAnalysis {
 	}
 
 	/**
-	 * Resolves the exported instances to the types {@link #isExported} compares against. A single pass over the instance fields reaches
-	 * both the function a {@code tf.function} wrapper holds in its {@code func} field (the TensorFlow summaries model
+	 * Resolves the exported instances to the types {@link #isExported} compares against. An index of the instance fields, built once,
+	 * reaches the function a {@code tf.function} wrapper holds in its {@code func} field (the TensorFlow summaries model
 	 * {@code tf.function(fn, ...)} that way), the elements of an exported {@code signatures} container, and the functions stored on an
-	 * object exported whole.
+	 * object exported whole or on any object it reaches through its fields.
 	 */
 	private void resolveTypes() {
 		for (InstanceKey instance : this.exportedFunctions)
@@ -134,18 +142,59 @@ public class ExportAnalysis {
 		if (this.exportedFunctions.isEmpty() && this.exportedContainers.isEmpty() && this.exportedObjects.isEmpty())
 			return;
 
-		for (PointerKey key : this.pointerAnalysis.getPointerKeys())
-			if (key instanceof InstanceFieldPointerKey field) {
-				InstanceKey owner = field.getInstanceKey();
-				boolean wrapper = this.exportedFunctions.contains(owner) && key instanceof InstanceFieldKey named
-						&& FUNC_FIELD.equals(named.getField().getName().toString());
+		Map<InstanceKey, List<InstanceFieldPointerKey>> fields = new HashMap<>();
 
-				// A function stored as an attribute of an object saved whole (for example, `module.serve = serve`) is exported with it. So
-				// is a method the object's class inherits, which the front end stores on the instance.
-				if (wrapper || this.exportedContainers.contains(owner) || this.exportedObjects.contains(owner))
-					for (InstanceKey value : this.pointerAnalysis.getPointsToSet(key))
-						this.exportedFunctionTypes.add(typeName(value.getConcreteType().getReference()));
-			}
+		for (PointerKey key : this.pointerAnalysis.getPointerKeys())
+			if (key instanceof InstanceFieldPointerKey field)
+				fields.computeIfAbsent(field.getInstanceKey(), k -> new ArrayList<>()).add(field);
+
+		for (InstanceKey function : this.exportedFunctions)
+			for (InstanceFieldPointerKey field : fields.getOrDefault(function, List.of()))
+				if (field instanceof InstanceFieldKey named && FUNC_FIELD.equals(named.getField().getName().toString()))
+					this.addValueTypes(field);
+
+		for (InstanceKey container : this.exportedContainers) {
+			boolean any = false;
+
+			for (InstanceFieldPointerKey field : fields.getOrDefault(container, List.of()))
+				any |= this.addValueTypes(field);
+
+			// A container whose entries point to nothing, such as one of concrete functions built elsewhere, exports what is unknown.
+			if (!any)
+				this.unresolved = true;
+		}
+
+		// A function stored on an object saved whole is exported with it: a method of its class, inherited ones included, which the front
+		// end stores on the instance, and a function assigned to an attribute (for example, `module.serve = serve`). So is one stored on an
+		// object it tracks, such as a submodule or a layer, however deeply nested.
+		Deque<InstanceKey> worklist = new ArrayDeque<>(this.exportedObjects);
+		Set<InstanceKey> visited = new HashSet<>(this.exportedObjects);
+
+		while (!worklist.isEmpty())
+			for (InstanceFieldPointerKey field : fields.getOrDefault(worklist.pop(), List.of()))
+				for (InstanceKey value : this.pointerAnalysis.getPointsToSet(field)) {
+					this.exportedFunctionTypes.add(typeName(value.getConcreteType().getReference()));
+
+					if (visited.add(value))
+						worklist.push(value);
+				}
+	}
+
+	/**
+	 * Records the types of what a field points to as exported function types.
+	 *
+	 * @param field The field.
+	 * @return True iff the field points to anything.
+	 */
+	private boolean addValueTypes(PointerKey field) {
+		boolean any = false;
+
+		for (InstanceKey value : this.pointerAnalysis.getPointsToSet(field)) {
+			this.exportedFunctionTypes.add(typeName(value.getConcreteType().getReference()));
+			any = true;
+		}
+
+		return any;
 	}
 
 	/**
@@ -162,18 +211,18 @@ public class ExportAnalysis {
 		if (SAVE.equals(member) && SAVED_MODEL.equals(receiver)) {
 			// tf.saved_model.save(obj, export_dir, signatures=None, options=None)
 			this.addPointsToOrFlag(node, argument(invoke, 1, "obj"), this.exportedObjects);
-			this.addSignatures(node, argument(invoke, 3, "signatures"));
+			this.addSignatures(node, defUse, argument(invoke, 3, "signatures"));
 		} else if (SAVE.equals(member)) {
 			// model.save(filepath, overwrite=True, include_optimizer=True, save_format=None, signatures=None, options=None, ...): a Keras
 			// model saving itself. Any other object with a `save` method is swept in too, which only declines a narrowing.
 			if (defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead read)
 				this.addPointsTo(node, read.getObjectRef(), this.exportedObjects);
 
-			this.addSignatures(node, argument(invoke, 5, "signatures"));
+			this.addSignatures(node, defUse, argument(invoke, 5, "signatures"));
 		} else if (SAVE_MODEL.equals(member) && MODELS.equals(receiver)) {
 			// tf.keras.models.save_model(model, filepath, overwrite=True, include_optimizer=True, save_format=None, signatures=None, ...)
 			this.addPointsToOrFlag(node, argument(invoke, 1, "model"), this.exportedObjects);
-			this.addSignatures(node, argument(invoke, 6, "signatures"));
+			this.addSignatures(node, defUse, argument(invoke, 6, "signatures"));
 		} else if (FROM_KERAS_MODEL.equals(member) && TFLITE_CONVERTER.equals(receiver))
 			// tf.lite.TFLiteConverter.from_keras_model(model)
 			this.addPointsToOrFlag(node, argument(invoke, 1, "model"), this.exportedObjects);
@@ -190,15 +239,36 @@ public class ExportAnalysis {
 	}
 
 	/**
-	 * Records a {@code signatures} argument: what it points to, and the entries of a container it is (such as a dictionary). A concrete
-	 * function passed there needs no unwrapping: the summaries' {@code get_concrete_function} returns the function it is called on.
+	 * Records a {@code signatures} argument: what it points to, and the entries of a container it is (such as a dictionary). The summaries
+	 * do not model {@code get_concrete_function}, so its result points to nothing; for the argument itself, or an entry of a container
+	 * literal written here, defined by such a call, the function it is called on is recorded instead. Any other value, or entry, that
+	 * points to nothing leaves what the call exports unknown.
 	 *
 	 * @param node The node.
+	 * @param defUse The node's def-use information.
 	 * @param signatures The argument value, or {@code -1} for none.
 	 */
-	private void addSignatures(CGNode node, int signatures) {
-		if (signatures != -1 && !this.addPointsToAndElements(node, signatures, this.exportedFunctions))
-			this.unresolved = true;
+	private void addSignatures(CGNode node, DefUse defUse, int signatures) {
+		if (signatures == -1)
+			return;
+
+		this.addPointsToAndElements(node, signatures, this.exportedFunctions);
+
+		for (int element : elementValues(defUse, signatures))
+			if (!this.addConcreteFunctionReceiver(node, defUse, element) && !this.pointsToAnything(node, element))
+				this.unresolved = true;
+	}
+
+	/**
+	 * Whether {@code value} points to anything.
+	 *
+	 * @param node The node.
+	 * @param value The value.
+	 * @return True iff {@code value}'s points-to set is nonempty.
+	 */
+	private boolean pointsToAnything(CGNode node, int value) {
+		PointerKey key = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
+		return !this.pointerAnalysis.getPointsToSet(key).isEmpty();
 	}
 
 	/**

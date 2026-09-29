@@ -157,10 +157,11 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's supplied {@code input_signature} disagrees with its reachable call sites: it is strictly tighter than the inferred
-	 * signature, or incomparable with it. Since the inferred signature is the join over those call sites, some reachable call already
-	 * violates the supplied one: it raises at runtime (a shape mismatch, or a tensor of the wrong dtype), or TensorFlow silently casts it
-	 * to the declared dtype (a NumPy array). Rewriting the signature to admit the call would repair the program rather than refactor it, so
-	 * the signature is left unchanged and the disagreement is reported.
+	 * signature, or incomparable with it, or it declares fewer parameters than they pass. Since the inferred signature is the join over the
+	 * evidence at those call sites, that evidence contradicts the supplied one: such a call raises at runtime (a shape mismatch, a tensor
+	 * of the wrong dtype, or an undeclared argument), TensorFlow silently casts it to the declared dtype (a NumPy array), or, for a Python
+	 * value, either happens depending on the direction of the conversion. Rewriting the signature to admit the call would repair the
+	 * program rather than refactor it, so the signature is left unchanged and the disagreement is reported.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */

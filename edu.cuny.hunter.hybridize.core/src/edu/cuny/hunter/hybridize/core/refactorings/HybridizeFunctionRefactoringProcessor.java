@@ -520,8 +520,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// inference, can disagree, so the kinds are computed only there.
 				if (hasAdjudicableSignature(func)) {
 					func.computeArgumentKinds(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
-					func.computeExported(exportAnalysis.updateAndGet(
-							existing -> existing != null ? existing : new ExportAnalysis(callGraph, builder.getPointerAnalysis())));
+					ExportAnalysis exports;
+
+					// Locked rather than updated atomically, since a lost race would repeat the whole-program scan.
+					synchronized (exportAnalysis) {
+						exports = exportAnalysis.get();
+
+						if (exports == null) {
+							exports = new ExportAnalysis(callGraph, builder.getPointerAnalysis());
+							exportAnalysis.set(exports);
+						}
+					}
+
+					func.computeExported(exports);
 				}
 
 				// Check whether the function calls an eager-only API (issue 363). Its failure is reachable in exactly the same
