@@ -1,12 +1,14 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -23,6 +25,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
@@ -46,6 +49,7 @@ import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
 import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
 import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.ScriptOutsidePythonPathException;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -97,6 +101,16 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new HashMap<>();
 
 	private Map<IProject, CallGraph> projectToCallGraph = new HashMap<>();
+
+	/**
+	 * Whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/990). Off by default, since such a script means the project's
+	 * source folders do not cover its code, and whether it matters is the project owner's call, not the tool's.
+	 */
+	private boolean skipScriptsOutsidePythonPath;
+
+	/** Each project's scripts that were left out of the analysis because no PYTHONPATH entry contains them, relative to the project. */
+	private Map<IProject, List<String>> projectToSkippedScripts = new HashMap<>();
 
 	private Map<IProject, TensorTypeAnalysis> projectToTensorTypeAnalysis = new HashMap<>();
 
@@ -350,17 +364,44 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
 			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
 
-			// create the analysis engine for the project.
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath,
-					this.getTargetedCfaDepth());
+			// create the analysis engine for the project, and its call graph builder. A script that no PYTHONPATH entry contains fails the
+			// project, naming the script, unless such scripts are to be skipped; then the engine is rebuilt without it (issue 990).
+			List<IPath> skipped = new ArrayList<>();
+			EclipsePythonProjectTensorAnalysisEngine candidate;
+			PythonSSAPropagationCallGraphBuilder built;
 
-			// build the call graph for the project.
-			PythonSSAPropagationCallGraphBuilder builder;
-			try {
-				builder = computeCallGraphBuilder(engine);
-			} catch (IOException e) {
-				throw new CoreException(Status.error("Could not compute call graph builder for: " + project.getName(), e));
+			while (true) {
+				candidate = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath, this.getTargetedCfaDepth(), skipped);
+
+				try {
+					built = computeCallGraphBuilder(candidate);
+					break;
+				} catch (IOException e) {
+					throw new CoreException(Status.error("Could not compute call graph builder for: " + project.getName(), e));
+				} catch (ScriptOutsidePythonPathException e) {
+					IPath script = projectRelative(project, e.getScript());
+					String message = "Project " + project.getName() + " has a script, " + (script == null ? e.getScript() : script)
+							+ ", that none of its PYTHONPATH entries " + e.getPythonPath()
+							+ " contains: its source folders do not cover it.";
+
+					if (!this.getSkipScriptsOutsidePythonPath() || script == null || skipped.contains(script))
+						throw new CoreException(
+								Status.error(message + " Correct the project's source folders"
+										+ (this.getSkipScriptsOutsidePythonPath() ? ""
+												: ", or, in the evaluator, skip such scripts with --skip-scripts-outside-python-path")
+										+ ".", e));
+
+					LOG.warn(message + " Skipping it, as configured.");
+					status.addWarning(message + " It was skipped, as configured.");
+					skipped.add(script);
+				}
 			}
+
+			if (!skipped.isEmpty())
+				this.getProjectToSkippedScripts().put(project, skipped.stream().map(IPath::toString).toList());
+
+			EclipsePythonProjectTensorAnalysisEngine engine = candidate;
+			PythonSSAPropagationCallGraphBuilder builder = built;
 
 			subMonitor.subTask("Building call graph.");
 			CallGraph callGraph;
@@ -714,6 +755,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.getProjectToMod().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
+		this.getProjectToSkippedScripts().clear();
 		Function.clearCaches();
 	}
 
@@ -907,6 +949,53 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckNumpyCalls(boolean alwaysCheckNumpyCalls) {
 		this.alwaysCheckNumpyCalls = alwaysCheckNumpyCalls;
+	}
+
+	/**
+	 * Resolves a script name the analysis reports to a path relative to the project's directory.
+	 *
+	 * @param project The project.
+	 * @param script The script's name, as the analysis reports it: absolute, or relative to the directory the engine collects the project's
+	 *        scripts from.
+	 * @return The script's path relative to the project's directory, or {@code null} if it is not within the project.
+	 */
+	private static IPath projectRelative(IProject project, String script) {
+		// The directory the engine collects the project's scripts from, which the analysis names them against.
+		IPath location = getPath(project);
+		IPath path = org.eclipse.core.runtime.Path.fromOSString(script);
+		IPath absolute = path.isAbsolute() ? path : location.append(path);
+
+		return location.isPrefixOf(absolute) && absolute.toFile().isFile() ? absolute.makeRelativeTo(location) : null;
+	}
+
+	/**
+	 * Whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project (issue 990).
+	 *
+	 * @return True iff such scripts are skipped.
+	 */
+	public boolean getSkipScriptsOutsidePythonPath() {
+		return this.skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Sets whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project (issue 990). Off
+	 * by default: such a script means the project's source folders do not cover its code, which the project's owner should decide about.
+	 * Either way the script is named: a failure's message names it, and a skipped script is logged, reported as a warning in the
+	 * refactoring status, and listed by {@link #getProjectToSkippedScripts()}.
+	 *
+	 * @param skipScriptsOutsidePythonPath Whether to skip such scripts.
+	 */
+	public void setSkipScriptsOutsidePythonPath(boolean skipScriptsOutsidePythonPath) {
+		this.skipScriptsOutsidePythonPath = skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Returns each project's scripts that were left out of the analysis because no PYTHONPATH entry contains them (issue 990).
+	 *
+	 * @return The skipped scripts, relative to each project's directory.
+	 */
+	public Map<IProject, List<String>> getProjectToSkippedScripts() {
+		return this.projectToSkippedScripts;
 	}
 
 	public boolean getAlwaysCheckStaticShapeReads() {

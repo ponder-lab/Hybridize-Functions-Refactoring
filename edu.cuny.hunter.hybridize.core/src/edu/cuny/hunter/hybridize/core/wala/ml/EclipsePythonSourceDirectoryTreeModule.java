@@ -1,6 +1,8 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.Set;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IWorkspace;
@@ -20,6 +22,13 @@ public class EclipsePythonSourceDirectoryTreeModule extends EclipseSourceDirecto
 
 	protected IPath rootPath;
 
+	/**
+	 * The files left out of the module, as the root joined with each file's path relative to it. Compared exactly, rather than through the
+	 * superclass's exclusion patterns, which are regular expressions that escape only {@code .}: a path with {@code +}, {@code (} or
+	 * {@code $} would mis-match, and one with <code>{{</code> would not compile (#990).
+	 */
+	private Set<IPath> excludedFiles = Collections.emptySet();
+
 	public EclipsePythonSourceDirectoryTreeModule(IPath root, IPath[] excludePaths) {
 		super(root, excludePaths);
 		// We need a copy of this because `com.ibm.wala.ide.classloader.EclipseSourceDirectoryTreeModule.rootIPath` is private.
@@ -29,6 +38,24 @@ public class EclipsePythonSourceDirectoryTreeModule extends EclipseSourceDirecto
 	public EclipsePythonSourceDirectoryTreeModule(IPath root, IPath[] excludePaths, String fileExt) {
 		super(root, excludePaths, fileExt);
 		this.rootPath = root;
+	}
+
+	/**
+	 * Constructs a module over the files under the root with the given extension, leaving out the given files exactly (#990).
+	 *
+	 * @param root The root directory.
+	 * @param fileExt The extension of the files to include.
+	 * @param excludedFiles The files to leave out, as the root joined with each file's path relative to it.
+	 */
+	public EclipsePythonSourceDirectoryTreeModule(IPath root, String fileExt, Set<IPath> excludedFiles) {
+		this(root, null, fileExt);
+		this.excludedFiles = excludedFiles;
+	}
+
+	@Override
+	protected boolean includeFile(File file) {
+		return super.includeFile(file)
+				&& !this.excludedFiles.contains(this.getRootPath().append(file.getPath().substring(root.getPath().length())));
 	}
 
 	@Override

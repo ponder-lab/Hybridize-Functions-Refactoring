@@ -46,6 +46,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -74,6 +75,7 @@ import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourceAttributes;
 import org.eclipse.core.runtime.CoreException;
@@ -134,6 +136,7 @@ import org.python.pydev.refactoring.ast.PythonModuleManager;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
+import org.python.pydev.shared_core.resource_stubs.FolderStub;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
@@ -567,6 +570,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private boolean alwaysCheckStaticShapeReads;
 
+	/** Whether a script that no PYTHONPATH entry contains is skipped rather than failing the project (off by default; #990). */
+	private boolean skipScriptsOutsidePythonPath;
+
+	/** The processor {@link #getFunctions(String)} last ran, for tests that inspect what it reports beyond the functions. */
+	private HybridizeFunctionRefactoringProcessor lastProcessor;
+
 	/**
 	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to the refactoring's own
 	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the harness does not override it. A test sets it via
@@ -648,6 +657,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public void setAlwaysCheckStaticShapeReads(boolean alwaysCheckStaticShapeReads) {
 		this.alwaysCheckStaticShapeReads = alwaysCheckStaticShapeReads;
+	}
+
+	/**
+	 * Sets whether a script that no PYTHONPATH entry contains is skipped rather than failing the project, as the evaluator's
+	 * {@code skipScriptsOutsidePythonPath} does (#990).
+	 *
+	 * @param skipScriptsOutsidePythonPath Whether to skip such scripts.
+	 */
+	public void setSkipScriptsOutsidePythonPath(boolean skipScriptsOutsidePythonPath) {
+		this.skipScriptsOutsidePythonPath = skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Makes the fixture's directory, which holds {@code in/}, the project's directory, while its source folder stays {@code in/}. A script
+	 * elsewhere in the fixture is then one the project's source folders do not cover (#990). The nature is shared across tests, so the
+	 * caller restores the returned source path afterward.
+	 *
+	 * @return The nature's source path before the change, to restore.
+	 * @throws CoreException If the nature's source path cannot be read or set.
+	 */
+	private String useFixtureDirectoryAsProjectRoot() throws CoreException {
+		String sourceFolder = getAbsolutePath(this.getInputTestFileName("A")).getParent().toString();
+		String fixtureDirectory = new File(sourceFolder).getParent();
+
+		ProjectStub projectStub = new ProjectStub("TestProject", sourceFolder, new IProject[0], new IProject[0]) {
+			@Override
+			public IPath getFullPath() {
+				return fromOSString(fixtureDirectory);
+			}
+
+			// The stub resolves every source folder to the project's directory, so the one source folder is resolved here instead.
+			@Override
+			public IFolder getFolder(IPath path) {
+				return new FolderStub(new org.python.pydev.shared_core.resource_stubs.ProjectStub(new File(fixtureDirectory), nature),
+						new File(sourceFolder));
+			}
+		};
+
+		setAstManager(sourceFolder, projectStub);
+
+		String previous = nature.getPythonPathNature().getProjectSourcePath(false);
+		nature.getPythonPathNature().setProjectSourcePath(sourceFolder);
+		return previous;
 	}
 
 	/**
@@ -797,6 +849,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 		processor.setTargetedCfaDepth(this.targetedCfaDepth);
 		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
+		processor.setSkipScriptsOutsidePythonPath(this.skipScriptsOutsidePythonPath);
+		this.lastProcessor = processor;
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -2734,6 +2788,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), f.getInferredInputSignatureAbsenceReason());
 		assertEquals("An unreachable function infers no signature, so it reads no unresolved axis.", FALSE,
 				f.getHasUnresolvedStaticallyReadAxes());
+	}
+
+	/**
+	 * A project whose source folders leave a script with an import uncovered fails, naming the script, rather than failing with the
+	 * analysis's own exception (#990).
+	 */
+	@Test
+	public void testScriptOutsidePythonPath() throws Exception {
+		String previous = this.useFixtureDirectoryAsProjectRoot();
+
+		try {
+			CoreException e = assertThrows(CoreException.class, () -> this.getFunctions());
+			assertTrue("The failure names the uncovered script: " + e.getMessage(), e.getMessage().contains("extra/B.py"));
+			assertTrue("The failure says the source folders do not cover it: " + e.getMessage(),
+					e.getMessage().contains("its source folders do not cover it"));
+		} finally {
+			nature.getPythonPathNature().setProjectSourcePath(previous);
+		}
+	}
+
+	/**
+	 * With skipping on, a script no source folder covers is left out and listed, and the rest of the project is analyzed (#990).
+	 */
+	@Test
+	public void testScriptOutsidePythonPathSkipped() throws Exception {
+		String previous = this.useFixtureDirectoryAsProjectRoot();
+		this.setSkipScriptsOutsidePythonPath(true);
+
+		try {
+			Set<Function> functions = this.getFunctions();
+			assertEquals(1, functions.size());
+			// The script sits under a directory whose name is full of regular-expression metacharacters, which the exclusion must take
+			// literally.
+			assertEquals("The skipped script is listed.", List.of("extra/{{slug}} (c++)/B.py"),
+					this.lastProcessor.getProjectToSkippedScripts().values().stream().flatMap(List::stream).toList());
+
+			Function f = functions.iterator().next();
+			assertEquals("The covered script is still analyzed.", TRUE, f.getHasTensorParameter());
+		} finally {
+			nature.getPythonPathNature().setProjectSourcePath(previous);
+		}
 	}
 
 	/**
