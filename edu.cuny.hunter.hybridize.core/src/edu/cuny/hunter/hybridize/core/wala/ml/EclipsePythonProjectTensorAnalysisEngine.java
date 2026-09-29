@@ -5,6 +5,7 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -52,7 +53,7 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath) {
 		super(pythonPath);
-		this.initialize(project);
+		this.initialize(project, Collections.emptySet());
 	}
 
 	/**
@@ -66,21 +67,38 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 	 * @param targetedCfaDepth The targeted k-CFA depth to forward to the analysis engine.
 	 */
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath, int targetedCfaDepth) {
+		this(project, pythonPath, targetedCfaDepth, Collections.emptySet());
+	}
+
+	/**
+	 * Constructs an engine as {@link #EclipsePythonProjectTensorAnalysisEngine(IProject, List, int)} does, leaving the given scripts out of
+	 * the analysis: scripts under no PYTHONPATH entry that the caller chose to skip rather than fail on
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/990).
+	 *
+	 * @param project The project to analyze.
+	 * @param pythonPath The Python path entries.
+	 * @param targetedCfaDepth The targeted k-CFA depth to forward to the analysis engine.
+	 * @param excludedScripts The scripts to leave out, relative to the project's directory.
+	 */
+	public EclipsePythonProjectTensorAnalysisEngine(IProject project, List<File> pythonPath, int targetedCfaDepth,
+			Collection<IPath> excludedScripts) {
 		super(pythonPath, TENSORFLOW, targetedCfaDepth);
-		this.initialize(project);
+		this.initialize(project, excludedScripts);
 	}
 
 	public EclipsePythonProjectTensorAnalysisEngine(IProject project) {
-		this.initialize(project);
+		this.initialize(project, Collections.emptySet());
 	}
 
-	private void initialize(IProject project) {
+	private void initialize(IProject project, Collection<IPath> excludedScripts) {
 		assert this.project == null : "Engine is meant to be initialized only once.";
 
 		this.project = project;
 		IPath projectPath = getPath(project);
 
-		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, null, ".py");
+		// The module matches each exclusion against the project's path joined with a file's relative path.
+		IPath[] excludes = excludedScripts.isEmpty() ? null : excludedScripts.stream().map(projectPath::append).toArray(IPath[]::new);
+		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, excludes, ".py");
 		LOG.info("Creating engine from: " + dirModule + ".");
 
 		this.setModuleFiles(Collections.singleton(dirModule));

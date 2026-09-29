@@ -154,6 +154,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	private static final String DEPTH_LIMITED_CSV_FILENAME = "depth_limited.csv";
 
+	/**
+	 * The scripts left out of the analysis because no PYTHONPATH entry contains them, when
+	 * {@link EvaluationOption#SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH} is on (issue 990): one row per script, so a skip is never silent.
+	 */
+	private static final String SKIPPED_SCRIPTS_CSV_FILENAME = "skipped_scripts.csv";
+
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
@@ -201,6 +207,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean alwaysCheckTensorIteration = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_ITERATION.key());
 
 	private boolean alwaysCheckKerasSymbolicArguments = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_KERAS_SYMBOLIC_ARGUMENTS.key());
+
+	private boolean skipScriptsOutsidePythonPath = Boolean.getBoolean(EvaluationOption.SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.key());
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
@@ -303,7 +311,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
 								"dim index", "dim class", "dtype", "dtype top"));
 				CSVPrinter depthLimitedPrinter = createCSVPrinter(DEPTH_LIMITED_CSV_FILENAME,
-						new String[] { "subject", "method", "value number", "call string length" });) {
+						new String[] { "subject", "method", "value number", "call string length" });
+				CSVPrinter skippedScriptsPrinter = createCSVPrinter(SKIPPED_SCRIPTS_CSV_FILENAME, new String[] { "subject", "script" });) {
 			writeReadme();
 
 			if (BUILD_WORKSPACE) {
@@ -346,6 +355,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
 					processor.setAlwaysCheckKerasSymbolicArguments(this.getAlwaysCheckKerasSymbolicArguments());
+					processor.setSkipScriptsOutsidePythonPath(this.getSkipScriptsOutsidePythonPath());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -485,6 +495,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					for (DepthLimitedPoint point : depthLimitedPoints)
 						depthLimitedPrinter.printRecord(project.getName(), point.method(), point.valueNumber(), point.callStringLength());
+
+					for (String script : processor.getProjectToSkippedScripts().getOrDefault(project, List.of()))
+						skippedScriptsPrinter.printRecord(project.getName(), script);
 
 					// actually perform the refactoring if there are no fatal
 					// errors.
@@ -1002,6 +1015,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckKerasSymbolicArguments() {
 		return alwaysCheckKerasSymbolicArguments;
+	}
+
+	public boolean getSkipScriptsOutsidePythonPath() {
+		return skipScriptsOutsidePythonPath;
 	}
 
 	public boolean getProcessFunctionsInParallel() {
