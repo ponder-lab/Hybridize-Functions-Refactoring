@@ -2343,12 +2343,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * A broader supplied signature on a method of a Keras model saved through the model's own {@code save} (#808): the narrowing is
-	 * declined.
+	 * A broader supplied signature on a method of a Keras model saved through the model's own {@code save} (#808): a {@code save} call on
+	 * an object may or may not be a model saving itself, so the method is possibly exported, and the narrowing is declined as undetermined.
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedModelSave() throws Exception {
-		helperAssertExportDeclined(true);
+		helperAssertExportDeclined(false);
 	}
 
 	/**
@@ -2492,7 +2492,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderExportedConcreteSignaturesDict() throws Exception {
-		helperAssertExportDeclined(true);
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, true);
+
+		// The dictionary's entries were all resolved at the call, so the export status stays determined for the rest of the program.
+		Function g = this.getFunction("g");
+		assertEquals("An unrelated broader signature is still narrowed.", singleton(RECONFIGURE), g.getTransformations());
 	}
 
 	/**
@@ -2593,6 +2601,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testReconfigureNarrowBroaderStaticAxisReadRank() throws Exception {
 		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a user class with its own {@code save} (#808): the call may be a model saving itself, so
+	 * the method is possibly exported, and the narrowing is declined as undetermined rather than as a definite export.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderPossiblyExportedSave() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("Trainer.step");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A supplied signature declaring fewer parameters than are inferred, where the extra parameter has a tensor default no call passes
+	 * (#808): TensorFlow fills in the default, so the signature is left unchanged with a warning, without failing the disagreement
+	 * precondition.
+	 */
+	@Test
+	public void testReconfigurePreserveCountTensorDefault() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("A signature of a different parameter count selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("A default no call passes is not an argument a call passes.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+	}
+
+	/**
+	 * A broader supplied signature spelling a dtype TensorFlow does not define (#808): the parser cannot read it, so the signature is not
+	 * modeled and never narrowed.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnknownDType() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("A signature whose dtype names no TensorFlow dtype is not modeled.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
+		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
 	}
 
 	/**

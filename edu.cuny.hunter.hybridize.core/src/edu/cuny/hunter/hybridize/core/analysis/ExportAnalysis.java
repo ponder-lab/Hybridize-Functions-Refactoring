@@ -35,7 +35,7 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * callers, so narrowing a supplied signature there is declined even under the closed-world assumption (issue 808).
  * <p>
  * Only true exports count. A {@code get_concrete_function} call that only forces a trace fixes no external interface, so it is not an
- * export unless its result reaches a TensorFlow Lite conversion.
+ * export unless its result reaches a SavedModel's {@code signatures} or a TensorFlow Lite conversion.
  * <p>
  * The analysis does not rely on call-graph edges into the export APIs, which the TensorFlow summaries do not model. It recognizes each call
  * in a reachable node by its attribute names ({@code saved_model.save}, {@code save}, {@code models.save_model},
@@ -43,8 +43,12 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * module is matched by the name it is read through, so an alias that renames it, or a function imported from it by name, is not recognized.
  * When an export call's exported argument points to nothing the analysis can see, as for an instance of a class the summaries do not model,
  * what it exports is unknown, and every function not otherwise found exported is reported as possibly exported. A {@code save} call on
- * another receiver is recognized as a Keras model saving itself only when the receiver resolves, since such calls are common on other
- * objects.
+ * another receiver may be a Keras model saving itself, but such calls are common on other objects too, so the functions it reaches are
+ * reported as possibly exported rather than exported.
+ * <p>
+ * An object exported whole exports the functions reachable through its fields, which covers its methods, its attributes, and objects it
+ * holds as attributes, such as submodules. A layer that a functional Keras model reaches only through its graph of inputs and outputs is
+ * not among its fields, so its functions are not found.
  */
 public class ExportAnalysis {
 
@@ -88,6 +92,12 @@ public class ExportAnalysis {
 	 */
 	private final Set<InstanceKey> exportedObjects = new HashSet<>();
 
+	/**
+	 * The objects a {@code save} call on a receiver other than the SavedModel module is made on. The receiver may be a Keras model saving
+	 * itself, or any other object with a {@code save} method, so the functions stored on it are possibly exported.
+	 */
+	private final Set<InstanceKey> possiblyExportedObjects = new HashSet<>();
+
 	/** The values exported as functions: a SavedModel's {@code signatures}, and the functions a concrete-function conversion was given. */
 	private final Set<InstanceKey> exportedFunctions = new HashSet<>();
 
@@ -95,11 +105,20 @@ public class ExportAnalysis {
 	private final Set<InstanceKey> exportedContainers = new HashSet<>();
 
 	/**
+	 * The exported containers written as a literal at the export call, whose entries {@link #addSignatures} resolved one by one there,
+	 * unwrapping any {@code get_concrete_function} entry the container's own fields cannot show.
+	 */
+	private final Set<InstanceKey> literalContainers = new HashSet<>();
+
+	/**
 	 * The types of the exported functions' own objects, resolved once after the scan: each exported function, each function a
 	 * {@code tf.function} wrapper among them wraps, each element of an exported container, and each function stored on an object exported
 	 * whole.
 	 */
 	private final Set<String> exportedFunctionTypes = new HashSet<>();
+
+	/** The types of the functions stored on a possibly exported object ({@link #possiblyExportedObjects}). */
+	private final Set<String> possiblyExportedFunctionTypes = new HashSet<>();
 
 	/** Whether some explicit export call's exported argument points to nothing the analysis can see, so what it exports is unknown. */
 	private boolean unresolved;
@@ -139,7 +158,8 @@ public class ExportAnalysis {
 		for (InstanceKey instance : this.exportedFunctions)
 			this.exportedFunctionTypes.add(typeName(instance.getConcreteType().getReference()));
 
-		if (this.exportedFunctions.isEmpty() && this.exportedContainers.isEmpty() && this.exportedObjects.isEmpty())
+		if (this.exportedFunctions.isEmpty() && this.exportedContainers.isEmpty() && this.exportedObjects.isEmpty()
+				&& this.possiblyExportedObjects.isEmpty())
 			return;
 
 		Map<InstanceKey, List<InstanceFieldPointerKey>> fields = new HashMap<>();
@@ -154,26 +174,41 @@ public class ExportAnalysis {
 					this.addValueTypes(field);
 
 		for (InstanceKey container : this.exportedContainers) {
-			boolean any = false;
+			List<InstanceFieldPointerKey> entries = fields.getOrDefault(container, List.of());
+			boolean literal = this.literalContainers.contains(container);
 
-			for (InstanceFieldPointerKey field : fields.getOrDefault(container, List.of()))
-				any |= this.addValueTypes(field);
-
-			// A container whose entries point to nothing, such as one of concrete functions built elsewhere, exports what is unknown.
-			if (!any)
+			// A container built elsewhere is seen only through its fields, so an entry that points to nothing, such as a concrete function,
+			// or no entries at all, leave what it exports unknown. A literal's entries were resolved at the call.
+			if (!literal && entries.isEmpty())
 				this.unresolved = true;
+
+			for (InstanceFieldPointerKey field : entries)
+				if (!this.addValueTypes(field) && !literal)
+					this.unresolved = true;
 		}
 
 		// A function stored on an object saved whole is exported with it: a method of its class, inherited ones included, which the front
 		// end stores on the instance, and a function assigned to an attribute (for example, `module.serve = serve`). So is one stored on an
-		// object it tracks, such as a submodule or a layer, however deeply nested.
-		Deque<InstanceKey> worklist = new ArrayDeque<>(this.exportedObjects);
-		Set<InstanceKey> visited = new HashSet<>(this.exportedObjects);
+		// object it holds as an attribute, such as a submodule, however deeply nested.
+		this.addReachableTypes(fields, this.exportedObjects, this.exportedFunctionTypes);
+		this.addReachableTypes(fields, this.possiblyExportedObjects, this.possiblyExportedFunctionTypes);
+	}
+
+	/**
+	 * Records the types of everything reachable through the fields of the given objects.
+	 *
+	 * @param fields The instance fields of each object.
+	 * @param roots The objects to start from.
+	 * @param into The set of types to add to.
+	 */
+	private void addReachableTypes(Map<InstanceKey, List<InstanceFieldPointerKey>> fields, Set<InstanceKey> roots, Set<String> into) {
+		Deque<InstanceKey> worklist = new ArrayDeque<>(roots);
+		Set<InstanceKey> visited = new HashSet<>(roots);
 
 		while (!worklist.isEmpty())
 			for (InstanceFieldPointerKey field : fields.getOrDefault(worklist.pop(), List.of()))
 				for (InstanceKey value : this.pointerAnalysis.getPointsToSet(field)) {
-					this.exportedFunctionTypes.add(typeName(value.getConcreteType().getReference()));
+					into.add(typeName(value.getConcreteType().getReference()));
 
 					if (visited.add(value))
 						worklist.push(value);
@@ -214,9 +249,9 @@ public class ExportAnalysis {
 			this.addSignatures(node, defUse, argument(invoke, 3, "signatures"));
 		} else if (SAVE.equals(member)) {
 			// model.save(filepath, overwrite=True, include_optimizer=True, save_format=None, signatures=None, options=None, ...): a Keras
-			// model saving itself. Any other object with a `save` method is swept in too, which only declines a narrowing.
+			// model saving itself, or any other object with a `save` method, so what it stores is only possibly exported.
 			if (defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead read)
-				this.addPointsTo(node, read.getObjectRef(), this.exportedObjects);
+				this.addPointsTo(node, read.getObjectRef(), this.possiblyExportedObjects);
 
 			this.addSignatures(node, defUse, argument(invoke, 5, "signatures"));
 		} else if (SAVE_MODEL.equals(member) && MODELS.equals(receiver)) {
@@ -252,9 +287,17 @@ public class ExportAnalysis {
 		if (signatures == -1)
 			return;
 
+		Set<InstanceKey> containers = new HashSet<>(this.exportedContainers);
 		this.addPointsToAndElements(node, signatures, this.exportedFunctions);
+		Set<Integer> elements = elementValues(defUse, signatures);
 
-		for (int element : elementValues(defUse, signatures))
+		// A container literal written here has its entries resolved one by one below.
+		if (!elements.contains(signatures))
+			for (InstanceKey container : this.exportedContainers)
+				if (!containers.contains(container))
+					this.literalContainers.add(container);
+
+		for (int element : elements)
 			if (!this.addConcreteFunctionReceiver(node, defUse, element) && !this.pointsToAnything(node, element))
 				this.unresolved = true;
 	}
@@ -409,24 +452,17 @@ public class ExportAnalysis {
 	 * are resolved as exported functions too.
 	 *
 	 * @param node The node.
-	 * @param value The value, or {@code -1} for none.
+	 * @param value The value.
 	 * @param into The set to add to.
-	 * @return True iff {@code value} points to something.
 	 */
-	private boolean addPointsToAndElements(CGNode node, int value, Set<InstanceKey> into) {
+	private void addPointsToAndElements(CGNode node, int value, Set<InstanceKey> into) {
 		PointerKey key = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
-		boolean any = false;
 
-		for (InstanceKey instance : this.pointerAnalysis.getPointsToSet(key)) {
+		for (InstanceKey instance : this.pointerAnalysis.getPointsToSet(key))
 			if (Util.isContainerType(instance.getConcreteType().getReference()))
 				this.exportedContainers.add(instance);
 			else
 				into.add(instance);
-
-			any = true;
-		}
-
-		return any;
 	}
 
 	/**
@@ -435,13 +471,15 @@ public class ExportAnalysis {
 	 *
 	 * @param functionType The type of the function's own object, i.e., its declaring-class reference.
 	 * @return True iff the function is exported, false iff it is not, and {@code null} when it is not found exported but some export call's
-	 *         exported value could not be resolved.
+	 *         exported value could not be resolved, or it is stored on an object a {@code save} call is made on.
 	 */
 	Boolean isExported(TypeReference functionType) {
-		if (this.exportedFunctionTypes.contains(typeName(functionType)))
+		String name = typeName(functionType);
+
+		if (this.exportedFunctionTypes.contains(name))
 			return Boolean.TRUE;
 
-		return this.unresolved ? null : Boolean.FALSE;
+		return this.unresolved || this.possiblyExportedFunctionTypes.contains(name) ? null : Boolean.FALSE;
 	}
 
 	/**

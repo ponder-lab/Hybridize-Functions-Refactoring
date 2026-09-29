@@ -1,5 +1,6 @@
 # A broader supplied signature on a method of a Keras model the program saves through the model's own save method (#808). Saving the
-# model exports it, so the method's signature is part of the exported interface and the narrowing is declined.
+# model exports it. A save call on an object is not always a model saving itself, so the method is possibly exported, and the narrowing
+# is declined.
 import tensorflow as tf
 
 

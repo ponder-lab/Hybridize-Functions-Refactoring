@@ -684,7 +684,10 @@ public class Function {
 			if (name == null)
 				return Optional.empty();
 			try {
-				return Optional.of(DType.valueOf(name.toUpperCase(Locale.ROOT)));
+				DType dType = DType.valueOf(name.toUpperCase(Locale.ROOT));
+
+				// UNKNOWN names no TensorFlow dtype, so a signature spelling it is one the parser cannot read.
+				return dType == DType.UNKNOWN ? Optional.empty() : Optional.of(dType);
 			} catch (IllegalArgumentException _) {
 				return Optional.empty();
 			}
@@ -2392,21 +2395,30 @@ public class Function {
 		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
 		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
 
-		if (suppliedEntries.size() < inferredEntries.size()) {
-			// Every inferred entry is a parameter some reachable call passes, so a call passes an argument the signature does not cover.
+		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+				.toList();
+
+		// A parameter the inferred signature covers beyond the supplied one is passed by every reachable call when it has no default, and
+		// by some reachable call only when the call-site analysis says so. A tensor-typed parameter with a default is covered even when no
+		// call passes it, and TensorFlow then fills in the default.
+		boolean uncoveredArgumentPassed = suppliedEntries.size() < inferredEntries.size() && covered.size() == inferredEntries.size()
+				&& covered.subList(suppliedEntries.size(), covered.size()).stream()
+						.allMatch(p -> !p.hasDefault() || TRUE.equals(p.isSuppliedAtCallSite()));
+
+		if (uncoveredArgumentPassed) {
 			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but its "
 					+ "reachable calls pass " + inferredEntries.size()
-					+ "; a call passing an argument the signature does not declare raises " + "at runtime.");
+					+ "; a call passing an argument the signature does not declare raises at runtime.");
 			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
 					"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
 							+ "calls would repair the program rather than refactor it.");
 			return;
 		}
 
-		if (suppliedEntries.size() > inferredEntries.size()) {
-			// The inferred signature leaves out a defaulted parameter no reachable call passes (#787), so the two need not disagree:
-			// TensorFlow fills in the default and converts it against the supplied signature. They cannot be compared parameter by
-			// parameter, so the signature is left unchanged without claiming that a call violates it.
+		if (suppliedEntries.size() != inferredEntries.size()) {
+			// The inferred signature leaves out a defaulted parameter no reachable call passes (#787), or covers one a call may not pass,
+			// so the two need not disagree: TensorFlow fills in the default and converts it against the supplied signature. They cannot be
+			// compared parameter by parameter, so the signature is left unchanged without claiming that a call violates it.
 			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but "
 					+ inferredEntries.size() + " are inferred from its reachable calls, so the two cannot be compared parameter by "
 					+ "parameter; the signature is left unchanged.");
@@ -2414,9 +2426,6 @@ public class Function {
 					"Functions with no Python literal arguments may benefit from hybridization.");
 			return;
 		}
-
-		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
-				.toList();
 
 		for (int i = 0; i < suppliedEntries.size(); i++) {
 			InputSignature.SpecEntry suppliedEntry = suppliedEntries.get(i);
