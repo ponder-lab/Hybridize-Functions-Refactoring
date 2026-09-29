@@ -49,10 +49,12 @@
 # usable interpreter. PYTHON_INTERPRETER is the absolute path of a Python
 # executable to make the workspace's default PyDev interpreter, the one committed
 # metadata names as `Default`, before importing; the run exits 5 if it cannot be
-# configured. A project whose source folders leave a Python file uncovered fails,
-# naming the file (issue 990); SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH=true instead leaves
-# such files out of the analysis, listing each in skipped_scripts.csv. Whether an
-# uncovered file matters is the project's call, so fix its metadata where it does.
+# configured. A project whose source folders leave uncovered a Python file the
+# analysis must bind (one containing an import, or a module of a package it
+# translates) fails, naming the file (issue 990). SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH=true
+# instead leaves such files out, listing each in skipped_scripts.csv; each one costs
+# another class-hierarchy build. Whether an uncovered file matters is the project's
+# call, so fix its metadata where it does.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather

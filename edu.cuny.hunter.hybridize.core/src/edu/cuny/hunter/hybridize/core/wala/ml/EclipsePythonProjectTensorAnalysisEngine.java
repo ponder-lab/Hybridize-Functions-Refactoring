@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.ILog;
@@ -75,9 +76,9 @@ public class EclipsePythonProjectTensorAnalysisEngine extends PythonTensorAnalys
 		this.project = project;
 		IPath projectPath = getPath(project);
 
-		// The module matches each exclusion against the project's path joined with a file's relative path.
-		IPath[] excludes = excludedScripts.isEmpty() ? null : excludedScripts.stream().map(projectPath::append).toArray(IPath[]::new);
-		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, excludes, ".py");
+		// The module leaves out each file whose path, the project's joined with the file's relative path, is excluded.
+		Module dirModule = new EclipsePythonSourceDirectoryTreeModule(projectPath, ".py",
+				excludedScripts.stream().map(projectPath::append).collect(Collectors.toUnmodifiableSet()));
 		LOG.info("Creating engine from: " + dirModule + ".");
 
 		this.setModuleFiles(Collections.singleton(dirModule));

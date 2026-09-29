@@ -723,6 +723,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				| `parameters.csv` | non-`self` declared parameter. |
 				| `parameter_dimensions.csv` | (non-`self` parameter, inferred tensor type, dimension). |
 				| `depth_limited.csv` | points-to result abandoned at the targeted CFA depth. |
+				| `skipped_scripts.csv` | script left out as uncovered by any source folder (`skipScriptsOutsidePythonPath`). |
 				""");
 	}
 

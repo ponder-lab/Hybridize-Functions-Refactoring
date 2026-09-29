@@ -385,16 +385,20 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 							+ " contains: its source folders do not cover it.";
 
 					if (!this.getSkipScriptsOutsidePythonPath() || script == null || skipped.contains(script))
-						throw new CoreException(Status.error(message + " Correct the project's source folders"
-								+ (this.getSkipScriptsOutsidePythonPath() ? "" : ", or skip such scripts with skipScriptsOutsidePythonPath")
-								+ ".", e));
+						throw new CoreException(
+								Status.error(message + " Correct the project's source folders"
+										+ (this.getSkipScriptsOutsidePythonPath() ? ""
+												: ", or, in the evaluator, skip such scripts with --skip-scripts-outside-python-path")
+										+ ".", e));
 
 					LOG.warn(message + " Skipping it, as configured.");
 					status.addWarning(message + " It was skipped, as configured.");
 					skipped.add(script);
-					this.getProjectToSkippedScripts().computeIfAbsent(project, _ -> new ArrayList<>()).add(script.toString());
 				}
 			}
+
+			if (!skipped.isEmpty())
+				this.getProjectToSkippedScripts().put(project, skipped.stream().map(IPath::toString).toList());
 
 			EclipsePythonProjectTensorAnalysisEngine engine = candidate;
 			PythonSSAPropagationCallGraphBuilder builder = built;
@@ -751,6 +755,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.getProjectToMod().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
+		this.getProjectToSkippedScripts().clear();
 		Function.clearCaches();
 	}
 

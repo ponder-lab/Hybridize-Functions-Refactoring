@@ -2819,7 +2819,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		try {
 			Set<Function> functions = this.getFunctions();
 			assertEquals(1, functions.size());
-			assertEquals("The skipped script is listed.", List.of("extra/B.py"),
+			// The script sits under a directory whose name is full of regular-expression metacharacters, which the exclusion must take
+			// literally.
+			assertEquals("The skipped script is listed.", List.of("extra/{{slug}} (c++)/B.py"),
 					this.lastProcessor.getProjectToSkippedScripts().values().stream().flatMap(List::stream).toList());
 
 			Function f = functions.iterator().next();
