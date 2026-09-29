@@ -25,14 +25,15 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
- * Finds the values a program exports through a TensorFlow interface that outlives it: a SavedModel written by {@code tf.saved_model.save},
- * a model's own {@code save}, or {@code tf.keras.models.save_model}, or a TensorFlow Lite model converted by
- * {@code tf.lite.TFLiteConverter}. A function exported this way has its input signature fixed by the exported interface as well as by its
- * callers, so narrowing a supplied signature there is declined even under the closed-world assumption (issue 808).
+ * Finds the values a program exports through a TensorFlow interface that outlives it: a SavedModel written by {@code tf.saved_model.save}
+ * or {@code tf.keras.models.save_model}, or a TensorFlow Lite model converted by {@code tf.lite.TFLiteConverter}, and those a {@code save}
+ * call on another object possibly exports. A function exported this way has its input signature fixed by the exported interface as well as
+ * by its callers, so narrowing a supplied signature there is declined even under the closed-world assumption (issue 808).
  * <p>
  * Only true exports count. A {@code get_concrete_function} call that only forces a trace fixes no external interface, so it is not an
  * export unless its result reaches a SavedModel's {@code signatures} or a TensorFlow Lite conversion.
@@ -44,7 +45,7 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * When an export call's exported argument points to nothing the analysis can see, as for an instance of a class the summaries do not model,
  * what it exports is unknown, and every function not otherwise found exported is reported as possibly exported. A {@code save} call on
  * another receiver may be a Keras model saving itself, but such calls are common on other objects too, so the functions it reaches are
- * reported as possibly exported rather than exported.
+ * reported as possibly exported rather than exported; a receiver that points to nothing is ignored.
  * <p>
  * An object exported whole exports the functions reachable through its fields, which covers its methods, its attributes, and objects it
  * holds as attributes, such as submodules. A layer that a functional Keras model reaches only through its graph of inputs and outputs is
@@ -152,7 +153,8 @@ public class ExportAnalysis {
 	 * Resolves the exported instances to the types {@link #isExported} compares against. An index of the instance fields, built once,
 	 * reaches the function a {@code tf.function} wrapper holds in its {@code func} field (the TensorFlow summaries model
 	 * {@code tf.function(fn, ...)} that way), the elements of an exported {@code signatures} container, and the functions stored on an
-	 * object exported whole or on any object it reaches through its fields.
+	 * object exported whole or on any object it reaches through its fields. The same walk from the objects a generic {@code save} call is
+	 * made on finds the possibly exported functions.
 	 */
 	private void resolveTypes() {
 		for (InstanceKey instance : this.exportedFunctions)
@@ -291,8 +293,9 @@ public class ExportAnalysis {
 		this.addPointsToAndElements(node, signatures, this.exportedFunctions);
 		Set<Integer> elements = elementValues(defUse, signatures);
 
-		// A container literal written here has its entries resolved one by one below.
-		if (!elements.contains(signatures))
+		// A container literal allocated and written here has its entries resolved one by one below. One received from elsewhere, even if
+		// written here too, may hold entries this node does not show, so it is left to the field check.
+		if (defUse.getDef(signatures) instanceof SSANewInstruction && !elements.contains(signatures))
 			for (InstanceKey container : this.exportedContainers)
 				if (!containers.contains(container))
 					this.literalContainers.add(container);

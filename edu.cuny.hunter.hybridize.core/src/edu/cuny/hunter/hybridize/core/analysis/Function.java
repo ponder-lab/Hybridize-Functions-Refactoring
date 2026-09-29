@@ -2401,7 +2401,9 @@ public class Function {
 		// A parameter the inferred signature covers beyond the supplied one is passed by every reachable call when it has no default, and
 		// by some reachable call only when the call-site analysis says so. A tensor-typed parameter with a default is covered even when no
 		// call passes it, and TensorFlow then fills in the default.
-		boolean uncoveredArgumentPassed = suppliedEntries.size() < inferredEntries.size() && covered.size() == inferredEntries.size()
+		assert covered.size() == inferredEntries.size() : "The inferred signature covers each parameter once, in declaration order.";
+
+		boolean uncoveredArgumentPassed = suppliedEntries.size() < inferredEntries.size()
 				&& covered.subList(suppliedEntries.size(), covered.size()).stream()
 						.allMatch(p -> !p.hasDefault() || TRUE.equals(p.isSuppliedAtCallSite()));
 

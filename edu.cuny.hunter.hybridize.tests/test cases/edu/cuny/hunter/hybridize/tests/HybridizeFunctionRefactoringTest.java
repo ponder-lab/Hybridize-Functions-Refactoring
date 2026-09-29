@@ -2347,7 +2347,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * an object may or may not be a model saving itself, so the method is possibly exported, and the narrowing is declined as undetermined.
 	 */
 	@Test
-	public void testReconfigureNarrowBroaderExportedModelSave() throws Exception {
+	public void testReconfigureNarrowBroaderPossiblyExportedModelSave() throws Exception {
 		helperAssertExportDeclined(false);
 	}
 
@@ -2631,6 +2631,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("A signature of a different parameter count selects no transformation.", f.getTransformations().isEmpty());
 		assertNull("A default no call passes is not an argument a call passes.",
 				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+		assertTrue("The count mismatch is reported as not comparable.", Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> e.isWarning() && e.getMessage().contains("cannot be compared parameter by parameter")));
 	}
 
 	/**
@@ -2647,6 +2649,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("A signature whose dtype names no TensorFlow dtype is not modeled.",
 				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
 		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function enters a {@code signatures} dictionary the saving function
+	 * receives and adds to (#808): the dictionary is not a literal allocated there, so its entries are checked through its fields, and the
+	 * concrete function's entry leaves the status undetermined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesReceived() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
 	}
 
 	/**

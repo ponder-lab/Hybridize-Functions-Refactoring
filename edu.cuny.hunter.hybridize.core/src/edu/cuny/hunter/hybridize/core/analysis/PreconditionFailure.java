@@ -190,13 +190,13 @@ public enum PreconditionFailure {
 	/**
 	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but the function is part of an
 	 * interface the program exports, or whether it is could not be determined. The exports recognized are a SavedModel written by
-	 * {@code tf.saved_model.save} or {@code tf.keras.models.save_model} (as a {@code signatures} value, directly or through
-	 * {@code get_concrete_function}, or as a function stored on the saved object or an object it holds, such as a method or an attribute),
-	 * and a TensorFlow Lite model converted by {@code from_concrete_functions} or {@code from_keras_model}. A {@code save} call on any
-	 * other object may be a model saving itself, so the functions stored on it are possibly exported. The exported interface fixes the
-	 * signature for its consumers as well as for the reachable callers, so narrowing it could reject inputs the exported model is meant to
-	 * accept. This is a stated relaxation of the closed-world assumption, taken only for true exports: a {@code get_concrete_function} call
-	 * that only forces a trace does not count. The supplied signature is left unchanged.
+	 * {@code tf.saved_model.save} or {@code tf.keras.models.save_model} (as a {@code signatures} value or dictionary entry, directly or
+	 * through {@code get_concrete_function}, or as a function stored on the saved object or an object it holds, such as a method or an
+	 * attribute), and a TensorFlow Lite model converted by {@code from_concrete_functions} or {@code from_keras_model}. A {@code save} call
+	 * on any other object may be a model saving itself, so the functions stored on it are possibly exported. The exported interface fixes
+	 * the signature for its consumers as well as for the reachable callers, so narrowing it could reject inputs the exported model is meant
+	 * to accept. This is a stated relaxation of the closed-world assumption, taken only for true exports: a {@code get_concrete_function}
+	 * call that only forces a trace does not count. The supplied signature is left unchanged.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
