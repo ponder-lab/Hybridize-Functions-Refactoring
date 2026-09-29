@@ -2177,6 +2177,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
+		// The parameter reaches the formerly crashing state: classified as a tensor by its hint, with no tensor types inferred.
+		Parameter x = f.getParameters().iterator().next();
+		assertEquals("The parameter is classified as a tensor from its type hint.", TRUE, x.isTensor());
+		assertNull("Without a call-graph node, no tensor types are inferred.", x.getTensorTypes());
+
+		assertEquals("The parameter falls through to the no-evidence disposition.",
+				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), f.getInferredInputSignatureAbsenceReason());
 		assertEquals("An unreachable function infers no signature, so it reads no unresolved axis.", FALSE,
 				f.getHasUnresolvedStaticallyReadAxes());
 	}
