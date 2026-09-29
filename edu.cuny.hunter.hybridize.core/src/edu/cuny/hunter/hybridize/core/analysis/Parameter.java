@@ -333,7 +333,8 @@ public final class Parameter {
 	/**
 	 * Returns the set of possible {@link TensorType}s for this {@link Parameter}.
 	 *
-	 * @return The set of possible {@link TensorType}s for this {@link Parameter}.
+	 * @return The set of possible {@link TensorType}s for this {@link Parameter}, or {@code null} when they were never inferred, as when
+	 *         the owning function has no call-graph node (#984).
 	 */
 	public Set<TensorType> getTensorTypes() {
 		return this.tensorTypes;
