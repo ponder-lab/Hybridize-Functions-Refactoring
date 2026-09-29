@@ -2321,14 +2321,14 @@ public class Function {
 	 * ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_EXPORTED}).</li>
 	 * <li>The literal carries text the narrowed signature would drop, such as a spec's {@code name}, a comment, or a string
 	 * ({@link PreconditionFailure#NARROWING_WOULD_DROP_SPEC_TEXT}).</li>
-	 * <li>A supplied dtype is {@link DType#UNKNOWN}. The narrowing would then replace a dtype that was never read, which can change how
-	 * non-tensor arguments are cast. The supplied-signature parser declines to model any dtype it cannot read, so this is a defensive check
-	 * rather than a reachable case.</li>
 	 * <li>The narrowing changes a shape the function reads statically at trace time, so it changes the traced program
 	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}). The reads are those collected for the static-shape-read check
 	 * (issue 811): a {@code .shape} or {@code get_shape()} read of a parameter flowing into a shape-consuming operation in the function
 	 * itself. A read reached only through a callee, or consumed by plain Python code, is not seen.</li>
 	 * </ul>
+	 * A supplied dtype is never {@link DType#UNKNOWN} here: the supplied-signature parser declines to model any dtype it cannot read, so
+	 * the narrowing never replaces a dtype that was never read, which could change how non-tensor arguments are cast. An assertion keeps
+	 * that invariant explicit.
 	 *
 	 * @param supplied The supplied input signature.
 	 * @param inferred The inferred input signature, which {@code supplied} is strictly broader than.
@@ -2359,16 +2359,8 @@ public class Function {
 			return;
 		}
 
-		boolean unreadDType = supplied.entries().stream().flatMap(entry -> coveredTypes(entry).stream())
-				.anyMatch(type -> type.getDType() == DType.UNKNOWN);
-
-		if (unreadDType) {
-			this.addWarning("This hybrid function's input signature is broader than its call sites require, but it declares a dtype that "
-					+ "could not be read, so it is left unchanged.");
-			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-					"Functions with no Python literal arguments may benefit from hybridization.");
-			return;
-		}
+		assert supplied.entries().stream().flatMap(entry -> coveredTypes(entry).stream())
+				.noneMatch(type -> type.getDType() == DType.UNKNOWN) : "The parser modeled a supplied dtype it could not read.";
 
 		if (this.narrowingChangesStaticallyReadShape(supplied, inferred)) {
 			this.addFailure(PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE,

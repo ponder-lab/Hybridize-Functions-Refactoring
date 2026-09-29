@@ -2263,8 +2263,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A broader supplied signature whose dtype cannot be read (#808): the supplied-signature parser declines to model it, so it never
-	 * reaches the narrowing at all. This pins the invariant that makes the narrowing's defensive unknown-dtype check unreachable: a dtype
-	 * the tool did not read is never replaced.
+	 * reaches the narrowing at all. This pins the invariant that makes the narrowing's unknown-dtype assertion hold: a dtype the tool did
+	 * not read is never replaced.
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderUnreadDType() throws Exception {
@@ -2529,6 +2529,70 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = this.getFunction("M.f");
 		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
 		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A dtype disagreement on the second of two parameters (#808): the agreeing first parameter is skipped, and only the second is
+	 * reported.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableSecondParameter() throws Exception {
+		helperAssertAdjudicationReportsOnly(
+				"Parameter `u` is declared with dtype float32, but a reachable call passes a tensor of dtype int32; that call raises at runtime");
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would change a rank the function reads statically (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticRankRead() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a {@code signatures} value through another {@code tf.function} wrapping it
+	 * (#808): the wrapper's {@code func} field holds the function, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedWrapper() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature in a program that converts an unresolvable concrete function to a TensorFlow Lite model (#808): what the
+	 * conversion exports is unknown, so the narrowing is declined as possibly exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolvedTFLite() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a function no reachable code calls (#808): nothing is inferred, so the signature is neither narrowed
+	 * nor reported as disagreeing, though its argument kinds and export status are still computed.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreachable() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("An unreachable function's signature is not narrowed.", f.getTransformations().isEmpty());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+		assertNull("An unreachable function's signature is not reported as disagreeing.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would fix the rank of a parameter whose axis the function reads statically (#808): the
+	 * read axis is unknown under the supplied signature, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticAxisReadRank() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
 	}
 
 	/**

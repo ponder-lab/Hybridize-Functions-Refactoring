@@ -375,14 +375,11 @@ public class ExportAnalysis {
 	 * Adds what {@code value} points to.
 	 *
 	 * @param node The node.
-	 * @param value The value, or {@code -1} for none.
+	 * @param value The value.
 	 * @param into The set to add to.
 	 * @return True iff {@code value} points to something.
 	 */
 	private boolean addPointsTo(CGNode node, int value, Set<InstanceKey> into) {
-		if (value == -1)
-			return false;
-
 		PointerKey key = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
 		boolean any = false;
 
