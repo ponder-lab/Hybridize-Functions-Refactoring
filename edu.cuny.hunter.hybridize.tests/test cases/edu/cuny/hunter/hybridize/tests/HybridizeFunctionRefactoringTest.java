@@ -12,12 +12,18 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -2082,45 +2088,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Adjudication path (#596, made report-only by #808), supplied-tighter: the existing {@code input_signature} is more specific than the
-	 * call-site evidence (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the
-	 * inferred signature is the join over the observed call sites, this relation means a nonconforming observed call raises at runtime;
-	 * rewriting the signature would repair rather than preserve behavior, so it is preserved and the finding surfaces as a warning.
+	 * Adjudication path (#596; #808), supplied-tighter: the existing {@code input_signature} is more specific than the call-site evidence
+	 * (a concrete rank-1 shape against call sites of differing rank, which infer an unknown-rank shape). Since the inferred signature is
+	 * the join over the observed call sites, this relation means a nonconforming observed call raises at runtime; rewriting the signature
+	 * would repair rather than preserve behavior, so it is left unchanged, the finding surfaces as a warning, and the disagreement
+	 * precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
 	public void testReconfigurePreserveTighter() throws Exception {
-		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which the reachable calls' evidence does not fit");
 	}
 
 	/**
 	 * Name-referenced variant of {@link #testReconfigurePreserveTighter()} (#834): the tighter signature is referenced through a
-	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same report-only
-	 * warning with the constant untouched.
+	 * module-level constant, so the adjudicated signature was resolved through the sole-binding rule; the outcome is the same warning and
+	 * failure, with the constant untouched.
 	 */
 	@Test
 	public void testReconfigurePreserveNameReference() throws Exception {
-		helperAssertAdjudicationReportsOnly("narrower than its call sites require");
+		helperAssertAdjudicationReportsOnly("is declared with shape (2,), which the reachable calls' evidence does not fit");
 	}
 
 	/**
-	 * Adjudication path (#596, made report-only by #808), incomparable: the existing {@code input_signature} is incomparable with the
-	 * inferred one (a float32 dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is
-	 * preserved and the finding surfaces as a warning.
+	 * Adjudication path (#596; #808), incomparable: the existing {@code input_signature} is incomparable with the inferred one (a float32
+	 * dtype against an int32 call site); a nonconforming observed call raises at runtime, so the signature is left unchanged, the finding
+	 * surfaces as a warning, and the disagreement precondition fails.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
 	public void testReconfigurePreserveIncomparable() throws Exception {
-		helperAssertAdjudicationReportsOnly("disagrees with its call sites");
+		helperAssertAdjudicationReportsOnly("passes a tensor of dtype int32; that call raises at runtime");
 	}
 
 	/**
-	 * Shared assertion for the report-only adjudication tests (#808): the single hybrid fixture function selects no transformation and no
-	 * passing precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing
-	 * {@code messageFragment}, and terminates in the same {@code HAS_NO_PRIMITIVE_PARAMETERS} failure as the other unmodified-signature
-	 * outcomes.
+	 * Shared assertion for the disagreement tests (#808): the single hybrid fixture function selects no transformation and no passing
+	 * precondition, keeps its supplied {@code input_signature} modeled and untouched, emits a warning containing {@code messageFragment},
+	 * and fails {@code SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS}.
 	 *
 	 * @param messageFragment A fragment the adjudication warning must contain.
 	 */
@@ -2131,35 +2137,577 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertTrue("The adjudication is report-only: no transformation is selected.", f.getTransformations().isEmpty());
-		assertNull("No passing precondition on the report-only path.", f.getPassingPrecondition());
+		assertTrue("A disagreeing signature selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on a disagreeing signature.", f.getPassingPrecondition());
 		assertTrue("The supplied signature remains modeled and untouched.",
 				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
 
 		boolean found = Arrays.stream(f.getStatus().getEntries()).anyMatch(e -> e.isWarning() && e.getMessage().contains(messageFragment));
 		assertTrue("Expected an adjudication warning containing: " + messageFragment, found);
 
-		assertNotNull("The adjudicated function terminates in the no-primitive-parameters failure.",
-				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNotNull("A disagreeing supplied signature fails its precondition (#808).",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
 	}
 
 	/**
-	 * Modify path (#596), supplied-broader: the existing {@code input_signature} (an unknown-rank shape) is broader than the call sites
-	 * require, so it is preserved (not overwritten) and the divergence is reported informationally.
+	 * Narrowing path (#808), supplied-broader: the existing {@code input_signature} (an unknown-rank shape) is broader than the call sites
+	 * require. Under the closed-world assumption every reachable caller conforms to the inferred signature, so the supplied one is narrowed
+	 * to it ({@code P5}) and the decorator's literal is replaced in place.
 	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/596">Issue 596</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
 	@Test
-	public void testReconfigurePreserveBroader() throws Exception {
+	public void testReconfigureNarrowBroader() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Tuple-literal variant of {@link #testReconfigureNarrowBroader()} (#808): the supplied signature is a parenthesized tuple, and the
+	 * whole tuple, parentheses included, is replaced by the inferred signature.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderTuple() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Shared assertion for the narrowing tests (#808): the single hybrid fixture function selects {@code RECONFIGURE} with the {@code P5}
+	 * passing precondition, and applying its edits yields the expected output, in which the supplied literal is replaced by the inferred
+	 * signature.
+	 */
+	private void helperAssertNarrowing() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 		assertEquals(1, functions.size());
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
-		assertFalse("A broader supplied signature must not be overwritten.", f.getTransformations().contains(RECONFIGURE));
-		assertTrue("Expected an informational status about preserving the broader signature.", Arrays.stream(f.getStatus().getEntries())
-				.anyMatch(e -> e.isInfo() && e.getMessage().contains("broader than its call sites require")));
+		assertEquals("A broader supplied signature is narrowed.", singleton(RECONFIGURE), f.getTransformations());
+		assertEquals("Narrowing sets the P5 passing precondition.", P5, f.getPassingPrecondition());
+
+		IDocument doc = f.getContainingDocument();
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
+	 * Shared assertion for the declined-narrowing tests (#808): the supplied signature is broader than the call sites require, but the
+	 * narrowing is declined with the given failure, no transformation is selected, and the supplied signature stays modeled and untouched.
+	 *
+	 * @param failure The failure the declined narrowing reports.
+	 * @return The fixture function.
+	 */
+	private Function helperAssertNarrowingDeclined(PreconditionFailure failure) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("No passing precondition on a declined narrowing.", f.getPassingPrecondition());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+		assertNotNull("The declined narrowing reports " + failure + ".", f.getEntryMatchingFailure(failure));
+		return f;
+	}
+
+	/**
+	 * Shared assertion for the export-declined tests (#808): the narrowing is declined as {@link #helperAssertNarrowingDeclined} checks,
+	 * with the export failure, and its message says whether the function was found exported or its export status is undetermined.
+	 *
+	 * @param determined True iff the function is expected to be found exported, rather than possibly exported.
+	 */
+	private void helperAssertExportDeclined(boolean determined) throws Exception {
+		assertExportFailure(helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_EXPORTED), determined);
+	}
+
+	/**
+	 * Asserts that the function's export failure says whether it was found exported or its export status is undetermined.
+	 *
+	 * @param f The function.
+	 * @param determined True iff the function is expected to be found exported, rather than possibly exported.
+	 */
+	private static void assertExportFailure(Function f, boolean determined) {
+		RefactoringStatusEntry entry = f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_EXPORTED);
+		assertNotNull("The declined narrowing reports the export.", entry);
+		assertEquals("The export failure says whether the function was found exported.", determined,
+				entry.getMessage().contains("is part of an interface the program exports"));
+		assertEquals("The export failure says whether the export status is undetermined.", !determined,
+				entry.getMessage().contains("could not be determined"));
+	}
+
+	/**
+	 * A broader supplied signature given by name rather than as a literal (#808): the name's binding may be shared with other decorators,
+	 * so rewriting it for one function would split it, and the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderNameReference() throws Exception {
+		helperAssertNarrowingDeclined(SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME);
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would change a shape the function reads statically (#808): the body passes an axis read
+	 * into a reshape target, which the supplied signature leaves unknown and the inferred one fixes, so the narrowing would change the
+	 * traced program and is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticRead() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature whose dtype cannot be read (#808): the supplied-signature parser declines to model it, so it never
+	 * reaches the narrowing at all. This pins the invariant that makes the narrowing's unknown-dtype assertion hold: a dtype the tool did
+	 * not read is never replaced.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreadDType() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A signature whose dtype was not read is not modeled.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
+		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a SavedModel {@code signatures} entry (#808): the exported interface fixes the
+	 * signature for its consumers too, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignatures() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * Dictionary variant of {@link #testReconfigureNarrowBroaderExportedSignatures()} (#808): the method is exported as an entry of a
+	 * {@code signatures} dictionary, whose elements are resolved as exported functions.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesDict() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a method of an object saved as a SavedModel (#808): saving the object exports its {@code tf.function}
+	 * attributes, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedObject() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function is converted to a TensorFlow Lite model (#808): the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedTFLite() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model converted to a TensorFlow Lite model (#808): converting the model exports
+	 * it, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedKeras() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function is only traced (#808): a {@code get_concrete_function} call that
+	 * reaches no export fixes no external interface, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderTraceOnly() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature on a method of a class the program does not export, while it saves an instance of another class (#808):
+	 * only functions stored on the saved object count, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnrelatedExport() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model saved through the model's own {@code save} (#808): a {@code save} call on
+	 * an object may or may not be a model saving itself, so the method is possibly exported, and the narrowing is declined as undetermined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderPossiblyExportedModelSave() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a Keras model saved through {@code tf.keras.models.save_model} (#808): the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSaveModel() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a SavedModel {@code signatures} value through its concrete function (#808):
+	 * the {@code get_concrete_function} receiver is the exported function, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedConcreteSignature() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a method a saved object inherits (#808): the saved object's class hierarchy is exported, so the
+	 * narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedInherited() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature on a function assigned to an attribute of a saved object (#808): the saved object's fields are exported,
+	 * so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedAttribute() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves an object the analysis cannot resolve (#808): what the save exports is unknown,
+	 * so the function may be exported, and the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolved() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a method of an object saved through an imported alias of the SavedModel module, from inside a
+	 * function (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedAlias() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, true);
+	}
+
+	/**
+	 * A broader supplied signature whose spec carries a {@code name} (#808): the narrowed signature would drop it, so the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderSpecName() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_WOULD_DROP_SPEC_TEXT);
+	}
+
+	/**
+	 * A broader supplied signature with a comment inside its literal (#808): the narrowed signature would drop it, so the narrowing is
+	 * declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderComment() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_WOULD_DROP_SPEC_TEXT);
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing changes only an axis the function does not read statically (#808): the static-read
+	 * comparison is per axis, so the narrowing applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreadAxis() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A supplied signature declaring more parameters than are inferred from the reachable calls (#808): the inferred one leaves out a
+	 * defaulted parameter no call passes, so the two cannot be compared parameter by parameter. The signature is left unchanged with a
+	 * warning, and the disagreement precondition does not fail, since no call is shown to violate it.
+	 */
+	@Test
+	public void testReconfigurePreserveCountMismatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("A signature of a different parameter count selects no transformation.", f.getTransformations().isEmpty());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+
+		boolean found = Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> e.isWarning() && e.getMessage().contains("cannot be compared parameter by parameter"));
+		assertTrue("Expected a warning that the signatures cannot be compared.", found);
+
+		assertNull("A count mismatch does not claim that a call violates the signature.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+	}
+
+	/**
+	 * Keyword variant of {@link #testReconfigurePreserveIncomparableNumpy()} (#808): the NumPy array is passed by keyword.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpyKeyword() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
+	}
+
+	/**
+	 * Method variant of {@link #testReconfigurePreserveIncomparableNumpy()} (#808): the NumPy array is passed to a method.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpyMethod() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
+	}
+
+	/**
+	 * A dtype disagreement whose call sites pass both a tensor and a NumPy array (#808): one raises and the other is cast, so the warning
+	 * says both.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableMixed() throws Exception {
+		helperAssertAdjudicationReportsOnly("depending on the kind of value, that call raises at runtime or is silently cast to float32");
+	}
+
+	/**
+	 * A broader supplied signature on a function exported through a {@code signatures} dictionary whose entry is a concrete function
+	 * (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedConcreteSignaturesDict() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, true);
+
+		// The dictionary's entries were all resolved at the call, so the export status stays determined for the rest of the program.
+		Function g = this.getFunction("g");
+		assertEquals("An unrelated broader signature is still narrowed.", singleton(RECONFIGURE), g.getTransformations());
+	}
+
+	/**
+	 * A broader supplied signature on a method of a submodule the saved object tracks (#808): the saved object's fields are followed
+	 * transitively, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedChild() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("Encoder.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, true);
+	}
+
+	/**
+	 * A broader supplied signature in a program whose SavedModel {@code signatures} entry is a concrete function of an unmodeled object
+	 * (#808): what the save exports is unknown, so the narrowing is declined as possibly exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolvedSignature() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function enters a {@code signatures} dictionary built in another function
+	 * (#808): the dictionary's entries point to nothing, so what the save exports is unknown, and the narrowing is declined as possibly
+	 * exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesBuiltElsewhere() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A dtype disagreement on the second of two parameters (#808): the agreeing first parameter is skipped, and only the second is
+	 * reported.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableSecondParameter() throws Exception {
+		helperAssertAdjudicationReportsOnly(
+				"Parameter `u` is declared with dtype float32, but a reachable call passes a tensor of dtype int32; that call raises at runtime");
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would change a rank the function reads statically (#808): the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticRankRead() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature on a function exported as a {@code signatures} value through another {@code tf.function} wrapping it
+	 * (#808): the wrapper's {@code func} field holds the function, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedWrapper() throws Exception {
+		helperAssertExportDeclined(true);
+	}
+
+	/**
+	 * A broader supplied signature in a program that converts an unresolvable concrete function to a TensorFlow Lite model (#808): what the
+	 * conversion exports is unknown, so the narrowing is declined as possibly exported.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedUnresolvedTFLite() throws Exception {
+		helperAssertExportDeclined(false);
+	}
+
+	/**
+	 * A broader supplied signature on a function no reachable code calls (#808): nothing is inferred, so the signature is neither narrowed
+	 * nor reported as disagreeing, though its argument kinds and export status are still computed.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnreachable() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
+		assertTrue("An unreachable function's signature is not narrowed.", f.getTransformations().isEmpty());
+		assertTrue("The supplied signature remains modeled and untouched.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isPresent());
+		assertNull("An unreachable function's signature is not reported as disagreeing.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+	}
+
+	/**
+	 * A broader supplied signature whose narrowing would fix the rank of a parameter whose axis the function reads statically (#808): the
+	 * read axis is unknown under the supplied signature, so the narrowing is declined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStaticAxisReadRank() throws Exception {
+		helperAssertNarrowingDeclined(NARROWING_CHANGES_STATICALLY_READ_SHAPE);
+	}
+
+	/**
+	 * A broader supplied signature on a method of a user class with its own {@code save} (#808): the call may be a model saving itself, so
+	 * the method is possibly exported, and the narrowing is declined as undetermined rather than as a definite export.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderPossiblyExportedSave() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("Trainer.step");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A supplied signature declaring fewer parameters than are inferred, where the extra parameter has a tensor default no call passes
+	 * (#808): TensorFlow fills in the default, so the signature is left unchanged with a warning, without failing the disagreement
+	 * precondition.
+	 */
+	@Test
+	public void testReconfigurePreserveCountTensorDefault() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("A signature of a different parameter count selects no transformation.", f.getTransformations().isEmpty());
+		assertNull("A default no call passes is not an argument a call passes.",
+				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
+		assertTrue("The count mismatch is reported as not comparable.", Arrays.stream(f.getStatus().getEntries())
+				.anyMatch(e -> e.isWarning() && e.getMessage().contains("cannot be compared parameter by parameter")));
+	}
+
+	/**
+	 * A broader supplied signature spelling a dtype TensorFlow does not define (#808): the parser cannot read it, so the signature is not
+	 * modeled and never narrowed.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnknownDType() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertTrue("A signature whose dtype names no TensorFlow dtype is not modeled.",
+				f.getHybridizationParameters().getSuppliedInputSignature().isEmpty());
+		assertFalse("An unmodeled supplied signature is never narrowed.", f.getTransformations().contains(RECONFIGURE));
+	}
+
+	/**
+	 * A broader supplied signature on a function whose concrete function enters a {@code signatures} dictionary the saving function
+	 * receives and adds to (#808): the dictionary is not a literal allocated there, so its entries are checked through its fields, and the
+	 * concrete function's entry leaves the status undetermined.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderExportedSignaturesReceived() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function f = this.getFunction("M.f");
+		assertTrue("A declined narrowing selects no transformation.", f.getTransformations().isEmpty());
+		assertExportFailure(f, false);
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves another object with an explicit {@code signatures=None} (#808): None exports
+	 * nothing and leaves the export status determined, so the narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderSignaturesNone() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature in a program that saves an array with NumPy (#808): no TensorFlow interface is exported, so the
+	 * narrowing still applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderUnrelatedSave() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A broader supplied signature whose spec passes its shape and dtype positionally (#808): nothing is dropped, so the narrowing applies.
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderPositional() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * A supplied signature declaring fewer parameters than the reachable calls pass (#808): a call passes an argument the signature does
+	 * not declare, which raises, so the disagreement precondition fails.
+	 */
+	@Test
+	public void testReconfigurePreserveCountShorter() throws Exception {
+		helperAssertAdjudicationReportsOnly("a call passing an argument the signature does not declare raises at runtime");
+	}
+
+	/**
+	 * Incomparable dtype with a non-tensor argument (#808): the supplied signature declares float32, but the reachable call passes a NumPy
+	 * array of dtype int64, which TensorFlow silently casts at the signature boundary rather than rejecting. The precondition fails and the
+	 * warning says the value is cast, not that the call raises.
+	 */
+	@Test
+	public void testReconfigurePreserveIncomparableNumpy() throws Exception {
+		helperAssertAdjudicationReportsOnly("passes a NumPy array of dtype int64, which TensorFlow silently casts to float32");
 	}
 
 	/**

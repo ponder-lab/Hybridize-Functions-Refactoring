@@ -153,7 +153,63 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
 	 */
-	RETURNS_OPERATION(25);
+	RETURNS_OPERATION(25),
+
+	/**
+	 * The function's supplied {@code input_signature} disagrees with its reachable call sites: it is strictly tighter than the inferred
+	 * signature, or incomparable with it, or it declares fewer parameters than they pass. Since the inferred signature is the join over the
+	 * evidence at those call sites, that evidence contradicts the supplied one: such a call raises at runtime (a shape mismatch, a tensor
+	 * of the wrong dtype, or an undeclared argument), TensorFlow silently casts it to the declared dtype (a NumPy array), or, for a Python
+	 * value, either happens depending on the direction of the conversion. Rewriting the signature to admit the call would repair the
+	 * program rather than refactor it, so the signature is left unchanged and the disagreement is reported.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS(26),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but narrowing it to the inferred
+	 * signature would change a shape the function reads statically at trace time. A statically read axis that the supplied signature leaves
+	 * unknown and the inferred one fixes changes the program the function traces, so the narrowing is not behavior-preserving and the
+	 * supplied signature is left unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	NARROWING_CHANGES_STATICALLY_READ_SHAPE(27),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but it is given by name rather than
+	 * as a literal. The name's binding may be shared with other decorators, and rewriting it for one function would change the others;
+	 * rewriting only this decorator's reference would split a signature the developer chose to share. The supplied signature is left
+	 * unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME(28),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but the function is part of an
+	 * interface the program exports, or whether it is could not be determined. The exports recognized are a SavedModel written by
+	 * {@code tf.saved_model.save} or {@code tf.keras.models.save_model} (as a {@code signatures} value or dictionary entry, directly or
+	 * through {@code get_concrete_function}, or as a function stored on the saved object or an object it holds, such as a method or an
+	 * attribute), and a TensorFlow Lite model converted by {@code from_concrete_functions} or {@code from_keras_model}. A {@code save} call
+	 * on any other object may be a model saving itself, so the functions stored on it are possibly exported. The exported interface fixes
+	 * the signature for its consumers as well as for the reachable callers, so narrowing it could reject inputs the exported model is meant
+	 * to accept. This is a stated relaxation of the closed-world assumption, taken only for true exports: a {@code get_concrete_function}
+	 * call that only forces a trace does not count. The supplied signature is left unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	SUPPLIED_INPUT_SIGNATURE_EXPORTED(29),
+
+	/**
+	 * The function's supplied {@code input_signature} is broader than its reachable call sites require, but its literal carries text the
+	 * narrowed signature would drop: a spec argument other than the shape and dtype (most often a {@code name}, which changes the traced
+	 * placeholders and the function's structured input signature), a comment, or a string. The supplied signature is left unchanged.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
+	 */
+	NARROWING_WOULD_DROP_SPEC_TEXT(30);
 
 	static {
 		// check that the codes are unique.
