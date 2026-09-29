@@ -556,6 +556,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	protected boolean inferInputSignatures;
 
 	/**
+	 * Whether the static-shape-read check is forced on for every function rather than only where it can decide a conversion (off by
+	 * default).
+	 */
+	private boolean alwaysCheckStaticShapeReads;
+
+	/**
 	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to the refactoring's own
 	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the harness does not override it. A test sets it via
 	 * {@link #setTargetedCfaDepth(int)} to analyze a fixture at a chosen depth (#600).
@@ -626,6 +632,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public void setInferInputSignatures(boolean inferInputSignatures) {
 		this.inferInputSignatures = inferInputSignatures;
+	}
+
+	/**
+	 * Sets whether the static-shape-read check is forced on for every function, as the evaluator's {@code alwaysCheckStaticShapeReads}
+	 * does.
+	 *
+	 * @param alwaysCheckStaticShapeReads Whether to force the check on.
+	 */
+	public void setAlwaysCheckStaticShapeReads(boolean alwaysCheckStaticShapeReads) {
+		this.alwaysCheckStaticShapeReads = alwaysCheckStaticShapeReads;
 	}
 
 	/**
@@ -774,6 +790,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 		processor.setTargetedCfaDepth(this.targetedCfaDepth);
+		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
 
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
@@ -2143,6 +2160,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("A broader supplied signature must not be overwritten.", f.getTransformations().contains(RECONFIGURE));
 		assertTrue("Expected an informational status about preserving the broader signature.", Arrays.stream(f.getStatus().getEntries())
 				.anyMatch(e -> e.isInfo() && e.getMessage().contains("broader than its call sites require")));
+	}
+
+	/**
+	 * With the static-shape-read check forced on, an unreachable function is checked too. Its parameter is classified as a tensor from its
+	 * type hint alone, but without a call-graph node it has no tensor types, and signature inference dereferenced them, failing the whole
+	 * project with a {@code NullPointerException}. The check must instead pass determinately.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/984">Issue 984</a>
+	 */
+	@Test
+	public void testForcedStaticShapeReadCheckUnreachableTypeHinted() throws Exception {
+		this.setInferInputSignatures(true);
+		this.setAlwaysCheckStaticShapeReads(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function f = functions.iterator().next();
+		assertEquals("An unreachable function infers no signature, so it reads no unresolved axis.", FALSE,
+				f.getHasUnresolvedStaticallyReadAxes());
 	}
 
 	/**

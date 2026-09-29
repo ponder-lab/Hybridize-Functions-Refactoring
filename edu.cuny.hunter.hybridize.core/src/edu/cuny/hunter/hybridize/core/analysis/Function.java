@@ -4022,7 +4022,10 @@ public class Function {
 			// Everything observed for this parameter came from a declared expected failure, so nothing of its own is left to reduce. What
 			// the conforming callers pass may still be a container, whose element structure classification surfaced for exactly this case,
 			// so the container branch below runs first and only its failure reports the exclusion (#888).
-			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && !param.getTensorTypes().isEmpty();
+			// A parameter classified as a tensor from its type hint alone, in a function with no call-graph node, has no tensor types at
+			// all;
+			// it has no evidence to exclude, so it falls through to the no-evidence disposition below (#984).
+			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && param.getTensorTypes() != null && !param.getTensorTypes().isEmpty();
 
 			// A container's element evidence outranks the parameter's own typing, and does so however much of the latter there is. A tuple
 			// of tensors reaching a parameter is reported as the union of its elements' types, so the flat typing here is those very
