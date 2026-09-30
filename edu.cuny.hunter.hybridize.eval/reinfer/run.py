@@ -119,8 +119,24 @@ def strip_subject(subject, work):
     return records
 
 
+def project_name(work):
+    """The name the evaluator will give the imported project.
+
+    The headless import names a project from a committed ``.project`` when the checkout carries one, and
+    from its directory otherwise; asking for the directory's name when the two differ evaluates nothing.
+    """
+    try:
+        with open(os.path.join(work, ".project")) as f:
+            match = re.search(r"<name>([^<]*)</name>", f.read())
+        if match:
+            return match.group(1)
+    except OSError:
+        pass
+    return os.path.basename(work)
+
+
 def evaluate(subject, work, out, arguments):
-    project = os.path.basename(work)
+    project = project_name(work)
     entry = work + "=" + ":".join(subject["roots"])
     run_dir = os.path.join(out, "run")
     workspace = os.path.join(out, "workspace")

@@ -29,6 +29,24 @@ class FailureOfTest(unittest.TestCase):
         )
 
 
+class ProjectNameTest(unittest.TestCase):
+    def test_a_committed_project_file_names_the_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = os.path.join(d, "gpt-2-tensorflow2.0-88dfc145b")
+            os.makedirs(work)
+            with open(os.path.join(work, ".project"), "w") as f:
+                f.write(
+                    "<projectDescription>\n\t<name>gpt-2-tensorflow2.0</name>\n</projectDescription>\n"
+                )
+            self.assertEqual(run.project_name(work), "gpt-2-tensorflow2.0")
+
+    def test_without_one_the_directory_names_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = os.path.join(d, "tf-image-15977b3c6")
+            os.makedirs(work)
+            self.assertEqual(run.project_name(work), "tf-image-15977b3c6")
+
+
 class PrepareTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
