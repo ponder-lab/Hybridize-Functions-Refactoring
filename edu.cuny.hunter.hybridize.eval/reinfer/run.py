@@ -138,6 +138,45 @@ def evaluate(subject, work, out, arguments):
     return run_dir, code, succeeded
 
 
+def harness_provenance(harness):
+    """Which harness produced a run, and whether that code is merged.
+
+    The commit alone does not answer the second question after a squash merge, which gives the same
+    code a different commit. The git tree of this directory does: a run whose tree equals the tree
+    of this directory on main ran merged code, whatever its commit.
+    """
+    commit = git(harness, "rev-parse", "HEAD")
+    tree = git(harness, "rev-parse", "HEAD:./")
+    git(harness, "fetch", "-q", "origin", "main")
+    main_tree = git(
+        harness, "rev-parse", "origin/main:edu.cuny.hunter.hybridize.eval/reinfer"
+    )
+    on_main = (
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                harness,
+                "merge-base",
+                "--is-ancestor",
+                commit,
+                "origin/main",
+            ],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+    return {
+        "commit": commit,
+        "dirty": bool(git(harness, "status", "--porcelain", ".")),
+        "tree": tree,
+        "commit on main": on_main,
+        "main commit": git(harness, "rev-parse", "origin/main"),
+        "tree on main": main_tree,
+        "tree equals main": tree is not None and tree == main_tree,
+    }
+
+
 def taken_under(arguments, subject, source, trim):
     plugins = os.path.join(os.path.dirname(arguments.eclipse), "plugins")
     jars = (
@@ -163,10 +202,7 @@ def taken_under(arguments, subject, source, trim):
             "bundles": jars,
             "consumer": arguments.consumer,
         },
-        "harness": {
-            "commit": git(harness, "rev-parse", "HEAD"),
-            "dirty": bool(git(harness, "status", "--porcelain", ".")),
-        },
+        "harness": harness_provenance(harness),
         "configuration": {**EVALUATOR_ENVIRONMENT, "annotations": "none"},
         "trim": trim,
     }
