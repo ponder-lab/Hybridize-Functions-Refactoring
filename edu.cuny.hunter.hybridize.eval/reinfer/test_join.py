@@ -368,6 +368,22 @@ class JoinSubjectTest(unittest.TestCase):
         self.assertEqual(functions[0]["outcome"], "not-reproduced:mapping")
         self.assertEqual(functions[0]["also applies"], "")
 
+    def test_relaxation_outcomes(self):
+        relax = {"repo": "r", "sha": "s", "kind": "relax_shapes"}
+        records = [
+            self.record("scored", "", 1),  # has dimension rows
+            self.record("called", "", 4),  # a text caller, no dimension rows
+            self.record("lonely", "", 8),  # nothing reaches it
+        ]
+        for r in records:
+            r["signature_form"] = "none"
+            r["removed_source"] = None
+        functions, _, _ = join.join_subject(relax, records, self.run, self.checkout)
+        outcome = {r["function"]: r["outcome"] for r in functions}
+        self.assertEqual(outcome["scored"], "relax-shapes")
+        self.assertEqual(outcome["called"], "not-reached:call-graph")
+        self.assertEqual(outcome["lonely"], "no-call-site:in-tree")
+
     def test_complete_scope_is_in_tree(self):
         records = [self.record("lonely", "[tf.TensorSpec([2])]", 8)]
         functions, _, _ = join.join_subject(

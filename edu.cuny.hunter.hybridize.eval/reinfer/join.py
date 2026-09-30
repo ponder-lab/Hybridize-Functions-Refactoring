@@ -14,7 +14,9 @@ Every function receives exactly one outcome:
 - ``no-call-site:in-tree`` / ``no-call-site:trimmed``: no evidence reached the function and no call
   to it was found, in the full checkout or in a trimmed one;
 - ``evaluation-failed:<cause>``: the evaluator did not complete for the subject;
-- ``relax-shapes``: a relaxation commit, which has no removed spec and is scored on its axes;
+- ``relax-shapes``: a relaxation commit whose function the analysis reached, scored on its axes;
+- ``not-reached:call-graph``: a relaxation commit whose function has in-tree callers the call graph did
+  not connect, an in-scope miss (a relaxation commit with no caller at all scores ``no-call-site``);
 - ``excluded:<reason>``: nothing can be scored (an unevaluable spec, a positional signature, a
   function the tool never considered).
 """
@@ -134,9 +136,11 @@ def axis_evidence(dimension_rows):
 
 
 def axis_verdict(axis):
-    """The scoring rule. A wildcard is REQUIRED when the axis takes more than one extent or any member is
-    Dynamic; UNDETERMINED when any member is of an unresolved class (Unresolved, or a class the rule
-    does not name); otherwise UNNECESSARY, a single fixed extent."""
+    """IS's scoring rule. A wildcard is REQUIRED when the axis takes two or more distinct Constant
+    extents or any member is Dynamic; UNDETERMINED when a member is Symbolic, Unresolved or TOP (or
+    Ragged or Compound, which the rule does not yet name; Compound's components are not exported) and
+    the Constants alone show no variation; otherwise UNNECESSARY, a single fixed extent. A scalar has no
+    axes, so its rows carry no dim index and never reach here."""
     if len(axis["extents"]) > 1 or "Dynamic" in axis["classes"]:
         return "required"
     if axis["classes"] - {"Constant"}:
@@ -321,8 +325,12 @@ def join_subject(
             outcome = f"excluded:{excluded}"
         elif failure:
             outcome = f"evaluation-failed:{failure}"
-        elif subject["kind"] == "relax_shapes":
+        elif subject["kind"] == "relax_shapes" and dimension_rows:
             outcome = "relax-shapes"
+        elif subject["kind"] == "relax_shapes" and (resolved or text):
+            # Callers exist in the tree, but no type evidence reached the function: an in-scope miss of
+            # the call graph, distinct from a function the closed world puts out of reach (IS's ruling).
+            outcome = "not-reached:call-graph"
         # PRECEDENCE: reachability before spec form. With no call site the tool has nothing to infer
         # from, whatever the spec's form, so a function the closed world puts out of reach is not
         # counted as a miss of the form; the form is kept in `also applies`.
@@ -332,9 +340,9 @@ def join_subject(
                 if trim.get("sparse") and not trim.get("caller_scope_complete")
                 else "in-tree"
             )
-            if any(spec.contains_mapping(t) for t in removed):
+            if any(spec.contains_mapping(t) for t in removed or []):
                 also = "not-reproduced:mapping"
-        elif any(spec.contains_mapping(t) for t in removed):
+        elif any(spec.contains_mapping(t) for t in removed or []):
             outcome = "not-reproduced:mapping"
         elif inferred is not None:
             outcome = "scored"
