@@ -317,6 +317,19 @@ class JoinSubjectTest(unittest.TestCase):
         )
         self.assertEqual(functions[0]["outcome"], "excluded:not-considered-by-the-tool")
 
+    def test_a_failed_evaluation_keeps_its_functions(self):
+        records = [
+            self.record("scored", "[tf.TensorSpec([2, 3], tf.float32)]", 1),
+            self.record("dynamic", "dataset.element_spec", 0),
+        ]
+        functions, _, _ = join.join_subject(
+            self.SUBJECT, records, self.run, self.checkout, failure="OutOfMemoryError"
+        )
+        outcome = {r["function"]: r["outcome"] for r in functions}
+        self.assertEqual(outcome["scored"], "evaluation-failed:OutOfMemoryError")
+        # A spec that cannot be known is excluded whatever the evaluation did.
+        self.assertTrue(outcome["dynamic"].startswith("excluded:unevaluable"))
+
     def test_complete_scope_is_in_tree(self):
         records = [self.record("lonely", "[tf.TensorSpec([2])]", 8)]
         functions, _, _ = join.join_subject(

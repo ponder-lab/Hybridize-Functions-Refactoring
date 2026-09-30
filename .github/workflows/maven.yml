@@ -58,7 +58,7 @@ jobs:
       run: black --fast --check --extend-exclude \/out .
     - name: Test the strip-and-re-infer harness
       working-directory: edu.cuny.hunter.hybridize.eval/reinfer
-      run: python3.10 -m unittest -v test_spec test_strip test_join
+      run: python3.10 -m unittest -v test_spec test_strip test_join test_run
     - name: Install test requirements
       run: pip3.10 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
     - name: Install with Maven

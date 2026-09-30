@@ -13,6 +13,7 @@ Every function receives exactly one outcome:
   inference cannot express;
 - ``no-call-site:in-tree`` / ``no-call-site:trimmed``: no evidence reached the function and no call
   to it was found, in the full checkout or in a trimmed one;
+- ``evaluation-failed:<cause>``: the evaluator did not complete for the subject;
 - ``relax-shapes``: a relaxation commit, which has no removed spec and is scored on its axes;
 - ``excluded:<reason>``: nothing can be scored (an unevaluable spec, a positional signature, a
   function the tool never considered).
@@ -228,7 +229,9 @@ def _relations(removed, inferred):
     }
 
 
-def join_subject(subject, records, run_dir, checkout, ground_truth=None, trim=None):
+def join_subject(
+    subject, records, run_dir, checkout, ground_truth=None, trim=None, failure=None
+):
     """Produce ``(function_rows, parameter_rows, axis_rows)`` for one subject."""
     functions = _by_key(read_rows(run_dir, "functions.csv"))
     specs = _by_key(
@@ -310,10 +313,12 @@ def join_subject(subject, records, run_dir, checkout, ground_truth=None, trim=No
         resolved = resolved_calls(calls, record["qualname"])
         absence = sorted({r["absence reason"] for r in absences.get(key, [])})
 
-        if excluded is None and not present:
+        if excluded is None and not present and not failure:
             excluded = "not-considered-by-the-tool"
         if excluded is not None:
             outcome = f"excluded:{excluded}"
+        elif failure:
+            outcome = f"evaluation-failed:{failure}"
         elif subject["kind"] == "relax_shapes":
             outcome = "relax-shapes"
         elif any(spec.contains_mapping(t) for t in removed):

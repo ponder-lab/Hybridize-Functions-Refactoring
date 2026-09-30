@@ -46,6 +46,7 @@ Each function receives exactly one outcome:
 | `not-reproduced:<reason>` | The function is in scope, but the tool produced no spec; `<reason>` is the evaluator's absence reason, with the failed preconditions beside it. | Yes |
 | `no-call-site:in-tree` | No evidence reached the function, and no call to it exists in the checkout. | Left to the consumer |
 | `no-call-site:trimmed` | The same, but in a sparse checkout whose caller search is not known to be complete. | Left to the consumer |
+| `evaluation-failed:<cause>` | The evaluator did not complete for the subject, for example `OutOfMemoryError`; the function is in scope, but the tool produced nothing. | Left to the consumer |
 | `relax-shapes` | A relaxation commit, which removes no spec and is scored on its axes. | Separately |
 | `excluded:<reason>` | Nothing can be scored: an unevaluable spec, a positional signature, or a function the tool never considered. | No |
 

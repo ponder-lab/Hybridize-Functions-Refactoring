@@ -20,6 +20,7 @@ import csv
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -112,6 +113,7 @@ def evaluate(subject, work, out, arguments):
     os.makedirs(workspace)
     environment = dict(os.environ)
     environment.update(EVALUATOR_ENVIRONMENT)
+    environment["MAX_HEAP"] = arguments.max_heap
     environment.update(
         {
             "ECLIPSE": arguments.eclipse,
@@ -131,11 +133,26 @@ def evaluate(subject, work, out, arguments):
             stdout=log,
             stderr=subprocess.STDOUT,
         ).returncode
-    # The product launcher exits nonzero even after a successful evaluation, so the exit code is not a
-    # witness. The evaluator's own completion line is.
     with open(log_path, errors="replace") as log:
-        succeeded = SUCCESS_LINE in log.read()
-    return run_dir, code, succeeded
+        return run_dir, code, failure_of(log.read(), code)
+
+
+def failure_of(log, code):
+    """Why an evaluation did not complete, or None if it did.
+
+    The product launcher exits nonzero even after a successful evaluation, so the exit code is not a
+    witness. The evaluator's own completion line is.
+    """
+    if SUCCESS_LINE in log:
+        return None
+    if "java.lang.OutOfMemoryError" in log:
+        return "OutOfMemoryError"
+    skipped = re.search(
+        r"Evaluation completed: 0 of 1 project\(s\) succeeded.*?\((\w+):", log
+    )
+    if skipped:
+        return skipped.group(1)
+    return f"did-not-complete (launcher exit {code})"
 
 
 def harness_provenance(harness):
@@ -203,7 +220,11 @@ def taken_under(arguments, subject, source, trim):
             "consumer": arguments.consumer,
         },
         "harness": harness_provenance(harness),
-        "configuration": {**EVALUATOR_ENVIRONMENT, "annotations": "none"},
+        "configuration": {
+            **EVALUATOR_ENVIRONMENT,
+            "MAX_HEAP": arguments.max_heap,
+            "annotations": "none",
+        },
         "trim": trim,
     }
 
@@ -221,6 +242,11 @@ def main(argv=None):
         help="the Hybridize commit the evaluator product was built from",
     )
     parser.add_argument("--config", help="per-subject trims, keyed by manifest path")
+    parser.add_argument(
+        "--max-heap",
+        default=EVALUATOR_ENVIRONMENT["MAX_HEAP"],
+        help="the evaluator's heap, recorded in taken-under.json",
+    )
     parser.add_argument("--only", nargs="*", help="manifest paths to run, default all")
     parser.add_argument(
         "--strip-only",
@@ -262,13 +288,15 @@ def main(argv=None):
             )
             continue
 
-        run_dir, code, succeeded = evaluate(subject, work, out, arguments)
-        if not succeeded:
+        run_dir, code, failure = evaluate(subject, work, out, arguments)
+        if failure:
+            # Still joined: a failed evaluation is an outcome for every function it covered, not a
+            # reason for those functions to leave the output.
             print(
-                f"{subject['path']}: EVALUATION DID NOT COMPLETE (exit {code}); see {out}/run.log"
+                f"{subject['path']}: EVALUATION FAILED ({failure}); see {out}/run.log",
+                flush=True,
             )
             status = 1
-            continue
         truth_path = os.path.join(
             subjects_dir, "_ground-truth", subject["path"], "element_spec.json"
         )
@@ -277,13 +305,19 @@ def main(argv=None):
             with open(truth_path) as f:
                 truth = json.load(f)
         rows = join.join_subject(
-            subject, records, run_dir, work, ground_truth=truth, trim=trim
+            subject,
+            records,
+            run_dir,
+            work,
+            ground_truth=truth,
+            trim=trim,
+            failure=failure,
         )
         for name, part in zip(("functions", "parameters", "axes"), rows):
             write_csv(os.path.join(out, f"reinfer_{name}.csv"), part)
             combined[name].extend(part)
         outcomes = ", ".join(f"{r['function']}={r['outcome']}" for r in rows[0])
-        print(f"{subject['path']}: evaluated (launcher exit {code}); {outcomes}")
+        print(f"{subject['path']}: launcher exit {code}; {outcomes}", flush=True)
 
     for name, rows in combined.items():
         write_csv(os.path.join(arguments.out, f"reinfer_{name}.csv"), rows)
