@@ -6,13 +6,19 @@ import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.INT32;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.STRING;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType.UNKNOWN;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 import org.junit.Test;
 
+import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.DynamicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -424,5 +430,101 @@ public class InputSignatureTest {
 		InputSignature supplied = sig(new TensorType(FLOAT32, List.of(DynamicDim.INSTANCE, new NumericDim(784))));
 		InputSignature inferred = sig(new TensorType(FLOAT32, List.of(new SymbolicDim("?"), new NumericDim(784))));
 		assertEquals(Relation.AGREEMENT, supplied.relate(inferred));
+	}
+
+	/**
+	 * The relation cases the strip-and-re-infer harness shares with this test
+	 * ({@code edu.cuny.hunter.hybridize.eval/reinfer/relation_cases.txt}). The harness restates {@link InputSignature#relate} in Python
+	 * because it runs outside the OSGi runtime; both sides read this one table, so a change to either order that the other does not share
+	 * fails a build.
+	 */
+	private static final Path RELATION_CASES = Path.of("..", "edu.cuny.hunter.hybridize.eval", "reinfer", "relation_cases.txt");
+
+	/**
+	 * Every case in the shared table relates as the table says. Only the combined relation is asserted here; the per-axis columns restrict
+	 * the same order to one axis, and the harness's own tests assert them together with their combination.
+	 *
+	 * @throws IOException If the table cannot be read.
+	 */
+	@Test
+	public void testRelateSharedCases() throws IOException {
+		int cases = 0;
+
+		for (String line : Files.readAllLines(RELATION_CASES)) {
+			if (line.isBlank() || line.startsWith("#"))
+				continue;
+
+			String[] fields = line.split(";");
+			InputSignature supplied = parseRenderedSignature(fields[0]);
+			InputSignature inferred = parseRenderedSignature(fields[1]);
+			assertEquals(line, Relation.valueOf(fields[2].strip()), supplied.relate(inferred));
+			++cases;
+		}
+
+		assertTrue("The shared table has no cases.", cases > 10);
+	}
+
+	/**
+	 * Parses the harness's rendering of a signature: specs joined by {@code " | "}, each {@code dtype[dims]} or a parenthesized sequence of
+	 * them.
+	 *
+	 * @param text The rendered signature.
+	 * @return The signature.
+	 */
+	private static InputSignature parseRenderedSignature(String text) {
+		List<InputSignature.SpecEntry> entries = new ArrayList<>();
+
+		for (String entry : text.strip().split(" \\| ")) {
+			if (entry.startsWith("(")) {
+				List<TensorType> elements = new ArrayList<>();
+				int depth = 0;
+				int start = 1;
+
+				for (int i = 1; i < entry.length() - 1; i++) {
+					char c = entry.charAt(i);
+
+					if (c == '[')
+						++depth;
+					else if (c == ']')
+						--depth;
+					else if (c == ',' && depth == 0) {
+						elements.add(parseRenderedType(entry.substring(start, i)));
+						start = i + 1;
+					}
+				}
+
+				elements.add(parseRenderedType(entry.substring(start, entry.length() - 1)));
+				entries.add(new Sequence(elements));
+			} else
+				entries.add(new Single(parseRenderedType(entry)));
+		}
+
+		return new InputSignature(entries);
+	}
+
+	/**
+	 * Parses one rendered spec, {@code dtype[dims]}: {@code ?} is {@link DType#UNKNOWN}, {@code *} is unknown rank, and {@code None} is a
+	 * {@link DynamicDim}.
+	 *
+	 * @param text The rendered spec.
+	 * @return The tensor type.
+	 */
+	private static TensorType parseRenderedType(String text) {
+		String spec = text.strip();
+		int open = spec.indexOf('[');
+		String dtypeName = spec.substring(0, open);
+		String body = spec.substring(open + 1, spec.length() - 1);
+		DType dtype = dtypeName.equals("?") ? UNKNOWN : DType.valueOf(dtypeName.toUpperCase(Locale.ROOT));
+
+		if (body.equals("*"))
+			return new TensorType(dtype, null);
+
+		List<TensorType.Dimension<?>> dims = new ArrayList<>();
+
+		if (!body.isEmpty())
+			for (String dim : body.split(","))
+				dims.add(dim.strip().equals("None") ? DynamicDim.INSTANCE : new NumericDim(Integer.parseInt(dim.strip())));
+
+		return new TensorType(dtype, dims);
 	}
 }
