@@ -64,6 +64,29 @@ class AxisVerdictTest(unittest.TestCase):
             self.verdict("Constant,4", "Constant,8", "Unresolved"), "required"
         )
 
+    def test_an_unknown_rank_is_kept(self):
+        rows = [
+            {
+                "param index": "0",
+                "container position": "",
+                "type ordinal": "0",
+                "rank": "TOP",
+                "dim index": "",
+                "dim class": "TOP",
+            },
+            {
+                "param index": "0",
+                "container position": "",
+                "type ordinal": "1",
+                "rank": "2",
+                "dim index": "0",
+                "dim class": "Constant,4",
+            },
+        ]
+        axes, ranks = join.axis_evidence(rows)
+        self.assertEqual(ranks, {"TOP", "2"})
+        self.assertEqual(join.axis_verdict(axes[("", 0)]), "unnecessary")
+
     def test_an_unnamed_class_is_undetermined(self):
         self.assertEqual(self.verdict("Symbolic"), "undetermined")
 

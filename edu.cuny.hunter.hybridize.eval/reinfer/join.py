@@ -117,7 +117,8 @@ def axis_evidence(dimension_rows):
     ranks = set()
     for row in dimension_rows:
         if row.get("rank"):
-            ranks.add(int(row["rank"]))
+            # A type of unknown rank reports its rank as TOP, which is evidence too, so it is kept.
+            ranks.add(row["rank"])
         if row.get("dim index", "") == "":
             continue
         position = row.get("container position", "")
@@ -426,7 +427,16 @@ def join_subject(
                     "relation": rel["both"] or "",
                     "dtype relation": rel["dtype"] or "",
                     "shape relation": rel["shape"] or "",
-                    "inferred ranks": "|".join(str(r) for r in sorted(ranks)),
+                    "inferred ranks": "|".join(
+                        sorted(
+                            ranks,
+                            key=lambda r: (
+                                not r.isdigit(),
+                                int(r) if r.isdigit() else 0,
+                                r,
+                            ),
+                        )
+                    ),
                     "tensor types": (
                         parameter.get("tensor types", "") if parameter else ""
                     ),

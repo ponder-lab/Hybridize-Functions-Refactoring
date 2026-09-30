@@ -78,8 +78,13 @@ def repository_of(directory):
     return children[0] if len(children) == 1 else directory
 
 
-def prepare(subject, source, work):
-    """Copy ``source`` to ``work`` without ``.git``, after checking HEAD is the manifest's SHA."""
+def prepare(subject, source, work, exclude=()):
+    """Copy ``source`` to ``work`` without ``.git``, after checking HEAD is the manifest's SHA.
+
+    ``exclude`` names top-level paths of the checkout to leave out of the analyzed tree, for a
+    repository that holds a second, separate program (VaDER's ``tensorflow1`` beside
+    ``tensorflow2``). The trim is recorded with the run, like a sparse checkout's.
+    """
     repository = repository_of(source)
     head = git(repository, "rev-parse", "HEAD")
     if head != subject["sha"]:
@@ -90,7 +95,16 @@ def prepare(subject, source, work):
         raise RuntimeError(f"{source}: the working tree is not clean")
     if os.path.exists(work):
         raise RuntimeError(f"{work} exists; use a fresh --out")
-    shutil.copytree(source, work, ignore=shutil.ignore_patterns(".git"), symlinks=True)
+    excluded = {os.path.normpath(os.path.join(source, e)) for e in exclude}
+
+    def ignore(directory, names):
+        return {
+            n
+            for n in names
+            if n == ".git" or os.path.normpath(os.path.join(directory, n)) in excluded
+        }
+
+    shutil.copytree(source, work, ignore=ignore, symlinks=True)
 
 
 def strip_subject(subject, work):
@@ -276,7 +290,7 @@ def main(argv=None):
         out = os.path.join(arguments.out, subject["path"])
         work = os.path.join(out, subject["path"])
         os.makedirs(out)
-        prepare(subject, source, work)
+        prepare(subject, source, work, exclude=trim.get("exclude", ()))
         records = strip_subject(subject, work)
         with open(os.path.join(out, "strip.json"), "w") as f:
             json.dump(records, f, indent=1)
