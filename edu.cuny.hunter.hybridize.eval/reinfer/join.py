@@ -314,6 +314,7 @@ def join_subject(
         resolved = resolved_calls(calls, record["qualname"])
         absence = sorted({r["absence reason"] for r in absences.get(key, [])})
 
+        also = ""
         if excluded is None and not present and not failure:
             excluded = "not-considered-by-the-tool"
         if excluded is not None:
@@ -322,16 +323,21 @@ def join_subject(
             outcome = f"evaluation-failed:{failure}"
         elif subject["kind"] == "relax_shapes":
             outcome = "relax-shapes"
-        elif any(spec.contains_mapping(t) for t in removed):
-            outcome = "not-reproduced:mapping"
-        elif inferred is not None:
-            outcome = "scored"
-        elif not dimension_rows and resolved == 0 and text == 0:
+        # PRECEDENCE: reachability before spec form. With no call site the tool has nothing to infer
+        # from, whatever the spec's form, so a function the closed world puts out of reach is not
+        # counted as a miss of the form; the form is kept in `also applies`.
+        elif inferred is None and not dimension_rows and resolved == 0 and text == 0:
             outcome = "no-call-site:" + (
                 "trimmed"
                 if trim.get("sparse") and not trim.get("caller_scope_complete")
                 else "in-tree"
             )
+            if any(spec.contains_mapping(t) for t in removed):
+                also = "not-reproduced:mapping"
+        elif any(spec.contains_mapping(t) for t in removed):
+            outcome = "not-reproduced:mapping"
+        elif inferred is not None:
+            outcome = "scored"
         else:
             outcome = "not-reproduced:" + ("|".join(absence) or "unknown")
 
@@ -348,6 +354,7 @@ def join_subject(
             {
                 **base,
                 "outcome": outcome,
+                "also applies": also,
                 "decorator": record.get("decorator_callee") or "",
                 "other arguments": "; ".join(record.get("other_arguments", [])),
                 "relaxation": "; ".join(

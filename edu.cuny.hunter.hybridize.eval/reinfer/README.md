@@ -50,7 +50,7 @@ Each function receives exactly one outcome:
 | `relax-shapes` | A relaxation commit, which removes no spec and is scored on its axes. | Separately |
 | `excluded:<reason>` | Nothing can be scored: an unevaluable spec, a positional signature, or a function the tool never considered. | No |
 
-A function counts as having no call site only when all three signals agree: no inferred type reached any of its parameters, no resolved call in `calls.csv` names it, and a text search of the checkout finds no call of its name. All three are columns, so the classification can be audited.
+Reachability takes precedence over spec form: a function with no call site scores `no-call-site`, even if its removed spec holds a dict, since the tool had no evidence to infer from. The form is kept in the `also applies` column. A function counts as having no call site only when all three signals agree: no inferred type reached any of its parameters, no resolved call in `calls.csv` names it, and a text search of the checkout finds no call of its name. All three are columns, so the classification can be audited.
 
 ## Output
 

@@ -293,7 +293,9 @@ class JoinSubjectTest(unittest.TestCase):
         self.assertEqual(outcome["scored"]["relation"], spec.SUPPLIED_TIGHTER)
         self.assertEqual(outcome["scored"]["dtype relation"], spec.AGREEMENT)
         self.assertEqual(outcome["scored"]["shape relation"], spec.SUPPLIED_TIGHTER)
-        self.assertEqual(outcome["mapped"]["outcome"], "not-reproduced:mapping")
+        # `mapped` has no evidence, no resolved call and no text caller: reachability takes precedence.
+        self.assertEqual(outcome["mapped"]["outcome"], "no-call-site:trimmed")
+        self.assertEqual(outcome["mapped"]["also applies"], "not-reproduced:mapping")
         self.assertEqual(outcome["called"]["outcome"], "not-reproduced:UNKNOWN_DTYPE")
         self.assertEqual(outcome["called"]["text callers"], 1)
         # A trimmed checkout whose caller search is not known to be complete says so.
@@ -352,6 +354,19 @@ class JoinSubjectTest(unittest.TestCase):
         self.assertEqual(outcome["scored"], "evaluation-failed:OutOfMemoryError")
         # A spec that cannot be known is excluded whatever the evaluation did.
         self.assertTrue(outcome["dynamic"].startswith("excluded:unevaluable"))
+
+    def test_a_called_mapping_is_a_form_miss(self):
+        # With a caller, the tool had evidence and the dict form is what it cannot express.
+        with open(os.path.join(self.checkout, "m.py"), "a") as f:
+            f.write("mapped_call = mapped(1)\n")
+        functions, _, _ = join.join_subject(
+            self.SUBJECT,
+            [self.record("mapped", "[{'a': tf.TensorSpec([2])}]", 20)],
+            self.run,
+            self.checkout,
+        )
+        self.assertEqual(functions[0]["outcome"], "not-reproduced:mapping")
+        self.assertEqual(functions[0]["also applies"], "")
 
     def test_complete_scope_is_in_tree(self):
         records = [self.record("lonely", "[tf.TensorSpec([2])]", 8)]
