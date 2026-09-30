@@ -16,6 +16,14 @@ class FailureOfTest(unittest.TestCase):
             "OutOfMemoryError",
         )
 
+    def test_stack_overflow(self):
+        self.assertEqual(
+            run.failure_of(
+                "!MESSAGE Application error\njava.lang.StackOverflowError\n", 13
+            ),
+            "StackOverflowError",
+        )
+
     def test_a_skipped_project_names_its_exception(self):
         log = (
             "!MESSAGE Evaluation completed: 0 of 1 project(s) succeeded, 1 failed and were skipped: "

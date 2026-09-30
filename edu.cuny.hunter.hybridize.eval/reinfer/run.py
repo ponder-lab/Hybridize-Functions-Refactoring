@@ -163,8 +163,16 @@ def evaluate(subject, work, out, arguments):
             stdout=log,
             stderr=subprocess.STDOUT,
         ).returncode
-    with open(log_path, errors="replace") as log:
-        return run_dir, code, failure_of(log.read(), code)
+    # The launcher's log misses errors the platform records only in the workspace's own log, such as a
+    # StackOverflowError that ends the application, so both are read.
+    text = ""
+    for path in (log_path, os.path.join(workspace, ".metadata", ".log")):
+        try:
+            with open(path, errors="replace") as log:
+                text += log.read()
+        except OSError:
+            pass
+    return run_dir, code, failure_of(text, code)
 
 
 def failure_of(log, code):
@@ -175,8 +183,9 @@ def failure_of(log, code):
     """
     if SUCCESS_LINE in log:
         return None
-    if "java.lang.OutOfMemoryError" in log:
-        return "OutOfMemoryError"
+    for error in ("OutOfMemoryError", "StackOverflowError"):
+        if "java.lang." + error in log:
+            return error
     skipped = re.search(
         r"Evaluation completed: 0 of 1 project\(s\) succeeded.*?\((\w+):", log
     )
