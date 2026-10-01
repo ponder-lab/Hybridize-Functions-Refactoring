@@ -3159,10 +3159,35 @@ public class Function {
 				elementReason = this.reportElementDrop(param, j, elements.get(j));
 		}
 
-		if (elementReason == null)
-			specByParameter.put(param, new InputSignature.Sequence(reduced));
-		else
+		if (elementReason != null)
 			blocking.put(param, elementReason);
+		else if (!this.blocksOnUntypedContainerContext(param, blocking))
+			specByParameter.put(param, new InputSignature.Sequence(reduced));
+	}
+
+	/**
+	 * Blocks the container parameter {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is
+	 * reached in a conforming calling context that supplies no container the elements were read from (#1003), including an argument after a
+	 * starred unpack, which the analysis reads as the unpacked sequence itself (#1004). The container form of
+	 * {@link #blocksOnUntypedContext}, asked, like it, only once a specification exists to store, so it relabels no other absence. See
+	 * {@link Parameter#hasUntypedContainerContext()}.
+	 *
+	 * @param param The container parameter whose reduced specification is about to be stored.
+	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
+	 * @return True iff the parameter blocks, in which case its specification must not be stored.
+	 */
+	private boolean blocksOnUntypedContainerContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
+		if (!param.hasUntypedContainerContext())
+			return false;
+
+		// The nested specification comes from the containers the analysis saw. A context that supplies none of them passes something the
+		// specification makes no claim about, and TensorFlow enforces the nesting, so that call may be rejected.
+		this.addInfo(INPUT_SIGNATURE_INFERENCE,
+				"`" + this + "` is reached from a call site whose argument for parameter `" + param.getName() + "` is not a container the "
+						+ "analysis read, so a nested specification derived from the other call sites may reject that call; "
+						+ "input-signature inference is dropped.");
+		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
+		return true;
 	}
 
 	/**

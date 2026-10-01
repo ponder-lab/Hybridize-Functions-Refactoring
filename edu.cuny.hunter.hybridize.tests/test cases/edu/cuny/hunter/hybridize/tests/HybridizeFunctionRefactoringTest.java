@@ -13417,4 +13417,69 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
 	}
 
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003: a container parameter reached from a call site that
+	 * supplies no container the analysis read must not keep a nested specification derived from the other call sites. Each function below
+	 * is called once with a tuple or list of tensors and once with a value read from {@code pickle.load}, which the analysis does not
+	 * model; {@code pair_typed} receives only typed tuples.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function typed = findFunction(functions, "pair_typed");
+		assertEquals("A container parameter reached only with typed tuples keeps its nested specification.",
+				"[[tf.TensorSpec(shape=(4, 3), dtype=tf.float32), tf.TensorSpec(shape=(4, 3), dtype=tf.float32)]]",
+				typed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertFalse("The control reaches no untyped container context.", typed.getParameters().get(0).hasUntypedContainerContext());
+
+		for (String name : List.of("pair_sum", "list_sum", "pair_outer", "pair_inner")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s nested specification would be a claim about the untyped call too.",
+					Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// Under depth-1 call strings `pair_inner` has one node, reached from `pair_outer`'s single call site and typed from the tuple, so
+		// only the caller's argument, which has no abstract value in the pickled context, shows the other call.
+		assertTrue("The callee's container context is untyped through its caller's argument.",
+				findFunction(functions, "pair_inner").getParameters().get(0).hasUntypedContainerContext());
+
+		// A keyword splat names no parameter at the call site, so the caller's argument cannot be aligned with `pair` and only the callee's
+		// own node, which nothing modeled reaches, shows the call.
+		assertEquals("A splatted call that passes nothing modeled withholds the nested specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				findFunction(functions, "pair_splat").getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1004: an argument passed through a starred unpack binds an
+	 * element of the unpacked sequence, which the analysis reads as the sequence itself, so the parameter must not get a nested
+	 * specification. On TensorFlow 2.9.3 the nested one rejects the very call it was derived from.
+	 */
+	@Test
+	public void testInferInputSignatureStarredArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function plain = findFunction(functions, "t4");
+		assertEquals("Plain positional calls are unaffected.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				plain.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function trailing = findFunction(functions, "t3");
+		assertEquals("The parameter bound by the unpack withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), trailing.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only the unpacked parameter blocks.", List.of("y"),
+				trailing.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		Function leading = findFunction(functions, "t5");
+		assertEquals("A leading unpack withholds the parameter it binds.", List.of("x"),
+				leading.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertTrue("Both still hybridize.", trailing.getTransformations().contains(Transformation.CONVERT_TO_HYBRID)
+				&& leading.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
 }

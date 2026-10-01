@@ -74,12 +74,14 @@ import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.intset.OrdinalSet;
 
 /**
  * A representation of a Python function parameter.
@@ -192,6 +194,15 @@ public final class Parameter {
 	 * merge one call level up.
 	 */
 	private boolean untypedCallerArgument;
+
+	/**
+	 * True iff this parameter, as a container of tensors, is reached in a conforming calling context that supplies no container whose
+	 * elements the reduction read (#1003): a conforming node at which no value reaches the parameter, or a caller whose argument has no
+	 * abstract value or cannot be aligned with the parameter, such as one passed through a starred unpack (#1004). The flat counterpart,
+	 * {@link #hasUntypedConformingContext()}, cannot serve a container: its elements, not the container itself, carry the tensor types, so
+	 * every context reads as untyped there. Populated by {@link #extractConformingContainerElements}.
+	 */
+	private boolean untypedContainerContext;
 
 	/**
 	 * The tensor-typed pointer keys of each {@link TensorTypeAnalysis}, built once per analysis and shared by every parameter that asks.
@@ -975,6 +986,86 @@ public final class Parameter {
 				: Boolean.valueOf(this.hasTensorContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
 
 		this.extractContainerElements(tensorAnalysis, conforming, builder, subMonitor.split(1));
+		this.inferUntypedContainerContexts(conforming, builder);
+	}
+
+	/**
+	 * Records whether this parameter, as a container, is reached in a conforming calling context that supplies no container (#1003). See
+	 * {@link #hasUntypedContainerContext()}.
+	 * <p>
+	 * The container counterpart of {@link #inferTensorTypes}'s untyped nodes and {@link #inferUntypedCallerArguments}, at the granularity a
+	 * container has: whether anything reaches the parameter, rather than whether what reaches it is tensor-typed. A context that passes a
+	 * value needs no check of its own here: the element extraction reads every value reaching the parameter, so a value with no element
+	 * evidence, or one that is not a sequence, already leaves the form unreduced. What it cannot see is a context that passes nothing the
+	 * analysis models, since an empty points-to set contributes no value to refuse.
+	 *
+	 * @param nodes The owning function's conforming call-graph nodes.
+	 * @param builder The propagation-call-graph builder for the project.
+	 */
+	private void inferUntypedContainerContexts(Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		// Read only by the signature reduction, so with inference off the walk is pure cost.
+		if (!this.function.getInferInputSignatures())
+			return;
+
+		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
+		CallGraph callGraph = builder.getCallGraph();
+		HeapModel heapModel = pointerAnalysis.getHeapModel();
+		// The callee is the invoke's first use, so the parameter at declaration index i, with self at 0, is the IR's parameter i + 1 and
+		// the
+		// invoke's positional argument i + 1.
+		int slot = this.getIndex() + 1;
+		String name = this.getName();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null || slot >= ir.getNumberOfParameters())
+				continue;
+
+			if (isEmpty(pointerAnalysis.getPointsToSet(builder.getPointerKeyForLocal(node, ir.getParameter(slot))))) {
+				this.untypedContainerContext = true;
+				return;
+			}
+
+			for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node)))
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(caller, node))) {
+					IR callerIr = caller.getIR();
+
+					if (callerIr == null)
+						continue;
+
+					for (SSAAbstractInvokeInstruction instruction : callerIr.getCalls(site)) {
+						int use = argumentUse(instruction, name, slot);
+
+						// An omitted parameter takes its default, which the callee's own node already reports.
+						if (use == OMITTED)
+							continue;
+
+						// A starred unpack at or before the parameter binds an element of the unpacked sequence here, while the analysis
+						// reads the sequence itself as the argument, so the container evidence describes a value the parameter never
+						// receives (#1004).
+						if (use == UNALIGNED || isEmpty(pointerAnalysis.getPointsToSet(heapModel.getPointerKeyForLocal(caller, use)))) {
+							this.untypedContainerContext = true;
+							return;
+						}
+					}
+				}
+		}
+	}
+
+	private static boolean isEmpty(OrdinalSet<InstanceKey> pointsToSet) {
+		return pointsToSet == null || pointsToSet.isEmpty();
+	}
+
+	/**
+	 * Whether this parameter, as a container of tensors, is reached in a conforming calling context that supplies no container whose
+	 * elements the reduction read (#1003): a conforming node at which nothing the analysis models reaches it, or a caller passing an
+	 * argument with no abstract value, or one the call cannot align with it, such as an argument after a starred unpack (#1004).
+	 *
+	 * @return True iff a nested specification derived from the other contexts would be a claim about a call that supplies something else.
+	 */
+	public boolean hasUntypedContainerContext() {
+		return this.untypedContainerContext;
 	}
 
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
@@ -1277,7 +1368,7 @@ public final class Parameter {
 	 * conforming call-graph nodes carries no tensor type for the parameter, or a caller passes it, at a call site into such a node, an
 	 * argument the tensor-type analysis did not type in the caller's own context. The second catches a callee node that k-limited contexts
 	 * share between a typed and an untyped caller. This is about the parameter's flat typing only: a container parameter whose evidence
-	 * arrives through its elements reports every context here.
+	 * arrives through its elements reports every context here, and is asked {@link #hasUntypedContainerContext()} instead.
 	 *
 	 * @return True iff the parameter is untyped in some conforming calling context.
 	 */
