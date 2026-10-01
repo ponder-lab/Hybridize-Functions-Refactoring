@@ -13171,4 +13171,79 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
 				t.getTensorTypes());
 	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
+	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
+	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedCallingContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control's only call is concrete, so its signature is the call's.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float64), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function mixed = findFunction(functions, "mixed");
+		assertTrue("`mixed` is still hybridized.", mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertFalse("A signature derived from the concrete call alone would reject the untyped call.",
+				mixed.getInferredInputSignature().isPresent());
+		assertEquals("The untyped context widens the parameters to unknown.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), mixed.getInferredInputSignatureAbsenceReason());
+		assertEquals("Both parameters are untyped in that context, so both block.", List.of("inputs", "sequence_length"),
+				mixed.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertTrue("Every blocking parameter reports the untyped context.", mixed.getBlockingParameterReasons().values().stream()
+				.allMatch(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT::equals));
+		assertTrue("The control reaches no untyped context.",
+				control.getParameters().stream().noneMatch(Parameter::hasUntypedConformingContext));
+
+		// The call inside `assertRaises` passes `None`, which the analysis does not type, but it is a declared failure and so not a
+		// conforming context: the signature from the tensor call stands.
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure leaves no untyped context.", "[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The typed calls already disagree in dtype, so no specification exists to withhold, and that reason is kept.
+		Function mixedDtypes = findFunction(functions, "mixed_dtypes");
+		assertEquals("A parameter whose typed contexts do not reduce keeps its own reason.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), mixedDtypes.getInferredInputSignatureAbsenceReason());
+		assertTrue("It does reach an untyped context.", mixedDtypes.getParameters().get(0).hasUntypedConformingContext());
+
+		// Under depth-1 call strings `inner` has one node, typed from the concrete call, so only the caller's untyped argument shows the
+		// pickled call.
+		Function outer = findFunction(functions, "outer");
+		Function inner = findFunction(functions, "inner");
+		assertEquals("The caller withholds on its own untyped node.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				outer.getInferredInputSignatureAbsenceReason());
+		assertEquals("The callee withholds on the caller's untyped argument.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), inner.getInferredInputSignatureAbsenceReason());
+
+		// A specification covering `mask` rejects the call that omits it, so the omission is an untyped context.
+		Function optional = findFunction(functions, "optional");
+		assertEquals("The omitted tensor parameter withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), optional.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only `mask` blocks.", List.of("mask"),
+				optional.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		// Typed calls through a Keras layer's `call`, with the argument passed by keyword, keep the specification.
+		Function buildMask = findFunction(functions, "Encoder.build_mask");
+		assertEquals("Typed keyword calls through a layer's `call` keep their specification.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The guarded `leak_outer(None)` has its own node set aside, so `leak_outer` keeps its specification. Its call into `leak_inner`
+		// is not set aside, so `leak_inner` withholds. That is intended: with the specification, `leak_outer(None)` would raise
+		// `ValueError` rather than the `TypeError` the guard declares.
+		Function leakOuter = findFunction(functions, "leak_outer");
+		assertEquals("A declared failure's own node is set aside.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				leakOuter.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		Function leakInner = findFunction(functions, "leak_inner");
+		assertEquals("A declared failure's untyped argument one level down withholds.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
+	}
+
 }

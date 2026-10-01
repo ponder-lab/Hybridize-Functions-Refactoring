@@ -138,6 +138,29 @@ public sealed interface InferenceResult {
 		HETEROGENEOUS_SPARSITY,
 
 		/**
+		 * The function is reached in a calling context in which the tensor-type analysis associated no type with the parameter, beside
+		 * contexts whose types reduce to a specification. That specification would be a claim about every call, and what the untyped
+		 * context passes is not known to match it: a specification derived from small, concrete test calls would reject a program's own
+		 * call whose argument the analysis could not type. The untyped context therefore widens the parameter to unknown rather than
+		 * dropping out of the evidence. Reported only where a specification would otherwise have been stored, so no other absence is
+		 * relabeled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
+		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined.
+		 * <p>
+		 * An untyped context is found two ways: a call-graph node of the function carries no type for the parameter, or a caller passes it,
+		 * at a call site into such a node, an argument the analysis did not type in the caller's own context. The second sees through a
+		 * callee node that k-limited contexts share between callers, but only one call level up: in {@code f1 -> f2 -> f3}, with only
+		 * {@code f1}'s callers differing, {@code f3}'s single node and its single caller node are both typed, so {@code f3} keeps the
+		 * specification. A caller that is itself reached only from a declared failure is not set aside at its call sites, so its untyped
+		 * argument withholds the callee's specification; that is the safer outcome, since a specification would change the exception the
+		 * failure is declared to raise (#1005). The check covers the flat reduction, not the container one (#1003).
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
+		 */
+		UNTYPED_CALLING_CONTEXT,
+
+		/**
 		 * A complete signature was inferred, but it leaves unresolved (wildcard) an axis the function's body reads statically (#811), so
 		 * emitting it would break the function at trace time. Unlike every other constant, the signature's absence is a choice rather than
 		 * an inference failure: the conversion proceeds with a bare decorator, which is exactly what the tool ships with inference off, and

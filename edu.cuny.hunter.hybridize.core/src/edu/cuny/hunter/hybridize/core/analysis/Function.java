@@ -4328,7 +4328,8 @@ public class Function {
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
 	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
-	 * add the reduced spec to the signature.
+	 * add the reduced spec to the signature, unless the function is also reached in a conforming context that left the parameter untyped,
+	 * in which case the spec is withheld with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} (#998).
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -4386,6 +4387,30 @@ public class Function {
 	 */
 	public Map<Parameter, AbsenceReason> getBlockingParameterReasons() {
 		return Collections.unmodifiableMap(this.blockingParameterReasons);
+	}
+
+	/**
+	 * Blocks {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is reached in a conforming
+	 * calling context in which the tensor-type analysis associated no type with it (#998). Asked only once the flat reduction has a
+	 * specification to store, so it relabels no other absence: a parameter whose typed contexts already fail to reduce keeps that reason.
+	 * Untyped contexts are found per call-graph node and per call site into one (see {@link Parameter#hasUntypedConformingContext()}).
+	 *
+	 * @param param The parameter whose reduced specification is about to be stored.
+	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
+	 * @return True iff the parameter blocks, in which case its specification must not be stored.
+	 */
+	private boolean blocksOnUntypedContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
+		if (!param.hasUntypedConformingContext())
+			return false;
+
+		// The reduced specification comes from the contexts the analysis typed. What a context it reached without typing passes is not
+		// known to be a tensor matching that specification, so the specification would be a claim about that call too.
+		this.addInfo(INPUT_SIGNATURE_INFERENCE,
+				"`" + this + "` is reached from a call site where the argument for parameter `" + param.getName() + "` is not typed "
+						+ "as a tensor, so a specification derived from the other call sites may reject that call; input-signature "
+						+ "inference is dropped.");
+		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
+		return true;
 	}
 
 	/**
@@ -4619,7 +4644,10 @@ public class Function {
 							"Parameter `" + param.getName() + "` of `" + this + "` receives arguments observed as "
 									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
 									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
-					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+
+					if (!this.blocksOnUntypedContext(param, blocking))
+						specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+
 					continue;
 				}
 			}
@@ -4644,7 +4672,8 @@ public class Function {
 				continue;
 			}
 
-			specByParameter.put(param, new InputSignature.Single(spec.get()));
+			if (!this.blocksOnUntypedContext(param, blocking))
+				specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
 		/*
