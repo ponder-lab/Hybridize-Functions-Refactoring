@@ -100,7 +100,7 @@ def prepare(subject, source, work, exclude=(), sparse=()):
         )
     # --ignored too: ignored files (build output, a virtualenv, generated sources) are copied into the
     # analyzed tree like any other, so a checkout carrying them is not the commit it claims to be.
-    if git(repository, "status", "--porcelain", "--ignored"):
+    if git(repository, "--no-optional-locks", "status", "--porcelain", "--ignored"):
         raise RuntimeError(
             f"{source}: the working tree is not clean, or carries ignored files"
         )
@@ -163,6 +163,22 @@ def copy_sparse(repository, source, work, patterns):
             input="".join(p + "\n" for p in patterns).encode(),
         )
         run_git("-C", clone, "checkout", "-q", "--detach", head)
+        # git reports a selected blob a partial clone lacks but still exits 0, leaving the file out of
+        # the checkout; it shows as deleted, so a checkout that is not clean is refused.
+        status = subprocess.run(
+            ["git", "-C", clone, "status", "--porcelain"],
+            capture_output=True,
+            env=environment,
+        )
+        if status.returncode != 0 or status.stdout.strip():
+            missing = (
+                status.stdout.decode(errors="replace").strip()
+                or status.stderr.decode(errors="replace").strip()
+            )
+            raise RuntimeError(
+                f"{source}: git's sparse checkout of HEAD is incomplete, likely blobs a partial "
+                f"clone lacks: {missing}"
+            )
         selected = any(
             files for d, _, files in os.walk(clone) if ".git" not in d.split(os.sep)
         )

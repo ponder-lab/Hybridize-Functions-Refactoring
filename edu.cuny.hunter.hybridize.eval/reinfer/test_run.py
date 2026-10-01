@@ -88,7 +88,8 @@ class CopySparseTest(unittest.TestCase):
                 exist_ok=True,
             )
             with open(os.path.join(self.source, path), "w") as f:
-                f.write("x = 1\n")
+                # Distinct content, so that no two paths share a blob.
+                f.write(f"# {path}\n")
         with open(os.path.join(self.source, ".gitattributes"), "w") as f:
             f.write("a/x.py export-ignore\n")
         git = ["git", "-C", self.source, "-c", "user.name=t", "-c", "user.email=t@t"]
@@ -129,6 +130,39 @@ class CopySparseTest(unittest.TestCase):
         for patterns, expected in cases.items():
             with self.subTest(patterns=patterns):
                 self.assertEqual(self.copy(list(patterns)), expected)
+
+    def test_a_blob_a_partial_clone_lacks_is_refused(self):
+        # A blobless clone sparse to x.py never fetched a/b/x.py's blob; selecting it must fail the
+        # copy, not leave the file out.
+        subprocess.run(
+            ["git", "-C", self.source, "config", "uploadpack.allowFilter", "true"],
+            check=True,
+        )
+        partial = os.path.join(self.directory.name, "partial")
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--sparse",
+                "file://" + self.source,
+                partial,
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", partial, "sparse-checkout", "set", "--no-cone", "/x.py"],
+            check=True,
+        )
+        work = os.path.join(self.directory.name, "work")
+        with self.assertRaisesRegex(RuntimeError, "incomplete"):
+            run.copy_sparse(partial, partial, work, ["/x.py", "/a/b/x.py"])
+        self.assertEqual(
+            sorted(os.listdir(partial)),
+            [".git", "x.py"],
+            "the partial clone was not written to",
+        )
 
     def test_a_selection_of_nothing_is_refused(self):
         with self.assertRaises(RuntimeError):
