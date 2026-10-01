@@ -231,7 +231,18 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
 	 */
-	IS_BOUND_CUSTOM_GRADIENT_METHOD(32);
+	IS_BOUND_CUSTOM_GRADIENT_METHOD(32),
+
+	/**
+	 * The function is hybrid and has an inferred input signature that would be added to its decorator, but the names the signature is
+	 * written with, {@code TensorSpec} or a dtype constant, aren't in scope under the file's import shape, as with
+	 * {@code from tensorflow import function} alone. Writing it would raise {@code NameError}, so the signature is withheld and the
+	 * decorator is not reconfigured. A file with no TensorFlow import of its own, such as one reaching {@code tf} by a star import, gets an
+	 * injected import instead and is reconfigured.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED(33);
 
 	static {
 		// check that the codes are unique.

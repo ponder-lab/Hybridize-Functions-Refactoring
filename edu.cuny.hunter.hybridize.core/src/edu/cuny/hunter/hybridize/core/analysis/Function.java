@@ -860,18 +860,19 @@ public class Function {
 
 	/**
 	 * Pre-computes, per file, the union of spec-type constructor names and dtype constants required by the inferred input signatures of the
-	 * functions about to be converted to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...}
-	 * line covering all of them. Without it, the first hybridizable function processed in an import-less file fixes the injected line to
-	 * its own spec types and dtypes, and a later function needing a different dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated
-	 * off emission and left with a bare {@code @function} (follow-up to #574). Reads the memoized inferred signatures via
-	 * {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it once before transforming
-	 * a batch of functions.
+	 * functions about to be converted to hybrid or reconfigured, so {@link #convertToHybrid} and {@link #reconfigure} can auto-inject a
+	 * single {@code from tensorflow import ...} line covering all of them (issue 1018). Without it, the first hybridizable function
+	 * processed in an import-less file fixes the injected line to its own spec types and dtypes, and a later function needing a different
+	 * dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated off emission and left with a bare {@code @function} (follow-up to #574).
+	 * Reads the memoized inferred signatures via {@link #getInferredInputSignature}; it never triggers inference, so it adds no
+	 * per-parameter INFOs. Call it once before transforming a batch of functions.
 	 *
 	 * @param functions The functions about to be transformed.
 	 */
 	public static void planAutoInjectedImports(Collection<Function> functions) {
 		for (Function function : functions) {
-			if (!function.getTransformations().contains(CONVERT_TO_HYBRID) || !function.getInferInputSignatures())
+			if (!(function.getTransformations().contains(CONVERT_TO_HYBRID) || function.getTransformations().contains(RECONFIGURE))
+					|| !function.getInferInputSignatures())
 				continue;
 
 			function.getInferredInputSignature().ifPresent(sig -> {
@@ -1739,6 +1740,15 @@ public class Function {
 								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
 										"This hybrid tf.custom_gradient method has a bound self or cls argument, which tf.function "
 												+ "fails with in either decorator order, so its decorator is not reconfigured.");
+							else if (this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
+									&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
+									&& !this.canEmitInferredInputSignature() && this.inferInputSignature().signature().isPresent())
+								// Not already optimal either: a signature was inferred, but the names it is written with aren't in scope
+								// under
+								// the file's import shape, so it is withheld as unwritable (issue 1018).
+								this.addFailure(PreconditionFailure.INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED,
+										"This hybrid function's inferred input signature uses TensorFlow names its file doesn't import, so its "
+												+ "decorator is not reconfigured.");
 							else
 								// The pre-inference terminal, unchanged: no signature flow resolved anything here, so the already-optimal
 								// verdict reports as it always did.
@@ -5527,6 +5537,107 @@ public class Function {
 		return true;
 	}
 
+	/**
+	 * The bare TensorFlow names an auto-injected {@code from tensorflow import ...} line brings into scope for this function's file:
+	 * {@code function}, always, and, when input-signature emission applies, the spec-type constructors and dtype constants of every
+	 * signature the file's transformed functions need. This function's own signature is always included; the others come from
+	 * {@link #planAutoInjectedImports}, when it ran (#588). The names are ordered deterministically, {@code function} first.
+	 *
+	 * @return The names the injected line imports.
+	 */
+	private Set<String> namesToInject() {
+		// `function` is always needed for a fresh decorator and is kept for a reconfigured one too, so the per-file record serves either.
+		// When input-signature emission applies, also bring the signature's spec-type constructors (`TensorSpec`, and `RaggedTensorSpec`
+		// for a ragged parameter) and dtype constants into scope so the emission proceeds unqualified rather than being skipped.
+		Set<String> names = new LinkedHashSet<>();
+		names.add("function");
+
+		if (this.getInferInputSignatures()) {
+			/*
+			 * Union this function's spec-type and dtype names with those of every other transformed function in the file (pre-computed by
+			 * `planAutoInjectedImports`), so the single injected import line brings every function's names into scope rather than only the
+			 * first-processed function's (#588). The spec-type names are the signature's own `requiredSpecTypeNames` rather than a
+			 * hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into scope and its signature emits unqualified rather
+			 * than being gated off (#524). Falls back to this function's own names when no plan was computed (e.g. a direct `transform()`
+			 * without the processor's pre-pass).
+			 */
+			File file = this.getContainingFile();
+			SortedSet<String> specTypeNames = new TreeSet<>();
+			SortedSet<String> dtypeNames = new TreeSet<>();
+			this.inferInputSignature().signature().ifPresent(sig -> {
+				specTypeNames.addAll(sig.requiredSpecTypeNames());
+				dtypeNames.addAll(sig.requiredDTypeNames());
+			});
+
+			Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
+			if (plannedSpecTypeNames != null)
+				specTypeNames.addAll(plannedSpecTypeNames);
+
+			Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
+			if (plannedDTypeNames != null)
+				dtypeNames.addAll(plannedDTypeNames);
+
+			if (!dtypeNames.isEmpty()) {
+				names.addAll(specTypeNames);
+				names.addAll(dtypeNames);
+			}
+		}
+
+		return names;
+	}
+
+	/**
+	 * Auto-injects a {@code from tensorflow import ...} line into a file that reaches TensorFlow through no import of its own, as when
+	 * {@code tf} arrives by a star import from another module, and returns the import context the line establishes. The first function
+	 * transformed in the file fixes the injected line and records which names it brings into scope; later functions in the same file reuse
+	 * that record rather than injecting again (#574). The fresh-decorator path ({@link #convertToHybrid()}) and the reconfiguration path
+	 * ({@link #reconfigure()}) share it (issue 1018), so a file mixing both injects once.
+	 * <p>
+	 * Emission is reachable iff the function's required names are among those the injected line brought into scope. The
+	 * {@link #computeInputSignatureKeyword(ImportContext)} gate enforces that, so a later function needing a dtype the first did not inject
+	 * is skipped rather than given a decorator that raises {@code NameError}.
+	 *
+	 * @param doc The containing document.
+	 * @param edits The edits to add the injected line to, when this call injects it.
+	 * @return The unqualified import context the injected (or previously injected) line establishes.
+	 * @throws BadLocationException If the insertion line cannot be resolved.
+	 */
+	private ImportContext injectImport(IDocument doc, List<TextEdit> edits) throws BadLocationException {
+		File file = this.getContainingFile();
+		Set<String> injectedNames = autoInjectedImportNames.get(file);
+
+		if (injectedNames == null) {
+			Set<String> names = this.namesToInject();
+			int line = getLineToInsertImport(doc);
+			int lineOffset = doc.getLineOffset(line);
+
+			MultiTextEdit mte = new MultiTextEdit();
+			mte.addChild(new InsertEdit(lineOffset, "from tensorflow import " + String.join(", ", names) + "\n"));
+			edits.add(mte);
+			autoInjectedImportNames.put(file, names);
+			injectedNames = names;
+		}
+
+		return new ImportContext("", false, injectedNames);
+	}
+
+	/**
+	 * The import context under which this function's emitted names would be written: the file's own TensorFlow import shape or, when the
+	 * file has none, the one {@link #injectImport(IDocument, List)} establishes, from the line already injected into the file or the line
+	 * it would inject.
+	 *
+	 * @return The import context for emission.
+	 */
+	private ImportContext emissionImportContext() {
+		ImportContext ctx = getImportContext(this.getContainingDocument());
+
+		if (ctx != null)
+			return ctx;
+
+		Set<String> injectedNames = autoInjectedImportNames.get(this.getContainingFile());
+		return new ImportContext("", false, injectedNames != null ? injectedNames : this.namesToInject());
+	}
+
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
 		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
@@ -5548,66 +5659,9 @@ public class Function {
 
 		ImportContext ctx = getImportContext(doc);
 
-		if (ctx == null) {
-			// No TensorFlow import in scope: auto-inject one. The first hybridizable function in the file fixes the injected line and
-			// records which names it brings into scope; later functions in the same file reuse that record (#574).
-			File file = this.getContainingFile();
-			Set<String> injectedNames = autoInjectedImportNames.get(file);
-
-			if (injectedNames == null) {
-				// `function` is always needed for the decorator. When input-signature emission applies, also bring the signature's
-				// spec-type
-				// constructors (`TensorSpec`, and `RaggedTensorSpec` for a ragged parameter) and dtype constants into scope so the emission
-				// proceeds unqualified rather than being skipped. The names are sorted for deterministic emission; `function` leads.
-				Set<String> names = new LinkedHashSet<>();
-				names.add("function");
-
-				if (this.getInferInputSignatures()) {
-					/*
-					 * Union this function's spec-type and dtype names with those of every other to-be-hybridized function in the file
-					 * (pre-computed by `planAutoInjectedImports`), so the single injected import line brings every function's names into
-					 * scope rather than only the first-processed function's (#588). The spec-type names are the signature's own
-					 * `requiredSpecTypeNames` rather than a hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into
-					 * scope and its signature emits unqualified rather than being gated off (#524). Falls back to this function's own names
-					 * when no plan was computed (e.g. a direct `transform()` without the processor's pre-pass).
-					 */
-					SortedSet<String> specTypeNames = new TreeSet<>();
-					SortedSet<String> dtypeNames = new TreeSet<>();
-					this.inferInputSignature().signature().ifPresent(sig -> {
-						specTypeNames.addAll(sig.requiredSpecTypeNames());
-						dtypeNames.addAll(sig.requiredDTypeNames());
-					});
-
-					Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
-					if (plannedSpecTypeNames != null)
-						specTypeNames.addAll(plannedSpecTypeNames);
-
-					Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
-					if (plannedDTypeNames != null)
-						dtypeNames.addAll(plannedDTypeNames);
-
-					if (!dtypeNames.isEmpty()) {
-						names.addAll(specTypeNames);
-						names.addAll(dtypeNames);
-					}
-				}
-
-				int line = getLineToInsertImport(doc);
-				int lineOffset = doc.getLineOffset(line);
-
-				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import " + String.join(", ", names) + "\n");
-				MultiTextEdit mte = new MultiTextEdit();
-				mte.addChild(edit);
-				ret.add(mte);
-				autoInjectedImportNames.put(file, names);
-				injectedNames = names;
-			}
-
-			// Emission is reachable iff this function's required names are among those the injected line brought into scope; the
-			// `computeInputSignatureKeyword` gate enforces that, so a later function needing a dtype the first did not inject is
-			// safely skipped rather than emitting a `NameError`-raising decorator.
-			ctx = new ImportContext("", false, injectedNames);
-		}
+		if (ctx == null)
+			// No TensorFlow import in scope: auto-inject one (#574).
+			ctx = this.injectImport(doc, ret);
 
 		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
 		// sequencing zero-length same-offset edits by add-order (#575). Wrap it in a MultiTextEdit (a container) so every element of
@@ -5628,11 +5682,11 @@ public class Function {
 	 * precondition declines ({@link PreconditionSuccess#P5}), whose literal is replaced by the inferred one (issue 808). A tighter or
 	 * incomparable signature is never rewritten, since the rewrite would repair a nonconforming call rather than preserve behavior. Reuses
 	 * the existing import-shape resolution ({@link #getImportContext(IDocument)}) and emission gate
-	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function necessarily
-	 * imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null} check below is
-	 * defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's import shape (e.g.
-	 * {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching
-	 * {@link #convertToHybrid()}'s silent skip.
+	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}). A decorator can reference
+	 * TensorFlow through a name the file doesn't import itself, such as a {@code tf} arriving by a star import, in which case
+	 * {@code getImportContext} finds nothing and a {@code from tensorflow import ...} line is injected, as for a fresh decorator (issue
+	 * 1018). When the signature's names are not reachable under the file's import shape (e.g. {@code from tensorflow import function}
+	 * without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching {@link #convertToHybrid()}'s silent skip.
 	 *
 	 * @return The edits adding {@code input_signature=[...]} to the decorator or replacing its broader literal, or an empty list when
 	 *         emission is gated out.
@@ -5644,10 +5698,11 @@ public class Function {
 		List<TextEdit> ret = new ArrayList<>();
 
 		IDocument doc = this.getContainingDocument();
-		ImportContext ctx = getImportContext(doc);
+		ImportContext fileContext = getImportContext(doc);
 
-		if (ctx == null)
-			return ret;
+		// A decorator that reaches TensorFlow only through another module, such as by a star import, leaves the file with no import of its
+		// own to qualify the emitted names with; inject one, as a fresh decorator does (issue 1018).
+		final ImportContext ctx = fileContext != null ? fileContext : this.injectImport(doc, ret);
 
 		if (this.getHybridizationParameters() != null && this.getHybridizationParameters().hasInputSignatureParam()) {
 			// Narrowing path (P5, issue 808): replace the supplied literal signature in place with the inferred one. Only a literal is
@@ -5825,16 +5880,16 @@ public class Function {
 	/**
 	 * Whether an inferred input signature can actually be emitted into this function's decorator under the containing file's import shape.
 	 * Gates {@code RECONFIGURE} selection in {@link #check()} so a passing precondition is never reported for a no-op transformation: a
-	 * hybrid function always imports TensorFlow (its decorator references it), but the named-import shape ({@code from tensorflow import
-	 * function}) can leave {@code TensorSpec} or a dtype constant out of scope, in which case
-	 * {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit. True implies
-	 * both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites the decorator.
+	 * file with no TensorFlow import of its own is resolved against the line {@link #injectImport(IDocument, List)} injects (issue 1018),
+	 * but the named-import shape ({@code from tensorflow import function}) can leave {@code TensorSpec} or a dtype constant out of scope,
+	 * in which case {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit.
+	 * True implies both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites
+	 * the decorator.
 	 *
 	 * @return True iff the inferred input signature is emittable under this file's import shape.
 	 */
 	private boolean canEmitInferredInputSignature() {
-		ImportContext ctx = getImportContext(this.getContainingDocument());
-		return ctx != null && this.computeInputSignatureKeyword(ctx).isPresent();
+		return this.computeInputSignatureKeyword(this.emissionImportContext()).isPresent();
 	}
 
 	/**
