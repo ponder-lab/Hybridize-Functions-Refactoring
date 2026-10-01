@@ -98,15 +98,18 @@ public final class ExceptionHandlerAnalysis {
 		if (statement == null || statement.beginLine == line && (statement instanceof FunctionDef || statement instanceof ClassDef))
 			return;
 
-		if (statement instanceof FunctionDef function) {
+		switch (statement) {
+		case FunctionDef function -> {
 			enclosing.clear();
 			this.descend(function.body, line, enclosing);
-		} else if (statement instanceof ClassDef type) {
+		}
+		case ClassDef type -> {
 			enclosing.clear();
 			this.descend(type.body, line, enclosing);
-		} else if (statement instanceof TryExcept tryExcept) {
-			int handlerLine = tryExcept.handlers == null || tryExcept.handlers.length == 0 ? Integer.MAX_VALUE
-					: tryExcept.handlers[0].beginLine;
+		}
+		case TryExcept tryExcept -> {
+			excepthandlerType[] handlers = tryExcept.handlers == null ? new excepthandlerType[0] : tryExcept.handlers;
+			int handlerLine = handlers.length == 0 ? Integer.MAX_VALUE : handlers[0].beginLine;
 			int elseLine = firstLine(tryExcept.orelse);
 
 			if (line < handlerLine && line < elseLine) {
@@ -115,21 +118,23 @@ public final class ExceptionHandlerAnalysis {
 			} else if (line >= elseLine)
 				this.descend(tryExcept.orelse.body, line, enclosing);
 			else
-				for (int i = tryExcept.handlers.length - 1; i >= 0; i--)
-					if (tryExcept.handlers[i].beginLine <= line) {
-						this.descend(tryExcept.handlers[i].body, line, enclosing);
+				for (int i = handlers.length - 1; i >= 0; i--)
+					if (handlers[i].beginLine <= line) {
+						this.descend(handlers[i].body, line, enclosing);
 						break;
 					}
-		} else if (statement instanceof TryFinally tryFinally)
-			this.descend(line < firstLine(tryFinally.finalbody) ? tryFinally.body : tryFinally.finalbody.body, line, enclosing);
-		else if (statement instanceof If conditional)
-			this.descend(line < firstLine(conditional.orelse) ? conditional.body : conditional.orelse.body, line, enclosing);
-		else if (statement instanceof For loop)
-			this.descend(line < firstLine(loop.orelse) ? loop.body : loop.orelse.body, line, enclosing);
-		else if (statement instanceof While loop)
-			this.descend(line < firstLine(loop.orelse) ? loop.body : loop.orelse.body, line, enclosing);
-		else if (statement instanceof With with && with.body != null)
-			this.descend(with.body.body, line, enclosing);
+		}
+		case TryFinally tryFinally -> this.descend(line < firstLine(tryFinally.finalbody) ? tryFinally.body : tryFinally.finalbody.body,
+				line, enclosing);
+		case If conditional -> this.descend(line < firstLine(conditional.orelse) ? conditional.body : conditional.orelse.body, line,
+				enclosing);
+		case For loop -> this.descend(line < firstLine(loop.orelse) ? loop.body : loop.orelse.body, line, enclosing);
+		case While loop -> this.descend(line < firstLine(loop.orelse) ? loop.body : loop.orelse.body, line, enclosing);
+		case With with when with.body != null -> this.descend(with.body.body, line, enclosing);
+		default -> {
+			// Any other statement holds no nested block that a try could enclose the line in.
+		}
+		}
 	}
 
 	/** The last statement of {@code block} beginning at or before {@code line}, or {@code null} when there is none. */
