@@ -1,4 +1,4 @@
-# The developer's own decorator order fails here: this program raises a TypeError when the method is called (#1000).
+# The developer's own decorator order fails here: this program raises when the method is called (#1000).
 import tensorflow as tf
 
 

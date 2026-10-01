@@ -8925,6 +8925,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("It is not reconfigured.", already.getTransformations().contains(Transformation.RECONFIGURE));
 		assertNotNull("It is reported.", already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD.getCode()));
+		assertNull("It is not reported as already optimal, since its decorator fails on every call.",
+				already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS.getCode()));
 	}
 
 	@Test
