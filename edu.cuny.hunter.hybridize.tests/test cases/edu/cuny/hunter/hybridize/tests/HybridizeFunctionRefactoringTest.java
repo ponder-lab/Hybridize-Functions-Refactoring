@@ -13536,6 +13536,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test that a parameter receiving the list {@code tf.unstack} or {@code tf.split} returns, or a slice of it, gets no input signature.
+	 * Ariadne's summary of either returns a list whose one stand-in piece is written at fixed indices, and the tensor analysis types the
+	 * list itself as that piece, so the parameter read as a flat tensor and received a specification of one piece, which makes the body's
+	 * unpacking raise in a graph.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1012">Issue 1012</a>
+	 */
+	@Test
+	public void testInferInputSignatureUnstackedList() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : new String[] { "unstack_sum", "split_sum", "slice_sum" }) {
+			Function f = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertFalse("`" + name + "` receives a list a TensorFlow operation returns, so no signature describes it.",
+					f.getInferredInputSignature().isPresent());
+			assertEquals("`" + name + "` blocks on an unmodeled container.",
+					Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), f.getInferredInputSignatureAbsenceReason());
+			assertTrue("`" + name + "`'s parameter receives a library list.", f.getParameters().get(0).receivesLibraryContainer());
+		}
+
+		// Control: a library summary whose element structure the analysis reads is an ordinary modeled container, and keeps its nested
+		// signature. The directory iterator's batch tuple in `testTensorTypedContainerParameter` is that case.
+
+		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension: its string parameter makes
+		// it a primitive-parameter function, so it is not hybridized and has no signature to get wrong.
+		Function perAnchor = findFunction(functions, "per_anchor");
+		assertTrue("`per_anchor` has a primitive parameter.", perAnchor.getHasPrimitiveParameter());
+		assertFalse("`per_anchor` is not hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// Controls: a tensor argument, an element of an unstacked list, and gpt-2's shape, a split unpacked by the caller with one element
+		// passed on, keep their flat signatures.
+		Map<String, String> controls = Map.of("boxes_loss",
+				"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]", "first_of",
+				"[tf.TensorSpec(shape=(3,), dtype=tf.float32)]", "split_heads", "[tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]", "attend",
+				"[tf.TensorSpec(shape=(2, 6), dtype=tf.float32)]");
+
+		for (Map.Entry<String, String> control : controls.entrySet()) {
+			Function f = findFunction(functions, control.getKey());
+			assertEquals("`" + control.getKey() + "` keeps its signature.", control.getValue(),
+					f.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+			assertFalse("`" + control.getKey() + "`'s parameters receive no library list.",
+					f.getParameters().stream().anyMatch(Parameter::receivesLibraryContainer));
+		}
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
 	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
 	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.

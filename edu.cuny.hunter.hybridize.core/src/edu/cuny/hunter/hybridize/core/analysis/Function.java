@@ -4755,6 +4755,20 @@ public class Function {
 			// elements flattened: reducing it writes one specification whose disagreeing members collapse to a wildcard, and binding a
 			// pair to that specification makes the body's unpacking raise. The elements are what the callers actually pass, position by
 			// position, so the nested structure is both the more precise answer and the only executable one (#888).
+			// A container a TensorFlow library summary allocated, whose element structure the analysis does not read, such as the list
+			// `tf.unstack` or `tf.split` returns: the summary stands one element in for every piece, and the tensor analysis types the
+			// list itself as that element, so the flat typing describes one piece, not the value the function receives, and a
+			// specification of it makes the body's unpacking raise. The parameter blocks, and the function is hybridized with a bare
+			// decorator (#1012). A summary whose element structure is read, such as a Keras directory iterator's batch tuple, is an
+			// ordinary modeled container and reduces as one.
+			if (param.receivesLibraryContainer() && param.getContainerElementTypes() == null) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+						+ "` receives a list a TensorFlow operation returns, such as "
+						+ "`tf.unstack` or `tf.split`, whose length and elements the analysis does not model; the signature is dropped.");
+				blocking.put(param, AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				continue;
+			}
+
 			if (param.isTensorContainer() != null && param.isTensorContainer() && param.getContainerElementTypes() != null
 					&& !contexts.isEmpty()) {
 				this.reduceContainerElements(param, specByParameter, blocking);
