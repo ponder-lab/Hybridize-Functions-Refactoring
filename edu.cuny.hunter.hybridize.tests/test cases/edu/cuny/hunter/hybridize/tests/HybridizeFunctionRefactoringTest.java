@@ -8879,6 +8879,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				scale.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
 
+	/**
+	 * Test that a {@code tf.custom_gradient} method with a bound first argument, an instance method or a {@code classmethod}, is not
+	 * hybridized. Under {@code tf.function} in either decorator order, graph-mode {@code custom_gradient} converts the bound {@code self}
+	 * or {@code cls} to a tensor and raises, or the gradient function's return is rejected. A {@code staticmethod} and a plain function
+	 * have no bound argument and are still hybridized (above {@code tf.custom_gradient}, per #996).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	@Test
+	public void testCustomGradientBoundMethod() throws Exception {
+		Function bound = getFunction("Ops.bound");
+		assertTrue("An instance method is bound.", bound.isBoundCustomGradientMethod());
+		assertFalse("A bound custom-gradient method is not hybridized.",
+				bound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("It is declined with a reason.",
+				bound.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD.getCode()));
+
+		// The classmethod is identified structurally, whether or not the analysis reaches it.
+		Function classBound = getFunction("Ops.class_bound");
+		assertTrue("A classmethod is bound.", classBound.isBoundCustomGradientMethod());
+		assertFalse("A bound custom-gradient classmethod is not hybridized.",
+				classBound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		for (String name : new String[] { "Ops.unbound", "plain" }) {
+			Function unbound = getFunction(name);
+			assertFalse(name + " has no bound argument.", unbound.isBoundCustomGradientMethod());
+			assertTrue(name + " is still hybridized.", unbound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Test that an already-hybrid {@code tf.custom_gradient} method with a bound first argument is not reconfigured. Its
+	 * {@code tf.function} already fails in either decorator order, so adding an inferred {@code input_signature} to it would change nothing
+	 * that runs. It is reported instead.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	@Test
+	public void testCustomGradientBoundMethodNotReconfigured() throws Exception {
+		this.setInferInputSignatures(true);
+		Function already = getFunction("Ops.already");
+		assertTrue("The fixture method is already hybrid.", already.isHybrid());
+		assertTrue("It is bound.", already.isBoundCustomGradientMethod());
+		assertFalse("It is not reconfigured.", already.getTransformations().contains(Transformation.RECONFIGURE));
+		assertNotNull("It is reported.", already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD.getCode()));
+		assertNull("It is not reported as already optimal, since its decorator fails on every call.",
+				already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS.getCode()));
+	}
+
 	@Test
 	public void testCustomGradient() throws Exception {
 		Set<Function> functions = this.getFunctions();
