@@ -91,19 +91,31 @@ def signature_decorator(node):
     Returns ``(index, call, form)``, where ``form`` is ``"keyword"`` (``input_signature=...``),
     ``"positional"`` (the second positional argument of ``function(func, input_signature)``) or
     ``"none"``. ``(None, None, "none")`` when no ``*.function`` decorator is present.
+
+    A ``*.function`` decorator that carries a signature is preferred over one that does not, wherever
+    either sits in the list, so another library's ``function`` decorator cannot hide TensorFlow's. More
+    than one carrying a signature is refused, since which one to strip is then not determined.
     """
+    with_signature, without = [], []
     for index, decorator in enumerate(node.decorator_list):
         call = decorator if isinstance(decorator, ast.Call) else None
         func = call.func if call else decorator
         if _tail(func) != "function":
             continue
-        if call is None:
-            return index, None, "none"
-        if any(k.arg == SIGNATURE_KEYWORD for k in call.keywords):
-            return index, call, "keyword"
-        if len(call.args) >= 2:
-            return index, call, "positional"
-        return index, call, "none"
+        if call is not None and any(k.arg == SIGNATURE_KEYWORD for k in call.keywords):
+            with_signature.append((index, call, "keyword"))
+        elif call is not None and len(call.args) >= 2:
+            with_signature.append((index, call, "positional"))
+        else:
+            without.append((index, call, "none"))
+    if len(with_signature) > 1:
+        raise ValueError(
+            f"{len(with_signature)} *.function decorators of {node.name} carry a signature"
+        )
+    if with_signature:
+        return with_signature[0]
+    if without:
+        return without[0]
     return None, None, "none"
 
 

@@ -113,6 +113,29 @@ class StripKeywordTest(unittest.TestCase):
                         data, _ = strip.strip_function(text.encode("utf-8"), "f")
                         self.assertIn(expected.encode("utf-8"), data)
 
+    def test_a_signature_below_another_function_decorator_is_found(self):
+        for other in ("@other.function()", "@other.function"):
+            with self.subTest(other=other):
+                data, record = self.strip(f"""
+                    {other}
+                    @tf.function(input_signature=[tf.TensorSpec([2])])
+                    def f(x):
+                        return x
+                    """)
+                self.assertEqual(record["signature_form"], "keyword")
+                self.assertEqual(record["decorator_index"], 1)
+                self.assertNotIn(b"input_signature", data)
+                self.assertIn(other.encode("utf-8"), data)
+
+    def test_two_function_decorators_with_signatures_are_refused(self):
+        with self.assertRaisesRegex(ValueError, "2 [*].function decorators"):
+            self.strip("""
+                @a.function(input_signature=[tf.TensorSpec([1])])
+                @tf.function(input_signature=[tf.TensorSpec([2])])
+                def f(x):
+                    return x
+                """)
+
     def test_positional_signature_is_recorded_not_stripped(self):
         text = """
             @tf.function(None, [tf.TensorSpec([2])])
