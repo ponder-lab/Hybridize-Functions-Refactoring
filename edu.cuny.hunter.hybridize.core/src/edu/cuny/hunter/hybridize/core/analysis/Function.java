@@ -4599,6 +4599,17 @@ public class Function {
 				continue;
 			}
 
+			// The conforming types come from the contexts the analysis could type. A context it reaches but could not type is a call whose
+			// argument is unknown, and a specification reduced without it would be a claim about that call too (#998).
+			if (param.hasUntypedConformingContext()) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"`" + this + "` is reached from a call site where the argument for parameter `" + param.getName()
+								+ "` could not be typed, so a specification derived from the other call sites may reject that call; "
+								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
+				blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
+				continue;
+			}
+
 			DType pin = this.eagerEffectiveDtypePins.get(param);
 
 			if (pin != null) {

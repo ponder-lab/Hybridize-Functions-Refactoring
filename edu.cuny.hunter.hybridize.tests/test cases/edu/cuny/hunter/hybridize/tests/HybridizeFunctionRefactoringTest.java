@@ -13130,4 +13130,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
 				t.getTensorTypes());
 	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
+	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
+	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedCallingContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control's only call is concrete, so its signature is the call's.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float64), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function mixed = findFunction(functions, "mixed");
+		assertTrue("`mixed` is still hybridized.", mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertFalse("A signature derived from the concrete call alone would reject the untyped call.",
+				mixed.getInferredInputSignature().isPresent());
+		assertEquals("The untyped context widens the parameters to unknown.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), mixed.getInferredInputSignatureAbsenceReason());
+		assertEquals("Both parameters are untyped in that context, so both block.", List.of("inputs", "sequence_length"),
+				mixed.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertTrue("Every blocking parameter reports the untyped context.", mixed.getBlockingParameterReasons().values().stream()
+				.allMatch(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT::equals));
+		assertTrue("The control reaches no untyped context.",
+				control.getParameters().stream().noneMatch(Parameter::hasUntypedConformingContext));
+	}
 }

@@ -174,6 +174,12 @@ public final class Parameter {
 	private Set<TensorType> conformingTensorTypes = Set.of();
 
 	/**
+	 * The conforming call-graph nodes of the owning function in which the tensor-type analysis associated no type with this parameter: the
+	 * function is reached in that context, but what arrives there is untyped (#998). Populated alongside {@link #conformingTensorTypes}.
+	 */
+	private Set<CGNode> untypedConformingNodes = Set.of();
+
+	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
 	 * {@code TRUE} or {@code FALSE}.
 	 */
@@ -1088,11 +1094,14 @@ public final class Parameter {
 	 * violation rather than under any current path.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
+	 * @param nodes The owning function's call-graph nodes, against which a node contributing no tensor type is recorded as an untyped
+	 *        calling context.
 	 */
-	void inferTensorTypes(TensorTypeAnalysis analysis) {
+	void inferTensorTypes(TensorTypeAnalysis analysis, Set<CGNode> nodes) {
 		Set<TensorType> result = new HashSet<>();
 		Set<TensorType> conforming = new HashSet<>();
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
+		Set<CGNode> typed = new HashSet<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
@@ -1104,6 +1113,9 @@ public final class Parameter {
 						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
 					result.addAll(tensorVariable.getTypes());
 
+					if (!tensorVariable.getTypes().isEmpty())
+						typed.add(localPointerKey.getNode());
+
 					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
 					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
 					if (!excluded.contains(localPointerKey.getNode()))
@@ -1114,6 +1126,28 @@ public final class Parameter {
 
 		this.setTensorTypes(unmodifiableSet(result));
 		this.conformingTensorTypes = unmodifiableSet(conforming);
+
+		// The iterator reports only variables it typed, so a node where the parameter is untyped contributes nothing to the union above
+		// rather than widening it. That node is a calling context the function is reached in, and what it passes is unknown, so the
+		// reduction must see it (#998).
+		Set<CGNode> untyped = new HashSet<>();
+
+		for (CGNode node : nodes)
+			if (!excluded.contains(node) && !typed.contains(node))
+				untyped.add(node);
+
+		this.untypedConformingNodes = unmodifiableSet(untyped);
+	}
+
+	/**
+	 * Whether the owning function is reached in a conforming calling context in which the tensor-type analysis associated no type with this
+	 * parameter (#998). A specification reduced from the other contexts' types is a claim about every call, and nothing is known of what
+	 * this one passes, so such a parameter has no specification.
+	 *
+	 * @return True iff some conforming call-graph node of the owning function carries no tensor type for this parameter.
+	 */
+	public boolean hasUntypedConformingContext() {
+		return !this.untypedConformingNodes.isEmpty();
 	}
 
 	/**
@@ -1232,7 +1266,7 @@ public final class Parameter {
 			// type-hint shortcut (Phase 1) `return`s before reaching the Ariadne query; populating here keeps the cache correct for
 			// type-hint parameters that Ariadne also classified from the call site.
 			if (!nodes.isEmpty())
-				this.inferTensorTypes(tensorAnalysis);
+				this.inferTensorTypes(tensorAnalysis, nodes);
 
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
