@@ -39,6 +39,8 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -436,39 +438,113 @@ public class Util {
 		return false;
 	}
 
+	/** The prefix Ariadne gives the name of a global read. */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/** The declaring-class prefix of a node for user code: a script or a function in one. */
+	private static final String USER_SCRIPT_TYPE_NAME_PREFIX = "Lscript ";
+
 	/**
-	 * True iff {@code node}, transitively over the same nodes {@link #performsTensorFlowOp} scans, holds a call whose target the call graph
-	 * does not resolve. Such a call may perform a tensor computation the scan cannot see (an object built through a factory the analysis
-	 * doesn't follow, a callee fetched with {@code getattr}), so a scan that finds no tensor op has not established that there is none. See
+	 * Python's builtin callables, other than exception types, as {@code dir(builtins)} lists them on Python 3.10. A call to one performs no
+	 * tensor computation itself, so its lacking a call-graph target says nothing about whether the caller computes tensors.
+	 */
+	private static final Set<String> PYTHON_BUILTIN_CALLABLES = Set.of("abs", "aiter", "all", "anext", "any", "ascii", "bin", "bool",
+			"breakpoint", "bytearray", "bytes", "callable", "chr", "classmethod", "compile", "complex", "copyright", "credits", "delattr",
+			"dict", "dir", "divmod", "enumerate", "eval", "exec", "exit", "filter", "float", "format", "frozenset", "getattr", "globals",
+			"hasattr", "hash", "help", "hex", "id", "input", "int", "isinstance", "issubclass", "iter", "len", "license", "list", "locals",
+			"map", "max", "memoryview", "min", "next", "object", "oct", "open", "ord", "pow", "print", "property", "quit", "range", "repr",
+			"reversed", "round", "set", "setattr", "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars",
+			"zip");
+
+	/**
+	 * The type names of Python's builtin values whose methods perform no tensor computation (string, dictionary, list, tuple and set
+	 * methods).
+	 */
+	private static final Set<String> PYTHON_BUILTIN_VALUE_TYPE_NAMES = Set.of("Lstring", "Ldict", "Llist", "Ltuple", "Lset");
+
+	/**
+	 * True iff {@code node}, transitively over the same nodes {@link #performsTensorFlowOp} scans, holds a call in user code whose target
+	 * the call graph does not resolve and that may compute tensors. Such a call may perform a tensor computation the scan cannot see (an
+	 * object built through a factory the analysis doesn't follow, a callee fetched with {@code getattr}), so a scan that finds no tensor op
+	 * has not established that there is none. A call of a Python builtin, or of a method on a builtin string, dictionary, list, tuple or
+	 * set, is not counted: it computes no tensors, and Ariadne leaves many of them without a target. Only user code is inspected; a library
+	 * or summary node's own body is not the analyzed function's code, though its successors (user callbacks) are walked. A call whose
+	 * target set is non-empty but imprecise counts as resolved, so the scan's own misses stay possible by design. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param callGraph The call graph, used to resolve each call's targets and follow callees transitively.
-	 * @return True iff a call reachable from {@code node}'s user-defined bodies has no resolved target.
+	 * @param pointerAnalysis The pointer analysis, used to read a method call's receiver.
+	 * @return True iff a call reachable from {@code node}'s user-defined bodies has no resolved target and may compute tensors.
 	 */
-	public static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph) {
-		return hasUnresolvedCall(node, callGraph, Sets.newHashSet());
+	public static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return hasUnresolvedCall(node, callGraph, pointerAnalysis, Sets.newHashSet());
 	}
 
-	private static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, Set<CGNode> seen) {
+	private static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<CGNode> seen) {
 		if (!seen.add(node))
 			return false;
 
-		// Mirror `performsTensorFlowOp`: a TensorFlow library node's own body is not the analyzed function's code, but its successors
-		// (user callbacks) are walked.
-		if (!isTensorFlowNode(node)) {
+		if (isUserCodeNode(node)) {
 			IR ir = node.getIR();
 
-			if (ir != null)
+			if (ir != null) {
+				DefUse defUse = node.getDU();
+
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
 					if (instruction instanceof PythonInvokeInstruction invoke
-							&& callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty())
+							&& callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty()
+							&& !callsPythonBuiltin(node, invoke, defUse, pointerAnalysis))
 						return true;
+			}
 		}
 
 		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
-			if (hasUnresolvedCall(succNodes.next(), callGraph, seen))
+			if (hasUnresolvedCall(succNodes.next(), callGraph, pointerAnalysis, seen))
 				return true;
+
+		return false;
+	}
+
+	/** True iff {@code node} is user code, a script or a function in one, rather than a library or summary node. */
+	private static boolean isUserCodeNode(CGNode node) {
+		return node.getMethod().getDeclaringClass().getName().toString().startsWith(USER_SCRIPT_TYPE_NAME_PREFIX);
+	}
+
+	/**
+	 * True iff {@code invoke} calls a Python builtin by name, or a method on a value that points only to builtin strings, dictionaries,
+	 * lists, tuples or sets. A call of a value produced by another call is never a builtin here: {@code getattr(tf, "op")} itself is
+	 * exempt, but calling its result is not.
+	 */
+	private static boolean callsPythonBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (def instanceof AstLexicalRead lexical) {
+			Access[] accesses = lexical.getAccesses();
+			return accesses.length > 0 && PYTHON_BUILTIN_CALLABLES.contains(accesses[0].getName().fst);
+		}
+
+		if (def instanceof AstGlobalRead global) {
+			String name = global.getGlobalName();
+			return name.startsWith(GLOBAL_PREFIX) && PYTHON_BUILTIN_CALLABLES.contains(name.substring(GLOBAL_PREFIX.length()));
+		}
+
+		if (def instanceof PythonPropertyRead read) {
+			PointerKey receiver = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+			boolean any = false;
+
+			for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(receiver)) {
+				if (!PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.getConcreteType().getName().toString()))
+					return false;
+
+				any = true;
+			}
+
+			// An empty receiver set is unknown, not builtin.
+			return any;
+		}
 
 		return false;
 	}

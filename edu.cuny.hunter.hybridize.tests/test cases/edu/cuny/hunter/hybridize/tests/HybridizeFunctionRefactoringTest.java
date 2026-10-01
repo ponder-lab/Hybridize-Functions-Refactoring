@@ -11033,9 +11033,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function whose body computes only through a call the call graph does not resolve is not established as barren, so it keeps
 	 * its decorator (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Its tensor op is fetched with
-	 * {@code getattr}, which the analysis does not follow, so the scan finds no op; de-hybridizing such a function on that basis breaks one
-	 * that relies on graph mode. A truly barren function, with no unresolved call, still de-hybridizes (P6), and the eager-to-hybrid side
-	 * is unchanged: the eager twin still fails {@link PreconditionFailure#NO_TENSOR_COMPUTATION}.
+	 * {@code getattr}: the {@code getattr} call itself is a builtin, but the call of its result is unresolved, so the scan finds no op
+	 * without having seen every call. De-hybridizing such a function on that basis breaks one that relies on graph mode. A truly barren
+	 * function still de-hybridizes (P6), including one whose only calls are Python builtins or methods of builtin strings, dictionaries,
+	 * lists, tuples and sets, which Ariadne leaves without a target but which compute no tensors. The eager-to-hybrid side is unchanged:
+	 * the eager twin still fails {@link PreconditionFailure#NO_TENSOR_COMPUTATION}.
 	 */
 	@Test
 	public void testUnresolvedCallKeepsHybrid() throws Exception {
@@ -11043,20 +11045,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`opaque` is hybrid.", opaque.isHybrid());
 		assertTrue("`opaque` has a tensor parameter.", opaque.getHasTensorParameter());
 		assertFalse("The scan finds no tensor op in `opaque`.", opaque.getHasTensorComputation());
-		assertTrue("`opaque`'s `getattr`-fetched call is unresolved.", opaque.isTensorComputationUnresolved());
+		assertTrue("Calling `getattr`'s result is an unresolved call.", opaque.isTensorComputationUnresolved());
 		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
 
-		Function barren = getFunction("barren");
-		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
-		assertFalse("`barren` has no unresolved call.", barren.isTensorComputationUnresolved());
-		assertEquals("A barren hybrid function still de-hybridizes (P6).", P6, barren.getPassingPrecondition());
-		assertTrue("`barren` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
+				"tuple_method", "set_method", "numpy_call" }) {
+			Function barren = getFunction(name);
+			assertFalse("`" + name + "` performs no tensor computation.", barren.getHasTensorComputation());
+			assertFalse("`" + name + "` has no unresolved call that may compute tensors.", barren.isTensorComputationUnresolved());
+			assertEquals("`" + name + "`, a barren hybrid function, still de-hybridizes (P6).", P6, barren.getPassingPrecondition());
+			assertTrue("`" + name + "` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+		}
 
 		Function eager = getFunction("opaque_eager");
 		assertFalse("`opaque_eager` is eager.", eager.isHybrid());
 		assertNotNull("The eager-to-hybrid side is unchanged: `opaque_eager` still fails NO_TENSOR_COMPUTATION.",
 				eager.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+	}
+
+	/**
+	 * A hybrid function with a supplied {@code input_signature} is not de-hybridized as having no tensor parameter (P2), even when the
+	 * analysis doesn't see its parameter as a tensor (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The
+	 * signature declares each parameter it covers tensor-like, so the "no tensor parameter" verdict is not an established absence; here a
+	 * Python {@code int} argument becomes a tensor through the signature, so de-hybridizing would also change the function's result. The
+	 * same function without a signature still de-hybridizes (P2).
+	 */
+	@Test
+	public void testSuppliedSignatureKeepsHybrid() throws Exception {
+		Function declared = getFunction("declared");
+		assertTrue("`declared` is hybrid.", declared.isHybrid());
+		assertFalse("The analysis doesn't see `declared`'s parameter as a tensor.", declared.getHasTensorParameter());
+		assertTrue("`declared` carries a supplied input_signature.", declared.getHybridizationParameters().hasInputSignatureParam());
+		assertFalse("`declared` is not de-hybridized against its own signature.", declared.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotEquals("`declared` does not pass P2.", P2, declared.getPassingPrecondition());
+
+		Function undeclared = getFunction("undeclared");
+		assertFalse("`undeclared`'s parameter is not a tensor.", undeclared.getHasTensorParameter());
+		assertEquals("Without a signature, the function still de-hybridizes (P2).", P2, undeclared.getPassingPrecondition());
+		assertTrue("`undeclared` selects CONVERT_TO_EAGER.", undeclared.getTransformations().contains(CONVERT_TO_EAGER));
 	}
 
 	/**
