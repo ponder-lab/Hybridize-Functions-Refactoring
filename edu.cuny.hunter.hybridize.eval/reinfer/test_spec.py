@@ -131,6 +131,12 @@ class ParseSignatureTest(unittest.TestCase):
                 with self.assertRaises(spec.NonLiteral):
                     spec.parse_signature(source)
 
+    def test_unpacked_arguments_are_not_literal(self):
+        for source in ("[tf.TensorSpec(**options)]", "[tf.TensorSpec(*args)]"):
+            with self.subTest(source=source):
+                with self.assertRaises(spec.NonLiteral):
+                    spec.parse_signature(source)
+
     def test_a_negative_dimension_is_not_read_as_a_wildcard(self):
         with self.assertRaises(spec.NonLiteral):
             spec.parse_signature("[tf.TensorSpec([-1, 3])]")

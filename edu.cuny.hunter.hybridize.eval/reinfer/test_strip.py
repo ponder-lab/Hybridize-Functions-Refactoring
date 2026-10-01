@@ -1,3 +1,4 @@
+import ast
 import os
 import tempfile
 import textwrap
@@ -176,6 +177,27 @@ class StripEdgeTest(unittest.TestCase):
             """)
         self.assertIn(b"jit_compile=True  # fast", data)
         self.assertNotIn(b"input_signature", data)
+
+    def test_a_comment_before_the_comma_after_a_keyword_survives(self):
+        for text in (
+            "@tf.function(input_signature=[x]  # why\n    , jit_compile=True)\ndef f(x):\n    return x\n",
+            "@tf.function(input_signature=[x]  # why\n    ,)\ndef f(x):\n    return x\n",
+        ):
+            with self.subTest(text=text):
+                data, _ = strip.strip_function(text.encode("utf-8"), "f")
+                self.assertIn(b"# why", data)
+                self.assertNotIn(b"input_signature", data)
+                call = ast.parse(data).body[0].decorator_list[0]
+                self.assertEqual(call.args, [])
+                self.assertEqual(
+                    [k.arg for k in call.keywords],
+                    ["jit_compile"] if "jit_compile" in text else [],
+                )
+
+    def test_a_source_not_in_utf8_is_refused(self):
+        text = '# -*- coding: latin-1 -*-\n@tf.function(experimental_implements="\xe9", input_signature=[x])\ndef f(x):\n    return x\n'
+        with self.assertRaisesRegex(ValueError, "not UTF-8"):
+            strip.strip_function(text.encode("latin-1"), "f")
 
     def test_a_comma_inside_a_string_is_not_the_separator(self):
         data, _ = self.strip("""

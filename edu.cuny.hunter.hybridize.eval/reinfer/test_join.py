@@ -461,6 +461,108 @@ class JoinSubjectTest(unittest.TestCase):
         self.assertEqual(functions[0]["relation"], spec.AGREEMENT)
         self.assertEqual(functions[0]["obtained by"], "evaluated: ran it")
 
+    def test_a_sequence_axis_reads_its_element_of_the_removed_spec(self):
+        write(
+            self.run,
+            "parameter_dimensions.csv",
+            [
+                "param index",
+                "param name",
+                "is container",
+                "container position",
+                "type ordinal",
+                "rank",
+                "dim index",
+                "dim class",
+                "dtype",
+                "dtype top",
+            ],
+            [
+                key("scored")
+                + [
+                    "0",
+                    "x",
+                    "true",
+                    "1",
+                    "0",
+                    "2",
+                    "0",
+                    "Constant,5",
+                    "FLOAT32",
+                    "false",
+                ]
+            ],
+        )
+        records = [
+            self.record("scored", "[[tf.TensorSpec([2]), tf.TensorSpec([5, 7])]]", 1)
+        ]
+        _, _, axes = join.join_subject(self.SUBJECT, records, self.run, self.checkout)
+        self.assertEqual(
+            [(a["container position"], a["dim index"], a["removed dim"]) for a in axes],
+            [("1", 0, "5")],
+        )
+
+    def test_ground_truth_is_not_given_to_same_named_twins(self):
+        records = [
+            self.record("scored", "dataset.element_spec", 1),
+            {
+                **self.record("scored", "dataset.element_spec", 1),
+                "definition_ordinal": 2,
+            },
+        ]
+        truth = {
+            "scored": {
+                "structure": {"_list": [{"dtype": "float32", "shape": [None, 3]}]}
+            }
+        }
+        functions, _, _ = join.join_subject(
+            self.SUBJECT, records, self.run, self.checkout, ground_truth=truth
+        )
+        for row in functions:
+            self.assertTrue(
+                row["outcome"].startswith("excluded:unevaluable"), row["outcome"]
+            )
+            self.assertIn("share that name", row["outcome"])
+
+
+class GroundTruthIdentityTest(unittest.TestCase):
+    def record(self, file, ordinal):
+        return {"file": file, "qualname": "f", "definition_ordinal": ordinal}
+
+    def test_an_unqualified_entry_is_not_given_to_twins(self):
+        records = [self.record("a.py", 1), self.record("b.py", 1)]
+        truth = {"f": {"structure": {}}}
+        for record in records:
+            entry, reason = join.ground_truth_for(truth, record, records)
+            self.assertIsNone(entry)
+            self.assertIn("2 stripped functions share that name", reason)
+
+    def test_a_qualified_entry_goes_to_its_twin_only(self):
+        records = [self.record("a.py", 1), self.record("b.py", 1)]
+        truth = {"f": {"structure": {}, "file": "b.py", "definition_ordinal": 1}}
+        self.assertEqual(
+            join.ground_truth_for(truth, records[0], records), (None, None)
+        )
+        self.assertIs(join.ground_truth_for(truth, records[1], records)[0], truth["f"])
+
+    def test_a_unique_name_needs_no_qualification(self):
+        records = [self.record("a.py", 1)]
+        truth = {"f": {"structure": {}}}
+        self.assertIs(join.ground_truth_for(truth, records[0], records)[0], truth["f"])
+
+
+class RemovedLeafTest(unittest.TestCase):
+    def test_a_container_position_selects_the_sequence_element(self):
+        (tree,) = spec.parse_signature("[[tf.TensorSpec([2]), tf.TensorSpec([5, 7])]]")
+        self.assertEqual(join.removed_leaf(tree, "1")["shape"], [5, 7])
+        self.assertIsNone(join.removed_leaf(tree, ""))
+        self.assertIsNone(join.removed_leaf(tree, "2"))
+
+    def test_a_direct_parameter_is_its_own_leaf(self):
+        (tree,) = spec.parse_signature("[tf.TensorSpec([3])]")
+        self.assertIs(join.removed_leaf(tree, ""), tree)
+        self.assertIsNone(join.removed_leaf(tree, "0"))
+
 
 class PreconditionNamesTest(unittest.TestCase):
     def test_read_from_the_enum(self):

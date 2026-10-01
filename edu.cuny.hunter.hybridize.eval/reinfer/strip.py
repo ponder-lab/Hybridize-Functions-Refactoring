@@ -187,6 +187,14 @@ def _comma_before(tokens, position):
     return None
 
 
+def _comment_between(tokens, begin, end):
+    """Whether a comment starts within ``[begin, end)``."""
+    return any(
+        kind == tokenize.COMMENT and begin <= start < end
+        for kind, _, start, _ in tokens
+    )
+
+
 def strip_keyword(data, call, keyword):
     """Return ``data`` (bytes) with ``keyword`` and its separating comma cut out of ``call``.
 
@@ -204,33 +212,30 @@ def strip_keyword(data, call, keyword):
         comma = _comma_after(tokens, finish)
         if comma is None:
             raise ValueError("no comma after the keyword")
+        if _comment_between(tokens, finish, comma - 1):
+            # A comment sits between the keyword and its comma: cut the two apart, so it stays.
+            return data[:start] + data[finish : comma - 1] + data[comma:]
         end = comma
         while end < len(data) and data[end : end + 1] in _SPACE:
             end += 1
-        if data.rfind(b"#", finish, comma) != -1:
-            end = comma  # a comment between keyword and comma: cut only up to the comma, not beyond.
         begin = start
     elif index > 0:
         comma = _comma_before(tokens, start)
         if comma is None:
             raise ValueError("no comma before the keyword")
-        if not any(
-            kind == tokenize.COMMENT and comma < begin_ < start
-            for kind, _, begin_, _ in tokens
-        ):
+        if not _comment_between(tokens, comma + 1, start):
             begin, end = comma, finish
         else:
             # A comment sits between the comma and the keyword: cut the two apart, so it stays.
             return data[:comma] + data[comma + 1 : start] + data[finish:]
     else:
-        begin, end = offsets.at(*_start(keyword)), offsets.at(*_end(keyword))
-        rest = end
-        while rest < len(data) and data[rest : rest + 1] in (b" ", b"\t", b"\n", b"\r"):
-            rest += 1
-        if data[rest : rest + 1] == b",":
-            end = (
-                rest + 1
-            )  # a sole argument's trailing comma would leave `function(,)`.
+        # A sole argument's trailing comma would leave `function(,)`, so it goes too.
+        begin, end = start, finish
+        comma = _comma_after(tokens, finish)
+        if comma is not None:
+            if _comment_between(tokens, finish, comma - 1):
+                return data[:start] + data[finish : comma - 1] + data[comma:]
+            end = comma
     return data[:begin] + data[end:]
 
 
@@ -277,6 +282,11 @@ def strip_function(data, qualname, line=None, ordinal=None):
     source text, the decorator's callee and every other argument, and the form of the signature. For a
     positional or absent signature nothing is removed and ``new_data`` is ``data``.
     """
+    encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+    if encoding not in ("utf-8", "utf-8-sig"):
+        # The AST counts UTF-8 bytes of the decoded source; offsets into another encoding would cut the
+        # wrong bytes.
+        raise ValueError(f"source encoding {encoding} is not UTF-8")
     tree = parse(data)
     ordinal, node = find_definition(tree, qualname, line=line, ordinal=ordinal)
     index, call, form = signature_decorator(node)

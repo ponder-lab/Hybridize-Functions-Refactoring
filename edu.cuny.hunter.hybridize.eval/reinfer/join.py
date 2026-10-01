@@ -30,6 +30,70 @@ import spec
 
 KEY = ("relative path", "function", "definition ordinal")
 
+_IDENTITY = [
+    "repo",
+    "sha",
+    "kind",
+    "relative path",
+    "function",
+    "definition ordinal",
+    "evaluator function",
+    "evaluator ordinal",
+    "library",
+]
+# The columns of each output, so that an output with no rows still has its header.
+COLUMNS = {
+    "functions": _IDENTITY
+    + [
+        "outcome",
+        "also applies",
+        "decorator",
+        "other arguments",
+        "relaxation",
+        "removed spec",
+        "removed source",
+        "obtained by",
+        "inferred spec",
+        "absence reasons",
+        "failed preconditions",
+        "relation",
+        "dtype relation",
+        "shape relation",
+        "arity removed",
+        "arity inferred",
+        "dimension rows",
+        "resolved calls",
+        "text callers",
+        "trim",
+    ],
+    "parameters": _IDENTITY
+    + [
+        "outcome",
+        "position",
+        "param index",
+        "param name",
+        "removed spec",
+        "removed leaves",
+        "inferred spec",
+        "relation",
+        "dtype relation",
+        "shape relation",
+        "inferred ranks",
+        "tensor types",
+    ],
+    "axes": _IDENTITY
+    + [
+        "position",
+        "param index",
+        "container position",
+        "dim index",
+        "extents",
+        "classes",
+        "verdict",
+        "removed dim",
+    ],
+}
+
 PRECONDITION_FAILURE_JAVA = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..",
@@ -273,6 +337,45 @@ def _relations(removed, inferred):
     }
 
 
+def ground_truth_for(ground_truth, record, records):
+    """The ground-truth entry for ``record``, and why there is none when one is keyed by its name.
+
+    Entries are keyed by qualified name. An entry may also name its ``file`` and
+    ``definition_ordinal``; when it does, both must match. When it does not and the subject strips
+    more than one function by that name, the entry cannot say which one it describes, so neither
+    gets it.
+    """
+    entry = (ground_truth or {}).get(record["qualname"])
+    if entry is None:
+        return None, None
+    for field in ("file", "definition_ordinal"):
+        if field in entry and entry[field] != record[field]:
+            return None, None
+    twins = sum(1 for r in records if r["qualname"] == record["qualname"])
+    if twins > 1 and not ("file" in entry and "definition_ordinal" in entry):
+        return None, (
+            f"ground truth for {record['qualname']} names neither file nor definition "
+            f"ordinal, and {twins} stripped functions share that name"
+        )
+    return entry, None
+
+
+def removed_leaf(tree, container_position):
+    """The leaf of the removed spec ``tree`` that an evaluator dimension row describes: the tree itself
+    for a direct parameter (empty container position), or that element of a sequence."""
+    if not tree:
+        return None
+    if container_position == "":
+        return tree if tree["kind"] == "leaf" else None
+    if tree["kind"] != "sequence":
+        return None
+    index = int(container_position)
+    if index >= len(tree["elements"]):
+        return None
+    element = tree["elements"][index]
+    return element if element["kind"] == "leaf" else None
+
+
 def join_subject(
     subject, records, run_dir, checkout, ground_truth=None, trim=None, failure=None
 ):
@@ -334,9 +437,9 @@ def join_subject(
                     removed = spec.parse_signature(record["removed_source"])
                     obtained_by = "literal"
             except spec.NonLiteral as error:
-                truth = (ground_truth or {}).get(record["qualname"])
+                truth, ambiguity = ground_truth_for(ground_truth, record, records)
                 if truth is None:
-                    excluded = f"unevaluable: {error}"
+                    excluded = f"unevaluable: {ambiguity or error}"
                 else:
                     removed = spec.signature_from_structure(truth["structure"])
                     obtained_by = "evaluated: " + ground_truth.get("obtained_by", "")
@@ -496,12 +599,11 @@ def join_subject(
                     ),
                 }
             )
-            r_leaf = r_tree if r_tree and r_tree["kind"] == "leaf" else None
             for (container_position, dim), axis in sorted(axes.items()):
                 removed_dim = ""
+                r_leaf = removed_leaf(r_tree, container_position)
                 if (
                     r_leaf
-                    and container_position == ""
                     and r_leaf["shape"] is not None
                     and dim < len(r_leaf["shape"])
                 ):
@@ -522,5 +624,11 @@ def join_subject(
                         "verdict": axis_verdict(axis),
                         "removed dim": removed_dim,
                     }
+                )
+    for name, rows in zip(COLUMNS, (function_rows, parameter_rows, axis_rows)):
+        for row in rows:
+            if list(row) != COLUMNS[name]:
+                raise AssertionError(
+                    f"{name} row columns differ from COLUMNS: {list(row)}"
                 )
     return function_rows, parameter_rows, axis_rows

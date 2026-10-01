@@ -50,11 +50,11 @@ EVALUATOR_ENVIRONMENT = {
 SUCCESS_LINE = "Evaluation completed: all 1 project(s) succeeded."
 
 
-def write_csv(path, rows):
-    if not rows:
-        return
+def write_csv(path, rows, columns):
+    """Write ``rows`` under the header ``columns``; with no rows, the file holds the header alone, so an
+    empty result is told apart from a run that wrote nothing."""
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -357,13 +357,20 @@ def main(argv=None):
             failure=failure,
         )
         for name, part in zip(("functions", "parameters", "axes"), rows):
-            write_csv(os.path.join(out, f"reinfer_{name}.csv"), part)
+            write_csv(
+                os.path.join(out, f"reinfer_{name}.csv"), part, join.COLUMNS[name]
+            )
             combined[name].extend(part)
         outcomes = ", ".join(f"{r['function']}={r['outcome']}" for r in rows[0])
         print(f"{subject['path']}: launcher exit {code}; {outcomes}", flush=True)
 
+    if arguments.strip_only:
+        # Nothing was joined, so there is no result to write, not an empty one.
+        return status
     for name, rows in combined.items():
-        write_csv(os.path.join(arguments.out, f"reinfer_{name}.csv"), rows)
+        write_csv(
+            os.path.join(arguments.out, f"reinfer_{name}.csv"), rows, join.COLUMNS[name]
+        )
     return status
 
 

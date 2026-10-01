@@ -6,6 +6,15 @@ import unittest
 import run
 
 
+class WriteCsvTest(unittest.TestCase):
+    def test_no_rows_still_writes_the_header(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "reinfer_axes.csv")
+            run.write_csv(path, [], run.join.COLUMNS["axes"])
+            with open(path) as f:
+                self.assertEqual(f.read().strip(), ",".join(run.join.COLUMNS["axes"]))
+
+
 class FailureOfTest(unittest.TestCase):
     def test_the_completion_line_is_the_witness(self):
         self.assertIsNone(run.failure_of("...\n!MESSAGE " + run.SUCCESS_LINE + "\n", 1))

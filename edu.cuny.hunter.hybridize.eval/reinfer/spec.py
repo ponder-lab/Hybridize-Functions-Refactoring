@@ -273,6 +273,12 @@ def _shape(node):
 
 def _spec_call(node):
     spec_type = _name_tail(node.func)
+    for k in node.keywords:
+        if k.arg is None:
+            raise NonLiteral(f"unpacked arguments to {spec_type}: {ast.unparse(node)}")
+    for value in node.args:
+        if isinstance(value, ast.Starred):
+            raise NonLiteral(f"unpacked arguments to {spec_type}: {ast.unparse(node)}")
     arguments = {k.arg: k.value for k in node.keywords}
     positional = ("shape", "dtype", "name")
     for index, value in enumerate(node.args):
