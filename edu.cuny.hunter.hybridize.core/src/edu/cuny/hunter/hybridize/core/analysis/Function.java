@@ -1508,7 +1508,7 @@ public class Function {
 										.map(exceptions -> "Can't hybridize a function called inside an assertRaises, pytest.raises, or try "
 												+ "statement with an argument whose shape or dtype no unguarded call is known to pass; tracing "
 												+ "it may raise " + exceptions
-												+ " in place of the TensorFlow error, which the guard treats " + "differently.")
+												+ " in place of the TensorFlow error, which the guard treats differently.")
 										.orElseGet(() -> "Can't hybridize a function whose body calls TensorFlow inside a try statement "
 												+ "that dispatches on " + this.bodyHandlerChange.get() + "."));
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
