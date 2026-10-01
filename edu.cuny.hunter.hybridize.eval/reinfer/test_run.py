@@ -64,6 +64,56 @@ class ProjectNameTest(unittest.TestCase):
             self.assertEqual(run.project_name(work), "tf-image-15977b3c6")
 
 
+class SparseMatcherTest(unittest.TestCase):
+    def matches(self, pattern, path):
+        return bool(run.sparse_matcher(pattern).fullmatch(path))
+
+    def test_a_star_stays_within_one_directory(self):
+        self.assertTrue(self.matches("/a/*.py", "a/x.py"))
+        self.assertFalse(self.matches("/a/*.py", "a/b/x.py"))
+
+    def test_a_double_star_spans_directories(self):
+        for path in ("a/x.py", "a/b/x.py", "a/b/c/x.py"):
+            with self.subTest(path=path):
+                self.assertTrue(self.matches("/a/**/*.py", path))
+        self.assertFalse(self.matches("/a/**/*.py", "b/x.py"))
+
+    def test_a_pattern_is_anchored_at_the_root(self):
+        self.assertTrue(self.matches("/x.py", "x.py"))
+        self.assertFalse(self.matches("/x.py", "a/x.py"))
+
+    def test_patterns_git_reads_differently_are_refused(self):
+        for pattern in ("x.py", "!/x.py", "/a/", "/[ab].py"):
+            with self.subTest(pattern=pattern):
+                with self.assertRaises(RuntimeError):
+                    run.sparse_matcher(pattern)
+
+
+class TrimTest(unittest.TestCase):
+    SUBJECT = {
+        "path": "p",
+        "notes": "the subject's own notes",
+        "sparse": ["/a.py"],
+        "caller_scope_complete": True,
+        "trim_note": "why",
+    }
+
+    def test_the_trim_is_read_from_the_manifest_entry(self):
+        self.assertEqual(
+            run.trim_of(self.SUBJECT, {}),
+            {"sparse": ["/a.py"], "caller_scope_complete": True, "note": "why"},
+        )
+
+    def test_a_local_source_is_added(self):
+        self.assertEqual(run.trim_of(self.SUBJECT, {"source": "/s"})["source"], "/s")
+
+    def test_a_trim_field_in_the_local_config_is_refused(self):
+        for local in ({"sparse": ["/b.py"]}, {"exclude": ["x"]}, {"note": "n"}):
+            with self.subTest(local=local):
+                with self.assertRaises(RuntimeError):
+                    run.trim_of(self.SUBJECT, local)
+
+
 class PrepareTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -109,6 +159,44 @@ class PrepareTest(unittest.TestCase):
                 {"sha": head.stdout.strip()},
                 self.source,
                 os.path.join(self.directory.name, "w"),
+            )
+
+    def files(self, work):
+        return sorted(
+            os.path.relpath(os.path.join(d, f), work)
+            for d, _, fs in os.walk(work)
+            for f in fs
+        )
+
+    def test_a_sparse_trim_copies_only_the_matching_files_of_the_commit(self):
+        # A file missing from the working tree is still copied: the trim reads the commit, not the
+        # checkout, so how the local checkout happens to be sparse does not matter.
+        os.remove(os.path.join(self.source, "keep", "a.py"))
+        subprocess.run(
+            ["git", "-C", self.source, "update-index", "--skip-worktree", "keep/a.py"],
+            check=True,
+        )
+        work = os.path.join(self.directory.name, "work")
+        run.prepare(self.subject, self.source, work, sparse=["/keep/*.py"])
+        self.assertEqual(self.files(work), ["keep/a.py"])
+
+    def test_sparse_and_exclude_together_are_refused(self):
+        with self.assertRaises(RuntimeError):
+            run.prepare(
+                {**self.subject, "path": "p"},
+                self.source,
+                os.path.join(self.directory.name, "w"),
+                exclude=["tensorflow1"],
+                sparse=["/top.py"],
+            )
+
+    def test_a_sparse_trim_matching_nothing_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            run.prepare(
+                self.subject,
+                self.source,
+                os.path.join(self.directory.name, "w"),
+                sparse=["/missing.py"],
             )
 
     def test_a_different_head_is_refused(self):

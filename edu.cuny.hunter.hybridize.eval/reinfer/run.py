@@ -9,10 +9,14 @@ Usage::
 
     python3 run.py --manifest SUBJECTS/manifest.json --out OUT \\
         --eclipse <hybridize-evaluator launcher> --runner <run-headless-evaluator.sh> \\
-        --python <python3.10 with TensorFlow> [--config config.json] [--only PATH ...]
+        --python <python3.10 with TensorFlow> [--subjects-dir DIR] [--ground-truth DIR] \\
+        [--config config.json] [--only PATH ...]
 
-``--config`` supplies per-subject trims for sparse checkouts: a source directory to copy instead of
-the manifest's, whether the caller search is complete by lexical scope, and a note for the output.
+A subject's trim is part of its manifest entry: ``sparse`` (the paths of the fix commit to analyze,
+for a repository too large to analyze whole), ``caller_scope_complete`` (whether that trim is complete
+for caller search), ``exclude`` (top-level paths to leave out) and a ``trim_note``. ``--config`` holds only
+what is local to one machine, keyed by manifest path: a ``source`` checkout to copy in place of the
+one under ``--subjects-dir``.
 """
 
 import argparse
@@ -78,12 +82,15 @@ def repository_of(directory):
     return children[0] if len(children) == 1 else directory
 
 
-def prepare(subject, source, work, exclude=()):
+def prepare(subject, source, work, exclude=(), sparse=()):
     """Copy ``source`` to ``work`` without ``.git``, after checking HEAD is the manifest's SHA.
 
     ``exclude`` names top-level paths of the checkout to leave out of the analyzed tree, for a
     repository that holds a second, separate program (VaDER's ``tensorflow1`` beside
-    ``tensorflow2``). The trim is recorded with the run, like a sparse checkout's.
+    ``tensorflow2``). ``sparse``, when given, is a list of git sparse-checkout patterns (non-cone:
+    ``/``-anchored, with ``*`` and ``**``), and only the files of the commit that match them are
+    copied, read from the commit itself, so that how the local checkout happens to be sparse does
+    not matter. Either trim is recorded with the run.
     """
     repository = repository_of(source)
     head = git(repository, "rev-parse", "HEAD")
@@ -99,6 +106,11 @@ def prepare(subject, source, work, exclude=()):
         )
     if os.path.exists(work):
         raise RuntimeError(f"{work} exists; use a fresh --out")
+    if sparse:
+        if exclude:
+            raise RuntimeError(f"{subject['path']}: both sparse and exclude are given")
+        copy_sparse(repository, source, work, sparse)
+        return
     excluded = {os.path.normpath(os.path.join(source, e)) for e in exclude}
 
     def ignore(directory, names):
@@ -109,6 +121,96 @@ def prepare(subject, source, work, exclude=()):
         }
 
     shutil.copytree(source, work, ignore=ignore, symlinks=True)
+
+
+def sparse_matcher(pattern):
+    """A regular expression for one non-cone sparse-checkout pattern, matched against a file's path
+    from the repository root: ``/`` anchors it there, ``**/`` spans any number of directories, and
+    ``*`` and ``?`` stay within one. Negations and directory patterns are refused, so that nothing a
+    pattern means in git is silently read differently here."""
+    if not pattern.startswith("/") or pattern.startswith("!") or pattern.endswith("/"):
+        raise RuntimeError(f"unsupported sparse pattern: {pattern}")
+    expression, rest = "", pattern[1:]
+    while rest:
+        if rest.startswith("**/"):
+            expression, rest = expression + "(?:[^/]+/)*", rest[3:]
+        elif rest.startswith("*"):
+            expression, rest = expression + "[^/]*", rest[1:]
+        elif rest.startswith("?"):
+            expression, rest = expression + "[^/]", rest[1:]
+        elif rest[0] in "[\\":
+            raise RuntimeError(f"unsupported sparse pattern: {pattern}")
+        else:
+            expression, rest = expression + re.escape(rest[0]), rest[1:]
+    return re.compile(expression)
+
+
+def copy_sparse(repository, source, work, patterns):
+    """Write the files of HEAD that match ``patterns`` to ``work``. ``source`` must be the repository
+    itself, since the patterns are anchored at its root."""
+    if os.path.realpath(repository) != os.path.realpath(source):
+        raise RuntimeError(
+            f"{source}: a sparse trim needs the repository itself, not {repository}"
+        )
+    matchers = [sparse_matcher(pattern) for pattern in patterns]
+    listed = subprocess.run(
+        ["git", "-C", repository, "ls-tree", "-r", "-z", "--name-only", "HEAD"],
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.split("\0")
+    files = [f for f in listed if f and any(m.fullmatch(f) for m in matchers)]
+    if not files:
+        raise RuntimeError(
+            f"{source}: no file of HEAD matches the sparse patterns {patterns}"
+        )
+    os.makedirs(work)
+    archive = subprocess.Popen(
+        [
+            "git",
+            "--literal-pathspecs",
+            "-C",
+            repository,
+            "archive",
+            "--format=tar",
+            "HEAD",
+            "--",
+            *files,
+        ],
+        stdout=subprocess.PIPE,
+    )
+    extract = subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout)
+    archive.stdout.close()
+    if archive.wait() != 0 or extract.returncode != 0:
+        raise RuntimeError(f"{source}: could not copy the sparse files of HEAD")
+
+
+# A manifest entry's trim fields, and the name each has in the recorded trim. The note is
+# ``trim_note`` in the manifest, beside the entry's own ``notes``.
+TRIM_FIELDS = {
+    "sparse": "sparse",
+    "caller_scope_complete": "caller_scope_complete",
+    "exclude": "exclude",
+    "trim_note": "note",
+}
+
+
+def trim_of(subject, local):
+    """The subject's trim from its manifest entry, plus its machine-local ``source``, if any.
+
+    A local entry may only add ``source``; a trim field there would let the analyzed tree differ
+    from what the committed manifest says, so one is refused.
+    """
+    misplaced = sorted(set(local) - {"source"})
+    if misplaced:
+        raise RuntimeError(
+            f"{subject['path']}: {', '.join(misplaced)} belongs in the manifest, not --config"
+        )
+    trim = {
+        name: subject[field] for field, name in TRIM_FIELDS.items() if field in subject
+    }
+    trim.update(local)
+    return trim
 
 
 def strip_subject(subject, work):
@@ -284,7 +386,17 @@ def main(argv=None):
         required=True,
         help="the Hybridize commit the evaluator product was built from",
     )
-    parser.add_argument("--config", help="per-subject trims, keyed by manifest path")
+    parser.add_argument(
+        "--subjects-dir",
+        help="where each subject is checked out at its manifest path, default the manifest's directory",
+    )
+    parser.add_argument(
+        "--ground-truth",
+        help="where <path>/element_spec.json files live, default _ground-truth beside the manifest",
+    )
+    parser.add_argument(
+        "--config", help="machine-local checkout paths (source), keyed by manifest path"
+    )
     parser.add_argument(
         "--max-heap",
         default=EVALUATOR_ENVIRONMENT["MAX_HEAP"],
@@ -304,7 +416,11 @@ def main(argv=None):
     if arguments.config:
         with open(arguments.config) as f:
             config = json.load(f)
-    subjects_dir = os.path.dirname(os.path.abspath(arguments.manifest))
+    manifest_dir = os.path.dirname(os.path.abspath(arguments.manifest))
+    subjects_dir = os.path.abspath(arguments.subjects_dir or manifest_dir)
+    ground_truth_dir = os.path.abspath(
+        arguments.ground_truth or os.path.join(manifest_dir, "_ground-truth")
+    )
     os.makedirs(arguments.out, exist_ok=True)
     combined = {"functions": [], "parameters": [], "axes": []}
     status = 0
@@ -312,14 +428,20 @@ def main(argv=None):
     for subject in manifest["subjects"]:
         if arguments.only and subject["path"] not in arguments.only:
             continue
-        trim = config.get(subject["path"], {})
+        trim = trim_of(subject, config.get(subject["path"], {}))
         source = os.path.expanduser(
             trim.get("source", os.path.join(subjects_dir, subject["path"]))
         )
         out = os.path.join(arguments.out, subject["path"])
         work = os.path.join(out, subject["path"])
         os.makedirs(out)
-        prepare(subject, source, work, exclude=trim.get("exclude", ()))
+        prepare(
+            subject,
+            source,
+            work,
+            exclude=trim.get("exclude", ()),
+            sparse=trim.get("sparse", ()),
+        )
         records = strip_subject(subject, work)
         with open(os.path.join(out, "strip.json"), "w") as f:
             json.dump(records, f, indent=1)
@@ -341,7 +463,7 @@ def main(argv=None):
             )
             status = 1
         truth_path = os.path.join(
-            subjects_dir, "_ground-truth", subject["path"], "element_spec.json"
+            ground_truth_dir, subject["path"], "element_spec.json"
         )
         truth = None
         if os.path.exists(truth_path):
