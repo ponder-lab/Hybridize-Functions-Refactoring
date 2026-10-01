@@ -177,7 +177,8 @@ public sealed interface InferenceResult {
 		 * a flat specification converting a container, a nested one indexing a dict or set, and a sparse or ragged one, whose exception
 		 * depends on the argument. A guard admits the exception by naming that class, {@code Exception}, or {@code BaseException}; an
 		 * unpredicted one is admitted only by the last two. A {@code tf.errors} guard is judged like any other, since a data-dependent op
-		 * error survives a bare decorator. The function still converts with a bare decorator.
+		 * error survives a bare decorator. The function still converts with a bare decorator, unless that decorator may change the
+		 * exception too, in which case the conversion is refused ({@link PreconditionFailure#TRACING_CHANGES_GUARDED_EXCEPTION}).
 		 *
 		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
 		 */

@@ -44,6 +44,7 @@ import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.TextEdit;
 import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
+import org.python.pydev.parser.jython.SimpleNode;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
 import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
@@ -73,6 +74,7 @@ import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
+import edu.cuny.hunter.hybridize.core.analysis.ExceptionHandlerAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.ExportAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
@@ -474,13 +476,25 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> callerCovered = Function.computeCallerCoverage(projectFunctions, callGraph);
 			projectFunctions.forEach(func -> func.setCallerCovered(callerCovered.contains(func)));
 
+			// The modules whose `try` statements are read for the `except` clauses around a call (issue 1014): those of the project's
+			// functions, by the absolute path of their file, each read once and shared across the functions.
+			Map<String, ExceptionHandlerAnalysis> modules = new HashMap<>();
+
+			for (Function func : projectFunctions) {
+				SimpleNode module = func.getContainingModule();
+
+				if (module != null)
+					modules.computeIfAbsent(func.getContainingFile().getAbsolutePath(), k -> new ExceptionHandlerAnalysis(module));
+			}
+
 			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
-				// Which of the function's nodes are reached only from call sites the tests declare must fail (issue 888). Must precede
-				// tensor-parameter inference, which is where the per-node evidence is read and attributed. Exits immediately unless
-				// signature inference is on, the only consumer of the exclusion.
-				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis());
+				// Which of the function's nodes are reached only from call sites the tests declare must fail (issue 888), and, for an
+				// eager function, which are reached only from guarded call sites (issue 1014). Must precede tensor-parameter inference,
+				// which is where the per-node evidence is read and attributed. Exits immediately for a hybrid function unless signature
+				// inference is on, the only consumer of the exclusion.
+				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis(), modules);
 
 				try {
 					func.inferTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));

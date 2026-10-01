@@ -113,6 +113,7 @@ import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
+import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
@@ -1166,16 +1167,26 @@ public class Function {
 	private Set<CGNode> expectedFailureNodes = Set.of();
 
 	/**
-	 * For each of {@link #expectedFailureNodes}, the guards around each declared failure reaching it, one list per call. Read to tell
-	 * whether the guard admits the exception an inferred signature raises when it rejects the argument that call passes (#1005).
+	 * For each call-graph node of this {@link Function} reached only from guarded call sites, the guards around each guarded call reaching
+	 * it, one list per call: the expected-failure guards, and for an eager function also the {@code except} clauses (#1014). Unlike
+	 * {@link #expectedFailureNodes}, it is kept with inference off and when every node is guarded. Read to tell whether the guard admits
+	 * the exception an inferred signature raises when it rejects the argument a declared failure passes (#1005), and whether a guard
+	 * dispatches differently on the exception tracing raises in place of the body's (#1014).
 	 */
-	private Map<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> expectedFailureGuards = Map.of();
+	private Map<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> callGuards = Map.of();
 
 	/**
-	 * For each of {@link #expectedFailureNodes}, what the declared failure passes each parameter, by declaration index, read from the
-	 * parameter's points-to set there. The exception a specification raises depends on it as much as on the specification (#1005).
+	 * The exceptions tracing may raise that a {@code try} statement in this eager function's own body treats differently from a TensorFlow
+	 * error, around a call that may run a TensorFlow operation, rendered for the status message; empty when there is none or it was not
+	 * computed (#1014). Converting the function traces its body, so that call would raise the traced exception in place of the kernel's.
 	 */
-	private Map<CGNode, Map<Integer, GuardedArgument>> expectedFailureArgumentKinds = Map.of();
+	private Optional<String> bodyHandlerChange = Optional.empty();
+
+	/**
+	 * For each node of {@link #callGuards}, what the guarded call passes each parameter, by declaration index, read from the parameter's
+	 * points-to set there. The exception a specification raises depends on it as much as on the specification (#1005).
+	 */
+	private Map<CGNode, Map<Integer, GuardedArgument>> guardedArgumentKinds = Map.of();
 
 	/**
 	 * What a declared failure passes a parameter, by the objects its points-to set holds in the expected-failure node (#1005).
@@ -1489,6 +1500,19 @@ public class Function {
 								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
 										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
 												+ "fails with it in either decorator order.");
+							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
+								// A guard around a call dispatches on its exception, but the argument may fail a static check, which a
+								// bare decorator raises at trace time as another exception than the kernel's (issue 1014). The decorator
+								// itself changes the exception, so no signature can be withheld to preserve the dispatch. A safety
+								// failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION, this.tracingChangesGuardedException()
+										.map(exceptions -> "Can't hybridize a function called inside an assertRaises, pytest.raises, or try "
+												+ "statement with an argument whose shape or dtype no unguarded call is known to pass; tracing "
+												+ "it may raise " + exceptions
+												+ " in place of the TensorFlow error, which the guard treats " + "differently.")
+										.orElseGet(() -> "Can't hybridize a function whose body calls TensorFlow inside a try statement "
+												+ "that treats a TensorFlow error differently from " + this.bodyHandlerChange.get()
+												+ ", which tracing may raise in its place."));
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -2964,15 +2988,22 @@ public class Function {
 	 * Computes this {@link Function}'s expected-failure nodes ({@link ExpectedFailureContextAnalysis}), the ones reached only from call
 	 * sites the developer has declared must fail, whose evidence the signature reduction then leaves out (#888). Must run before
 	 * {@link #inferTensorParameters}, which is where the per-node evidence is read. Excluding every node is treated as excluding none, so
-	 * the change stays confined to what is emitted rather than to which precondition passes.
+	 * the change stays confined to what is emitted rather than to which precondition passes. For an eager function, the nodes reached only
+	 * from guarded calls, inside an expected-failure guard or a {@code try} statement's body, are recorded with their guards whatever is
+	 * excluded, since its conversion is checked against them with inference on or off (#1014).
 	 *
 	 * @param callGraph The call graph, walked in the caller direction.
 	 * @param pointerAnalysis The pointer analysis, used to resolve each guard call's member name.
+	 * @param modules The modules whose {@code try} statements are read, by the absolute path of their file.
 	 */
-	public void computeExpectedFailureNodes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
-		// The exclusion is read in exactly one place, the signature reduction, so with inference off there is nothing for it to affect and
-		// the walk is pure cost. Gating here rather than at the call site keeps that invariant next to the code that relies on it.
-		if (!this.getInferInputSignatures())
+	public void computeExpectedFailureNodes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<String, ExceptionHandlerAnalysis> modules) {
+		// The exclusion is read only by the signature reduction, and the guards otherwise only by the conversion of an eager function
+		// (#1014), so with inference off a hybrid function has nothing for the walk to affect, and it is pure cost. Gating here rather than
+		// at the call site keeps that invariant next to the code that relies on it.
+		boolean eager = !TRUE.equals(this.isHybrid());
+
+		if (!this.getInferInputSignatures() && !eager)
 			return;
 
 		Set<CGNode> nodes;
@@ -2987,8 +3018,26 @@ public class Function {
 		if (nodes.isEmpty())
 			return;
 
-		ExpectedFailureContextAnalysis analysis = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis);
+		ExpectedFailureContextAnalysis analysis = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis, modules);
 		Set<CGNode> guarded = analysis.guardedOnlyNodes(nodes);
+
+		// A call inside a `try` statement's body is guarded too, but only the conversion reads it (#1014), and it does not set evidence
+		// aside: a handler declares nothing about whether the call raises.
+		Set<CGNode> handled = eager ? analysis.guardedOnlyNodes(nodes, true) : guarded;
+
+		if (eager)
+			this.bodyHandlerChange = bodyHandlerChange(nodes, analysis, callGraph);
+
+		if (handled.isEmpty())
+			return;
+
+		LOG.info(this + " has " + handled.size() + " node(s) reached only from guarded call sites, " + guarded.size()
+				+ " from expected-failure ones.");
+		this.callGuards = analysis.guardsOf(handled);
+		this.guardedArgumentKinds = this.guardedArguments(handled, pointerAnalysis);
+
+		if (!this.getInferInputSignatures() || guarded.isEmpty())
+			return;
 
 		if (guarded.size() == nodes.size()) {
 			LOG.info("Every call site of " + this + " is an expected failure; excluding none.");
@@ -2996,12 +3045,6 @@ public class Function {
 		}
 
 		this.expectedFailureNodes = guarded;
-
-		if (!guarded.isEmpty()) {
-			LOG.info(this + " has " + guarded.size() + " node(s) reached only from expected-failure call sites.");
-			this.expectedFailureGuards = analysis.guardsOf(guarded);
-			this.expectedFailureArgumentKinds = this.guardedArguments(guarded, pointerAnalysis);
-		}
 	}
 
 	/**
@@ -3792,6 +3835,15 @@ public class Function {
 
 	public Set<RefactoringStatusEntry> getErrors() {
 		return this.getRefactoringStatusEntries(RefactoringStatusEntry::isError);
+	}
+
+	/**
+	 * Returns the AST root of the module containing this {@link Function}.
+	 *
+	 * @return The module's AST root, or {@code null} when it was not available.
+	 */
+	public SimpleNode getContainingModule() {
+		return this.getFunctionDefinition().getContainingModule();
 	}
 
 	/**
@@ -4993,13 +5045,7 @@ public class Function {
 
 		/** True iff {@code guard} admits what this rejection raises. */
 		boolean admittedBy(ExpectedFailureContextAnalysis.Guard guard) {
-			if (!guard.resolved())
-				return false;
-
-			if (guard.names().contains("Exception") || guard.names().contains("BaseException"))
-				return true;
-
-			return this.exception != null && guard.names().contains(this.exception);
+			return this.exception == null ? guard.admitsAny() : guard.admits(this.exception);
 		}
 
 		@Override
@@ -5019,14 +5065,19 @@ public class Function {
 	 * @return The exception that would escape, rendered for the status message, or empty when no declared failure is affected.
 	 */
 	private Optional<String> guardedCallRejection(Parameter param, InputSignature.SpecEntry entry) {
-		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.expectedFailureGuards.entrySet()) {
+		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
+			// A node whose evidence was kept is one the specification was derived from, so it is not judged as a rejected call.
+			if (!this.expectedFailureNodes.contains(node.getKey()))
+				continue;
+
 			SignatureRejection rejection = this.signatureRejection(param, entry, node.getKey());
 
 			if (rejection == SignatureRejection.CONFORMS)
 				continue;
 
 			for (List<ExpectedFailureContextAnalysis.Guard> guards : node.getValue()) {
-				if (guards.stream().anyMatch(rejection::admittedBy))
+				// Only a declared failure is judged; an `except` clause around it declares nothing (#1014).
+				if (guards.stream().filter(guard -> !guard.handler()).anyMatch(rejection::admittedBy))
 					continue;
 
 				return Optional.of(rejection.toString());
@@ -5045,8 +5096,7 @@ public class Function {
 	 * @return Whether the argument conforms, or the exception the rejection raises.
 	 */
 	private SignatureRejection signatureRejection(Parameter param, InputSignature.SpecEntry entry, CGNode node) {
-		GuardedArgument kind = this.expectedFailureArgumentKinds.getOrDefault(node, Map.of()).getOrDefault(param.getIndex(),
-				GuardedArgument.OTHER);
+		GuardedArgument kind = this.guardedArgumentKinds.getOrDefault(node, Map.of()).getOrDefault(param.getIndex(), GuardedArgument.OTHER);
 
 		if (entry instanceof InputSignature.Sequence)
 			return switch (kind) {
@@ -5059,7 +5109,7 @@ public class Function {
 			return SignatureRejection.UNPREDICTED;
 
 		TensorType spec = ((InputSignature.Single) entry).type();
-		Set<TensorType> passed = param.getExpectedFailureTensorTypes(node);
+		Set<TensorType> passed = param.getTensorTypes(node);
 
 		// Only an argument that holds nothing but tensors may conform; one that may also be `None` is rejected whenever it is.
 		if (kind == GuardedArgument.TENSORS && !passed.isEmpty() && passed.stream().allMatch(t -> conforms(t, spec)))
@@ -5097,6 +5147,240 @@ public class Function {
 				return false;
 
 		return true;
+	}
+
+	/** The exception tracing raises for an operation whose static shape check fails, as measured on TensorFlow 2.9.3 (#1014). */
+	private static final String TRACE_TIME_SHAPE_EXCEPTION = "ValueError";
+
+	/** The exception tracing raises for an operation whose operands' dtypes disagree, as measured on TensorFlow 2.9.3 (#1014). */
+	private static final String TRACE_TIME_DTYPE_EXCEPTION = "TypeError";
+
+	/**
+	 * Whether a bare {@code tf.function} may change how a guard around a call to this function dispatches on the exception the call raises,
+	 * so that converting it would change the program's behavior (#1014). A kernel raises a {@code tf.errors} class as it runs, but a bare
+	 * decorator traces the function with the argument's own shape and dtype, and where a static check fails on them, tracing raises in
+	 * place of the kernel: {@code ValueError} for a shape and {@code TypeError} for a dtype. A data-dependent error, such as an
+	 * out-of-range {@code tf.gather} or a failed {@code tf.debugging.assert_positive}, is still raised by the kernel. The two cannot be
+	 * told apart from the body, but a call outside every guard that passes the same type traced without a static error, so such an argument
+	 * is no hazard. Any other argument is: one of another shape or dtype, one whose type is not fully known, and a container, a
+	 * {@code None}, or anything else that is not only tensors.
+	 * <p>
+	 * A guard distinguishes the two exceptions where it treats them differently. An expected-failure guard declares that the call raises
+	 * what it admits, so it distinguishes only when it may admit a {@code tf.errors} class and does not admit what tracing raises: one
+	 * admitting no {@code tf.errors} class declares an exception that is not a kernel's, which tracing raises where the body does. A
+	 * {@code try} statement declares nothing about whether the call raises, so its {@code except} clauses distinguish when the first to
+	 * catch what tracing raises is not the first to catch a kernel's error, in either direction: {@code except InvalidArgumentError}
+	 * catches the eager error and lets the traced one escape, and {@code except ValueError} the reverse.
+	 *
+	 * @return The exceptions tracing may raise that some guard treats differently, rendered for the status message, or empty when no
+	 *         guarded call is affected.
+	 */
+	private Optional<String> tracingChangesGuardedException() {
+		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
+			Set<String> raised = this.traceTimeExceptions(node.getKey());
+
+			if (raised.isEmpty())
+				continue;
+
+			for (List<ExpectedFailureContextAnalysis.Guard> guards : node.getValue()) {
+				List<ExpectedFailureContextAnalysis.Guard> declared = guards.stream().filter(guard -> !guard.handler()).toList();
+				List<ExpectedFailureContextAnalysis.Guard> handlers = guards.stream().filter(ExpectedFailureContextAnalysis.Guard::handler)
+						.toList();
+
+				Set<String> distinguished = raised.stream()
+						.filter(exception -> declaredDistinguishes(declared, exception) || handlersDistinguish(handlers, exception))
+						.collect(Collectors.toCollection(TreeSet::new));
+
+				if (!distinguished.isEmpty())
+					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * True iff the expected-failure guards {@code declared} around a call may admit the error a kernel raises but not {@code exception},
+	 * which tracing may raise in its place (#1014).
+	 *
+	 * @param declared The expected-failure guards around the call.
+	 * @param exception The simple name of an exception tracing may raise.
+	 * @return Whether the guards distinguish the two.
+	 */
+	private static boolean declaredDistinguishes(List<ExpectedFailureContextAnalysis.Guard> declared, String exception) {
+		return declared.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::mayAdmitOpError)
+				&& declared.stream().noneMatch(guard -> guard.admits(exception));
+	}
+
+	/**
+	 * True iff the first of the {@code except} clauses {@code handlers} to catch {@code exception}, which tracing may raise, is not the
+	 * first to catch the error a kernel raises (#1014). A clause catching what is unknown may be either.
+	 *
+	 * @param handlers The {@code except} clauses around the call, in the order Python tries them.
+	 * @param exception The simple name of an exception tracing may raise.
+	 * @return Whether the clauses distinguish the two.
+	 */
+	private static boolean handlersDistinguish(List<ExpectedFailureContextAnalysis.Guard> handlers, String exception) {
+		for (ExpectedFailureContextAnalysis.Guard handler : handlers) {
+			if (!handler.resolved())
+				return true;
+
+			boolean traced = handler.admits(exception);
+
+			if (traced != handler.admitsOpError())
+				return true;
+
+			if (traced)
+				return false;
+		}
+
+		return false;
+	}
+
+	/**
+	 * The exceptions tracing may raise that a {@code try} statement in {@code nodes}' own code treats differently from a TensorFlow error,
+	 * around a call that may run a TensorFlow operation (#1014). Converting the function traces that code, so such a call raises the traced
+	 * exception where it raised the kernel's, and what its argument is cannot be told from any call outside the {@code try}.
+	 *
+	 * @param nodes The call-graph nodes of this {@link Function}.
+	 * @param analysis The guard analysis, for the {@code except} clauses around each call.
+	 * @param callGraph The call graph, for each call's targets.
+	 * @return The exceptions, rendered for the status message, or empty when there is no such call.
+	 */
+	private static Optional<String> bodyHandlerChange(Set<CGNode> nodes, ExpectedFailureContextAnalysis analysis, CallGraph callGraph) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null)
+				continue;
+
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+				if (!(instruction instanceof SSAAbstractInvokeInstruction invoke))
+					continue;
+
+				List<ExpectedFailureContextAnalysis.Guard> handlers = analysis.handlersAround(node, invoke);
+
+				if (handlers.isEmpty())
+					continue;
+
+				Set<String> distinguished = Set.of(TRACE_TIME_SHAPE_EXCEPTION, TRACE_TIME_DTYPE_EXCEPTION).stream()
+						.filter(exception -> handlersDistinguish(handlers, exception)).collect(Collectors.toCollection(TreeSet::new));
+
+				if (!distinguished.isEmpty() && mayRunTensorFlow(callGraph, node, invoke.getCallSite()))
+					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * True iff the call at {@code site} in {@code node} may run a TensorFlow operation, and so raise a kernel's error: some target is
+	 * TensorFlow's or the program's own code, directly or through a synthesized trampoline (#1014). A builtin or another library cannot.
+	 *
+	 * @param callGraph The call graph.
+	 * @param node The node making the call.
+	 * @param site The call.
+	 * @return Whether the call may run a TensorFlow operation.
+	 */
+	private static boolean mayRunTensorFlow(CallGraph callGraph, CGNode node, CallSiteReference site) {
+		for (CGNode target : callGraph.getPossibleTargets(node, site)) {
+			if (runsTensorFlow(target))
+				return true;
+
+			if (!(target.getMethod() instanceof AstMethod))
+				for (CGNode forwarded : Iterator2Iterable.make(callGraph.getSuccNodes(target)))
+					if (runsTensorFlow(forwarded))
+						return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code node} is the program's own code or a TensorFlow API.
+	 *
+	 * @param node A call-graph node.
+	 * @return Whether the node may run a TensorFlow operation itself.
+	 */
+	private static boolean runsTensorFlow(CGNode node) {
+		String name = node.getMethod().getDeclaringClass().getName().toString();
+		return node.getMethod() instanceof AstMethod || name.startsWith(TENSORFLOW_TYPE_NAME_PREFIX)
+				|| name.startsWith(SYNTHETIC_TENSORFLOW_TYPE_NAME_PREFIX);
+	}
+
+	/** The type-name prefix of a TensorFlow API that the front end synthesizes, as in {@code L$tensorflow/keras/layers/}. */
+	private static final String SYNTHETIC_TENSORFLOW_TYPE_NAME_PREFIX = "L$tensorflow/";
+
+	/**
+	 * The exceptions tracing may raise, in place of the body's, for what the guarded call reaching {@code node} passes this function's
+	 * tensor parameters, judged against what every call-graph node not reached only from guarded calls passes them (#1014).
+	 *
+	 * @param node A node of this {@link Function} reached only from guarded call sites.
+	 * @return The simple names of the exceptions; empty when every argument has a type some other call passes.
+	 */
+	private Set<String> traceTimeExceptions(CGNode node) {
+		Set<String> ret = new HashSet<>();
+		Map<Integer, GuardedArgument> kinds = this.guardedArgumentKinds.getOrDefault(node, Map.of());
+
+		for (Parameter param : this.getParameters()) {
+			if (param.isSelf() || !TRUE.equals(param.isTensor()))
+				continue;
+
+			Set<TensorType> passed = param.getTensorTypes(node);
+
+			if (kinds.getOrDefault(param.getIndex(), GuardedArgument.OTHER) != GuardedArgument.TENSORS || passed.isEmpty()) {
+				ret.add(TRACE_TIME_SHAPE_EXCEPTION);
+				ret.add(TRACE_TIME_DTYPE_EXCEPTION);
+				continue;
+			}
+
+			Set<TensorType> others = param.getTensorTypesOutside(this.callGuards.keySet()).stream().filter(Function::isFullyKnown)
+					.collect(Collectors.toSet());
+
+			for (TensorType type : passed)
+				ret.addAll(traceTimeExceptions(type, others));
+		}
+
+		return ret;
+	}
+
+	/**
+	 * The exceptions tracing may raise for an argument of type {@code type}, given the fully known types {@code others} that the calls
+	 * outside every guard pass the same parameter (#1014). A type among them traced without a static error. Otherwise a shape no other call
+	 * passes, beside a dtype one does, may fail a static shape check; a dtype no other call passes, beside a shape one does, may fail a
+	 * static dtype check; and anything else may fail either. Since {@code others} are fully known, a shape or dtype of {@code type} that is
+	 * not is passed by no other call.
+	 *
+	 * @param type The type of the guarded call's argument.
+	 * @param others The fully known types the unguarded calls pass.
+	 * @return The simple names of the exceptions; empty when {@code type} is among {@code others}.
+	 */
+	private static Set<String> traceTimeExceptions(TensorType type, Set<TensorType> others) {
+		if (others.contains(type))
+			return Set.of();
+
+		boolean dtypeSeen = others.stream().anyMatch(other -> other.getDType() == type.getDType());
+		boolean shapeSeen = others.stream().anyMatch(other -> other.getDims().equals(type.getDims()));
+
+		if (dtypeSeen && !shapeSeen)
+			return Set.of(TRACE_TIME_SHAPE_EXCEPTION);
+
+		if (shapeSeen && !dtypeSeen)
+			return Set.of(TRACE_TIME_DTYPE_EXCEPTION);
+
+		return Set.of(TRACE_TIME_SHAPE_EXCEPTION, TRACE_TIME_DTYPE_EXCEPTION);
+	}
+
+	/**
+	 * True iff {@code type} has a concrete dtype and a shape every axis of which is a concrete extent, so that it determines the trace a
+	 * bare decorator makes for it.
+	 *
+	 * @param type A tensor type.
+	 * @return Whether the type is fully known.
+	 */
+	private static boolean isFullyKnown(TensorType type) {
+		return type.getDType() != DType.UNKNOWN && type.getDims() != null && type.getDims().stream().allMatch(NumericDim.class::isInstance);
 	}
 
 	/**
