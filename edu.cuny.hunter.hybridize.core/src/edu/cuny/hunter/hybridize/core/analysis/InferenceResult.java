@@ -144,10 +144,19 @@ public sealed interface InferenceResult {
 		 * call whose argument the analysis could not type. The untyped context therefore widens the parameter to unknown rather than
 		 * dropping out of the evidence. Reported only where a specification would otherwise have been stored, so no other absence is
 		 * relabeled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
-		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined. A context is a call-graph
-		 * node, so two calls the call graph merges count as one, and the check covers the flat reduction, not the container one.
+		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined.
+		 * <p>
+		 * An untyped context is found two ways: a call-graph node of the function carries no type for the parameter, or a caller passes it,
+		 * at a call site into such a node, an argument the analysis did not type in the caller's own context. The second sees through a
+		 * callee node that k-limited contexts share between callers, but only one call level up: in {@code f1 -> f2 -> f3}, with only
+		 * {@code f1}'s callers differing, {@code f3}'s single node and its single caller node are both typed, so {@code f3} keeps the
+		 * specification. A caller that is itself reached only from a declared failure is not set aside at its call sites, so its untyped
+		 * argument withholds the callee's specification; that is the safer outcome, since a specification would change the exception the
+		 * failure is declared to raise (#1005). The check covers the flat reduction, not the container one (#1003).
 		 *
 		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
 		 */
 		UNTYPED_CALLING_CONTEXT,
 

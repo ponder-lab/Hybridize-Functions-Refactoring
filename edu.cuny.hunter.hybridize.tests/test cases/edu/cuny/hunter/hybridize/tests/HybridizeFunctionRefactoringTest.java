@@ -13229,11 +13229,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Only `mask` blocks.", List.of("mask"),
 				optional.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
 
-		// Through a receiver trampoline, with the argument passed by keyword, a typed caller is still seen as typed.
+		// Typed calls through a Keras layer's `call`, with the argument passed by keyword, keep the specification.
 		Function buildMask = findFunction(functions, "Encoder.build_mask");
-		assertEquals("Typed calls through a trampoline keep their specification.",
+		assertEquals("Typed keyword calls through a layer's `call` keep their specification.",
 				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
 				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The guarded `leak_outer(None)` has its own node set aside, so `leak_outer` keeps its specification. Its call into `leak_inner`
+		// is not set aside, so `leak_inner` withholds. That is intended: with the specification, `leak_outer(None)` would raise
+		// `ValueError` rather than the `TypeError` the guard declares.
+		Function leakOuter = findFunction(functions, "leak_outer");
+		assertEquals("A declared failure's own node is set aside.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				leakOuter.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		Function leakInner = findFunction(functions, "leak_inner");
+		assertEquals("A declared failure's untyped argument one level down withholds.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
 	}
 
 }

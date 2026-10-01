@@ -199,11 +199,6 @@ public final class Parameter {
 	private static final Map<TensorTypeAnalysis, Set<PointerKey>> TYPED_KEYS = new WeakHashMap<>();
 
 	/**
-	 * The most trampolines followed from a callee back to the code that called it.
-	 */
-	private static final int MAX_TRAMPOLINE_HOPS = 2;
-
-	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
 	 * {@code TRUE} or {@code FALSE}.
 	 */
@@ -1178,9 +1173,8 @@ public final class Parameter {
 		Set<PointerKey> typedKeys = typedKeys(analysis);
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
 		String name = this.getName();
-		// The callee occupies positional slot 0 of an invoke, so the parameter at declaration index i (self at 0) is the invoke's
-		// positional
-		// argument i + 1.
+		// The callee occupies positional slot 0 of an invoke, so the parameter at declaration index i, with self at 0, is the invoke's
+		// positional argument i + 1.
 		int positionalSlot = this.getIndex() + 1;
 
 		for (CGNode node : nodes)
@@ -1199,7 +1193,9 @@ public final class Parameter {
 							if (use == OMITTED)
 								continue;
 
-							if (use == UNALIGNED || !isTyped(caller, use, typedKeys, callGraph, heapModel, MAX_TRAMPOLINE_HOPS)) {
+							// A receiver trampoline is a caller like any other here: its contexts are keyed on its own caller, site and
+							// receiver, so the argument it forwards is typed in its own frame (#998).
+							if (use == UNALIGNED || !typedKeys.contains(heapModel.getPointerKeyForLocal(caller, use))) {
 								this.untypedCallerArgument = true;
 								return;
 							}
@@ -1230,58 +1226,6 @@ public final class Parameter {
 				return UNALIGNED;
 
 		return invoke.getNumberOfPositionalParameters() > positionalSlot ? invoke.getUse(positionalSlot) : OMITTED;
-	}
-
-	/**
-	 * Whether the value {@code use} of {@code node} is tensor-typed in {@code node}'s context. A synthetic node (a receiver trampoline)
-	 * types nothing of its own and only forwards its parameters, so a forwarded parameter is typed iff every caller of the trampoline
-	 * passes a typed argument for it, followed at most {@code hops} levels.
-	 */
-	private static boolean isTyped(CGNode node, int use, Set<PointerKey> typedKeys, CallGraph callGraph, HeapModel heapModel, int hops) {
-		if (typedKeys.contains(heapModel.getPointerKeyForLocal(node, use)))
-			return true;
-
-		if (!node.getMethod().isSynthetic() || hops == 0)
-			return false;
-
-		IR ir = node.getIR();
-
-		if (ir == null)
-			return false;
-
-		// Value number 1 is the function object and occupies invoke slot 0, so the parameter with value number v arrives at invoke slot v -
-		// 1.
-		int[] parameters = ir.getParameterValueNumbers();
-		int slot = -1;
-
-		for (int i = 0; i < parameters.length; i++)
-			if (parameters[i] == use)
-				slot = i;
-
-		if (slot < 0)
-			return false;
-
-		boolean sawCall = false;
-
-		for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node)))
-			for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(caller, node))) {
-				IR callerIR = caller.getIR();
-
-				if (callerIR == null)
-					return false;
-
-				for (SSAAbstractInvokeInstruction instruction : callerIR.getCalls(site)) {
-					if (!(instruction instanceof PythonInvokeInstruction invoke) || invoke.getNumberOfPositionalParameters() <= slot)
-						return false;
-
-					sawCall = true;
-
-					if (!isTyped(caller, invoke.getUse(slot), typedKeys, callGraph, heapModel, hops - 1))
-						return false;
-				}
-			}
-
-		return sawCall;
 	}
 
 	/**

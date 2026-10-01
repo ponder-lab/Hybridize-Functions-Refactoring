@@ -39,6 +39,14 @@ def optional(x, mask=None):
     return x * mask
 
 
+def leak_inner(x):
+    return x * 2
+
+
+def leak_outer(x):
+    return leak_inner(x)
+
+
 class Encoder(tf.keras.layers.Layer):
     def build_mask(self, inputs, sequence_length=None):
         return tf.sequence_mask(sequence_length, maxlen=tf.shape(inputs)[1])
@@ -78,5 +86,11 @@ outer(batch["inputs"], batch["length"])
 optional(tf.ones([2]), tf.ones([2]))
 optional(tf.ones([2]))
 
-# Typed calls through a receiver trampoline and a keyword argument keep their specification.
+# Typed calls through a Keras layer's `call`, by keyword, keep their specification.
 Typed()(tf.zeros([4, 5, 10]), sequence_length=tf.constant([4, 3, 5, 2]))
+
+# A declared failure one call level up: its own node is set aside, but its call into `leak_inner` is not.
+leak_outer(tf.ones([2]))
+
+with case.assertRaises(TypeError):
+    leak_outer(None)
