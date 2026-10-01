@@ -1165,6 +1165,19 @@ public class Function {
 	private Set<CGNode> expectedFailureNodes = Set.of();
 
 	/**
+	 * For each of {@link #expectedFailureNodes}, the guards around each declared failure reaching it, one list per call. Read to tell
+	 * whether the guard admits the exception an inferred signature raises when it rejects the argument that call passes (#1005).
+	 */
+	private Map<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> expectedFailureGuards = Map.of();
+
+	/**
+	 * For each of {@link #expectedFailureNodes}, the declaration indices of the parameters to which the declared failure passes a list,
+	 * tuple, or other container, by points-to. TensorFlow converts such an argument against a flat specification in ways that raise
+	 * different exceptions, or none, so the exception a specification would raise there is not predicted (#1005).
+	 */
+	private Map<CGNode, Set<Integer>> expectedFailureContainerArguments = Map.of();
+
+	/**
 	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor ({@code KerasTensor}), which {@code tf.function}
 	 * refuses outright, so the decorator raises before anything is traced. {@code null} when it could not be determined (no call-graph
 	 * node, or a caller whose arguments are invisible), in which case the precondition does not block. See
@@ -2928,7 +2941,8 @@ public class Function {
 		if (nodes.isEmpty())
 			return;
 
-		Set<CGNode> guarded = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis).guardedOnlyNodes(nodes);
+		ExpectedFailureContextAnalysis analysis = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis);
+		Set<CGNode> guarded = analysis.guardedOnlyNodes(nodes);
 
 		if (guarded.size() == nodes.size()) {
 			LOG.info("Every call site of " + this + " is an expected failure; excluding none.");
@@ -2937,8 +2951,48 @@ public class Function {
 
 		this.expectedFailureNodes = guarded;
 
-		if (!guarded.isEmpty())
+		if (!guarded.isEmpty()) {
 			LOG.info(this + " has " + guarded.size() + " node(s) reached only from expected-failure call sites.");
+			this.expectedFailureGuards = analysis.guardsOf(guarded);
+			this.expectedFailureContainerArguments = this.containerArguments(guarded, pointerAnalysis);
+		}
+	}
+
+	/**
+	 * The declaration indices of the parameters to which each of {@code nodes} is passed a container, by points-to (#1005).
+	 *
+	 * @param nodes Call-graph nodes of this {@link Function}.
+	 * @param pointerAnalysis The pointer analysis, for the parameters' points-to sets.
+	 * @return For each node, the indices of its container-valued parameters.
+	 */
+	private Map<CGNode, Set<Integer>> containerArguments(Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Map<CGNode, Set<Integer>> ret = new HashMap<>();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			Set<Integer> containers = new HashSet<>();
+
+			if (ir != null)
+				for (Parameter param : this.getParameters()) {
+					// The first parameter of the node is the function object itself, so declaration index i is parameter i + 1.
+					int position = param.getIndex() + 1;
+
+					if (param.isSelf() || position >= ir.getNumberOfParameters())
+						continue;
+
+					PointerKey key = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(position));
+
+					for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(key))
+						if (instanceKey.concreteType() != null && Util.isContainerType(instanceKey.concreteType().getReference())) {
+							containers.add(param.getIndex());
+							break;
+						}
+				}
+
+			ret.put(node, containers);
+		}
+
+		return ret;
 	}
 
 	/**
@@ -4748,6 +4802,22 @@ public class Function {
 				specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
+		// A declared failure was set aside as evidence (#888), but it still runs against the signature, which validates the argument before
+		// the body does. Where the signature would reject that argument with an exception the declaring guard does not admit, emitting it
+		// would make the test fail, so the signature is withheld (#1005).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet()) {
+			Optional<String> rejection = this.guardedCallRejection(entry.getKey(), entry.getValue());
+
+			if (rejection.isPresent()) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this + "` would be specified by a signature that rejects the "
+								+ "argument a call declared to fail passes it, raising " + rejection.get() + " before the body runs, "
+								+ "which the call's guard does not admit; emitting the signature would make that test fail, so "
+								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
+				blocking.put(entry.getKey(), AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE);
+			}
+		}
+
 		/*
 		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
 		 * omitted when nothing after it contributes a spec: dropping one that precedes a spec would bind that spec to the dropped
@@ -4798,6 +4868,137 @@ public class Function {
 		this.inferredSpecByParameter = Collections.unmodifiableMap(specByParameter);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
+	}
+
+	/**
+	 * The exception TensorFlow raises when an input signature rejects an argument, by the specification's form and the argument's kind, as
+	 * measured on TensorFlow 2.9.3 (#1005).
+	 */
+	private enum SignatureRejection {
+		/** The argument conforms to the specification, so the signature does not intervene and the body raises as before. */
+		CONFORMS(null),
+
+		/**
+		 * A flat specification rejects a non-container argument that does not conform (a tensor of another shape or dtype, {@code None}, a
+		 * string, a number, an object), and a nested one rejects a container of another structure, raising {@code ValueError}.
+		 */
+		VALUE_ERROR("ValueError"),
+
+		/** A nested specification rejects a non-container argument, raising {@code TypeError}. */
+		TYPE_ERROR("TypeError"),
+
+		/**
+		 * A flat specification converts a container argument, which may conform or may raise {@code ValueError} or
+		 * {@code InvalidArgumentError} depending on its elements, so the exception is not predicted.
+		 */
+		UNPREDICTED(null);
+
+		/** The simple name of the exception raised, or {@code null} when none is raised or it is not predicted. */
+		private final String exception;
+
+		SignatureRejection(String exception) {
+			this.exception = exception;
+		}
+
+		/** True iff {@code guard} admits what this rejection raises. */
+		boolean admittedBy(ExpectedFailureContextAnalysis.Guard guard) {
+			if (!guard.resolved())
+				return false;
+
+			if (guard.names().contains("Exception") || guard.names().contains("BaseException"))
+				return true;
+
+			return this.exception != null && guard.names().contains(this.exception);
+		}
+
+		@Override
+		public String toString() {
+			return this.exception == null ? "an exception that depends on the argument's elements" : "`" + this.exception + "`";
+		}
+	}
+
+	/**
+	 * Whether {@code entry}, the specification inferred for {@code param}, rejects the argument some declared failure passes it with an
+	 * exception that failure's guard does not admit, so emitting it would make the test fail (#1005). A guard that names only
+	 * {@code tf.errors} classes is not judged here: it declares a TensorFlow runtime error, which hybridization changes on its own, with or
+	 * without a signature, so withholding the signature would not restore it.
+	 *
+	 * @param param A parameter that reduced to a specification.
+	 * @param entry The specification it reduced to.
+	 * @return The exception that would escape, rendered for the status message, or empty when no declared failure is affected.
+	 */
+	private Optional<String> guardedCallRejection(Parameter param, InputSignature.SpecEntry entry) {
+		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.expectedFailureGuards.entrySet()) {
+			SignatureRejection rejection = this.signatureRejection(param, entry, node.getKey());
+
+			if (rejection == SignatureRejection.CONFORMS)
+				continue;
+
+			for (List<ExpectedFailureContextAnalysis.Guard> guards : node.getValue()) {
+				if (guards.stream().anyMatch(rejection::admittedBy))
+					continue;
+
+				if (!guards.isEmpty() && guards.stream().allMatch(ExpectedFailureContextAnalysis.Guard::admitsOnlyOpErrors))
+					continue;
+
+				return Optional.of(rejection.toString());
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * What {@code entry} does with the argument the declared failure reaching {@code node} passes {@code param}.
+	 *
+	 * @param param The parameter.
+	 * @param entry The specification inferred for it.
+	 * @param node An expected-failure node of this {@link Function}.
+	 * @return Whether the argument conforms, or the exception the rejection raises.
+	 */
+	private SignatureRejection signatureRejection(Parameter param, InputSignature.SpecEntry entry, CGNode node) {
+		boolean container = this.expectedFailureContainerArguments.getOrDefault(node, Set.of()).contains(param.getIndex());
+
+		if (entry instanceof InputSignature.Sequence)
+			return container ? SignatureRejection.VALUE_ERROR : SignatureRejection.TYPE_ERROR;
+
+		if (container)
+			return SignatureRejection.UNPREDICTED;
+
+		TensorType spec = ((InputSignature.Single) entry).type();
+		Set<TensorType> passed = param.getExpectedFailureTensorTypes(node);
+
+		return !passed.isEmpty() && passed.stream().allMatch(t -> conforms(t, spec)) ? SignatureRejection.CONFORMS
+				: SignatureRejection.VALUE_ERROR;
+	}
+
+	/**
+	 * True iff a tensor of type {@code type} is known to satisfy the specification {@code spec}: the same concrete dtype and sparseness,
+	 * and a shape matching it axis by axis, a fixed axis of the specification requiring the same fixed extent.
+	 *
+	 * @param type The type of an argument.
+	 * @param spec The specification.
+	 * @return Whether the argument conforms; false when that is not known.
+	 */
+	private static boolean conforms(TensorType type, TensorType spec) {
+		if (type.getDType() == DType.UNKNOWN || type.getDType() != spec.getDType() || type.isSparse() != spec.isSparse())
+			return false;
+
+		List<Dimension<?>> wanted = spec.getDims();
+
+		if (wanted == null)
+			return true;
+
+		List<Dimension<?>> actual = type.getDims();
+
+		if (actual == null || actual.size() != wanted.size())
+			return false;
+
+		for (int i = 0; i < wanted.size(); i++)
+			if (wanted.get(i) instanceof NumericDim && !wanted.get(i).equals(actual.get(i)))
+				return false;
+
+		return true;
 	}
 
 	/**

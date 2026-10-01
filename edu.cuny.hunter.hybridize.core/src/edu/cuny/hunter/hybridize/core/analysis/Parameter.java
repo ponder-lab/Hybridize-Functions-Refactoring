@@ -6,6 +6,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
+import static java.util.Collections.unmodifiableMap;
 import static java.util.Collections.unmodifiableSet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.core.runtime.SubMonitor.convert;
@@ -184,6 +185,14 @@ public final class Parameter {
 	 * function is reached in that context, but what arrives there is untyped (#998). Populated alongside {@link #conformingTensorTypes}.
 	 */
 	private Set<CGNode> untypedConformingNodes = Set.of();
+
+	/**
+	 * This parameter's {@link TensorType}s in each expected-failure node of the owning function
+	 * ({@link Function#getExpectedFailureNodes()}), the evidence a specification is <em>not</em> derived from (#888). Read afterwards to
+	 * tell whether the specification would reject the argument a declared failure passes, and so change the exception the failure is
+	 * declared to raise (#1005). A node in which the parameter is untyped is absent. Populated alongside {@link #conformingTensorTypes}.
+	 */
+	private Map<CGNode, Set<TensorType>> expectedFailureTensorTypes = Map.of();
 
 	/**
 	 * True iff some caller passes this parameter an argument the tensor-type analysis did not type in the caller's own context, at a call
@@ -1148,6 +1157,7 @@ public final class Parameter {
 		Set<TensorType> conforming = new HashSet<>();
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
 		Set<CGNode> typed = new HashSet<>();
+		Map<CGNode, Set<TensorType>> guarded = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
@@ -1164,12 +1174,15 @@ public final class Parameter {
 					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
 					if (!excluded.contains(localPointerKey.getNode()))
 						conforming.addAll(tensorVariable.getTypes());
+					else
+						guarded.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
 				}
 			}
 		}
 
 		this.setTensorTypes(unmodifiableSet(result));
 		this.conformingTensorTypes = unmodifiableSet(conforming);
+		this.expectedFailureTensorTypes = unmodifiableMap(guarded);
 
 		// The iterator reports only variables it typed, so a node where the parameter is untyped contributes nothing to the union above
 		// rather than widening it. That node is a calling context the function is reached in, and what it passes is unknown, so the
@@ -1283,6 +1296,17 @@ public final class Parameter {
 	 */
 	public boolean hasUntypedConformingContext() {
 		return !this.untypedConformingNodes.isEmpty() || this.untypedCallerArgument;
+	}
+
+	/**
+	 * This parameter's {@link TensorType}s in the expected-failure node {@code node} of the owning function, the argument a declared
+	 * failure passes there (#1005).
+	 *
+	 * @param node An expected-failure node of the owning function.
+	 * @return The types observed for this parameter in {@code node}; empty when it is untyped there.
+	 */
+	Set<TensorType> getExpectedFailureTensorTypes(CGNode node) {
+		return this.expectedFailureTensorTypes.getOrDefault(node, Set.of());
 	}
 
 	/**

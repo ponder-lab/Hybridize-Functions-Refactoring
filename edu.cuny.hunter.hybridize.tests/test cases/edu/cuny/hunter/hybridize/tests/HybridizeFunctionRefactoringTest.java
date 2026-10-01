@@ -9655,8 +9655,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("No conforming caller passes a container.", FALSE, x.isConformingTensorContainer());
 		assertFalse("The conforming caller's tensor is flat evidence.", x.getConformingTensorTypes().isEmpty());
 
-		assertTrue("The flat reduction of the conforming evidence stands.", function.getInferredInputSignature().isPresent());
-		assertTrue("Nothing blocks.", function.getBlockingParameterReasons().isEmpty());
+		// The flat reduction stands, so the parameter is not blocked as an unmodeled container. Its specification is then withheld for a
+		// different reason: it would convert the rejected call's list of differently shaped tensors and raise `InvalidArgumentError`, which
+		// the call's `TypeError` guard does not admit (#1005).
+		assertEquals("The flat reduction stands, and only the declared failure withholds it.",
+				Map.of(x, InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE), function.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A call declared to fail is set aside as evidence (#888), but it still runs against the inferred signature, which validates the
+	 * argument before the body does. The signature is withheld exactly where it would reject that argument with an exception the call's
+	 * guard does not admit, which would make the test fail; each kept and each withheld case below was checked against TensorFlow 2.9.3 by
+	 * running its guarded call eagerly, under a bare decorator, and under the signature.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
+	 */
+	@Test
+	public void testExpectedFailureGuardAdmitsSignatureRejection() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		// `None` against a flat specification raises `ValueError`, and against a nested one `TypeError`; a list of tensors of different
+		// shapes against a flat one raises `InvalidArgumentError`, which a `ValueError` guard does not admit either.
+		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s guard does not admit the signature's rejection.",
+					Optional.of(InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE),
+					function.getInferredInputSignatureAbsenceReason());
+			assertTrue("`" + name + "` is still hybridized, with a bare decorator.",
+					function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+
+		// The guard admits the rejection (`value_guard`, `tuple_guard`, `broad_guard`, `nested_type_guard`, `nested_value_guard`), the
+		// argument conforms (`conforming`), or the guard names only a `tf.errors` class, which the bare decorator already reports
+		// differently (`op_error_guard`).
+		for (String name : List.of("value_guard", "tuple_guard", "broad_guard", "nested_type_guard", "nested_value_guard", "conforming",
+				"op_error_guard"))
+			assertTrue("`" + name + "` keeps its signature.", findFunction(functions, name).getInferredInputSignature().isPresent());
+
+		assertEquals("The tuple of classes is the guard's, not its pattern.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				findFunction(functions, "tuple_guard").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
@@ -13406,12 +13444,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
 				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		// The guarded `leak_outer(None)` has its own node set aside, so `leak_outer` keeps its specification. Its call into `leak_inner`
-		// is not set aside, so `leak_inner` withholds. That is intended: with the specification, `leak_outer(None)` would raise
-		// `ValueError` rather than the `TypeError` the guard declares.
+		// The guarded `leak_outer(None)` has its own node set aside as evidence, but a specification would reject `None` with `ValueError`
+		// before the body raises the `TypeError` the guard declares, so `leak_outer` withholds too (#1005). Its call into `leak_inner` is
+		// not set aside, so `leak_inner` withholds on the untyped argument.
 		Function leakOuter = findFunction(functions, "leak_outer");
-		assertEquals("A declared failure's own node is set aside.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
-				leakOuter.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("A specification would change the exception a declared failure raises.",
+				Optional.of(InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE),
+				leakOuter.getInferredInputSignatureAbsenceReason());
 		Function leakInner = findFunction(functions, "leak_inner");
 		assertEquals("A declared failure's untyped argument one level down withholds.",
 				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
