@@ -8848,6 +8848,36 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue(function.getHasTensorParameter());
 	}
 
+	/**
+	 * A hybrid function reached only through a bare program-defined decorator built on {@code functools.wraps} is not de-hybridized as
+	 * having no tensor parameter (P2) when the forwarding loses its argument
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, no value reaches
+	 * {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
+	 * ({@link TensorClassificationBasis#NO_VALUE_REACHED}), and the function is kept hybrid. Where the analysis doesn't reach the function
+	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes.
+	 */
+	@Test
+	public void testBareUserDecoratorWithWraps() throws Exception {
+		Function plain = getFunction("plain");
+		assertTrue("Control: the undecorated twin has a tensor parameter.", plain.getHasTensorParameter());
+		assertTrue("Control: the undecorated twin hybridizes.", plain.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		Function hybrid = getFunction("hybrid_scale");
+		assertTrue("`hybrid_scale` is hybrid.", hybrid.isHybrid());
+		assertFalse("`hybrid_scale` is not de-hybridized on a parameter no value reached.",
+				hybrid.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotEquals("`hybrid_scale` does not pass P2.", P2, hybrid.getPassingPrecondition());
+
+		if (FALSE.equals(hybrid.getHasTensorParameter()))
+			// Reached through the wrapper: the parameter's classification records that nothing arrived.
+			assertEquals("`hybrid_scale`'s `x` was reached by no value.", TensorClassificationBasis.NO_VALUE_REACHED,
+					hybrid.getParameters().get(0).getTensorClassificationBasis());
+
+		Function scale = getFunction("scale");
+		assertFalse("`scale`, eager behind the same wrapper, is not hybridized on no evidence.",
+				scale.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
 	@Test
 	public void testCustomGradient() throws Exception {
 		Set<Function> functions = this.getFunctions();

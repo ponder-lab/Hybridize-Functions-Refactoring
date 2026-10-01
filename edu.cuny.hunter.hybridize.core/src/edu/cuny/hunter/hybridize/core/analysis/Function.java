@@ -1573,7 +1573,16 @@ public class Function {
 				this.addInfo(
 						"This hybrid function carries a supplied input_signature, which declares and enforces its parameters' tensor types, so it is not de-hybridized.");
 
-			if (FALSE.equals(this.getHasTensorParameter()) && !suppliedSignature) {
+			// A "no tensor parameter" verdict is an established absence only if every parameter's classification is a determination. One
+			// that no value reached (a function called only through `wrapper(*args, **kwargs)`, say) concluded nothing, and the function
+			// is then left as it is, as an undetermined verdict is (issue 997).
+			boolean tensorParameterUnknown = FALSE.equals(this.getHasTensorParameter()) && !suppliedSignature
+					&& !this.isTensorParameterAbsenceEstablished();
+
+			if (tensorParameterUnknown)
+				this.addInfo(
+						"This hybrid function does not likely have a tensor parameter from tensor analysis, but no value reached one of its parameters, so it is kept hybrid.");
+			else if (FALSE.equals(this.getHasTensorParameter()) && !suppliedSignature) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
@@ -1875,6 +1884,19 @@ public class Function {
 		LOG.info(this + (performsTensorOp ? " performs a tensor computation."
 				: this.tensorComputationUnresolved ? " performs no tensor computation the analysis can see, but has an unresolved call."
 						: " performs no tensor computation."));
+	}
+
+	/**
+	 * True iff every non-{@code self} parameter's tensor classification is a determination, so that a "no tensor parameter" verdict is an
+	 * established absence rather than a lack of evidence. A parameter no value reached ({@link TensorClassificationBasis#NO_VALUE_REACHED})
+	 * or one whose classification didn't run concluded nothing. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @return True iff the parameters' non-tensor classifications are all determinations.
+	 */
+	public boolean isTensorParameterAbsenceEstablished() {
+		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis).noneMatch(b -> b == null
+				|| b == TensorClassificationBasis.NO_VALUE_REACHED || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
 	}
 
 	/**

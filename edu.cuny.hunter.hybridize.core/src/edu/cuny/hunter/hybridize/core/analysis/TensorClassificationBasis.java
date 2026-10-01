@@ -33,6 +33,13 @@ public enum TensorClassificationBasis {
 	 * it produces is outside the mechanism.
 	 */
 	ANALYZED_NOT_TENSOR,
+	/**
+	 * Every phase ran, but no value reaches the parameter in any of the function's call-graph nodes: its points-to set is empty throughout,
+	 * as when the function is called only through a forwarder such as {@code wrapper(*args, **kwargs)} that the analysis doesn't track
+	 * argument by argument. An empty tensor-type result then reflects that nothing arrived, not that what arrived is not a tensor, so this
+	 * is not a determination. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 */
+	NO_VALUE_REACHED,
 
 	/**
 	 * The enclosing function is absent from the call graph, so the tensor-type and container phases were <em>skipped</em> and the verdict
