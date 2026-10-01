@@ -1,10 +1,23 @@
+import os
+
 import numpy as np
 import tensorflow as tf
+
+# An op name the analysis can't model: read from the environment, so `getattr(tf, OP)` stays unresolved however `getattr` on a
+# constant name is modeled.
+OP = os.environ.get("HFR_OP", "reduce_sum")
 
 
 @tf.function
 def opaque(x):
-    # Computes through an op the analysis can't resolve: the callee is fetched with `getattr`.
+    # Computes through an op the analysis can't resolve: the callee is fetched with `getattr` by a name it can't model.
+    return getattr(tf, OP)(x)
+
+
+@tf.function
+def opaque_constant(x):
+    # The same through a constant name. This documents current behavior: Ariadne doesn't yet resolve `getattr` on a constant name, so
+    # this call is unresolved, and a release that does (ponder-lab/ML#909) will turn it into a resolved tensor op.
     return getattr(tf, "reduce_sum")(x)
 
 
@@ -14,7 +27,7 @@ def barren(x):
 
 
 def opaque_eager(x):
-    return getattr(tf, "reduce_sum")(x)
+    return getattr(tf, OP)(x)
 
 
 # Barren hybrid functions whose only calls are Python builtins, or methods of builtin values, which Ariadne leaves without a target.
@@ -86,7 +99,7 @@ def make(len):
     return step
 
 
-sum = getattr(tf, "reduce_sum")
+sum = getattr(tf, OP)
 
 
 @tf.function
@@ -112,8 +125,39 @@ def sorted_in_place(x):
     return x
 
 
+def setup():
+    global len
+    len = getattr(tf, OP)
+
+
+setup()
+
+
+@tf.function
+def global_rebound(x):
+    # `setup` rebinds `len` at module scope through a `global` declaration.
+    return len(x)
+
+
+@tf.function
+def sorted_keyed(x):
+    return sorted([x, x], key=tf.reduce_sum)
+
+
+def abs(a):
+    return a
+
+
+@tf.function
+def uses_user_abs(x):
+    # `abs` is the module's own barren function, resolved as such, not the builtin.
+    abs(1)
+    return x
+
+
 t = tf.constant([1.0, 2.0, 3.0])
 opaque(t)
+opaque_constant(t)
 barren(t)
 opaque_eager(t)
 builtin_function(t)
@@ -124,8 +168,11 @@ dict_items_loop(t)
 tuple_method(t)
 set_method(t)
 numpy_call(t)
-make(getattr(tf, "reduce_sum"))(t)
+make(getattr(tf, OP))(t)
 rebound(t)
 mapped(t)
 keyed(t)
 sorted_in_place(t)
+global_rebound(t)
+sorted_keyed(t)
+uses_user_abs(t)

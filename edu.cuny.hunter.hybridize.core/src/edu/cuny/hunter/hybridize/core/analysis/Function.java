@@ -1561,44 +1561,24 @@ public class Function {
 						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
 								+ "on every executed path; de-hybridizing it may be beneficial.");
 
-			boolean suppliedSignature = this.getHybridizationParameters().hasInputSignatureParam();
-
-			// Whether a hybrid-to-eager rule below would select the function: P2 (no tensor parameter), P3 (a tensor and a primitive
-			// parameter), or P6 (barren, with the scan's absence established).
-			boolean convertibleByParameters = FALSE.equals(this.getHasTensorParameter())
-					|| TRUE.equals(this.getHasTensorParameter()) && TRUE.equals(this.getHasPrimitiveParameter());
-			boolean convertibleAsBarren = TRUE.equals(this.getHasTensorParameter()) && FALSE.equals(this.getHasPrimitiveParameter())
-					&& FALSE.equals(this.getHasTensorComputation()) && !this.isTensorComputationUnresolved();
+			// A supplied `input_signature` keeps the function hybrid where a hybrid-to-eager rule below would otherwise remove it (issue
+			// 997): the rule still runs, side-effect and recursion checks included, but its CONVERT_TO_EAGER decision is replaced by a
+			// HAS_SUPPLIED_INPUT_SIGNATURE failure. See `convertToEagerUnlessSignatureSupplied`.
 
 			// A "no tensor parameter" verdict is an established absence only if every parameter's classification is a determination. One
 			// with no abstract value (an argument produced by an op the analysis doesn't model, such as `"_%d" % i` or `d.get(k)`, or lost
-			// through `wrapper(*args, **kwargs)`) concluded nothing, and the function is then left as it is, as an undetermined verdict is
-			// (issue 997).
-			boolean tensorParameterUnknown = FALSE.equals(this.getHasTensorParameter()) && !this.isTensorParameterAbsenceEstablished();
-
-			if (suppliedSignature && (convertibleByParameters || convertibleAsBarren))
-				/*
-				 * A supplied `input_signature` keeps the function hybrid where a hybrid-to-eager rule would otherwise remove it (issue
-				 * 997). P2 and P3 read the parameters as the analysis types them, but the signature converts each argument to its declared
-				 * tensor type at the boundary, an argument the analysis sees as a Python `int` included, so neither verdict holds. For P6,
-				 * whose parameter is already a tensor, the reason is the boundary itself: removing the decorator deletes the signature's
-				 * enforced validation and the single concrete function it pins. An empty signature (`input_signature=[]`, common on
-				 * `tf.Module` methods exported to a SavedModel) converts nothing, so only the second reason applies there. The branch is
-				 * terminal: it neither reconfigures the signature nor infers one.
-				 */
-				this.addInfo(
-						"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it stays hybrid.");
-			else if (tensorParameterUnknown)
-				this.addInfo(
-						"This hybrid function does not likely have a tensor parameter from tensor analysis, but a parameter has no abstract value, so it is kept hybrid.");
+			// through `wrapper(*args, **kwargs)`) concluded nothing, so the function is kept hybrid and reported as having tensor
+			// parameters that can't be inferred (issue 997).
+			if (FALSE.equals(this.getHasTensorParameter()) && !this.isTensorParameterAbsenceEstablished()
+					&& !this.getHybridizationParameters().hasInputSignatureParam())
+				this.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
+						"Can't infer tensor parameters for this hybrid function: a parameter has no abstract value, so it is kept hybrid.");
 			else if (FALSE.equals(this.getHasTensorParameter())) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addInfo("This hybrid function does not have Python side-effects.");
-					this.addTransformation(CONVERT_TO_EAGER);
-					this.setPassingPrecondition(P2);
-
+					this.convertToEagerUnlessSignatureSupplied(P2);
 				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1610,8 +1590,7 @@ public class Function {
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This hybrid function does not have Python side-effects.");
-						this.addTransformation(CONVERT_TO_EAGER);
-						this.setPassingPrecondition(P3);
+						this.convertToEagerUnlessSignatureSupplied(P3);
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
@@ -1631,8 +1610,7 @@ public class Function {
 
 						if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 							this.addInfo("This hybrid function does not have Python side-effects.");
-							this.addTransformation(CONVERT_TO_EAGER);
-							this.setPassingPrecondition(P6);
+							this.convertToEagerUnlessSignatureSupplied(P6);
 						} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 							this.addFailure(HAS_PYTHON_SIDE_EFFECTS,
 									"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1893,6 +1871,24 @@ public class Function {
 		LOG.info(this + (performsTensorOp ? " performs a tensor computation."
 				: this.tensorComputationUnresolved ? " performs no tensor computation the analysis can see, but has an unresolved call."
 						: " performs no tensor computation."));
+	}
+
+	/**
+	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
+	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
+	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
+	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @param precondition The precondition the conversion passes when it is selected.
+	 */
+	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
+		if (this.getHybridizationParameters().hasInputSignatureParam())
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE,
+					"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it is not de-hybridized.");
+		else {
+			this.addTransformation(CONVERT_TO_EAGER);
+			this.setPassingPrecondition(precondition);
+		}
 	}
 
 	/**

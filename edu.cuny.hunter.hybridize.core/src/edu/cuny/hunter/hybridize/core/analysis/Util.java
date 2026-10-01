@@ -520,7 +520,8 @@ public class Util {
 					if (instruction instanceof PythonInvokeInstruction invoke
 							&& (callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty()
 									&& !callsPythonBuiltin(node, invoke, defUse, callGraph, pointerAnalysis)
-									|| callsRebindingOfBuiltin(node, invoke, defUse, callGraph)))
+									|| callsRebindingOfBuiltin(node, invoke, defUse, callGraph)
+									|| passesKeyFunctionToBuiltin(node, invoke, defUse, pointerAnalysis)))
 						return true;
 			}
 		}
@@ -582,11 +583,42 @@ public class Util {
 	}
 
 	/**
+	 * True iff {@code invoke} gives {@code key=} to a keyed builtin ({@code min}, {@code max} or {@code sorted}) or to a method on a
+	 * builtin value ({@code list.sort}). The key function may compute tensors, and Ariadne may resolve the call to the builtin's summary
+	 * without following the key function, so such a call counts whatever its targets.
+	 */
+	private static boolean passesKeyFunctionToBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		if (!invoke.getKeywords().contains(KEY_KEYWORD))
+			return false;
+
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+		String name = def instanceof AstLexicalRead lexical && lexical.getAccesses().length > 0 ? lexical.getAccesses()[0].getName().fst
+				: def instanceof AstGlobalRead global && global.getGlobalName().startsWith(GLOBAL_PREFIX)
+						? global.getGlobalName().substring(GLOBAL_PREFIX.length())
+						: null;
+
+		if (name != null)
+			return KEYED_BUILTIN_NAMES.contains(name);
+
+		if (def instanceof PythonPropertyRead read) {
+			PointerKey receiver = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+
+			for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(receiver))
+				if (PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.concreteType().getName().toString()))
+					return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * True iff {@code invoke} calls a name the script rebinds from a Python builtin, such as {@code sum} after
-	 * {@code sum = getattr(tf, "reduce_sum")}. Such a call counts whatever its targets: when the rebinding's value has no abstract object,
-	 * Ariadne resolves the call to the builtin's summary, so a resolved call does not show that the callee is the builtin.
+	 * {@code sum = getattr(tf, "reduce_sum")}, and the call graph resolves it to the builtin's own summary. When the rebinding's value has
+	 * no abstract object, Ariadne resolves the call to the builtin, so such a resolved call does not show that the callee is the builtin.
 	 */
 	private static boolean callsRebindingOfBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph) {
+		Set<CGNode> targets = callGraph.getPossibleTargets(node, invoke.getCallSite());
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
 		String name = null;
 		String script = null;
@@ -599,8 +631,14 @@ public class Util {
 			script = scriptOf(node);
 		}
 
-		return name != null && script != null && script.equals(scriptOf(script)) && PYTHON_BUILTIN_NAMES.contains(name)
-				&& boundNames(callGraph, script).contains(name);
+		if (name == null || script == null || !script.equals(scriptOf(script)) || !PYTHON_BUILTIN_NAMES.contains(name)
+				|| !boundNames(callGraph, script).contains(name))
+			return false;
+
+		// Only a call resolved to the builtin's own summary is suspect; one resolved to the rebinding (a user's `def max`) is scanned like
+		// any other call, and one with no target is already counted by the target-less check.
+		String summary = BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name;
+		return !targets.isEmpty() && targets.stream().allMatch(t -> t.getMethod().getDeclaringClass().getName().toString().equals(summary));
 	}
 
 	/**
@@ -644,19 +682,28 @@ public class Util {
 		return scriptOf(node.getMethod().getDeclaringClass().getName().toString());
 	}
 
-	/** The names {@code script} binds at module scope, read from the writes in its own call-graph nodes. */
+	/**
+	 * The names {@code script} binds at module scope: its global writes from any of its call-graph nodes, and its body's lexical writes
+	 * other than the builtins it exposes to nested functions.
+	 */
 	private static Set<String> boundNames(CallGraph callGraph, String script) {
 		return SCRIPT_BOUND_NAMES.computeIfAbsent(callGraph, k -> new ConcurrentHashMap<>()).computeIfAbsent(script, k -> {
 			Set<String> names = new HashSet<>();
 
 			for (CGNode node : callGraph) {
-				if (!node.getMethod().getDeclaringClass().getName().toString().equals(script) || node.getIR() == null)
+				String declaringClass = node.getMethod().getDeclaringClass().getName().toString();
+
+				// A global write binds the name at module scope from anywhere in the script (`global len; len = ...` in a function);
+				// a lexical write does so only from the script's own body.
+				if (!scriptOf(declaringClass).equals(script) || node.getIR() == null)
 					continue;
+
+				boolean scriptBody = declaringClass.equals(script);
 
 				for (SSAInstruction instruction : Iterator2Iterable.make(node.getIR().iterateNormalInstructions()))
 					if (instruction instanceof AstGlobalWrite write && write.getGlobalName().startsWith(GLOBAL_PREFIX))
 						names.add(write.getGlobalName().substring(GLOBAL_PREFIX.length()));
-					else if (instruction instanceof AstLexicalWrite write)
+					else if (scriptBody && instruction instanceof AstLexicalWrite write)
 						// The script also writes into its scope the builtins its nested functions read, from the builtin's own import
 						// or prelude object. A write of anything else, such as `sum = getattr(tf, "reduce_sum")`, is a binding.
 						for (int i = 0; i < write.getAccessCount(); i++) {

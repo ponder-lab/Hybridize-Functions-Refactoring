@@ -11,6 +11,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT;
@@ -11116,12 +11117,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`opaque` is hybrid.", opaque.isHybrid());
 		assertTrue("`opaque` has a tensor parameter.", opaque.getHasTensorParameter());
 		assertFalse("The scan finds no tensor op in `opaque`.", opaque.getHasTensorComputation());
-		assertTrue("Calling `getattr`'s result is an unresolved call.", opaque.isTensorComputationUnresolved());
+		assertTrue("Calling `getattr`'s result, by a name the analysis can't model, is an unresolved call.",
+				opaque.isTensorComputationUnresolved());
 		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
 
+		// Documents current behavior: Ariadne leaves `getattr` on a constant name unresolved. When it resolves it (ponder-lab/ML#909), the
+		// call becomes a tensor op the scan sees, so the function stays hybrid for that reason instead, and the second assertion flips.
+		Function constant = getFunction("opaque_constant");
+		assertFalse("`opaque_constant` is not de-hybridized.", constant.getTransformations().contains(CONVERT_TO_EAGER));
+		assertTrue("`getattr(tf, \"reduce_sum\")` is still unresolved; ponder-lab/ML#909 is expected to resolve it.",
+				constant.isTensorComputationUnresolved());
+
 		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
-				"tuple_method", "set_method", "numpy_call" }) {
+				"tuple_method", "set_method", "numpy_call", "uses_user_abs" }) {
 			Function barren = getFunction(name);
 			assertFalse("`" + name + "` performs no tensor computation.", barren.getHasTensorComputation());
 			assertFalse("`" + name + "` has no unresolved call that may compute tensors.", barren.isTensorComputationUnresolved());
@@ -11130,7 +11139,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		// Calls that read like builtins but are bound otherwise, or that call a function argument, may compute tensors.
-		for (String name : new String[] { "make.step", "rebound", "mapped", "keyed", "sorted_in_place" }) {
+		for (String name : new String[] { "make.step", "rebound", "global_rebound", "mapped", "keyed", "sorted_keyed",
+				"sorted_in_place" }) {
 			Function kept = getFunction(name);
 			assertFalse("The scan finds no tensor op in `" + name + "`.", kept.getHasTensorComputation());
 			assertTrue("`" + name + "` has a call that may compute tensors.", kept.isTensorComputationUnresolved());
@@ -11169,24 +11179,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
-		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step" }) {
+		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec" }) {
 			Function kept = getFunction(name);
 			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
 			assertTrue("`" + name + "` carries a supplied input_signature.", kept.getHybridizationParameters().hasInputSignatureParam());
 			assertTrue("`" + name + "` selects no transformation.", kept.getTransformations().isEmpty());
 			assertNull("`" + name + "` passes no precondition.", kept.getPassingPrecondition());
+			assertNotNull("`" + name + "` is kept for its signature, reported as a failure so that it isn't counted optimizable.",
+					kept.getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE));
 			assertNull("`" + name + "` reports no missing primitive parameter.", kept.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		}
 
-			Set<String> messages = Arrays.stream(kept.getStatus().getEntries()).map(RefactoringStatusEntry::getMessage).collect(toSet());
-			assertTrue("`" + name + "` says it stays hybrid for its signature.",
-					messages.stream().anyMatch(m -> m.contains("has a supplied input_signature")));
-			assertFalse("`" + name + "` isn't reported as likely having a tensor parameter.",
+		for (String name : new String[] { "declared", "sig_zero", "Exporter.get_step" }) {
+			Set<String> messages = Arrays.stream(getFunction(name).getStatus().getEntries()).map(RefactoringStatusEntry::getMessage)
+					.collect(toSet());
+			assertFalse("`" + name + "`, with no tensor parameter seen, isn't reported as likely having one.",
 					messages.contains("This hybrid function likely has a tensor parameter."));
 		}
 
 		assertFalse("The analysis doesn't see `declared`'s parameter as a tensor.", getFunction("declared").getHasTensorParameter());
 		assertTrue("`sig_barren`'s parameter is a tensor.", getFunction("sig_barren").getHasTensorParameter());
 		assertFalse("`sig_barren` performs no tensor computation.", getFunction("sig_barren").getHasTensorComputation());
+
+		// The checks before the conversion still run as they do without a signature.
+		for (String name : new String[] { "se", "se_barren" }) {
+			Function sideEffecting = getFunction(name);
+			assertTrue("`" + name + "` has Python side-effects.", sideEffecting.getHasPythonSideEffects());
+			assertNotNull("`" + name + "` still fails HAS_PYTHON_SIDE_EFFECTS.",
+					sideEffecting.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+			assertTrue("`" + name + "` selects no transformation.", sideEffecting.getTransformations().isEmpty());
+		}
+
+		Function rec = getFunction("rec");
+		assertTrue("`rec` is recursive.", rec.isRecursive());
+		assertTrue("`rec` still carries the recursion warning.", Arrays.stream(rec.getStatus().getEntries())
+				.anyMatch(e -> e.getMessage().equals("Recursive tf.functions are not supported by TensorFlow.")));
 
 		assertEquals("Without a signature, `undeclared` still de-hybridizes (P2).", P2, getFunction("undeclared").getPassingPrecondition());
 		assertEquals("Without a signature, `barren` still de-hybridizes (P6).", P6, getFunction("barren").getPassingPrecondition());
@@ -11206,6 +11233,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`p_fmt`'s parameter has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
 				fmt.getParameters().get(0).getTensorClassificationBasis());
 		assertFalse("`p_fmt` is not de-hybridized.", fmt.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotNull("`p_fmt` is kept as having tensor parameters that can't be inferred, so that it isn't counted optimizable.",
+				fmt.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER));
 
 		Function literal = getFunction("p_int");
 		assertEquals("`p_int`'s parameter is determined not to be a tensor.", TensorClassificationBasis.ANALYZED_NOT_TENSOR,
