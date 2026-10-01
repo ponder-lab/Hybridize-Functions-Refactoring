@@ -736,6 +736,11 @@ public class Function {
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
 
 	/**
+	 * The FQN of {@code tf.custom_gradient}, above which a hybridizing {@code @tf.function} must go (#996).
+	 */
+	private static final String TF_CUSTOM_GRADIENT_FQN = "tensorflow.python.ops.custom_gradient.custom_gradient";
+
+	/**
 	 * The TensorFlow module name as it appears in Python {@code import} statements, used by {@link #getImportContext(IDocument)} to detect
 	 * the import shape (e.g. {@code import tensorflow}, {@code import tensorflow as tf}, {@code from tensorflow import ...}).
 	 */
@@ -5095,6 +5100,28 @@ public class Function {
 		return ret;
 	}
 
+	/**
+	 * Returns this function's outermost {@code @tf.custom_gradient} decorator, if any.
+	 *
+	 * @return The outermost decorator resolving to {@code tf.custom_gradient}, or empty when there is none or none resolves.
+	 */
+	private Optional<decoratorsType> getCustomGradientDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs != null)
+			for (decoratorsType decorator : decs)
+				try {
+					if (TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decorator, null)))
+						return Optional.of(decorator);
+				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
+						| NoTextSelectionException e) {
+					// Best effort, as in `getDecoratorNames()`.
+					LOG.info("Can't get name of decorator: " + decorator, e);
+				}
+
+		return Optional.empty();
+	}
+
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
 		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
@@ -5104,10 +5131,15 @@ public class Function {
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
 
 		IDocument doc = this.getContainingDocument();
-		int offset = getOffset(doc, functionDef);
-		int lineBeginOffset = offset - functionDef.beginColumn + 1;
 
-		String precedingText = doc.get(lineBeginOffset, functionDef.beginColumn - 1);
+		// The decorator goes on the line of the `def`, innermost, except above the outermost `@tf.custom_gradient`: beneath it, a Keras
+		// layer calling the function can no longer infer its output shape, while above it the shape, the call and the gradient all work
+		// (#996). Decorators above that one, such as `@staticmethod`, stay above.
+		SimpleNode anchor = this.getCustomGradientDecorator().<SimpleNode>map(d -> d).orElse(functionDef);
+		int offset = getOffset(doc, anchor);
+		int lineBeginOffset = doc.getLineOffset(doc.getLineOfOffset(offset));
+
+		String precedingText = doc.get(lineBeginOffset, offset - lineBeginOffset);
 
 		ImportContext ctx = getImportContext(doc);
 
