@@ -179,7 +179,7 @@ public sealed interface InferenceResult {
 		 * context passes is not known to match it: a specification derived from small, concrete test calls would reject a program's own
 		 * call whose argument the analysis could not type. The untyped context therefore widens the parameter to unknown rather than
 		 * dropping out of the evidence. Reported only where a specification would otherwise have been stored, so no other absence is
-		 * relabelled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
+		 * relabeled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
 		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined. A context is a call-graph
 		 * node, so two calls the call graph merges count as one, and the check covers the flat reduction, not the container one.
 		 *
