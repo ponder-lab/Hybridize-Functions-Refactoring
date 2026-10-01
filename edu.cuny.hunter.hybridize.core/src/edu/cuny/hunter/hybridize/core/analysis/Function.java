@@ -1743,9 +1743,8 @@ public class Function {
 							else if (this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
 									&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
 									&& !this.canEmitInferredInputSignature() && this.inferInputSignature().signature().isPresent())
-								// Not already optimal either: a signature was inferred, but the names it is written with aren't in scope
-								// under
-								// the file's import shape, so it is withheld as unwritable (issue 1018).
+								// Not already optimal either: a signature was inferred but is withheld as unwritable, since its names
+								// aren't in scope under the file's import shape (issue 1018).
 								this.addFailure(PreconditionFailure.INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED,
 										"This hybrid function's inferred input signature uses TensorFlow names its file doesn't import, so its "
 												+ "decorator is not reconfigured.");
@@ -5700,10 +5699,14 @@ public class Function {
 	 * TensorFlow through a name the file doesn't import itself, such as a {@code tf} arriving by a star import, in which case
 	 * {@code getImportContext} finds nothing and a {@code from tensorflow import ...} line is injected, as for a fresh decorator (issue
 	 * 1018). When the signature's names are not reachable under the file's import shape (e.g. {@code from tensorflow import function}
-	 * without {@code TensorSpec}), the gate yields no keyword and no edit is produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * without {@code TensorSpec}), the gate yields no keyword and the decorator is left unchanged, matching {@link #convertToHybrid()}'s
+	 * silent skip. The injected import is added to the returned edits before that gate runs, so when the gate declines in a file that has
+	 * no TensorFlow import of its own (a narrowing whose literal span can't be resolved, or a direct {@code transform()} without
+	 * {@link #planAutoInjectedImports}'s pre-pass), the edits inject the import with no decorator change. {@link #check()} selects
+	 * {@code RECONFIGURE} only when the gate passes, so through the processor this arises only for an unresolvable literal span.
 	 *
-	 * @return The edits adding {@code input_signature=[...]} to the decorator or replacing its broader literal, or an empty list when
-	 *         emission is gated out.
+	 * @return The edits adding {@code input_signature=[...]} to the decorator or replacing its broader literal, preceded by the injected
+	 *         import when the file has none; an empty list when the file has its own import and emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
