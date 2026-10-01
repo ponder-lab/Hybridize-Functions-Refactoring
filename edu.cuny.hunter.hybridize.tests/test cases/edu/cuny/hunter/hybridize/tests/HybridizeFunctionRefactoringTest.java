@@ -11031,6 +11031,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A hybrid function whose body computes only through a call the call graph does not resolve is not established as barren, so it keeps
+	 * its decorator (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Its tensor op is fetched with
+	 * {@code getattr}, which the analysis does not follow, so the scan finds no op; de-hybridizing such a function on that basis breaks one
+	 * that relies on graph mode. A truly barren function, with no unresolved call, still de-hybridizes (P6), and the eager-to-hybrid side
+	 * is unchanged: the eager twin still fails {@link PreconditionFailure#NO_TENSOR_COMPUTATION}.
+	 */
+	@Test
+	public void testUnresolvedCallKeepsHybrid() throws Exception {
+		Function opaque = getFunction("opaque");
+		assertTrue("`opaque` is hybrid.", opaque.isHybrid());
+		assertTrue("`opaque` has a tensor parameter.", opaque.getHasTensorParameter());
+		assertFalse("The scan finds no tensor op in `opaque`.", opaque.getHasTensorComputation());
+		assertTrue("`opaque`'s `getattr`-fetched call is unresolved.", opaque.isTensorComputationUnresolved());
+		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
+
+		Function barren = getFunction("barren");
+		assertFalse("`barren` performs no tensor computation.", barren.getHasTensorComputation());
+		assertFalse("`barren` has no unresolved call.", barren.isTensorComputationUnresolved());
+		assertEquals("A barren hybrid function still de-hybridizes (P6).", P6, barren.getPassingPrecondition());
+		assertTrue("`barren` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+
+		Function eager = getFunction("opaque_eager");
+		assertFalse("`opaque_eager` is eager.", eager.isHybrid());
+		assertNotNull("The eager-to-hybrid side is unchanged: `opaque_eager` still fails NO_TENSOR_COMPUTATION.",
+				eager.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+	}
+
+	/**
 	 * Pins the eager-to-hybrid benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709): an eager
 	 * function with a tensor parameter but no tensor computation must not hybridize (it fails with
 	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION}), while one that performs a tensor op still passes P1.

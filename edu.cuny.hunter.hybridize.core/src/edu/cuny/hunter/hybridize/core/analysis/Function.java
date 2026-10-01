@@ -1231,6 +1231,13 @@ public class Function {
 	private Boolean hasTensorComputation;
 
 	/**
+	 * True iff {@link #hasTensorComputation} is {@code false} only because no tensor op was found, while the scanned bodies hold a call the
+	 * call graph does not resolve. The absence of a tensor computation is then not established, so the hybrid-to-eager benefit precondition
+	 * (P6) does not de-hybridize the function. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 */
+	private boolean tensorComputationUnresolved;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under
 	 * {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the precondition
 	 * does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
@@ -1573,7 +1580,15 @@ public class Function {
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()) {
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && this.isTensorComputationUnresolved())
+						// Not established as barren: a call the analysis could not resolve may compute tensors, and de-hybridizing a
+						// function that does (and possibly relies on graph mode, such as `optimizer.get_gradients`) breaks it (issue 997).
+						// Keep the developer's decorator.
+						this.addInfo(
+								"This hybrid function performs no tensor computation the analysis can see, but it has an unresolved call, so it is kept hybrid.");
+
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()
+							&& !this.isTensorComputationUnresolved()) {
 						// Barren (issue 709): a hybrid function performing no tensor computation gains nothing from graph execution, only
 						// tracing overhead, so de-hybridize it when semantics are preserved (no Python side-effects). This is the
 						// hybrid-to-eager counterpart of the eager-to-hybrid NO_TENSOR_COMPUTATION precondition and a peer of P2/P3.
@@ -1834,7 +1849,24 @@ public class Function {
 
 		this.hasTensorComputation = performsTensorOp;
 
-		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
+		// No tensor op found is an established absence only if every call the scan passed was resolved; an unresolved call may perform
+		// a computation the scan cannot see.
+		if (!performsTensorOp)
+			this.tensorComputationUnresolved = nodes.stream().anyMatch(cgNode -> Util.hasUnresolvedCall(cgNode, callGraph));
+
+		LOG.info(this + (performsTensorOp ? " performs a tensor computation."
+				: this.tensorComputationUnresolved ? " performs no tensor computation the analysis can see, but has an unresolved call."
+						: " performs no tensor computation."));
+	}
+
+	/**
+	 * True iff no tensor computation was found in this {@link Function}'s body, but the body (transitively) holds a call the call graph
+	 * does not resolve, so the absence is not established.
+	 *
+	 * @return True iff the "no tensor computation" verdict rests on an incomplete scan.
+	 */
+	public boolean isTensorComputationUnresolved() {
+		return this.tensorComputationUnresolved;
 	}
 
 	/**

@@ -436,6 +436,43 @@ public class Util {
 		return false;
 	}
 
+	/**
+	 * True iff {@code node}, transitively over the same nodes {@link #performsTensorFlowOp} scans, holds a call whose target the call graph
+	 * does not resolve. Such a call may perform a tensor computation the scan cannot see (an object built through a factory the analysis
+	 * doesn't follow, a callee fetched with {@code getattr}), so a scan that finds no tensor op has not established that there is none. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param callGraph The call graph, used to resolve each call's targets and follow callees transitively.
+	 * @return True iff a call reachable from {@code node}'s user-defined bodies has no resolved target.
+	 */
+	public static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph) {
+		return hasUnresolvedCall(node, callGraph, Sets.newHashSet());
+	}
+
+	private static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		// Mirror `performsTensorFlowOp`: a TensorFlow library node's own body is not the analyzed function's code, but its successors
+		// (user callbacks) are walked.
+		if (!isTensorFlowNode(node)) {
+			IR ir = node.getIR();
+
+			if (ir != null)
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (instruction instanceof PythonInvokeInstruction invoke
+							&& callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty())
+						return true;
+		}
+
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
+			if (hasUnresolvedCall(succNodes.next(), callGraph, seen))
+				return true;
+
+		return false;
+	}
+
 	/** True iff {@code node}'s declaring class is in the TensorFlow namespace, i.e. a modeled op or library node rather than user code. */
 	static boolean isTensorFlowNode(CGNode node) {
 		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
