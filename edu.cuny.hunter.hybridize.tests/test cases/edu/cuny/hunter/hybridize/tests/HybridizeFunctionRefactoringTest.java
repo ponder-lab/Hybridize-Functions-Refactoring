@@ -13658,4 +13658,125 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
 	}
 
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003: a container parameter reached from a call site that
+	 * supplies no container the analysis read must not keep a nested specification derived from the other call sites. Each function below
+	 * is called once with a tuple or list of tensors and once with a value read from {@code pickle.load}, which the analysis does not
+	 * model; {@code pair_typed} receives only typed tuples.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function typed = findFunction(functions, "pair_typed");
+		assertEquals("A container parameter reached only with typed tuples keeps its nested specification.",
+				"[[tf.TensorSpec(shape=(4, 3), dtype=tf.float32), tf.TensorSpec(shape=(4, 3), dtype=tf.float32)]]",
+				typed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertFalse("The control reaches no untyped container context.", typed.getParameters().get(0).hasUntypedContainerContext());
+
+		for (String name : List.of("pair_sum", "list_sum", "pair_outer", "pair_inner")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s nested specification would be a claim about the untyped call too.",
+					Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// Under depth-1 call strings `pair_inner` has one node, reached from `pair_outer`'s single call site and typed from the tuple, so
+		// only the caller's argument, which has no abstract value in the pickled context, shows the other call.
+		assertTrue("The callee's container context is untyped through its caller's argument.",
+				findFunction(functions, "pair_inner").getParameters().get(0).hasUntypedContainerContext());
+
+		// The analysis does not represent a `**` splat at the call site, which reads as omitting `pair`, so only the callee's own node,
+		// which nothing modeled reaches, shows the call.
+		assertEquals("A splatted call that passes nothing modeled withholds the nested specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				findFunction(functions, "pair_splat").getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * A container parameter that withholds on an untyped context in a function whose other parameter needs a dtype pin: without the
+	 * specification no pin can be written, and a bare decorator raises on the pinned argument, so the conversion is declined rather than
+	 * converted bare. {@code pin_typed} is the control, reached only with typed tuples, and keeps both the pin and the nested
+	 * specification.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerPin() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function typed = findFunction(functions, "pin_typed");
+		assertTrue("The control converts.", typed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("The control keeps a specification, which carries the pin.", typed.getInferredInputSignature().isPresent());
+
+		Function mixed = findFunction(functions, "pin_mix");
+		assertEquals("The container withholds on the untyped call.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				mixed.getInferredInputSignatureAbsenceReason());
+		assertFalse("With no specification to carry the pin, a bare decorator would raise, so the conversion is declined.",
+				mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("The decline reports the unwritable pin.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1004: an argument passed through a starred unpack binds an
+	 * element of the unpacked sequence, which the analysis reads as the sequence itself, so the parameter must not get a nested
+	 * specification. On TensorFlow 2.9.3 the nested one rejects the very call it was derived from.
+	 */
+	@Test
+	public void testInferInputSignatureStarredArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function plain = findFunction(functions, "t4");
+		assertEquals("Plain positional calls are unaffected.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				plain.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function trailing = findFunction(functions, "t3");
+		assertEquals("The parameter bound by the unpack withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), trailing.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only the unpacked parameter blocks.", List.of("y"),
+				trailing.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		Function leading = findFunction(functions, "t5");
+		assertEquals("A leading unpack withholds the parameter it binds.", List.of("x"),
+				leading.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertTrue("Both still hybridize.", trailing.getTransformations().contains(Transformation.CONVERT_TO_HYBRID)
+				&& leading.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A method is reached through a receiver trampoline, which re-issues the call with every argument positional, so the unpack is
+		// visible only at the originating site one frame further up.
+		Function method = findFunction(functions, "M.m");
+		assertEquals("A method's parameter bound by an unpack withholds the specification.", List.of("y"),
+				method.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertEquals("Its reason is the untyped context.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				method.getInferredInputSignatureAbsenceReason());
+
+		Function plainMethod = findFunction(functions, "M.plain");
+		assertEquals("A method called without an unpack keeps its specification.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				plainMethod.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// At the originating site the receiver is bound, so a container parameter ahead of the unpack sits one slot earlier there and is
+		// aligned with its own typed tuple; only the parameter the unpack binds withholds.
+		Function beforeStar = findFunction(functions, "M.before_star");
+		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.", List.of("y"),
+				beforeStar.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		// A static method called through an instance goes through a synthetic frame too, but binds no receiver, so its slot is unshifted.
+		Function staticThroughInstance = findFunction(functions, "K.sm_inst");
+		assertEquals("A static method's parameter bound by an unpack withholds the specification.", List.of("y"),
+				staticThroughInstance.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		Function staticOnClass = findFunction(functions, "K.sm");
+		assertEquals("A static method called on its class, without an unpack, keeps its specification.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				staticOnClass.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
 }
