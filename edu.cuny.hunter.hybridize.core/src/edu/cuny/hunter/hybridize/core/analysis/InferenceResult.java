@@ -175,11 +175,13 @@ public sealed interface InferenceResult {
 
 		/**
 		 * The function is reached in a calling context in which the tensor-type analysis associated no type with the parameter, beside
-		 * contexts in which it did. The typed contexts alone would reduce to a specification, but a specification is a claim about every
-		 * call, and nothing is known of what the untyped context passes: a specification derived from small, concrete test calls would
-		 * reject a program's own call whose argument the analysis could not type. The untyped context therefore widens the parameter to
-		 * unknown rather than dropping out of the evidence. The function still converts with a bare decorator; only the specification is
-		 * withheld.
+		 * contexts whose types reduce to a specification. That specification would be a claim about every call, and what the untyped
+		 * context passes is not known to match it: a specification derived from small, concrete test calls would reject a program's own
+		 * call whose argument the analysis could not type. The untyped context therefore widens the parameter to unknown rather than
+		 * dropping out of the evidence. Reported only where a specification would otherwise have been stored, so no other absence is
+		 * relabelled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
+		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined. A context is a call-graph
+		 * node, so two calls the call graph merges count as one, and the check covers the flat reduction, not the container one.
 		 *
 		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
 		 */

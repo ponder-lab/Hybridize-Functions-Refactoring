@@ -1112,9 +1112,7 @@ public final class Parameter {
 					if (tensorVariable == null)
 						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
 					result.addAll(tensorVariable.getTypes());
-
-					if (!tensorVariable.getTypes().isEmpty())
-						typed.add(localPointerKey.getNode());
+					typed.add(localPointerKey.getNode());
 
 					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
 					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
@@ -1141,8 +1139,8 @@ public final class Parameter {
 
 	/**
 	 * Whether the owning function is reached in a conforming calling context in which the tensor-type analysis associated no type with this
-	 * parameter (#998). A specification reduced from the other contexts' types is a claim about every call, and nothing is known of what
-	 * this one passes, so such a parameter has no specification.
+	 * parameter (#998). This is about the parameter's flat typing only: a container parameter whose evidence arrives through its elements
+	 * reports every context here. A context is a call-graph node, so calls that the call graph merges into one node count once.
 	 *
 	 * @return True iff some conforming call-graph node of the owning function carries no tensor type for this parameter.
 	 */

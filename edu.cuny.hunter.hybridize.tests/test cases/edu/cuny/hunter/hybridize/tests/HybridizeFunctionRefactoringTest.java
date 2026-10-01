@@ -13200,5 +13200,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.allMatch(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT::equals));
 		assertTrue("The control reaches no untyped context.",
 				control.getParameters().stream().noneMatch(Parameter::hasUntypedConformingContext));
+
+		// The call inside `assertRaises` passes `None`, which the analysis does not type, but it is a declared failure and so not a
+		// conforming context: the signature from the tensor call stands.
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure leaves no untyped context.", "[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The typed calls already disagree in dtype, so no specification exists to withhold, and that reason is kept.
+		Function mixedDtypes = findFunction(functions, "mixed_dtypes");
+		assertEquals("A parameter whose typed contexts do not reduce keeps its own reason.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), mixedDtypes.getInferredInputSignatureAbsenceReason());
+		assertTrue("It does reach an untyped context.", mixedDtypes.getParameters().get(0).hasUntypedConformingContext());
 	}
 }
