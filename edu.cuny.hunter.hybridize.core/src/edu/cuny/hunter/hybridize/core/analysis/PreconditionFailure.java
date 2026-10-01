@@ -242,7 +242,48 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
 	 */
-	INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED(33);
+	INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED(33),
+
+	/**
+	 * A call to the eager function sits inside a guard that dispatches on the exception it raises, and adding {@code tf.function} may
+	 * change that exception, so the guard would treat it differently. A guard is an {@code assertRaises} or {@code pytest.raises} block or
+	 * a {@code try} statement's body. A {@code tf.errors} class is what a kernel raises as it runs, but a bare decorator traces the
+	 * function with the argument's own shape and dtype, and an operation whose static check fails on them raises at trace time instead:
+	 * {@code tf.matmul} of a rank-1 tensor raises {@code InvalidArgumentError} eagerly and {@code ValueError} under {@code tf.function},
+	 * and an operation on a tensor of the wrong dtype {@code TypeError} (TensorFlow 2.9.3). A data-dependent error, such as an out-of-range
+	 * {@code tf.gather} or a failed {@code tf.debugging.assert_positive}, is still raised by the kernel and survives the decorator.
+	 * <p>
+	 * The two kinds cannot be told apart from the body, so the conversion is refused where the guarded call's argument for a tensor
+	 * parameter has a shape or dtype that no call outside every guard passes, or one that is not fully known, such as a container or a
+	 * {@code None}, and a guard around the call distinguishes the kernel's error from what tracing would raise. An argument of a type an
+	 * unguarded call passes traced without a static error, so its failure is data-dependent and the function converts. A failed static
+	 * check is raised eagerly as {@code InvalidArgumentError} in every case measured, so a guard is read for whether it admits that class
+	 * (or its ancestor {@code OpError}); another {@code tf.errors} class, such as the {@code OutOfRangeError} that ends a dataset loop, is
+	 * raised where tracing raises it too. An {@code assertRaises} or {@code pytest.raises} block declares that the call raises what it
+	 * admits, so it distinguishes when it admits {@code InvalidArgumentError} but not what tracing raises; one admitting neither declares
+	 * an exception that tracing raises where the body does. A {@code try} statement declares nothing about whether the call raises, so its
+	 * {@code except} clauses distinguish in either direction: when the first clause to catch what tracing raises is not the first to catch
+	 * {@code InvalidArgumentError}, as with {@code except tf.errors.InvalidArgumentError} or {@code except ValueError} alone. A guard
+	 * admits an exception by naming that class, {@code Exception}, or {@code BaseException}, and a bare {@code except} admits every
+	 * exception.
+	 * <p>
+	 * A {@code try} statement in the function's own body, around a call into TensorFlow or the program's own code, is a hazard of its own,
+	 * since converting the function makes that body a trace. The operation then no longer runs inside the statement: a kernel's error,
+	 * data-dependent or not, is raised when the graph runs, outside it, so any clause that may catch a kernel's error is bypassed, whether
+	 * it names a {@code tf.errors} class, {@code Exception}, or {@code BaseException}, is a bare {@code except}, or cannot be read. A
+	 * clause catching {@code ValueError} or {@code TypeError} but no kernel's error distinguishes as well, since a failed static check now
+	 * reaches it. No call outside the statement shows what the call is passed, so the clauses alone decide. Unlike
+	 * {@link InferenceResult.AbsenceReason#WITHHELD_DECLARED_FAILURE_EXCEPTION}, where only the signature changes the exception and is
+	 * withheld, here the bare decorator changes it, so there is no decoration that preserves the dispatch, and the refusal holds with
+	 * input-signature inference on or off.
+	 * <p>
+	 * Only guards written around the call itself are seen: an exception handled by a {@code try} statement in a caller further up the stack
+	 * is not, and neither is a call made by {@code unittest} on the program's behalf, as in {@code assertRaises(E, f, x)}, which the call
+	 * graph does not model.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	TRACING_CHANGES_GUARDED_EXCEPTION(34);
 
 	static {
 		// check that the codes are unique.

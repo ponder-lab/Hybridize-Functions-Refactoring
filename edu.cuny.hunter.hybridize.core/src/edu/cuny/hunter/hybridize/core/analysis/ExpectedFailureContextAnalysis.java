@@ -14,6 +14,7 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
+import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -58,6 +59,11 @@ import com.ibm.wala.util.graph.dominators.Dominators;
  * guards nothing, keeping the allow-on-unknown polarity: failing to recognize a shape leaves evidence in rather than discarding it. The
  * {@code assertRaises(Exception, f, x)} call-form is deliberately out of scope: there the callee is passed as a value and applied inside
  * {@code unittest}, which is unmodeled, so no call-graph edge carries evidence from it in the first place.
+ * <p>
+ * A {@code try} statement's body is a guard as well, for the conversion only (#1014): a call there is one whose behavior depends on which
+ * exception it raises, but the statement declares nothing about whether it raises, so its evidence is never set aside. The front end lowers
+ * the statement without the classes its {@code except} clauses name, so the clauses are read from the module's source at the call's line
+ * ({@link ExceptionHandlerAnalysis}).
  */
 class ExpectedFailureContextAnalysis {
 
@@ -83,25 +89,108 @@ class ExpectedFailureContextAnalysis {
 	private static final Set<String> PYTEST_MODULE_GLOBAL_NAMES = Set.of("global pytest", "global py");
 
 	/**
-	 * The exception classes one expected-failure guard admits, as written at the guard call: {@code assertRaises(TypeError)}, a tuple of
-	 * classes, or a {@code tf.errors} class. A class is named by its simple name.
+	 * The exception classes one guard admits, as written at the guard: {@code assertRaises(TypeError)}, a tuple of classes, or a
+	 * {@code tf.errors} class. A class is named by its simple name. A guard is an expected-failure context manager, which declares that the
+	 * call raises what it admits, or one {@code except} clause of a {@code try} statement, which declares nothing about whether the call
+	 * raises (#1014).
 	 *
 	 * @param names The simple names of the classes the guard admits; empty when unresolved.
 	 * @param resolved False when some admitted class could not be named, in which case what the guard admits is unknown.
+	 * @param handler True iff the guard is an {@code except} clause rather than an expected-failure context manager.
 	 */
-	record Guard(Set<String> names, boolean resolved) {
+	record Guard(Set<String> names, boolean resolved, boolean handler) {
 
-		/** The unresolved guard: what it admits is unknown. */
-		static final Guard UNRESOLVED = new Guard(Set.of(), false);
+		/** The unresolved expected-failure guard: what it admits is unknown. */
+		static final Guard UNRESOLVED = new Guard(Set.of(), false, false);
+
+		/** The unresolved {@code except} clause: what it catches is unknown. */
+		static final Guard UNRESOLVED_HANDLER = new Guard(Set.of(), false, true);
+
+		/** The classes that admit every exception a call can raise. */
+		private static final Set<String> BROAD_EXCEPTION_NAMES = Set.of("Exception", "BaseException");
+
+		/**
+		 * The simple names of {@code tf.errors.OpError} and its subclasses, the errors a TensorFlow kernel raises when it runs (#1014).
+		 */
+		private static final Set<String> OP_ERROR_NAMES = Set.of("OpError", "CancelledError", "UnknownError", "InvalidArgumentError",
+				"DeadlineExceededError", "NotFoundError", "AlreadyExistsError", "PermissionDeniedError", "UnauthenticatedError",
+				"ResourceExhaustedError", "FailedPreconditionError", "AbortedError", "OutOfRangeError", "UnimplementedError",
+				"InternalError", "UnavailableError", "DataLossError");
+
+		/**
+		 * The simple names of the {@code tf.errors} classes a static check's failure is raised as eagerly: {@code InvalidArgumentError} and
+		 * its ancestor {@code OpError} (#1014). A shape or dtype that an operation rejects raised {@code InvalidArgumentError} in every
+		 * case measured on TensorFlow 2.9.3, including an operation with no kernel for the dtype.
+		 */
+		private static final Set<String> STATIC_OP_ERROR_NAMES = Set.of("InvalidArgumentError", "OpError");
+
+		/**
+		 * True iff this guard is known to admit the exception named {@code exception}: it names that class, {@code Exception}, or
+		 * {@code BaseException}. An unresolved guard admits nothing.
+		 *
+		 * @param exception The simple name of an exception class.
+		 * @return Whether the guard admits it.
+		 */
+		boolean admits(String exception) {
+			return this.resolved() && (this.names().contains(exception) || this.admitsAny());
+		}
+
+		/**
+		 * True iff this guard is known to admit every exception, by naming {@code Exception} or {@code BaseException}.
+		 *
+		 * @return Whether the guard admits any exception.
+		 */
+		boolean admitsAny() {
+			return this.resolved() && this.names().stream().anyMatch(BROAD_EXCEPTION_NAMES::contains);
+		}
+
+		/**
+		 * True iff this guard may be declaring the error a failed static check is raised as eagerly: it names {@code InvalidArgumentError}
+		 * or {@code OpError}, or what it admits is unknown (#1014). Another {@code tf.errors} class, such as {@code OutOfRangeError}, is
+		 * raised where tracing raises it too.
+		 *
+		 * @return Whether the declared exception may be a failed static check's.
+		 */
+		boolean mayAdmitStaticOpError() {
+			return !this.resolved() || this.names().stream().anyMatch(STATIC_OP_ERROR_NAMES::contains);
+		}
+
+		/**
+		 * True iff this guard is known to admit the error a failed static check is raised as eagerly: it names
+		 * {@code InvalidArgumentError}, {@code OpError}, {@code Exception}, or {@code BaseException} (#1014).
+		 *
+		 * @return Whether the guard admits that error; false when what it admits is unknown.
+		 */
+		boolean admitsStaticOpError() {
+			return this.resolved() && (this.admitsAny() || this.names().stream().anyMatch(STATIC_OP_ERROR_NAMES::contains));
+		}
+
+		/**
+		 * True iff this guard is known to admit some error a TensorFlow kernel raises: it names a {@code tf.errors} class,
+		 * {@code Exception}, or {@code BaseException} (#1014). A bare {@code except} admits every exception.
+		 *
+		 * @return Whether the guard admits a kernel's error; false when what it admits is unknown.
+		 */
+		boolean admitsOpError() {
+			return this.resolved() && (this.admitsAny() || this.names().stream().anyMatch(OP_ERROR_NAMES::contains));
+		}
 	}
 
 	private final CallGraph callGraph;
 
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
-	ExpectedFailureContextAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	/**
+	 * The modules whose {@code try} statements are read, by the absolute path of their file, from which a call's {@code except} clauses are
+	 * found (#1014). A call in a module that is not here has none.
+	 */
+	private final Map<String, ExceptionHandlerAnalysis> modules;
+
+	ExpectedFailureContextAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<String, ExceptionHandlerAnalysis> modules) {
 		this.callGraph = callGraph;
 		this.pointerAnalysis = pointerAnalysis;
+		this.modules = modules;
 	}
 
 	/**
@@ -111,20 +200,34 @@ class ExpectedFailureContextAnalysis {
 	 * @return Those nodes every call site of which is guarded; empty when none is.
 	 */
 	Set<CGNode> guardedOnlyNodes(Set<CGNode> nodes) {
+		return this.guardedOnlyNodes(nodes, false);
+	}
+
+	/**
+	 * Returns the subset of {@code nodes} reached only from call sites inside a guard: an expected-failure context manager, or, when
+	 * {@code handlers} is true, also a {@code try} statement with an {@code except} clause (#1014).
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param handlers Whether a call inside a {@code try} statement's body counts as guarded.
+	 * @return Those nodes every call site of which is guarded; empty when none is.
+	 */
+	Set<CGNode> guardedOnlyNodes(Set<CGNode> nodes, boolean handlers) {
 		Set<CGNode> ret = new HashSet<>();
 
 		for (CGNode node : nodes)
-			if (this.isGuardedOnly(node))
+			if (this.isGuardedOnly(node, handlers))
 				ret.add(node);
 
 		return ret;
 	}
 
 	/**
-	 * Returns, for each of {@code nodes}, the guards around each guarded call reaching it: one list per call, holding every guard whose
-	 * {@code with} body contains that call, innermost or not. A call's exception is admitted when any guard around it admits it (#1005).
+	 * Returns, for each of {@code nodes}, the guards around each guarded call reaching it: one list per call, holding every
+	 * expected-failure guard whose {@code with} body contains that call, innermost or not, followed by the {@code except} clauses whose
+	 * {@code try} body contains it, in the order Python tries them (#1014). A call's exception is admitted by an expected-failure guard
+	 * when any of them admits it (#1005).
 	 *
-	 * @param nodes Nodes reached only from expected-failure call sites, as {@link #guardedOnlyNodes(Set)} returns.
+	 * @param nodes Nodes reached only from guarded call sites, as {@link #guardedOnlyNodes(Set, boolean)} returns.
 	 * @return The guards around each call reaching each node.
 	 */
 	Map<CGNode, List<List<Guard>>> guardsOf(Set<CGNode> nodes) {
@@ -151,6 +254,7 @@ class ExpectedFailureContextAnalysis {
 							if (region.contains(block, dominators))
 								around.add(region.guard());
 
+					around.addAll(this.handlersAround(site.caller(), instruction));
 					calls.add(around);
 				}
 			}
@@ -161,19 +265,43 @@ class ExpectedFailureContextAnalysis {
 		return ret;
 	}
 
-	/** True iff every resolvable call site reaching {@code node} is guarded by an expected-failure context manager. */
-	private boolean isGuardedOnly(CGNode node) {
+	/**
+	 * True iff every resolvable call site reaching {@code node} is guarded by an expected-failure context manager, or, when
+	 * {@code handlers} is true, by that or an {@code except} clause.
+	 */
+	private boolean isGuardedOnly(CGNode node, boolean handlers) {
 		boolean sawSite = false;
 
 		for (Site site : this.originatingSites(node, new HashSet<>())) {
 			sawSite = true;
 
-			if (!this.isGuarded(site))
+			if (!this.isGuarded(site, handlers))
 				return false;
 		}
 
 		// No resolvable call site is ignorance rather than evidence, so the node keeps its evidence.
 		return sawSite;
+	}
+
+	/**
+	 * The {@code except} clauses around {@code instruction} in {@code caller}'s source, innermost first (#1014). The front end drops the
+	 * classes an {@code except} clause names, so they are read from the module's AST at the call's line.
+	 *
+	 * @param caller The node making the call.
+	 * @param instruction The call.
+	 * @return The clauses; empty when there are none, or when the call's position or module is not known.
+	 */
+	List<Guard> handlersAround(CGNode caller, SSAAbstractInvokeInstruction instruction) {
+		if (!(caller.getMethod() instanceof AstMethod method) || method.debugInfo() == null)
+			return List.of();
+
+		ExceptionHandlerAnalysis module = this.modules.get(method.getDeclaringClass().getSourceFileName());
+		Position position = method.debugInfo().getInstructionPosition(instruction.iIndex());
+
+		if (module == null || position == null)
+			return List.of();
+
+		return module.handlersAround(position.getFirstLine());
 	}
 
 	/** A call site in the frame that wrote it: the caller's node paired with the site reference. */
@@ -201,8 +329,11 @@ class ExpectedFailureContextAnalysis {
 		return ret;
 	}
 
-	/** True iff every invoke at {@code site} lies inside the body of an expected-failure guard in the same frame. */
-	private boolean isGuarded(Site site) {
+	/**
+	 * True iff every invoke at {@code site} lies inside the body of an expected-failure guard in the same frame, or, when {@code handlers}
+	 * is true, inside that or the body of a {@code try} statement with an {@code except} clause.
+	 */
+	private boolean isGuarded(Site site, boolean handlers) {
 		IR ir = site.caller().getIR();
 
 		if (ir == null)
@@ -210,7 +341,7 @@ class ExpectedFailureContextAnalysis {
 
 		Set<GuardRegion> regions = this.guardRegions(site.caller(), ir);
 
-		if (regions.isEmpty())
+		if (regions.isEmpty() && !handlers)
 			return false;
 
 		Dominators<ISSABasicBlock> dominators = Dominators.make(ir.getControlFlowGraph(), ir.getControlFlowGraph().entry());
@@ -221,7 +352,7 @@ class ExpectedFailureContextAnalysis {
 			if (block == null)
 				return false;
 
-			boolean inside = false;
+			boolean inside = handlers && !this.handlersAround(site.caller(), instruction).isEmpty();
 
 			for (GuardRegion region : regions)
 				if (region.contains(block, dominators)) {
@@ -322,7 +453,7 @@ class ExpectedFailureContextAnalysis {
 
 			if (use != receiver) {
 				Set<String> names = new HashSet<>();
-				return this.addExceptionNames(node, defUse, use, names, new HashSet<>()) ? new Guard(Set.copyOf(names), true)
+				return this.addExceptionNames(node, defUse, use, names, new HashSet<>()) ? new Guard(Set.copyOf(names), true, false)
 						: Guard.UNRESOLVED;
 			}
 		}

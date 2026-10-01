@@ -100,8 +100,8 @@ with case.assertRaises(TypeError):
 STRICT[0] = False
 
 
-# Kept: a guard naming only a `tf.errors` class is left alone, since the bare decorator already
-# reports the static shape error as a trace-time ValueError.
+# Withheld, and refused (#1014): the signature rejects the rank-1 argument with ValueError, and so
+# does the bare decorator, from the static shape check at trace time.
 def op_error_guard(x):
     return tf.matmul(x, x)
 
@@ -164,7 +164,8 @@ with case.assertRaises(ValueError):
 
 
 # Withheld: a data-dependent op error survives a bare decorator, but the signature rejects the
-# out-of-extent argument with ValueError first.
+# out-of-extent argument with ValueError first. Refused too (#1014), since no other call passes that
+# shape, so nothing tells the error from a static one.
 def gather_oob(x):
     return tf.gather(x, 3)
 

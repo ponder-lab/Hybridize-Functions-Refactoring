@@ -9826,14 +9826,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// judged like any other (`gather_oob`'s out-of-range gather survives a bare decorator), a sparse specification's rejection is not
 		// predicted (`sparse_value`), an argument that may be a tensor or `None` does not conform (`mixed`), and a dict against a nested
 		// specification raises `KeyError` (`pair_dict`).
-		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard",
-				"op_error_guard", "gather_oob", "sparse_value", "mixed", "pair_dict")) {
+		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard", "sparse_value",
+				"mixed", "pair_dict")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "`'s guard does not admit the signature's rejection.",
 					Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
 					function.getInferredInputSignatureAbsenceReason());
 			assertTrue("`" + name + "` is still hybridized, with a bare decorator.",
 					function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+
+		// A `tf.errors` guard around an argument of a shape no other call passes refuses the conversion itself (#1014), since a bare
+		// decorator may raise a static shape error at trace time. `op_error_guard`'s does; `gather_oob`'s out-of-range gather is
+		// data-dependent and would survive, but nothing tells it from a static error. Their signatures are still judged, and withheld.
+		for (String name : List.of("op_error_guard", "gather_oob")) {
+			Function function = findFunction(functions, name);
+			assertNotNull("`" + name + "` is refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			function.inferInputSignature();
+			assertEquals("`" + name + "`'s guard does not admit the signature's rejection either.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+					function.getInferredInputSignatureAbsenceReason());
 		}
 
 		// The guard admits the rejection (`value_guard`, `tuple_guard`, `broad_guard`, `nested_type_guard`, `nested_value_guard`), or the
@@ -9843,6 +9857,122 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("The tuple of classes is the guard's, not its pattern.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
 				findFunction(functions, "tuple_guard").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A call declared to fail with a TensorFlow error can raise another exception once the function is hybridized, since a bare decorator
+	 * traces the function with the argument's own shape and dtype, and an operation whose static check fails on them raises at trace time:
+	 * {@code ValueError} for a shape, {@code TypeError} for a dtype. The conversion is refused where the declared failure's argument has a
+	 * type no unguarded call passes, or one that is not fully known, and the guard does not admit the exception tracing would raise. Each
+	 * case was checked against TensorFlow 2.9.3 by running its guarded call eagerly and under a bare decorator. The refusal is the bare
+	 * decorator's, so it holds with inference off and on.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedException() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			// A shape no other call passes (`rank_mismatch`, `pytest_rank_mismatch`, and `shape_differs_assert`, whose data-dependent
+			// failure would survive but is not told from a static one), a dtype no other call passes under a guard admitting only the
+			// shape's `ValueError` (`dtype_mismatch`), a dict whose elements are not the argument's type (`from_dict`), no call that is
+			// not declared to fail (`only_declared`), and a type the other call passes that is not fully known (`masked`).
+			for (String name : List.of("rank_mismatch", "pytest_rank_mismatch", "shape_differs_assert", "dtype_mismatch", "from_dict",
+					"only_declared", "masked")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			// Arguments of the types the other calls pass, whose failures are therefore the kernel's (`same_shape_assert`,
+			// `same_shape_gather`, and `same_shape_default`, whose parameter that is not a tensor is not compared), a guard admitting what
+			// tracing raises (`admits_value`, `admits_any`, `admits_type`), a guard naming no `tf.errors` class (`no_op_error`), and one
+			// naming only a class a failed static check is not raised as (`out_of_range_guard`).
+			for (String name : List.of("same_shape_assert", "same_shape_gather", "same_shape_default", "admits_value", "admits_any",
+					"admits_type", "no_op_error", "out_of_range_guard")) {
+				Function function = findFunction(functions, name);
+				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
+						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+				assertNull("`" + name + "` is not refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+						PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			}
+
+			// A function that is already hybrid is not converted, so its decorator changes nothing.
+			Function hybrid = findFunction(functions, "already_hybrid");
+			assertTrue("`already_hybrid` is hybrid.", hybrid.isHybrid());
+			assertNull("`already_hybrid` is not refused.", hybrid.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		}
+	}
+
+	/**
+	 * The Keras shape of {@link #testTracingChangesGuardedException()}: {@code LanguageModel.call} is reached from the test through a
+	 * layer's {@code __call__}, and the call declared to fail passes a dict whose element fails {@code tf.matmul}'s static shape check. On
+	 * TensorFlow 2.9.3 the test passes eagerly and fails under a bare decorator, with {@code ValueError} at trace time in place of the
+	 * declared {@code InvalidArgumentError}, so the conversion is refused.
+	 * <p>
+	 * The guard is seen because the analysis dispatches {@code model(...)} through the synthesized {@code Layer.__call__} trampoline,
+	 * skipping the user's {@code Model.__call__} override, so the walk to the guarded frame hops only synthetic code. Were the override
+	 * resolved, the walk would stop at its frame, which is outside the guard: a guard in a caller further up the stack is not seen. This
+	 * test is what flags that change.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedKerasMethod() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Function call = findFunction(this.getFunctions("test_A"), "LanguageModel.call");
+			assertNotNull("`LanguageModel.call` is refused with inference " + (infer ? "on." : "off."), call.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			assertFalse("`LanguageModel.call` is not hybridized.", call.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * The program-code counterpart of {@link #testTracingChangesGuardedException()}: a {@code try} statement around a call dispatches on
+	 * the exception the call raises, but declares nothing about whether it raises, so its {@code except} clauses distinguish a TensorFlow
+	 * error from what tracing raises in either direction. Each case was checked against TensorFlow 2.9.3 by running the program eagerly and
+	 * with a bare decorator on the function, comparing which clause handles the call.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesHandledException() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			// A clause catching the eager error but not the traced one (`square`), the same clause in the function's own body
+			// (`safe_square`), a clause catching the traced error but not the eager one (`reverse`), the eager one named through an
+			// assigned name (`named_clause`), a clause whose classes are not read (`computed_clause`), and, in the function's own body, a
+			// clause the graph's data-dependent error bypasses: `Exception` (`body_broad`), a bare `except` (`body_bare`), and one naming
+			// the kernel's error and both traced ones (`body_tuple`), and one whose classes are not read (`body_computed`).
+			for (String name : List.of("square", "safe_square", "reverse", "named_clause", "computed_clause", "body_broad", "body_bare",
+					"body_tuple", "body_computed")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			// A data-dependent error on the shapes an unguarded call passes (`pick`), a clause catching both (`caught_either_way`), a bare
+			// `except` (`caught_by_bare`), an inner clause catching both before an outer one catching one (`caught_inside`), a call in an
+			// `else` clause, which the statement does not guard (`in_else`), a function defined but not called inside a `try` statement
+			// (`defined_in_try`), a `try` statement in the function's own body around a builtin (`scaled`), and a clause naming only
+			// `OutOfRangeError`, which a failed static check is not raised as (`loop_guarded`).
+			for (String name : List.of("pick", "caught_either_way", "caught_by_bare", "caught_inside", "in_else", "defined_in_try",
+					"scaled", "loop_guarded")) {
+				Function function = findFunction(functions, name);
+				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
+						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+				assertNull("`" + name + "` is not refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+						PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			}
+		}
 	}
 
 	/**
@@ -12152,7 +12282,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code with} rather than of the context manager, and which no fixture pinned at all before this one.
 	 * <p>
 	 * Runtime-verified on the pinned TF 2.9.3: {@code tf.matmul} of a rank-1 tensor raises the {@code InvalidArgumentError} both guards
-	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results.
+	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results. Under a bare {@code tf.function} it raises
+	 * {@code ValueError} at trace time instead, so both functions are refused (#1014).
 	 */
 	@Test
 	public void testExpectedFailureGuardRegion() throws Exception {
@@ -12164,14 +12295,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Both call sites are observed, so both shapes are seen.", 2, x.getTensorTypes().size());
 		assertEquals("Only the call inside the block is a declared failure, so only its shape is set aside.", 1,
 				x.getConformingTensorTypes().size());
-		// A square spec survives the reduction, but it would reject the declared failure's rank-1 argument with `ValueError` before the
-		// body's `InvalidArgumentError`, so it is withheld (#1005). The withholding is reached only from a reduced spec, so it still
-		// witnesses that the guard region set the failure aside. Under any hybridization this guarded test fails: a bare decorator also
-		// raises `ValueError` at trace time, from the static shape check. The tool cannot tell that static error from a data-dependent
-		// one that survives a bare decorator, so it withholds.
+		// Under any hybridization this guarded test fails: a bare decorator raises `ValueError` at trace time, from the static shape
+		// check, in place of the body's `InvalidArgumentError`, so the conversion is refused (#1014).
+		assertNotNull("A bare decorator would change the declared failure's exception.", afterGuard.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		assertFalse("`after_guard` is not hybridized.", afterGuard.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A square spec survives the reduction, and it would reject the declared failure's rank-1 argument with `ValueError` too (#1005).
+		// The withholding is reached only from a reduced spec, so it still witnesses that the guard region set the failure aside.
+		afterGuard.inferInputSignature();
 		assertEquals("The reduced spec would change the declared failure's exception.",
 				Map.of(x, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), afterGuard.getBlockingParameterReasons());
-		assertEquals("`after_guard` converts (P1).", P1, afterGuard.getPassingPrecondition());
 
 		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
 		// first arm to pin that guard form at all.
@@ -12180,6 +12314,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("Both call sites are observed under the pytest spelling too.", 2, pytestParameter.getTensorTypes().size());
 		assertEquals("Only the call inside the `pytest.raises` block is set aside.", 1, pytestParameter.getConformingTensorTypes().size());
+		assertNotNull("A bare decorator would change that declared failure's exception too.", pytestGuard.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		pytestGuard.inferInputSignature();
 		assertEquals("The reduced spec would change that declared failure's exception too.",
 				Map.of(pytestParameter, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
 				pytestGuard.getBlockingParameterReasons());
@@ -12233,13 +12370,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				inputs.isTensorContainer());
 		assertEquals("The guarded node's bare tensor is left out of the extraction, so the tuple's structure survives it.", 2,
 				inputs.getContainerElementTypes().size());
-		// The nested spec the conforming caller supports is recovered, but it would reject the declared failure's bare tensor with
-		// `TypeError` before the body's `InvalidArgumentError`, so it is withheld (#1005). The withholding is reached only from the reduced
-		// nested spec, so it still witnesses the recovery. Under a bare decorator this guarded test fails as well (`ValueError` at trace
-		// time); the tool cannot tell that static error from a data-dependent one, so it withholds.
+		// Under a bare decorator this guarded test fails (`ValueError` at trace time, from the static shape check on the bare tensor's
+		// slices), so the conversion is refused (#1014).
+		assertNotNull("A bare decorator would change the declared failure's exception.",
+				cin.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		assertFalse("`cin` is not hybridized.", cin.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		// The nested spec the conforming caller supports is recovered, and it would reject the declared failure's bare tensor with
+		// `TypeError` too (#1005). The withholding is reached only from the reduced nested spec, so it still witnesses the recovery.
+		cin.inferInputSignature();
 		assertEquals("The recovered nested spec would change the declared failure's exception.",
 				Map.of(inputs, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), cin.getBlockingParameterReasons());
-		assertEquals("`cin` converts (P1).", P1, cin.getPassingPrecondition());
 
 		Function usePair = findFunction(functions, "use_pair");
 		Parameter pair = usePair.getParameters().get(0);

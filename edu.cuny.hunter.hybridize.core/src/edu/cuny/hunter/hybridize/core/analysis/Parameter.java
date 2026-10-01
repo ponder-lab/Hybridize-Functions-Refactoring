@@ -199,12 +199,12 @@ public final class Parameter {
 	private Set<CGNode> untypedConformingNodes = Set.of();
 
 	/**
-	 * This parameter's {@link TensorType}s in each expected-failure node of the owning function
-	 * ({@link Function#getExpectedFailureNodes()}), the evidence a specification is <em>not</em> derived from (#888). Read afterwards to
-	 * tell whether the specification would reject the argument a declared failure passes, and so change the exception the failure is
-	 * declared to raise (#1005). A node in which the parameter is untyped is absent. Populated alongside {@link #conformingTensorTypes}.
+	 * This parameter's {@link TensorType}s in each call-graph node of the owning function. Read afterwards to tell whether a specification
+	 * would reject the argument a declared failure passes, and so change the exception the failure is declared to raise (#1005), and
+	 * whether that argument differs from what the other calls pass, so that tracing it may raise a different exception (#1014). A node in
+	 * which the parameter is untyped is absent. Populated alongside {@link #conformingTensorTypes}.
 	 */
-	private Map<CGNode, Set<TensorType>> expectedFailureTensorTypes = Map.of();
+	private Map<CGNode, Set<TensorType>> tensorTypesByNode = Map.of();
 
 	/**
 	 * True iff some caller passes this parameter an argument the tensor-type analysis did not type in the caller's own context, at a call
@@ -1350,7 +1350,7 @@ public final class Parameter {
 		Set<TensorType> conforming = new HashSet<>();
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
 		Set<CGNode> typed = new HashSet<>();
-		Map<CGNode, Set<TensorType>> guarded = new HashMap<>();
+		Map<CGNode, Set<TensorType>> byNode = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
@@ -1367,15 +1367,15 @@ public final class Parameter {
 					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
 					if (!excluded.contains(localPointerKey.getNode()))
 						conforming.addAll(tensorVariable.getTypes());
-					else
-						guarded.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
+
+					byNode.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
 				}
 			}
 		}
 
 		this.setTensorTypes(unmodifiableSet(result));
 		this.conformingTensorTypes = unmodifiableSet(conforming);
-		this.expectedFailureTensorTypes = unmodifiableMap(guarded);
+		this.tensorTypesByNode = unmodifiableMap(byNode);
 
 		// The iterator reports only variables it typed, so a node where the parameter is untyped contributes nothing to the union above
 		// rather than widening it. That node is a calling context the function is reached in, and what it passes is unknown, so the
@@ -1492,14 +1492,31 @@ public final class Parameter {
 	}
 
 	/**
-	 * This parameter's {@link TensorType}s in the expected-failure node {@code node} of the owning function, the argument a declared
+	 * This parameter's {@link TensorType}s in the call-graph node {@code node} of the owning function, such as the argument a declared
 	 * failure passes there (#1005).
 	 *
-	 * @param node An expected-failure node of the owning function.
+	 * @param node A call-graph node of the owning function.
 	 * @return The types observed for this parameter in {@code node}; empty when it is untyped there.
 	 */
-	Set<TensorType> getExpectedFailureTensorTypes(CGNode node) {
-		return this.expectedFailureTensorTypes.getOrDefault(node, Set.of());
+	Set<TensorType> getTensorTypes(CGNode node) {
+		return this.tensorTypesByNode.getOrDefault(node, Set.of());
+	}
+
+	/**
+	 * This parameter's {@link TensorType}s in the call-graph nodes of the owning function other than {@code nodes}, such as what the calls
+	 * not declared to fail pass it (#1014).
+	 *
+	 * @param nodes Call-graph nodes of the owning function to leave out.
+	 * @return The types observed for this parameter in every other node.
+	 */
+	Set<TensorType> getTensorTypesOutside(Set<CGNode> nodes) {
+		Set<TensorType> ret = new HashSet<>();
+
+		for (Map.Entry<CGNode, Set<TensorType>> entry : this.tensorTypesByNode.entrySet())
+			if (!nodes.contains(entry.getKey()))
+				ret.addAll(entry.getValue());
+
+		return ret;
 	}
 
 	/**
