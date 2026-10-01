@@ -536,7 +536,7 @@ public class Util {
 			boolean any = false;
 
 			for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(receiver)) {
-				if (!PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.getConcreteType().getName().toString()))
+				if (!PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.concreteType().getName().toString()))
 					return false;
 
 				any = true;
