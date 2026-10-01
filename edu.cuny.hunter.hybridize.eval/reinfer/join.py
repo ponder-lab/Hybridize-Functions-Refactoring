@@ -347,18 +347,18 @@ def ground_truth_for(ground_truth, record, records):
     entry = (ground_truth or {}).get(record["qualname"])
     if entry is None:
         return None, None
-    for field in ("file", "definition_ordinal"):
-        if field in entry and entry[field] != record[field]:
-            return None, None
-    twins = sum(
+    selectors = [f for f in ("file", "definition_ordinal") if f in entry]
+    if any(entry[f] != record[f] for f in selectors):
+        return None, None
+    candidates = sum(
         1
         for r in records
         if r["qualname"] == record["qualname"]
-        and ("file" not in entry or r["file"] == record["file"])
+        and all(r[f] == entry[f] for f in selectors)
     )
-    if twins > 1 and "definition_ordinal" not in entry:
+    if candidates > 1:
         return None, (
-            f"ground truth for {record['qualname']} does not say which of the {twins} "
+            f"ground truth for {record['qualname']} does not say which of the {candidates} "
             "stripped functions that share that name it describes"
         )
     return entry, None

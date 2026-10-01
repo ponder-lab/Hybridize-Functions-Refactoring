@@ -558,6 +558,20 @@ class GroundTruthIdentityTest(unittest.TestCase):
         truth = {"f": {"structure": {}, "file": "a.py"}}
         self.assertIsNone(join.ground_truth_for(truth, records[0], records)[0])
 
+    def test_an_ordinal_alone_does_not_tell_twins_in_different_files_apart(self):
+        records = [self.record("a.py", 1), self.record("b.py", 1)]
+        truth = {"f": {"structure": {}, "definition_ordinal": 1}}
+        for record in records:
+            self.assertIsNone(join.ground_truth_for(truth, record, records)[0])
+
+    def test_an_ordinal_alone_tells_twins_in_one_file_apart(self):
+        records = [self.record("a.py", 1), self.record("a.py", 2)]
+        truth = {"f": {"structure": {}, "definition_ordinal": 2}}
+        self.assertEqual(
+            join.ground_truth_for(truth, records[0], records), (None, None)
+        )
+        self.assertIs(join.ground_truth_for(truth, records[1], records)[0], truth["f"])
+
     def test_a_unique_name_needs_no_qualification(self):
         records = [self.record("a.py", 1)]
         truth = {"f": {"structure": {}}}
