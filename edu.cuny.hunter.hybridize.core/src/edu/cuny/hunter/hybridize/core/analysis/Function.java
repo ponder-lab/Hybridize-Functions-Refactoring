@@ -4393,7 +4393,7 @@ public class Function {
 	 * Blocks {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is reached in a conforming
 	 * calling context in which the tensor-type analysis associated no type with it (#998). Asked only once the flat reduction has a
 	 * specification to store, so it relabels no other absence: a parameter whose typed contexts already fail to reduce keeps that reason.
-	 * The guarantee is per call-graph node: two calls that the call graph merges into one node are one context here.
+	 * Untyped contexts are found per call-graph node and per call site into one (see {@link Parameter#hasUntypedConformingContext()}).
 	 *
 	 * @param param The parameter whose reduced specification is about to be stored.
 	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.

@@ -13212,5 +13212,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A parameter whose typed contexts do not reduce keeps its own reason.",
 				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), mixedDtypes.getInferredInputSignatureAbsenceReason());
 		assertTrue("It does reach an untyped context.", mixedDtypes.getParameters().get(0).hasUntypedConformingContext());
+
+		// Under depth-1 call strings `inner` has one node, typed from the concrete call, so only the caller's untyped argument shows the
+		// pickled call.
+		Function outer = findFunction(functions, "outer");
+		Function inner = findFunction(functions, "inner");
+		assertEquals("The caller withholds on its own untyped node.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				outer.getInferredInputSignatureAbsenceReason());
+		assertEquals("The callee withholds on the caller's untyped argument.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), inner.getInferredInputSignatureAbsenceReason());
+
+		// A specification covering `mask` rejects the call that omits it, so the omission is an untyped context.
+		Function optional = findFunction(functions, "optional");
+		assertEquals("The omitted tensor parameter withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), optional.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only `mask` blocks.", List.of("mask"),
+				optional.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		// Through a receiver trampoline, with the argument passed by keyword, a typed caller is still seen as typed.
+		Function buildMask = findFunction(functions, "Encoder.build_mask");
+		assertEquals("Typed calls through a trampoline keep their specification.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
+
 }
