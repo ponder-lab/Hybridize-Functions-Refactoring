@@ -117,7 +117,7 @@ def strip_subject(subject, work):
     for function in subject["functions"]:
         by_file.setdefault(function["file"], []).append(function)
     for file, functions in sorted(by_file.items()):
-        for record in strip.strip_file(os.path.join(work, file), functions):
+        for record in strip.strip_file(os.path.join(work, file), functions, root=work):
             record["file"] = file
             records.append(record)
     return records

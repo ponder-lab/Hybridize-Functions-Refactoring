@@ -141,6 +141,25 @@ class StripEdgeTest(unittest.TestCase):
         self.assertIn(b"jit_compile=True)", data)
         self.assertNotIn(b"input_signature", data)
 
+    def test_a_comment_before_a_final_keyword_survives(self):
+        data, _ = self.strip("""
+            @tf.function(
+                jit_compile=True,  # fast
+                input_signature=[tf.TensorSpec([2])])
+            def f(x):
+                return x
+            """)
+        self.assertIn(b"jit_compile=True  # fast", data)
+        self.assertNotIn(b"input_signature", data)
+
+    def test_a_comma_inside_a_string_is_not_the_separator(self):
+        data, _ = self.strip("""
+            @tf.function(experimental_implements="a, b", input_signature=[tf.TensorSpec([2])])
+            def f(x):
+                return x
+            """)
+        self.assertIn(b'@tf.function(experimental_implements="a, b")', data)
+
     def test_a_line_inside_a_multiline_header_names_the_definition(self):
         tree = strip.parse(source("@tf.function\ndef f(a,\n      b):\n    return a\n"))
         self.assertEqual(strip.find_definition(tree, "f", line=3)[0], 1)
@@ -175,6 +194,25 @@ class StripFileGuardTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 strip.strip_file(link, [{"qualname": "f", "line": 2}])
             with open(target, "rb") as f:
+                self.assertEqual(f.read(), self.TEXT)
+
+    def test_a_file_under_a_linked_directory_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            outside, work = os.path.join(directory, "outside"), os.path.join(
+                directory, "work"
+            )
+            os.makedirs(outside)
+            os.makedirs(work)
+            with open(os.path.join(outside, "m.py"), "wb") as f:
+                f.write(self.TEXT)
+            os.symlink(outside, os.path.join(work, "src"))
+            with self.assertRaises(ValueError):
+                strip.strip_file(
+                    os.path.join(work, "src", "m.py"),
+                    [{"qualname": "f", "line": 2}],
+                    root=work,
+                )
+            with open(os.path.join(outside, "m.py"), "rb") as f:
                 self.assertEqual(f.read(), self.TEXT)
 
     def test_a_function_listed_twice_is_refused(self):

@@ -255,14 +255,15 @@ def relate_signature(removed, inferred, axis):
     relations = [relate_entry(r, i, axis) for r, i in zip(removed, inferred)]
     if any(r is None for r in relations):
         return None
-    if spec.INCOMPARABLE in relations:
-        return spec.INCOMPARABLE
-    if UNDETERMINED in relations:
-        return UNDETERMINED
+    # The determined relations first: if they already combine to INCOMPARABLE, no value of an
+    # undetermined one could change that.
     result = spec.AGREEMENT
     for r in relations:
-        result = spec.combine(result, r)
-    return result
+        if r != UNDETERMINED:
+            result = spec.combine(result, r)
+    if result == spec.INCOMPARABLE:
+        return spec.INCOMPARABLE
+    return UNDETERMINED if UNDETERMINED in relations else result
 
 
 def _relations(removed, inferred):

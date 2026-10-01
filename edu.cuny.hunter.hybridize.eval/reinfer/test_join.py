@@ -150,6 +150,21 @@ class AmbiguousDtypeTest(unittest.TestCase):
             join.relate_entry(removed, self.INFERRED, "both"), spec.INCOMPARABLE
         )
 
+    def test_determined_parameters_that_conflict_are_incomparable(self):
+        removed = [
+            spec.leaf("float32", [2]),
+            spec.leaf("float32", [None]),
+            spec.sequence([spec.leaf("float32", [2]), spec.leaf("int32", [3])]),
+        ]
+        inferred = [
+            spec.leaf("float32", [None]),
+            spec.leaf("float32", [2]),
+            self.INFERRED,
+        ]
+        self.assertEqual(
+            join.relate_signature(removed, inferred, "both"), spec.INCOMPARABLE
+        )
+
     def test_an_unambiguous_signature_relates_as_the_order_does(self):
         removed, inferred = [spec.leaf("float32", [2, 3])], [
             spec.leaf("float32", [None, 3])

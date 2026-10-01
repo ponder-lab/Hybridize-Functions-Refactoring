@@ -12,7 +12,9 @@ one keyword deleted must equal the edited module, node for node.
 
 import ast
 import collections
+import io
 import os
+import tokenize
 import warnings
 
 SIGNATURE_KEYWORD = "input_signature"
@@ -125,34 +127,60 @@ def _end(node):
 
 
 _SPACE = (b" ", b"\t")
+_NON_CODE = (
+    tokenize.COMMENT,
+    tokenize.NL,
+    tokenize.NEWLINE,
+    tokenize.INDENT,
+    tokenize.DEDENT,
+)
 
 
-def _comma_after(data, position):
-    """The offset just past the comma that follows ``position``, skipping whitespace and comments, or
-    None if something else comes first."""
-    while position < len(data):
-        char = data[position : position + 1]
-        if char in _SPACE or char in (b"\n", b"\r"):
-            position += 1
-        elif char == b"#":
-            while position < len(data) and data[position : position + 1] not in (
-                b"\n",
-                b"\r",
-            ):
-                position += 1
-        elif char == b",":
-            return position + 1
-        else:
+def _tokens(data):
+    """Every token of ``data`` with its byte offsets. The tokenizer reports columns in characters, so
+    each is converted through its line's UTF-8 encoding, matching the AST's byte offsets.
+    """
+    offsets = _Offsets(data)
+    lines = data.decode("utf-8").splitlines(keepends=True)
+
+    def at(row, col):
+        return (
+            offsets.at(row, len(lines[row - 1][:col].encode("utf-8")))
+            if row <= len(lines)
+            else len(data)
+        )
+
+    return [
+        (t.type, t.string, at(*t.start), at(*t.end))
+        for t in tokenize.tokenize(io.BytesIO(data).readline)
+        if t.type != tokenize.ENCODING
+    ]
+
+
+def _comma_after(tokens, position):
+    """The end offset of the comma that follows ``position`` with only comments and line breaks
+    between, or None."""
+    for kind, text, begin, end in tokens:
+        if begin < position:
+            continue
+        if kind == tokenize.OP and text == ",":
+            return end
+        if kind not in _NON_CODE:
             return None
     return None
 
 
-def _comma_before(data, position):
-    """The offset of the comma that precedes ``position``, skipping whitespace (not comments), or None."""
-    position -= 1
-    while position >= 0 and data[position : position + 1] in _SPACE + (b"\n", b"\r"):
-        position -= 1
-    return position if position >= 0 and data[position : position + 1] == b"," else None
+def _comma_before(tokens, position):
+    """The start offset of the comma that precedes ``position`` with only comments and line breaks
+    between, or None."""
+    for kind, text, begin, end in reversed(tokens):
+        if end > position:
+            continue
+        if kind == tokenize.OP and text == ",":
+            return begin
+        if kind not in _NON_CODE:
+            return None
+    return None
 
 
 def strip_keyword(data, call, keyword):
@@ -164,11 +192,12 @@ def strip_keyword(data, call, keyword):
     anything after a line break, comments included, stays.
     """
     offsets = _Offsets(data)
+    tokens = _tokens(data)
     elements = sorted(list(call.args) + list(call.keywords), key=_start)
     index = elements.index(keyword)
     start, finish = offsets.at(*_start(keyword)), offsets.at(*_end(keyword))
     if index + 1 < len(elements):
-        comma = _comma_after(data, finish)
+        comma = _comma_after(tokens, finish)
         if comma is None:
             raise ValueError("no comma after the keyword")
         end = comma
@@ -178,10 +207,17 @@ def strip_keyword(data, call, keyword):
             end = comma  # a comment between keyword and comma: cut only up to the comma, not beyond.
         begin = start
     elif index > 0:
-        comma = _comma_before(data, start)
+        comma = _comma_before(tokens, start)
         if comma is None:
             raise ValueError("no comma before the keyword")
-        begin, end = comma, finish
+        if not any(
+            kind == tokenize.COMMENT and comma < begin_ < start
+            for kind, _, begin_, _ in tokens
+        ):
+            begin, end = comma, finish
+        else:
+            # A comment sits between the comma and the keyword: cut the two apart, so it stays.
+            return data[:comma] + data[comma + 1 : start] + data[finish:]
     else:
         begin, end = offsets.at(*_start(keyword)), offsets.at(*_end(keyword))
         rest = end
@@ -287,15 +323,22 @@ def strip_function(data, qualname, line=None, ordinal=None):
     return new_data, record
 
 
-def strip_file(path, functions):
+def strip_file(path, functions, root=None):
     """Strip each ``{"qualname", "line"}`` in ``functions`` from the file at ``path``, in place.
 
     Functions are located and stripped one at a time against the file as it stands, keyed by ordinal
     after the first lookup, so an earlier strip moving lines cannot misdirect a later one.
     """
-    if os.path.islink(path):
-        # Writing through a link could reach outside the copy, into the checkout it was made from.
-        raise ValueError(f"{path} is a symbolic link; refusing to strip through it")
+    # Writing through a link, of the file or of any directory above it, could reach outside the copy,
+    # into the checkout it was made from. So the file must resolve to a place inside ``root``.
+    if os.path.islink(path) or (
+        root is not None
+        and os.path.commonpath([os.path.realpath(path), os.path.realpath(root)])
+        != os.path.realpath(root)
+    ):
+        raise ValueError(
+            f"{path} resolves outside {root}; refusing to strip through a link"
+        )
     with open(path, "rb") as f:
         data = f.read()
     located = []
