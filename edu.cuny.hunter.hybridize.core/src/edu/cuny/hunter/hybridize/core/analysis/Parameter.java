@@ -173,6 +173,15 @@ public final class Parameter {
 	private Boolean conformingTensorContainer;
 
 	/**
+	 * Whether a conforming call passes this parameter a container that a TensorFlow library summary allocated, such as the list
+	 * {@code tf.unstack} or {@code tf.split} returns. Where the analysis reads no element structure for such a container, the tensor
+	 * analysis types the container itself as the one piece the summary stands in for every element, so a flat specification describes a
+	 * piece rather than the list the function receives (#1012). A summary whose element structure is read, such as a directory iterator's
+	 * batch tuple, reduces as an ordinary container.
+	 */
+	private boolean receivesLibraryContainer;
+
+	/**
 	 * This parameter's {@link TensorType}s from the call-graph nodes that are <em>not</em> expected-failure contexts
 	 * ({@link Function#getExpectedFailureNodes()}), which is the evidence a specification may be derived from (#888). Equal to
 	 * {@link #getTensorTypes()} whenever no node is excluded, which is the overwhelmingly common case. Populated alongside it by
@@ -404,6 +413,44 @@ public final class Parameter {
 	 */
 	public Boolean isConformingTensorContainer() {
 		return this.conformingTensorContainer;
+	}
+
+	/**
+	 * Returns whether a conforming call passes this parameter a container a TensorFlow library summary allocated, whose element structure
+	 * the analysis does not model (#1012).
+	 *
+	 * @return {@code true} when such a container reaches this parameter from a conforming call.
+	 */
+	public boolean receivesLibraryContainer() {
+		return this.receivesLibraryContainer;
+	}
+
+	/**
+	 * Whether a container allocated by a TensorFlow library node reaches the parameter at {@code paramInx} in any of {@code nodes}.
+	 *
+	 * @param paramInx The parameter's index.
+	 * @param nodes The call-graph nodes to read the parameter in.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @return {@code true} when such a container reaches the parameter.
+	 */
+	private static boolean receivesLibraryContainer(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey))
+				if ((instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey)
+						&& Util.isContainerType(instanceKey.concreteType().getReference())
+						&& Util.isTensorFlowNode(getAllocationSiteInNode(instanceKey).getNode()))
+					return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -1486,6 +1533,7 @@ public final class Parameter {
 					// verdict below is TRUE either way, so this asks a further question about an already tensor-typed parameter and
 					// moves no precondition; what it changes is the specification the reduction may write.
 					this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					this.receivesLibraryContainer = receivesLibraryContainer(this.getIndex(), this.conformingNodes(nodes), builder);
 
 					if (this.tensorContainer)
 						// The extraction reads the conforming nodes alone, on the same ground the tensor types do: a value passed by a
@@ -1503,6 +1551,7 @@ public final class Parameter {
 				// Phase 3: check for containers of tensors.
 				boolean isContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 				this.tensorContainer = isContainer;
+				this.receivesLibraryContainer = receivesLibraryContainer(this.getIndex(), this.conformingNodes(nodes), builder);
 				if (isContainer) {
 					// Surface the elements' types for the nested-spec reduction (#781); the boolean verdict stands regardless of whether
 					// the container form is one the reduction models. The extraction reads the conforming nodes alone, on the same ground
