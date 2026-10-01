@@ -834,6 +834,33 @@ public final class Parameter {
 	}
 
 	/**
+	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
+	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
+	 * whether the argument is a tensor.
+	 *
+	 * @param paramInx The index of the parameter under question.
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
+	 * @param builder The {@link CallGraphBuilder}.
+	 * @return True iff the parameter has an abstract value in some node.
+	 */
+	private static boolean hasAbstractValue(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			if (builder.getPointerAnalysis().getPointsToSet(pointerKey).iterator().hasNext())
+				return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Returns true iff the given parameter represents a container in the given {@link TensorTypeAnalysis}.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
@@ -1472,7 +1499,8 @@ public final class Parameter {
 			// determination. With the function absent from it, both phases were SKIPPED and nothing was concluded at all. They are
 			// indistinguishable in the verdict, which is what #971 is about, so the basis records which one happened.
 			this.tensorClassificationBasis = nodes.isEmpty() ? TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN
-					: TensorClassificationBasis.ANALYZED_NOT_TENSOR;
+					: hasAbstractValue(this.getIndex(), nodes, builder) ? TensorClassificationBasis.ANALYZED_NOT_TENSOR
+							: TensorClassificationBasis.NO_ABSTRACT_VALUE;
 
 			return this.tensor = FALSE;
 		} finally {

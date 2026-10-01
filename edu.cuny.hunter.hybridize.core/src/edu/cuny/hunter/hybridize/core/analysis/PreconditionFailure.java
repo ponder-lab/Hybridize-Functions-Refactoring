@@ -209,7 +209,18 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
-	NARROWING_WOULD_DROP_SPEC_TEXT(30);
+	NARROWING_WOULD_DROP_SPEC_TEXT(30),
+
+	/**
+	 * A hybrid function that a hybrid-to-eager rule (no tensor parameter, a primitive parameter, or no tensor computation) would otherwise
+	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. The signature converts each argument to its declared
+	 * tensor type at the boundary, which overrides how the analysis types the parameters those rules read, and removing the decorator would
+	 * delete the boundary the signature enforces and the single concrete function it pins (which a SavedModel export relies on, even when
+	 * the signature is empty and converts nothing). The function selects no transformation.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997">Issue 997</a>
+	 */
+	HAS_SUPPLIED_INPUT_SIGNATURE(31);
 
 	static {
 		// check that the codes are unique.

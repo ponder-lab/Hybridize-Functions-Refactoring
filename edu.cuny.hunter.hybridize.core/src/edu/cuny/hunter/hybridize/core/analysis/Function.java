@@ -1236,6 +1236,13 @@ public class Function {
 	private Boolean hasTensorComputation;
 
 	/**
+	 * True iff {@link #hasTensorComputation} is {@code false}, but the scan met a call it couldn't resolve that may compute tensors. The
+	 * absence of a tensor computation is then not established, so the hybrid-to-eager benefit precondition (P6) does not de-hybridize the
+	 * function. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 */
+	private boolean tensorComputationUnresolved;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under
 	 * {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the precondition
 	 * does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
@@ -1554,14 +1561,24 @@ public class Function {
 						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
 								+ "on every executed path; de-hybridizing it may be beneficial.");
 
-			if (this.getHasTensorParameter() != null && !this.getHasTensorParameter()) {
+			// A supplied `input_signature` keeps the function hybrid where a hybrid-to-eager rule below would otherwise remove it (issue
+			// 997): the rule still runs, side-effect and recursion checks included, but its CONVERT_TO_EAGER decision is replaced by a
+			// HAS_SUPPLIED_INPUT_SIGNATURE failure. See `convertToEagerUnlessSignatureSupplied`.
+
+			// A "no tensor parameter" verdict is an established absence only if every parameter's classification is a determination. One
+			// with no abstract value (an argument produced by an op the analysis doesn't model, such as `"_%d" % i` or `d.get(k)`, or lost
+			// through `wrapper(*args, **kwargs)`) concluded nothing, so the function is kept hybrid and reported as having tensor
+			// parameters that can't be inferred (issue 997).
+			if (FALSE.equals(this.getHasTensorParameter()) && !this.isTensorParameterAbsenceEstablished()
+					&& !this.getHybridizationParameters().hasInputSignatureParam())
+				this.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
+						"Can't infer tensor parameters for this hybrid function: a parameter has no abstract value, so it is kept hybrid.");
+			else if (FALSE.equals(this.getHasTensorParameter())) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addInfo("This hybrid function does not have Python side-effects.");
-					this.addTransformation(CONVERT_TO_EAGER);
-					this.setPassingPrecondition(P2);
-
+					this.convertToEagerUnlessSignatureSupplied(P2);
 				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1573,12 +1590,19 @@ public class Function {
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This hybrid function does not have Python side-effects.");
-						this.addTransformation(CONVERT_TO_EAGER);
-						this.setPassingPrecondition(P3);
+						this.convertToEagerUnlessSignatureSupplied(P3);
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()) {
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && this.isTensorComputationUnresolved())
+						// Not established as barren: a call the analysis could not resolve may compute tensors, and de-hybridizing a
+						// function that does (and possibly relies on graph mode, such as `optimizer.get_gradients`) breaks it (issue 997).
+						// Keep the developer's decorator.
+						this.addInfo(
+								"This hybrid function performs no tensor computation the analysis can see, but it has an unresolved call, so it is kept hybrid.");
+
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()
+							&& !this.isTensorComputationUnresolved()) {
 						// Barren (issue 709): a hybrid function performing no tensor computation gains nothing from graph execution, only
 						// tracing overhead, so de-hybridize it when semantics are preserved (no Python side-effects). This is the
 						// hybrid-to-eager counterpart of the eager-to-hybrid NO_TENSOR_COMPUTATION precondition and a peer of P2/P3.
@@ -1586,8 +1610,7 @@ public class Function {
 
 						if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 							this.addInfo("This hybrid function does not have Python side-effects.");
-							this.addTransformation(CONVERT_TO_EAGER);
-							this.setPassingPrecondition(P6);
+							this.convertToEagerUnlessSignatureSupplied(P6);
 						} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 							this.addFailure(HAS_PYTHON_SIDE_EFFECTS,
 									"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1839,7 +1862,56 @@ public class Function {
 
 		this.hasTensorComputation = performsTensorOp;
 
-		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
+		// No tensor op found is an established absence only if every call the scan passed was resolved; an unresolved call may perform
+		// a computation the scan cannot see.
+		if (!performsTensorOp)
+			this.tensorComputationUnresolved = nodes.stream()
+					.anyMatch(cgNode -> Util.hasUnresolvedCall(cgNode, callGraph, pointerAnalysis));
+
+		LOG.info(this + (performsTensorOp ? " performs a tensor computation."
+				: this.tensorComputationUnresolved ? " performs no tensor computation the analysis can see, but has an unresolved call."
+						: " performs no tensor computation."));
+	}
+
+	/**
+	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
+	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
+	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
+	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @param precondition The precondition the conversion passes when it is selected.
+	 */
+	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
+		if (this.getHybridizationParameters().hasInputSignatureParam())
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE,
+					"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it is not de-hybridized.");
+		else {
+			this.addTransformation(CONVERT_TO_EAGER);
+			this.setPassingPrecondition(precondition);
+		}
+	}
+
+	/**
+	 * True iff every non-{@code self} parameter's tensor classification is a determination, so that a "no tensor parameter" verdict is an
+	 * established absence rather than a lack of evidence. A parameter with no abstract value
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}) or one whose classification didn't run concluded nothing. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @return True iff the parameters' non-tensor classifications are all determinations.
+	 */
+	public boolean isTensorParameterAbsenceEstablished() {
+		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis).noneMatch(b -> b == null
+				|| b == TensorClassificationBasis.NO_ABSTRACT_VALUE || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
+	}
+
+	/**
+	 * True iff no tensor computation was found in this {@link Function}'s body, but the body (transitively) holds a call the call graph
+	 * does not resolve, so the absence is not established.
+	 *
+	 * @return True iff the "no tensor computation" verdict rests on an incomplete scan.
+	 */
+	public boolean isTensorComputationUnresolved() {
+		return this.tensorComputationUnresolved;
 	}
 
 	/**
