@@ -118,6 +118,13 @@ class ExpectedFailureContextAnalysis {
 				"InternalError", "UnavailableError", "DataLossError");
 
 		/**
+		 * The simple names of the {@code tf.errors} classes a static check's failure is raised as eagerly: {@code InvalidArgumentError} and
+		 * its ancestor {@code OpError} (#1014). A shape or dtype that an operation rejects raised {@code InvalidArgumentError} in every
+		 * case measured on TensorFlow 2.9.3, including an operation with no kernel for the dtype.
+		 */
+		private static final Set<String> STATIC_OP_ERROR_NAMES = Set.of("InvalidArgumentError", "OpError");
+
+		/**
 		 * True iff this guard is known to admit the exception named {@code exception}: it names that class, {@code Exception}, or
 		 * {@code BaseException}. An unresolved guard admits nothing.
 		 *
@@ -138,19 +145,29 @@ class ExpectedFailureContextAnalysis {
 		}
 
 		/**
-		 * True iff this guard may be declaring an error a TensorFlow kernel raises: it names a {@code tf.errors} class, or what it admits
-		 * is unknown (#1014).
+		 * True iff this guard may be declaring the error a failed static check is raised as eagerly: it names {@code InvalidArgumentError}
+		 * or {@code OpError}, or what it admits is unknown (#1014). Another {@code tf.errors} class, such as {@code OutOfRangeError}, is
+		 * raised where tracing raises it too.
 		 *
-		 * @return Whether the declared exception may be a kernel's.
+		 * @return Whether the declared exception may be a failed static check's.
 		 */
-		boolean mayAdmitOpError() {
-			return !this.resolved() || this.names().stream().anyMatch(OP_ERROR_NAMES::contains);
+		boolean mayAdmitStaticOpError() {
+			return !this.resolved() || this.names().stream().anyMatch(STATIC_OP_ERROR_NAMES::contains);
 		}
 
 		/**
-		 * True iff this guard is taken to admit the error a TensorFlow kernel raises: it names a {@code tf.errors} class,
-		 * {@code Exception}, or {@code BaseException} (#1014). Naming one {@code tf.errors} class is taken to admit them all, since which
-		 * one a kernel raises is not known.
+		 * True iff this guard is known to admit the error a failed static check is raised as eagerly: it names
+		 * {@code InvalidArgumentError}, {@code OpError}, {@code Exception}, or {@code BaseException} (#1014).
+		 *
+		 * @return Whether the guard admits that error; false when what it admits is unknown.
+		 */
+		boolean admitsStaticOpError() {
+			return this.resolved() && (this.admitsAny() || this.names().stream().anyMatch(STATIC_OP_ERROR_NAMES::contains));
+		}
+
+		/**
+		 * True iff this guard is known to admit some error a TensorFlow kernel raises: it names a {@code tf.errors} class,
+		 * {@code Exception}, or {@code BaseException} (#1014). A bare {@code except} admits every exception.
 		 *
 		 * @return Whether the guard admits a kernel's error; false when what it admits is unknown.
 		 */

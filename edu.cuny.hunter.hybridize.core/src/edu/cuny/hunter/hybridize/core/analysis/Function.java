@@ -1176,9 +1176,8 @@ public class Function {
 	private Map<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> callGuards = Map.of();
 
 	/**
-	 * The exceptions tracing may raise that a {@code try} statement in this eager function's own body treats differently from a TensorFlow
-	 * error, around a call that may run a TensorFlow operation, rendered for the status message; empty when there is none or it was not
-	 * computed (#1014). Converting the function traces its body, so that call would raise the traced exception in place of the kernel's.
+	 * What a {@code try} statement in this eager function's own body dispatches on, around a call that may run a TensorFlow operation, that
+	 * converting the function changes, rendered for the status message; empty when there is none or it was not computed (#1014).
 	 */
 	private Optional<String> bodyHandlerChange = Optional.empty();
 
@@ -1511,8 +1510,7 @@ public class Function {
 												+ "it may raise " + exceptions
 												+ " in place of the TensorFlow error, which the guard treats " + "differently.")
 										.orElseGet(() -> "Can't hybridize a function whose body calls TensorFlow inside a try statement "
-												+ "that treats a TensorFlow error differently from " + this.bodyHandlerChange.get()
-												+ ", which tracing may raise in its place."));
+												+ "that dispatches on " + this.bodyHandlerChange.get() + "."));
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -5200,21 +5198,22 @@ public class Function {
 	}
 
 	/**
-	 * True iff the expected-failure guards {@code declared} around a call may admit the error a kernel raises but not {@code exception},
-	 * which tracing may raise in its place (#1014).
+	 * True iff the expected-failure guards {@code declared} around a call may admit the error a failed static check is raised as eagerly
+	 * but not {@code exception}, which tracing may raise in its place (#1014).
 	 *
 	 * @param declared The expected-failure guards around the call.
 	 * @param exception The simple name of an exception tracing may raise.
 	 * @return Whether the guards distinguish the two.
 	 */
 	private static boolean declaredDistinguishes(List<ExpectedFailureContextAnalysis.Guard> declared, String exception) {
-		return declared.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::mayAdmitOpError)
+		return declared.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::mayAdmitStaticOpError)
 				&& declared.stream().noneMatch(guard -> guard.admits(exception));
 	}
 
 	/**
 	 * True iff the first of the {@code except} clauses {@code handlers} to catch {@code exception}, which tracing may raise, is not the
-	 * first to catch the error a kernel raises (#1014). A clause catching what is unknown may be either.
+	 * first to catch the error a failed static check is raised as eagerly (#1014). A clause catching what is unknown may be either. A
+	 * clause naming only another {@code tf.errors} class, as {@code except tf.errors.OutOfRangeError} around a loop does, catches neither.
 	 *
 	 * @param handlers The {@code except} clauses around the call, in the order Python tries them.
 	 * @param exception The simple name of an exception tracing may raise.
@@ -5227,7 +5226,7 @@ public class Function {
 
 			boolean traced = handler.admits(exception);
 
-			if (traced != handler.admitsOpError())
+			if (traced != handler.admitsStaticOpError())
 				return true;
 
 			if (traced)
@@ -5238,14 +5237,17 @@ public class Function {
 	}
 
 	/**
-	 * The exceptions tracing may raise that a {@code try} statement in {@code nodes}' own code treats differently from a TensorFlow error,
-	 * around a call that may run a TensorFlow operation (#1014). Converting the function traces that code, so such a call raises the traced
-	 * exception where it raised the kernel's, and what its argument is cannot be told from any call outside the {@code try}.
+	 * What a {@code try} statement in {@code nodes}' own code dispatches on, around a call that may run a TensorFlow operation, that
+	 * converting the function changes (#1014). Converting the function makes that code a trace, so the operation no longer runs inside the
+	 * {@code try}: an error its kernel raises is raised when the graph runs, outside the statement, so any clause that may catch a kernel's
+	 * error is bypassed, whatever else it catches. A failed static check is raised at trace time instead, as {@code ValueError} or
+	 * {@code TypeError}, so a clause catching one of those but no kernel's error now catches what it let escape. What the call is passed
+	 * cannot be told from any call outside the {@code try}, so the clauses alone decide.
 	 *
 	 * @param nodes The call-graph nodes of this {@link Function}.
 	 * @param analysis The guard analysis, for the {@code except} clauses around each call.
 	 * @param callGraph The call graph, for each call's targets.
-	 * @return The exceptions, rendered for the status message, or empty when there is no such call.
+	 * @return What the clauses dispatch on, rendered for the status message, or empty when there is no such call.
 	 */
 	private static Optional<String> bodyHandlerChange(Set<CGNode> nodes, ExpectedFailureContextAnalysis analysis, CallGraph callGraph) {
 		for (CGNode node : nodes) {
@@ -5263,11 +5265,19 @@ public class Function {
 				if (handlers.isEmpty())
 					continue;
 
+				if (!mayRunTensorFlow(callGraph, node, invoke.getCallSite()))
+					continue;
+
+				// A clause that cannot be read is caught below, since it distinguishes what tracing raises as well.
+				if (handlers.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::admitsOpError))
+					return Optional.of("a TensorFlow error, which a traced function raises when its graph runs, outside the try statement");
+
 				Set<String> distinguished = Set.of(TRACE_TIME_SHAPE_EXCEPTION, TRACE_TIME_DTYPE_EXCEPTION).stream()
 						.filter(exception -> handlersDistinguish(handlers, exception)).collect(Collectors.toCollection(TreeSet::new));
 
-				if (!distinguished.isEmpty() && mayRunTensorFlow(callGraph, node, invoke.getCallSite()))
-					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
+				if (!distinguished.isEmpty())
+					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or "))
+							+ ", which tracing raises in place of a TensorFlow error");
 			}
 		}
 

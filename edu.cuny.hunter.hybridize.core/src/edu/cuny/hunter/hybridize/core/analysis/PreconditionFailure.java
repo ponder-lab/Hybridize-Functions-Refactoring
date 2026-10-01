@@ -256,15 +256,23 @@ public enum PreconditionFailure {
 	 * The two kinds cannot be told apart from the body, so the conversion is refused where the guarded call's argument for a tensor
 	 * parameter has a shape or dtype that no call outside every guard passes, or one that is not fully known, such as a container or a
 	 * {@code None}, and a guard around the call distinguishes the kernel's error from what tracing would raise. An argument of a type an
-	 * unguarded call passes traced without a static error, so its failure is data-dependent and the function converts. An
-	 * {@code assertRaises} or {@code pytest.raises} block declares that the call raises what it admits, so it distinguishes when it admits
-	 * a {@code tf.errors} class but not what tracing raises; one admitting no {@code tf.errors} class declares an exception that tracing
-	 * raises where the body does. A {@code try} statement declares nothing about whether the call raises, so its {@code except} clauses
-	 * distinguish in either direction: when the first clause to catch what tracing raises is not the first to catch the kernel's error, as
-	 * with {@code except tf.errors.InvalidArgumentError} or {@code except ValueError} alone. A guard admits an exception by naming that
-	 * class, {@code Exception}, or {@code BaseException}, and a bare {@code except} admits every exception. A {@code try} statement in the
-	 * function's own body is the same hazard, around a call into TensorFlow or the program's own code, since converting the function traces
-	 * that call too; no call outside the statement shows what that call is passed, so its clauses alone decide. Unlike
+	 * unguarded call passes traced without a static error, so its failure is data-dependent and the function converts. A failed static
+	 * check is raised eagerly as {@code InvalidArgumentError} in every case measured, so a guard is read for whether it admits that class
+	 * (or its ancestor {@code OpError}); another {@code tf.errors} class, such as the {@code OutOfRangeError} that ends a dataset loop, is
+	 * raised where tracing raises it too. An {@code assertRaises} or {@code pytest.raises} block declares that the call raises what it
+	 * admits, so it distinguishes when it admits {@code InvalidArgumentError} but not what tracing raises; one admitting neither declares
+	 * an exception that tracing raises where the body does. A {@code try} statement declares nothing about whether the call raises, so its
+	 * {@code except} clauses distinguish in either direction: when the first clause to catch what tracing raises is not the first to catch
+	 * {@code InvalidArgumentError}, as with {@code except tf.errors.InvalidArgumentError} or {@code except ValueError} alone. A guard
+	 * admits an exception by naming that class, {@code Exception}, or {@code BaseException}, and a bare {@code except} admits every
+	 * exception.
+	 * <p>
+	 * A {@code try} statement in the function's own body, around a call into TensorFlow or the program's own code, is a hazard of its own,
+	 * since converting the function makes that body a trace. The operation then no longer runs inside the statement: a kernel's error,
+	 * data-dependent or not, is raised when the graph runs, outside it, so any clause that may catch a kernel's error is bypassed, whether
+	 * it names a {@code tf.errors} class, {@code Exception}, or {@code BaseException}, is a bare {@code except}, or cannot be read. A
+	 * clause catching {@code ValueError} or {@code TypeError} but no kernel's error distinguishes as well, since a failed static check now
+	 * reaches it. No call outside the statement shows what the call is passed, so the clauses alone decide. Unlike
 	 * {@link InferenceResult.AbsenceReason#WITHHELD_DECLARED_FAILURE_EXCEPTION}, where only the signature changes the exception and is
 	 * withheld, here the bare decorator changes it, so there is no decoration that preserves the dispatch, and the refusal holds with
 	 * input-signature inference on or off.

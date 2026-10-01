@@ -9889,9 +9889,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			// Arguments of the types the other calls pass, whose failures are therefore the kernel's (`same_shape_assert`,
 			// `same_shape_gather`, and `same_shape_default`, whose parameter that is not a tensor is not compared), a guard admitting what
-			// tracing raises (`admits_value`, `admits_any`, `admits_type`), and a guard naming no `tf.errors` class (`no_op_error`).
+			// tracing raises (`admits_value`, `admits_any`, `admits_type`), a guard naming no `tf.errors` class (`no_op_error`), and one
+			// naming only a class a failed static check is not raised as (`out_of_range_guard`).
 			for (String name : List.of("same_shape_assert", "same_shape_gather", "same_shape_default", "admits_value", "admits_any",
-					"admits_type", "no_op_error")) {
+					"admits_type", "no_op_error", "out_of_range_guard")) {
 				Function function = findFunction(functions, name);
 				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
 						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
@@ -9904,6 +9905,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue("`already_hybrid` is hybrid.", hybrid.isHybrid());
 			assertNull("`already_hybrid` is not refused.", hybrid.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		}
+	}
+
+	/**
+	 * The Keras shape of {@link #testTracingChangesGuardedException()}: {@code LanguageModel.call} is reached from the test through a
+	 * layer's {@code __call__}, and the call declared to fail passes a dict whose element fails {@code tf.matmul}'s static shape check. On
+	 * TensorFlow 2.9.3 the test passes eagerly and fails under a bare decorator, with {@code ValueError} at trace time in place of the
+	 * declared {@code InvalidArgumentError}, so the conversion is refused.
+	 * <p>
+	 * The guard is seen because the analysis dispatches {@code model(...)} through the synthesized {@code Layer.__call__} trampoline,
+	 * skipping the user's {@code Model.__call__} override, so the walk to the guarded frame hops only synthetic code. Were the override
+	 * resolved, the walk would stop at its frame, which is outside the guard: a guard in a caller further up the stack is not seen. This
+	 * test is what flags that change.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedKerasMethod() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Function call = findFunction(this.getFunctions("test_A"), "LanguageModel.call");
+			assertNotNull("`LanguageModel.call` is refused with inference " + (infer ? "on." : "off."), call.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			assertFalse("`LanguageModel.call` is not hybridized.", call.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
 	}
 
@@ -9923,8 +9948,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			// A clause catching the eager error but not the traced one (`square`), the same clause in the function's own body
 			// (`safe_square`), a clause catching the traced error but not the eager one (`reverse`), the eager one named through an
-			// assigned name (`named_clause`), and a clause whose classes are not read (`computed_clause`).
-			for (String name : List.of("square", "safe_square", "reverse", "named_clause", "computed_clause")) {
+			// assigned name (`named_clause`), a clause whose classes are not read (`computed_clause`), and, in the function's own body, a
+			// clause the graph's data-dependent error bypasses: `Exception` (`body_broad`), a bare `except` (`body_bare`), and one naming
+			// the kernel's error and both traced ones (`body_tuple`), and one whose classes are not read (`body_computed`).
+			for (String name : List.of("square", "safe_square", "reverse", "named_clause", "computed_clause", "body_broad", "body_bare",
+					"body_tuple", "body_computed")) {
 				Function function = findFunction(functions, name);
 				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
@@ -9934,9 +9962,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			// A data-dependent error on the shapes an unguarded call passes (`pick`), a clause catching both (`caught_either_way`), a bare
 			// `except` (`caught_by_bare`), an inner clause catching both before an outer one catching one (`caught_inside`), a call in an
 			// `else` clause, which the statement does not guard (`in_else`), a function defined but not called inside a `try` statement
-			// (`defined_in_try`), and a `try` statement in the function's own body around a builtin (`scaled`).
+			// (`defined_in_try`), a `try` statement in the function's own body around a builtin (`scaled`), and a clause naming only
+			// `OutOfRangeError`, which a failed static check is not raised as (`loop_guarded`).
 			for (String name : List.of("pick", "caught_either_way", "caught_by_bare", "caught_inside", "in_else", "defined_in_try",
-					"scaled")) {
+					"scaled", "loop_guarded")) {
 				Function function = findFunction(functions, name);
 				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
 						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));

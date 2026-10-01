@@ -149,6 +149,20 @@ with case.assertRaises(tf.errors.InvalidArgumentError):
     only_declared(tf.ones((3,)))
 
 
+# Converted: the body raises OutOfRangeError itself, where tracing raises it too, and a failed static
+# check is raised as InvalidArgumentError instead, which the guard does not admit.
+def out_of_range_guard(x):
+    if x.shape[0] == 3:
+        raise tf.errors.OutOfRangeError(None, None, "exhausted")
+    return x * 2
+
+
+out_of_range_guard(tf.ones((2,)))
+
+with case.assertRaises(tf.errors.OutOfRangeError):
+    out_of_range_guard(tf.ones((3,)))
+
+
 # Converted: a guard naming no `tf.errors` class declares an exception tracing raises where the body
 # does.
 def no_op_error(x):

@@ -178,3 +178,69 @@ def scaled(x):
 
 
 scaled(tf.ones((2,)))
+
+
+# Refused: once traced, an out-of-range `tf.gather` in the function's own body raises when the graph
+# runs, outside the `try` statement, so even `Exception` no longer catches it.
+def body_broad(x, i):
+    try:
+        return tf.gather(x, i)
+    except Exception:
+        return tf.constant(-1.0)
+
+
+body_broad(tf.ones((5,)), tf.constant(1))
+body_broad(tf.ones((5,)), tf.constant(7))
+
+
+# Refused: the same with a bare `except`.
+def body_bare(x, i):
+    try:
+        return tf.gather(x, i)
+    except:  # noqa: E722
+        return tf.constant(-1.0)
+
+
+body_bare(tf.ones((5,)), tf.constant(1))
+body_bare(tf.ones((5,)), tf.constant(7))
+
+
+# Refused: the same with a clause naming the kernel's error and both traced ones.
+def body_tuple(x, i):
+    try:
+        return tf.gather(x, i)
+    except (tf.errors.InvalidArgumentError, ValueError, TypeError):
+        return tf.constant(-1.0)
+
+
+body_tuple(tf.ones((5,)), tf.constant(1))
+body_tuple(tf.ones((5,)), tf.constant(7))
+
+
+# Refused: the same with a clause whose classes are not read.
+def body_computed(x, i):
+    try:
+        return tf.gather(x, i)
+    except errors_of():
+        return tf.constant(-1.0)
+
+
+body_computed(tf.ones((5,)), tf.constant(1))
+body_computed(tf.ones((5,)), tf.constant(7))
+
+
+# Converted: a failed static check is raised eagerly as InvalidArgumentError, which a clause naming
+# only OutOfRangeError, as around a dataset loop, catches neither eagerly nor traced.
+def loop_guarded(x):
+    return tf.matmul(x, x)
+
+
+loop_guarded(tf.ones((2, 2)))
+
+try:
+    try:
+        loop_guarded(tf.ones((3,)))
+    except tf.errors.OutOfRangeError:
+        pass
+except Exception:
+    pass
