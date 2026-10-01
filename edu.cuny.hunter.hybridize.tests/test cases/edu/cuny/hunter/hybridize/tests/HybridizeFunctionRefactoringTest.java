@@ -13447,11 +13447,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("The callee's container context is untyped through its caller's argument.",
 				findFunction(functions, "pair_inner").getParameters().get(0).hasUntypedContainerContext());
 
-		// A keyword splat names no parameter at the call site, so the caller's argument cannot be aligned with `pair` and only the callee's
-		// own node, which nothing modeled reaches, shows the call.
+		// The analysis does not represent a `**` splat at the call site, which reads as omitting `pair`, so only the callee's own node,
+		// which nothing modeled reaches, shows the call.
 		assertEquals("A splatted call that passes nothing modeled withholds the nested specification.",
 				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
 				findFunction(functions, "pair_splat").getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * A container parameter that withholds on an untyped context in a function whose other parameter needs a dtype pin: without the
+	 * specification no pin can be written, and a bare decorator raises on the pinned argument, so the conversion is declined rather than
+	 * converted bare. {@code pin_typed} is the control, reached only with typed tuples, and keeps both the pin and the nested
+	 * specification.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerPin() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function typed = findFunction(functions, "pin_typed");
+		assertTrue("The control converts.", typed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("The control keeps a specification, which carries the pin.", typed.getInferredInputSignature().isPresent());
+
+		Function mixed = findFunction(functions, "pin_mix");
+		assertEquals("The container withholds on the untyped call.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				mixed.getInferredInputSignatureAbsenceReason());
+		assertFalse("With no specification to carry the pin, a bare decorator would raise, so the conversion is declined.",
+				mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("The decline reports the unwritable pin.",
+				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
 	}
 
 	/**
@@ -13481,5 +13508,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				leading.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
 		assertTrue("Both still hybridize.", trailing.getTransformations().contains(Transformation.CONVERT_TO_HYBRID)
 				&& leading.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A method is reached through a receiver trampoline, which re-issues the call with every argument positional, so the unpack is
+		// visible only at the originating site one frame further up.
+		Function method = findFunction(functions, "M.m");
+		assertEquals("A method's parameter bound by an unpack withholds the specification.", List.of("y"),
+				method.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		assertEquals("Its reason is the untyped context.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
+				method.getInferredInputSignatureAbsenceReason());
+
+		Function plainMethod = findFunction(functions, "M.plain");
+		assertEquals("A method called without an unpack keeps its specification.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				plainMethod.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 }

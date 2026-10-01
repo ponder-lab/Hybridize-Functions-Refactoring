@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -1010,11 +1011,11 @@ public final class Parameter {
 		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
 		CallGraph callGraph = builder.getCallGraph();
 		HeapModel heapModel = pointerAnalysis.getHeapModel();
-		// The callee is the invoke's first use, so the parameter at declaration index i, with self at 0, is the IR's parameter i + 1 and
-		// the
-		// invoke's positional argument i + 1.
+		// The callee is the invoke's first use, so the parameter at declaration index i, with self at 0, is the IR's parameter i + 1. A
+		// direct call passes it at positional slot i + 1 too; a call through a receiver trampoline, one earlier (see originatingCalls).
 		int slot = this.getIndex() + 1;
 		String name = this.getName();
+		boolean hasReceiver = this.function.getParameters().stream().anyMatch(Parameter::isSelf);
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -1027,30 +1028,75 @@ public final class Parameter {
 				return;
 			}
 
-			for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node)))
-				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(caller, node))) {
-					IR callerIr = caller.getIR();
+			for (OriginatingCall call : originatingCalls(node, callGraph, slot, hasReceiver)) {
+				int use = argumentUse(call.instruction(), name, call.slot());
 
-					if (callerIr == null)
-						continue;
+				// An omitted parameter takes its default, which the callee's own node already reports.
+				if (use == OMITTED)
+					continue;
 
-					for (SSAAbstractInvokeInstruction instruction : callerIr.getCalls(site)) {
-						int use = argumentUse(instruction, name, slot);
-
-						// An omitted parameter takes its default, which the callee's own node already reports.
-						if (use == OMITTED)
-							continue;
-
-						// A starred unpack at or before the parameter binds an element of the unpacked sequence here, while the analysis
-						// reads the sequence itself as the argument, so the container evidence describes a value the parameter never
-						// receives (#1004).
-						if (use == UNALIGNED || isEmpty(pointerAnalysis.getPointsToSet(heapModel.getPointerKeyForLocal(caller, use)))) {
-							this.untypedContainerContext = true;
-							return;
-						}
-					}
+				// A starred unpack at or before the parameter binds an element of the unpacked sequence here, while the analysis reads
+				// the sequence itself as the argument, so the container evidence describes a value the parameter never receives (#1004).
+				if (use == UNALIGNED || isEmpty(pointerAnalysis.getPointsToSet(heapModel.getPointerKeyForLocal(call.caller(), use)))) {
+					this.untypedContainerContext = true;
+					return;
 				}
+			}
 		}
+	}
+
+	/**
+	 * A call into the owning function as the program writes it: the frame holding the invoke, the invoke, and the positional slot at which
+	 * that invoke passes this parameter.
+	 *
+	 * @param caller The frame containing the invoke.
+	 * @param instruction The invoke.
+	 * @param slot The positional slot of this parameter in {@code instruction}.
+	 */
+	private record OriginatingCall(CGNode caller, SSAAbstractInvokeInstruction instruction, int slot) {
+	}
+
+	/**
+	 * The calls into {@code node} as the program writes them. A receiver trampoline is not one: it re-issues the user's call with the
+	 * receiver bound and every argument positional, so a starred unpack or a keyword at the original site is invisible in its invoke. Its
+	 * contexts are keyed on its caller, site and receiver, so its own predecessors are exactly the originating sites, where the receiver is
+	 * bound and so the parameter sits one positional slot earlier.
+	 *
+	 * @param node A call-graph node of the owning function.
+	 * @param callGraph The call graph, walked in the caller direction.
+	 * @param slot The parameter's positional slot in an invoke that calls {@code node} directly.
+	 * @param hasReceiver Whether the owning function takes a receiver that a trampoline binds.
+	 * @return The originating calls.
+	 */
+	private static List<OriginatingCall> originatingCalls(CGNode node, CallGraph callGraph, int slot, boolean hasReceiver) {
+		List<OriginatingCall> ret = new ArrayList<>();
+
+		for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+			// The same test the expected-failure analysis uses for a frame the program writes, as opposed to a synthetic one.
+			boolean trampoline = !(caller.getMethod() instanceof AstMethod);
+
+			if (trampoline && hasReceiver) {
+				for (CGNode origin : Iterator2Iterable.make(callGraph.getPredNodes(caller)))
+					addCalls(ret, origin, callGraph.getPossibleSites(origin, caller), slot - 1);
+
+				continue;
+			}
+
+			addCalls(ret, caller, callGraph.getPossibleSites(caller, node), slot);
+		}
+
+		return ret;
+	}
+
+	private static void addCalls(List<OriginatingCall> calls, CGNode caller, Iterator<CallSiteReference> sites, int slot) {
+		IR ir = caller.getIR();
+
+		if (ir == null)
+			return;
+
+		for (CallSiteReference site : Iterator2Iterable.make(sites))
+			for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site))
+				calls.add(new OriginatingCall(caller, instruction, slot));
 	}
 
 	private static boolean isEmpty(OrdinalSet<InstanceKey> pointsToSet) {
