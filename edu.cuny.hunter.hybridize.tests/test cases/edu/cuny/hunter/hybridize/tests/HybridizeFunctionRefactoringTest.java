@@ -12,6 +12,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT;
@@ -2111,10 +2112,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function under a named import ({@code from tensorflow import function}) that brings the decorator into scope but not
 	 * {@code TensorSpec}: the inferred signature cannot be emitted unqualified, so {@code RECONFIGURE} must not be selected (it would be a
-	 * no-op). The function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS} status. Pins the emittability gate on {@code RECONFIGURE}
-	 * selection, ensuring a passing precondition is never reported for a transformation that would produce no edit.
+	 * no-op). Pins the emittability gate on {@code RECONFIGURE} selection, ensuring a passing precondition is never reported for a
+	 * transformation that would produce no edit. The function isn't already optimal, since a signature was inferred and withheld, so it
+	 * reports {@code INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED} rather than {@code HAS_NO_PRIMITIVE_PARAMETERS} (issue 1018).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
 	 */
 	@Test
 	public void testReconfigureNamedImportMissingTensorSpec() throws Exception {
@@ -2127,8 +2130,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Emission is impossible under this import shape, so RECONFIGURE must not be selected.",
 				f.getTransformations().contains(RECONFIGURE));
 		assertNull("No passing precondition when the signature is not emittable.", f.getPassingPrecondition());
-		assertNotNull("The function keeps its HAS_NO_PRIMITIVE_PARAMETERS failure.",
+		assertTrue("A signature is inferred.", f.getInferredInputSignature().isPresent());
+		assertNotNull("The withheld signature is reported as unwritable.",
+				f.getEntryMatchingFailure(INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED));
+		assertNull("A function whose inferred signature is withheld isn't reported as already optimal.",
 				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * An already-hybrid method whose file reaches TensorFlow only through a star import ({@code from B import *}, with {@code B} importing
+	 * {@code tensorflow as tf}). The file has no TensorFlow import of its own, so a {@code from tensorflow import ...} line is injected, as
+	 * for a fresh decorator, and the inferred signature is appended to the decorator, keeping {@code experimental_relax_shapes=True}
+	 * (#982).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImport() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Direct-import control for {@link #testReconfigureStarImport()}: with {@code tf} imported by the file itself, no import is injected
+	 * and the signature is qualified under {@code tf}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureRelaxShapesMethod() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Two already-hybrid methods in a file that reaches TensorFlow only through a star import, with signatures needing different dtypes.
+	 * Both are reconfigured, and the single injected import carries both dtypes.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImportUnion() throws Exception {
+		helperAssertStarImportTransforms(Map.of("step", RECONFIGURE, "evaluate", RECONFIGURE));
+	}
+
+	/**
+	 * An eager function converted to hybrid and an already-hybrid one reconfigured, in a file that reaches TensorFlow only through a star
+	 * import. The two paths share a single injected import.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImportMixed() throws Exception {
+		helperAssertStarImportTransforms(Map.of("scale", CONVERT_TO_HYBRID, "shift", RECONFIGURE));
+	}
+
+	/**
+	 * Applies the edits of every function in the current test's fixture, after the processor's import-planning pre-pass, and asserts that
+	 * each function selects its expected transformation and that the produced source matches the expected {@code out/A.py}.
+	 *
+	 * @param expected The transformation each function, by name, is expected to select.
+	 */
+	private void helperAssertStarImportTransforms(Map<String, Transformation> expected) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(expected.size(), functions.size());
+
+		for (Function function : functions)
+			assertEquals(function.getSimpleName() + " selects its expected transformation.",
+					singleton(expected.get(function.getSimpleName())), function.getTransformations());
+
+		// Mirror the processor's pre-pass so the injected import line carries every function's dtypes.
+		Function.planAutoInjectedImports(functions);
+
+		IDocument doc = functions.iterator().next().getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>();
+		for (Function function : functions)
+			edits.addAll(function.transform());
+
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
 	}
 
 	/**
@@ -2263,6 +2348,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderTuple() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Star-import variant of {@link #testReconfigureNarrowBroader()}: the file reaches TensorFlow only through a star import, so a
+	 * {@code from tensorflow import ...} line is injected and the supplied literal is replaced by the inferred signature, unqualified.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStarImport() throws Exception {
 		helperAssertNarrowing();
 	}
 
