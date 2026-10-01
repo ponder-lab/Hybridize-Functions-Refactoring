@@ -87,6 +87,31 @@ class StripKeywordTest(unittest.TestCase):
             '@tf.function(experimental_implements="é∑")'.encode("utf-8"), data
         )
 
+    def test_a_line_separator_above_does_not_shift_rows(self):
+        # str.splitlines breaks at a form feed and at U+2028; the tokenizer and the AST do not.
+        decorator = (
+            "@tf.function({}, input_signature=[x], {})\ndef f(x):\n    return x\n"
+        )
+        for above in ("x = 1\n\x0c\n", "# a\u2028b\n", "s = 'a\x85b'\n"):
+            for before, after in (("jit_compile=True", "reduce_retracing=True"),):
+                for text, expected in (
+                    (
+                        above + decorator.format(before, after),
+                        f"@tf.function({before}, {after})",
+                    ),
+                    (
+                        above + decorator.replace("{}, ", "", 1).format(after),
+                        f"@tf.function({after})",
+                    ),
+                    (
+                        above + decorator.replace(", {}", "", 1).format(before),
+                        f"@tf.function({before})",
+                    ),
+                ):
+                    with self.subTest(above=above, text=text):
+                        data, _ = strip.strip_function(text.encode("utf-8"), "f")
+                        self.assertIn(expected.encode("utf-8"), data)
+
     def test_positional_signature_is_recorded_not_stripped(self):
         text = """
             @tf.function(None, [tf.TensorSpec([2])])

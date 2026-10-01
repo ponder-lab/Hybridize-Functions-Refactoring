@@ -138,16 +138,20 @@ _NON_CODE = (
 
 def _tokens(data):
     """Every token of ``data`` with its byte offsets. The tokenizer reports columns in characters, so
-    each is converted through its line's UTF-8 encoding, matching the AST's byte offsets.
+    each is converted through its line's UTF-8 encoding. Rows count the lines the tokenizer itself
+    reads, which end only at a newline, unlike ``str.splitlines``, which also breaks at a form feed
+    and other separators.
     """
-    offsets = _Offsets(data)
-    lines = data.decode("utf-8").splitlines(keepends=True)
+    lines = io.BytesIO(data).readlines()
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
 
     def at(row, col):
-        return (
-            offsets.at(row, len(lines[row - 1][:col].encode("utf-8")))
-            if row <= len(lines)
-            else len(data)
+        if row > len(lines):
+            return len(data)
+        return starts[row - 1] + len(
+            lines[row - 1].decode("utf-8")[:col].encode("utf-8")
         )
 
     return [
