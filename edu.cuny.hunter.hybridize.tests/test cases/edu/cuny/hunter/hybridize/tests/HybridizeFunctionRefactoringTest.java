@@ -8851,9 +8851,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function reached only through a bare program-defined decorator built on {@code functools.wraps} is not de-hybridized as
 	 * having no tensor parameter (P2) when the forwarding loses its argument
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, no value reaches
-	 * {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
-	 * ({@link TensorClassificationBasis#NO_VALUE_REACHED}), and the function is kept hybrid. Where the analysis doesn't reach the function
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, the analysis
+	 * models no abstract value for {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}), and the function is kept hybrid. Where the analysis doesn't reach the function
 	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes.
 	 */
 	@Test
@@ -8864,13 +8864,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function hybrid = getFunction("hybrid_scale");
 		assertTrue("`hybrid_scale` is hybrid.", hybrid.isHybrid());
-		assertFalse("`hybrid_scale` is not de-hybridized on a parameter no value reached.",
+		assertFalse("`hybrid_scale` is not de-hybridized on a parameter with no abstract value.",
 				hybrid.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotEquals("`hybrid_scale` does not pass P2.", P2, hybrid.getPassingPrecondition());
 
 		if (FALSE.equals(hybrid.getHasTensorParameter()))
-			// Reached through the wrapper: the parameter's classification records that nothing arrived.
-			assertEquals("`hybrid_scale`'s `x` was reached by no value.", TensorClassificationBasis.NO_VALUE_REACHED,
+			// Reached through the wrapper: the parameter's classification records that it has no abstract value.
+			assertEquals("`hybrid_scale`'s `x` has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
 					hybrid.getParameters().get(0).getTensorClassificationBasis());
 
 		Function scale = getFunction("scale");
@@ -11129,6 +11129,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue("`" + name + "` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
 		}
 
+		// Calls that read like builtins but are bound otherwise, or that call a function argument, may compute tensors.
+		for (String name : new String[] { "make.step", "rebound", "mapped", "keyed", "sorted_in_place" }) {
+			Function kept = getFunction(name);
+			assertFalse("The scan finds no tensor op in `" + name + "`.", kept.getHasTensorComputation());
+			assertTrue("`" + name + "` has a call that may compute tensors.", kept.isTensorComputationUnresolved());
+			assertFalse("`" + name + "` is not de-hybridized.", kept.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
 		Function eager = getFunction("opaque_eager");
 		assertFalse("`opaque_eager` is eager.", eager.isHybrid());
 		assertNotNull("The eager-to-hybrid side is unchanged: `opaque_eager` still fails NO_TENSOR_COMPUTATION.",
@@ -11136,25 +11144,73 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * A hybrid function with a supplied {@code input_signature} is not de-hybridized as having no tensor parameter (P2), even when the
-	 * analysis doesn't see its parameter as a tensor (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The
-	 * signature declares each parameter it covers tensor-like, so the "no tensor parameter" verdict is not an established absence; here a
-	 * Python {@code int} argument becomes a tensor through the signature, so de-hybridizing would also change the function's result. The
-	 * same function without a signature still de-hybridizes (P2).
+	 * A hybrid function with a supplied {@code input_signature} is kept hybrid where a hybrid-to-eager rule would otherwise remove it
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997), and it reports a status that says why rather than one
+	 * that contradicts its classification. Here {@code declared}'s Python {@code int} argument is converted to a tensor by the signature,
+	 * so neither "no tensor parameter" (P2) nor "a primitive parameter" (P3) holds; {@code sig_barren} is barren, but removing its
+	 * decorator would delete the boundary it enforces (P6); and {@code sig_zero} and {@code Exporter.get_step} carry an empty signature,
+	 * which converts nothing but pins the one concrete function a SavedModel export relies on. The same functions without a signature still
+	 * de-hybridize.
 	 */
 	@Test
 	public void testSuppliedSignatureKeepsHybrid() throws Exception {
-		Function declared = getFunction("declared");
-		assertTrue("`declared` is hybrid.", declared.isHybrid());
-		assertFalse("The analysis doesn't see `declared`'s parameter as a tensor.", declared.getHasTensorParameter());
-		assertTrue("`declared` carries a supplied input_signature.", declared.getHybridizationParameters().hasInputSignatureParam());
-		assertFalse("`declared` is not de-hybridized against its own signature.", declared.getTransformations().contains(CONVERT_TO_EAGER));
-		assertNotEquals("`declared` does not pass P2.", P2, declared.getPassingPrecondition());
+		assertSuppliedSignatureKeepsHybrid();
+	}
 
-		Function undeclared = getFunction("undeclared");
-		assertFalse("`undeclared`'s parameter is not a tensor.", undeclared.getHasTensorParameter());
-		assertEquals("Without a signature, the function still de-hybridizes (P2).", P2, undeclared.getPassingPrecondition());
-		assertTrue("`undeclared` selects CONVERT_TO_EAGER.", undeclared.getTransformations().contains(CONVERT_TO_EAGER));
+	/**
+	 * {@link #testSuppliedSignatureKeepsHybrid()} with input-signature inference on. The supplied-signature branch is terminal: it neither
+	 * reconfigures nor infers a signature, so an empty signature on a zero-argument or {@code self}-only function, which has no parameter
+	 * to infer a spec for, does not reach signature inference.
+	 */
+	@Test
+	public void testSuppliedSignatureKeepsHybridInferring() throws Exception {
+		this.setInferInputSignatures(true);
+		assertSuppliedSignatureKeepsHybrid();
+	}
+
+	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
+		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step" }) {
+			Function kept = getFunction(name);
+			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
+			assertTrue("`" + name + "` carries a supplied input_signature.", kept.getHybridizationParameters().hasInputSignatureParam());
+			assertTrue("`" + name + "` selects no transformation.", kept.getTransformations().isEmpty());
+			assertNull("`" + name + "` passes no precondition.", kept.getPassingPrecondition());
+			assertNull("`" + name + "` reports no missing primitive parameter.", kept.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+
+			Set<String> messages = Arrays.stream(kept.getStatus().getEntries()).map(RefactoringStatusEntry::getMessage).collect(toSet());
+			assertTrue("`" + name + "` says it stays hybrid for its signature.",
+					messages.stream().anyMatch(m -> m.contains("has a supplied input_signature")));
+			assertFalse("`" + name + "` isn't reported as likely having a tensor parameter.",
+					messages.contains("This hybrid function likely has a tensor parameter."));
+		}
+
+		assertFalse("The analysis doesn't see `declared`'s parameter as a tensor.", getFunction("declared").getHasTensorParameter());
+		assertTrue("`sig_barren`'s parameter is a tensor.", getFunction("sig_barren").getHasTensorParameter());
+		assertFalse("`sig_barren` performs no tensor computation.", getFunction("sig_barren").getHasTensorComputation());
+
+		assertEquals("Without a signature, `undeclared` still de-hybridizes (P2).", P2, getFunction("undeclared").getPassingPrecondition());
+		assertEquals("Without a signature, `barren` still de-hybridizes (P6).", P6, getFunction("barren").getPassingPrecondition());
+	}
+
+	/**
+	 * A hybrid function whose parameter has no abstract value is not de-hybridized as having no tensor parameter (P2)
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from string
+	 * formatting, an op the analysis doesn't model, so its "not a tensor" classification concluded nothing
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}). The argument of {@code p_int} is a modeled literal, so its classification is a
+	 * determination and it still de-hybridizes.
+	 */
+	@Test
+	public void testParameterWithNoAbstractValue() throws Exception {
+		Function fmt = getFunction("p_fmt");
+		assertFalse("`p_fmt`'s parameter isn't seen as a tensor.", fmt.getHasTensorParameter());
+		assertEquals("`p_fmt`'s parameter has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+				fmt.getParameters().get(0).getTensorClassificationBasis());
+		assertFalse("`p_fmt` is not de-hybridized.", fmt.getTransformations().contains(CONVERT_TO_EAGER));
+
+		Function literal = getFunction("p_int");
+		assertEquals("`p_int`'s parameter is determined not to be a tensor.", TensorClassificationBasis.ANALYZED_NOT_TENSOR,
+				literal.getParameters().get(0).getTensorClassificationBasis());
+		assertEquals("`p_int` still de-hybridizes (P2).", P2, literal.getPassingPrecondition());
 	}
 
 	/**

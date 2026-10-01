@@ -674,12 +674,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
-				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "tensor computation unresolved",
-				"eager-only calls", "numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes",
-				"stale variable reads", "tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph",
-				"experimental_autograph_options", "experimental_follow_type_hints", "experimental_implements", "func", "input_signature",
-				"supplied input_signature", "jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation",
-				"input_signature absence reason", "refactoring", "passing precondition", "status");
+				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
+				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
+				"tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph", "experimental_autograph_options",
+				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
+				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
+				"refactoring", "passing precondition", "status", "tensor computation unresolved");
 	}
 
 	/**
@@ -888,9 +888,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		Object[] initialColumnValues = buildAttributeColumnValues(function, function.getMethodReference(), function.getDeclaringClass(),
 				function.isMethod(), function.getNumberOfParameters(), function.getHasTensorParameter(),
 				function.getHasPrimitiveParameter(), function.isHybrid(), function.getHasPythonSideEffects(), function.isRecursive(),
-				function.getHasTensorComputation(), function.isTensorComputationUnresolved(), function.getHasEagerOnlyCalls(),
-				function.getHasNumpyCallsOnParameters(), function.getHasInvalidNameArguments(),
-				function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads(),
+				function.getHasTensorComputation(), function.getHasEagerOnlyCalls(), function.getHasNumpyCallsOnParameters(),
+				function.getHasInvalidNameArguments(), function.getHasUnresolvedStaticallyReadAxes(), function.getHasStaleVariableReads(),
 				function.getHasTensorParameterIteration(), function.getHasKerasSymbolicArguments(), function.getCallerCovered());
 
 		for (Object columnValue : initialColumnValues)
@@ -925,6 +924,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		printer.print(function.getRefactoring());
 		printer.print(function.getPassingPrecondition());
 		printer.print(function.getStatus().isOK() ? 0 : function.getStatus().getEntryWithHighestSeverity().getSeverity());
+
+		// Appended last, rather than beside `tensor computation`, so that the earlier columns keep their positions for positional readers.
+		printer.print(function.isTensorComputationUnresolved());
 
 		// end the record.
 		printer.println();

@@ -1561,28 +1561,37 @@ public class Function {
 						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
 								+ "on every executed path; de-hybridizing it may be beneficial.");
 
-			// A supplied `input_signature` declares and enforces the parameters' tensor types: no `TensorSpec` describes a non-tensor, and
-			// an argument such as a Python `int` becomes a tensor at the boundary. Every hybrid-to-eager rule below reads the parameters
-			// the way the analysis types them, which the signature overrides, so none of them establishes that the decorator is
-			// removable, and removing it would also delete the enforced validation (issue 997). Such a function is kept hybrid and takes
-			// the already-hybrid path, which compares the supplied signature with the inferred one.
 			boolean suppliedSignature = this.getHybridizationParameters().hasInputSignatureParam();
 
-			if (suppliedSignature && (FALSE.equals(this.getHasTensorParameter()) || TRUE.equals(this.getHasPrimitiveParameter())
-					|| FALSE.equals(this.getHasTensorComputation())))
-				this.addInfo(
-						"This hybrid function carries a supplied input_signature, which declares and enforces its parameters' tensor types, so it is not de-hybridized.");
+			// Whether a hybrid-to-eager rule below would select the function: P2 (no tensor parameter), P3 (a tensor and a primitive
+			// parameter), or P6 (barren, with the scan's absence established).
+			boolean convertibleByParameters = FALSE.equals(this.getHasTensorParameter())
+					|| TRUE.equals(this.getHasTensorParameter()) && TRUE.equals(this.getHasPrimitiveParameter());
+			boolean convertibleAsBarren = TRUE.equals(this.getHasTensorParameter()) && FALSE.equals(this.getHasPrimitiveParameter())
+					&& FALSE.equals(this.getHasTensorComputation()) && !this.isTensorComputationUnresolved();
 
 			// A "no tensor parameter" verdict is an established absence only if every parameter's classification is a determination. One
-			// that no value reached (a function called only through `wrapper(*args, **kwargs)`, say) concluded nothing, and the function
-			// is then left as it is, as an undetermined verdict is (issue 997).
-			boolean tensorParameterUnknown = FALSE.equals(this.getHasTensorParameter()) && !suppliedSignature
-					&& !this.isTensorParameterAbsenceEstablished();
+			// with no abstract value (an argument produced by an op the analysis doesn't model, such as `"_%d" % i` or `d.get(k)`, or lost
+			// through `wrapper(*args, **kwargs)`) concluded nothing, and the function is then left as it is, as an undetermined verdict is
+			// (issue 997).
+			boolean tensorParameterUnknown = FALSE.equals(this.getHasTensorParameter()) && !this.isTensorParameterAbsenceEstablished();
 
-			if (tensorParameterUnknown)
+			if (suppliedSignature && (convertibleByParameters || convertibleAsBarren))
+				/*
+				 * A supplied `input_signature` keeps the function hybrid where a hybrid-to-eager rule would otherwise remove it (issue
+				 * 997). P2 and P3 read the parameters as the analysis types them, but the signature converts each argument to its declared
+				 * tensor type at the boundary, an argument the analysis sees as a Python `int` included, so neither verdict holds. For P6,
+				 * whose parameter is already a tensor, the reason is the boundary itself: removing the decorator deletes the signature's
+				 * enforced validation and the single concrete function it pins. An empty signature (`input_signature=[]`, common on
+				 * `tf.Module` methods exported to a SavedModel) converts nothing, so only the second reason applies there. The branch is
+				 * terminal: it neither reconfigures the signature nor infers one.
+				 */
 				this.addInfo(
-						"This hybrid function does not likely have a tensor parameter from tensor analysis, but no value reached one of its parameters, so it is kept hybrid.");
-			else if (FALSE.equals(this.getHasTensorParameter()) && !suppliedSignature) {
+						"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it stays hybrid.");
+			else if (tensorParameterUnknown)
+				this.addInfo(
+						"This hybrid function does not likely have a tensor parameter from tensor analysis, but a parameter has no abstract value, so it is kept hybrid.");
+			else if (FALSE.equals(this.getHasTensorParameter())) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
@@ -1596,7 +1605,7 @@ public class Function {
 			} else if (this.getHasTensorParameter() != null) { // it has a tensor parameter.
 				this.addInfo("This hybrid function likely has a tensor parameter.");
 				// if it has primitive parameters.
-				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter() && !suppliedSignature) {
+				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter()) {
 					this.addInfo("This hybrid function likely has a primitive parameter.");
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
@@ -1613,8 +1622,8 @@ public class Function {
 						this.addInfo(
 								"This hybrid function performs no tensor computation the analysis can see, but it has an unresolved call, so it is kept hybrid.");
 
-					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && !this.isTensorComputationUnresolved()
-							&& !suppliedSignature) {
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()
+							&& !this.isTensorComputationUnresolved()) {
 						// Barren (issue 709): a hybrid function performing no tensor computation gains nothing from graph execution, only
 						// tracing overhead, so de-hybridize it when semantics are preserved (no Python side-effects). This is the
 						// hybrid-to-eager counterpart of the eager-to-hybrid NO_TENSOR_COMPUTATION precondition and a peer of P2/P3.
@@ -1888,15 +1897,15 @@ public class Function {
 
 	/**
 	 * True iff every non-{@code self} parameter's tensor classification is a determination, so that a "no tensor parameter" verdict is an
-	 * established absence rather than a lack of evidence. A parameter no value reached ({@link TensorClassificationBasis#NO_VALUE_REACHED})
-	 * or one whose classification didn't run concluded nothing. See
+	 * established absence rather than a lack of evidence. A parameter with no abstract value
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}) or one whose classification didn't run concluded nothing. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @return True iff the parameters' non-tensor classifications are all determinations.
 	 */
 	public boolean isTensorParameterAbsenceEstablished() {
 		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis).noneMatch(b -> b == null
-				|| b == TensorClassificationBasis.NO_VALUE_REACHED || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
+				|| b == TensorClassificationBasis.NO_ABSTRACT_VALUE || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
 	}
 
 	/**

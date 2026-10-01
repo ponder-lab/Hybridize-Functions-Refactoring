@@ -74,6 +74,44 @@ def numpy_call(x):
     return x
 
 
+# Calls that read like builtins but aren't, or that call back into a function: each may compute tensors.
+
+
+def make(len):
+    @tf.function
+    def step(x):
+        # `len` is the enclosing function's parameter, not the builtin.
+        return len(x)
+
+    return step
+
+
+sum = getattr(tf, "reduce_sum")
+
+
+@tf.function
+def rebound(x):
+    # The module rebinds `sum`.
+    return sum(x)
+
+
+@tf.function
+def mapped(x):
+    return list(map(tf.nn.relu, [x, x]))
+
+
+@tf.function
+def keyed(x):
+    return max([x, x], key=tf.reduce_sum)
+
+
+@tf.function
+def sorted_in_place(x):
+    l = [x, x]
+    l.sort(key=tf.reduce_sum)
+    return x
+
+
 t = tf.constant([1.0, 2.0, 3.0])
 opaque(t)
 barren(t)
@@ -86,3 +124,8 @@ dict_items_loop(t)
 tuple_method(t)
 set_method(t)
 numpy_call(t)
+make(getattr(tf, "reduce_sum"))(t)
+rebound(t)
+mapped(t)
+keyed(t)
+sorted_in_place(t)

@@ -11,6 +11,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -39,8 +41,10 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstGlobalWrite;
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -57,6 +61,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
@@ -445,16 +450,35 @@ public class Util {
 	private static final String USER_SCRIPT_TYPE_NAME_PREFIX = "Lscript ";
 
 	/**
-	 * Python's builtin callables, other than exception types, as {@code dir(builtins)} lists them on Python 3.10. A call to one performs no
-	 * tensor computation itself, so its lacking a call-graph target says nothing about whether the caller computes tensors.
+	 * Python's builtin callables, other than exception types, as {@code dir(builtins)} lists them on Python 3.10, less {@code map} and
+	 * {@code filter}. A call to one performs no tensor computation itself, so its lacking a call-graph target says nothing about whether
+	 * the caller computes tensors. {@code map} and {@code filter} are left out because they call a function argument, which may compute
+	 * tensors; {@link #KEYED_BUILTIN_NAMES} holds the ones that do so only when given {@code key=}.
 	 */
 	private static final Set<String> PYTHON_BUILTIN_CALLABLES = Set.of("abs", "aiter", "all", "anext", "any", "ascii", "bin", "bool",
 			"breakpoint", "bytearray", "bytes", "callable", "chr", "classmethod", "compile", "complex", "copyright", "credits", "delattr",
-			"dict", "dir", "divmod", "enumerate", "eval", "exec", "exit", "filter", "float", "format", "frozenset", "getattr", "globals",
-			"hasattr", "hash", "help", "hex", "id", "input", "int", "isinstance", "issubclass", "iter", "len", "license", "list", "locals",
-			"map", "max", "memoryview", "min", "next", "object", "oct", "open", "ord", "pow", "print", "property", "quit", "range", "repr",
-			"reversed", "round", "set", "setattr", "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars",
-			"zip");
+			"dict", "dir", "divmod", "enumerate", "eval", "exec", "exit", "float", "format", "frozenset", "getattr", "globals", "hasattr",
+			"hash", "help", "hex", "id", "input", "int", "isinstance", "issubclass", "iter", "len", "license", "list", "locals", "max",
+			"memoryview", "min", "next", "object", "oct", "open", "ord", "pow", "print", "property", "quit", "range", "repr", "reversed",
+			"round", "set", "setattr", "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars", "zip");
+
+	/** Every Python builtin callable's name, the callback-taking ones included, for telling a rebinding of one from the builtin itself. */
+	private static final Set<String> PYTHON_BUILTIN_NAMES = Sets.union(PYTHON_BUILTIN_CALLABLES, Set.of("map", "filter"));
+
+	/** The builtins that call a function argument, which may compute tensors, only when it is given as {@code key=}. */
+	private static final Set<String> KEYED_BUILTIN_NAMES = Set.of("max", "min", "sorted");
+
+	/** The method through which Ariadne imports a module or builtin into a script. */
+	private static final String BUILTIN_IMPORT_METHOD_NAME = "import";
+
+	/** The type-name prefix of Ariadne's prelude objects for Python builtins. */
+	private static final String BUILTIN_PRELUDE_TYPE_NAME_PREFIX = "Lwala/builtin/";
+
+	/** The keyword through which {@code min}, {@code max}, {@code sorted} and {@code list.sort} take a function to call. */
+	private static final String KEY_KEYWORD = "key";
+
+	/** Per call graph, the names each script binds at module scope, so a builtin's name read there can be told from a rebinding. */
+	private static final Map<CallGraph, Map<String, Set<String>>> SCRIPT_BOUND_NAMES = Collections.synchronizedMap(new WeakHashMap<>());
 
 	/**
 	 * The type names of Python's builtin values whose methods perform no tensor computation (string, dictionary, list, tuple and set
@@ -494,8 +518,9 @@ public class Util {
 
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
 					if (instruction instanceof PythonInvokeInstruction invoke
-							&& callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty()
-							&& !callsPythonBuiltin(node, invoke, defUse, pointerAnalysis))
+							&& (callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty()
+									&& !callsPythonBuiltin(node, invoke, defUse, callGraph, pointerAnalysis)
+									|| callsRebindingOfBuiltin(node, invoke, defUse, callGraph)))
 						return true;
 			}
 		}
@@ -517,21 +542,28 @@ public class Util {
 	 * lists, tuples or sets. A call of a value produced by another call is never a builtin here: {@code getattr(tf, "op")} itself is
 	 * exempt, but calling its result is not.
 	 */
-	private static boolean callsPythonBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+	private static boolean callsPythonBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
 
 		if (def instanceof AstLexicalRead lexical) {
+			// A builtin is read from the script's scope; a name defined by an enclosing function (a closure over a parameter named
+			// `map`, say) is that function's binding, not the builtin.
 			Access[] accesses = lexical.getAccesses();
-			return accesses.length > 0 && PYTHON_BUILTIN_CALLABLES.contains(accesses[0].getName().fst);
+			return accesses.length > 0 && isUnboundBuiltin(accesses[0].getName().fst, accesses[0].getName().snd, invoke, callGraph);
 		}
 
 		if (def instanceof AstGlobalRead global) {
 			String name = global.getGlobalName();
-			return name.startsWith(GLOBAL_PREFIX) && PYTHON_BUILTIN_CALLABLES.contains(name.substring(GLOBAL_PREFIX.length()));
+			return name.startsWith(GLOBAL_PREFIX)
+					&& isUnboundBuiltin(name.substring(GLOBAL_PREFIX.length()), scriptOf(node), invoke, callGraph);
 		}
 
 		if (def instanceof PythonPropertyRead read) {
+			// A method given a function to call (`list.sort(key=...)`) may compute tensors through it.
+			if (invoke.getKeywords().contains(KEY_KEYWORD))
+				return false;
+
 			PointerKey receiver = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
 			boolean any = false;
 
@@ -547,6 +579,96 @@ public class Util {
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff {@code invoke} calls a name the script rebinds from a Python builtin, such as {@code sum} after
+	 * {@code sum = getattr(tf, "reduce_sum")}. Such a call counts whatever its targets: when the rebinding's value has no abstract object,
+	 * Ariadne resolves the call to the builtin's summary, so a resolved call does not show that the callee is the builtin.
+	 */
+	private static boolean callsRebindingOfBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+		String name = null;
+		String script = null;
+
+		if (def instanceof AstLexicalRead lexical && lexical.getAccesses().length > 0) {
+			name = lexical.getAccesses()[0].getName().fst;
+			script = lexical.getAccesses()[0].getName().snd;
+		} else if (def instanceof AstGlobalRead global && global.getGlobalName().startsWith(GLOBAL_PREFIX)) {
+			name = global.getGlobalName().substring(GLOBAL_PREFIX.length());
+			script = scriptOf(node);
+		}
+
+		return name != null && script != null && script.equals(scriptOf(script)) && PYTHON_BUILTIN_NAMES.contains(name)
+				&& boundNames(callGraph, script).contains(name);
+	}
+
+	/**
+	 * True iff {@code name}, read in the scope {@code definer}, is a Python builtin that {@code invoke} calls without a function argument:
+	 * the scope is a script's, the script binds no such name at module scope, and a keyed builtin is not given {@code key=}.
+	 */
+	private static boolean isUnboundBuiltin(String name, String definer, PythonInvokeInstruction invoke, CallGraph callGraph) {
+		if (!PYTHON_BUILTIN_CALLABLES.contains(name) || definer == null || !definer.equals(scriptOf(definer)))
+			return false;
+
+		if (KEYED_BUILTIN_NAMES.contains(name) && invoke.getKeywords().contains(KEY_KEYWORD))
+			return false;
+
+		return !boundNames(callGraph, definer).contains(name);
+	}
+
+	/**
+	 * True iff {@code def}, the definition of a value a script writes into its scope under {@code name}, is the builtin {@code name}
+	 * itself: Ariadne's import of it ({@code import()} on the class {@code L<name>}) or its prelude object (a
+	 * {@code Lwala/builtin/<name>}).
+	 */
+	private static boolean exposesBuiltin(SSAInstruction def, String name) {
+		if (def instanceof SSAAbstractInvokeInstruction invoke && invoke.isStatic())
+			return invoke.getDeclaredTarget().getDeclaringClass().getName().toString().equals("L" + name)
+					&& invoke.getDeclaredTarget().getName().toString().equals(BUILTIN_IMPORT_METHOD_NAME);
+
+		return def instanceof SSANewInstruction allocation
+				&& allocation.getConcreteType().getName().toString().equals(BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name);
+	}
+
+	/**
+	 * The script that a declaring-class or scope name belongs to: the name up to and including its {@code .py}, so that
+	 * {@code Lscript pkg/m.py/C/f} gives {@code Lscript pkg/m.py}.
+	 */
+	private static String scriptOf(String name) {
+		int end = name.indexOf(".py/");
+		return end < 0 ? name : name.substring(0, end + ".py".length());
+	}
+
+	private static String scriptOf(CGNode node) {
+		return scriptOf(node.getMethod().getDeclaringClass().getName().toString());
+	}
+
+	/** The names {@code script} binds at module scope, read from the writes in its own call-graph nodes. */
+	private static Set<String> boundNames(CallGraph callGraph, String script) {
+		return SCRIPT_BOUND_NAMES.computeIfAbsent(callGraph, k -> new ConcurrentHashMap<>()).computeIfAbsent(script, k -> {
+			Set<String> names = new HashSet<>();
+
+			for (CGNode node : callGraph) {
+				if (!node.getMethod().getDeclaringClass().getName().toString().equals(script) || node.getIR() == null)
+					continue;
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(node.getIR().iterateNormalInstructions()))
+					if (instruction instanceof AstGlobalWrite write && write.getGlobalName().startsWith(GLOBAL_PREFIX))
+						names.add(write.getGlobalName().substring(GLOBAL_PREFIX.length()));
+					else if (instruction instanceof AstLexicalWrite write)
+						// The script also writes into its scope the builtins its nested functions read, from the builtin's own import
+						// or prelude object. A write of anything else, such as `sum = getattr(tf, "reduce_sum")`, is a binding.
+						for (int i = 0; i < write.getAccessCount(); i++) {
+							String name = write.getAccess(i).getName().fst;
+
+							if (!exposesBuiltin(node.getDU().getDef(write.getUse(i)), name))
+								names.add(name);
+						}
+			}
+
+			return names;
+		});
 	}
 
 	/** True iff {@code node}'s declaring class is in the TensorFlow namespace, i.e. a modeled op or library node rather than user code. */
