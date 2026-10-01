@@ -220,7 +220,18 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997">Issue 997</a>
 	 */
-	HAS_SUPPLIED_INPUT_SIGNATURE(31);
+	HAS_SUPPLIED_INPUT_SIGNATURE(31),
+
+	/**
+	 * The function is a method whose first argument is bound (an instance method or a {@code classmethod}) and is decorated with
+	 * {@code tf.custom_gradient}. Under {@code tf.function}, {@code custom_gradient} runs in graph mode and converts every argument to a
+	 * tensor, the bound {@code self} or {@code cls} included, which raises; with {@code tf.function} beneath {@code custom_gradient}
+	 * instead, the gradient function's return is rejected. No decorator order works, so the conversion is declined. A {@code staticmethod}
+	 * and a plain function have no bound argument and are hybridized above {@code tf.custom_gradient} (#996).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	IS_BOUND_CUSTOM_GRADIENT_METHOD(32);
 
 	static {
 		// check that the codes are unique.
