@@ -1,12 +1,19 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
+import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -17,6 +24,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.graph.dominators.Dominators;
 
@@ -68,8 +76,24 @@ class ExpectedFailureContextAnalysis {
 	/** The member it invokes where the body closes, once on normal completion and once on the exception path. */
 	private static final String REGION_END_MEMBER_NAME = "__end__";
 
+	/** The method the front end invokes on a class to bind it by name, as in {@code invokestatic LTypeError.import()}. */
+	private static final String IMPORT_METHOD_NAME = "import";
+
 	/** Global-read names identifying the pytest module by import alias, mirroring {@link Util#NUMPY_MODULE_GLOBAL_NAMES}. */
 	private static final Set<String> PYTEST_MODULE_GLOBAL_NAMES = Set.of("global pytest", "global py");
+
+	/**
+	 * The exception classes one expected-failure guard admits, as written at the guard call: {@code assertRaises(TypeError)}, a tuple of
+	 * classes, or a {@code tf.errors} class. A class is named by its simple name.
+	 *
+	 * @param names The simple names of the classes the guard admits; empty when unresolved.
+	 * @param resolved False when some admitted class could not be named, in which case what the guard admits is unknown.
+	 */
+	record Guard(Set<String> names, boolean resolved) {
+
+		/** The unresolved guard: what it admits is unknown. */
+		static final Guard UNRESOLVED = new Guard(Set.of(), false);
+	}
 
 	private final CallGraph callGraph;
 
@@ -92,6 +116,47 @@ class ExpectedFailureContextAnalysis {
 		for (CGNode node : nodes)
 			if (this.isGuardedOnly(node))
 				ret.add(node);
+
+		return ret;
+	}
+
+	/**
+	 * Returns, for each of {@code nodes}, the guards around each guarded call reaching it: one list per call, holding every guard whose
+	 * {@code with} body contains that call, innermost or not. A call's exception is admitted when any guard around it admits it (#1005).
+	 *
+	 * @param nodes Nodes reached only from expected-failure call sites, as {@link #guardedOnlyNodes(Set)} returns.
+	 * @return The guards around each call reaching each node.
+	 */
+	Map<CGNode, List<List<Guard>>> guardsOf(Set<CGNode> nodes) {
+		Map<CGNode, List<List<Guard>>> ret = new HashMap<>();
+
+		for (CGNode node : nodes) {
+			List<List<Guard>> calls = new ArrayList<>();
+
+			for (Site site : this.originatingSites(node, new HashSet<>())) {
+				IR ir = site.caller().getIR();
+
+				if (ir == null)
+					continue;
+
+				Set<GuardRegion> regions = this.guardRegions(site.caller(), ir);
+				Dominators<ISSABasicBlock> dominators = Dominators.make(ir.getControlFlowGraph(), ir.getControlFlowGraph().entry());
+
+				for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site.reference())) {
+					ISSABasicBlock block = ir.getBasicBlockForInstruction(instruction);
+					List<Guard> around = new ArrayList<>();
+
+					if (block != null)
+						for (GuardRegion region : regions)
+							if (region.contains(block, dominators))
+								around.add(region.guard());
+
+					calls.add(around);
+				}
+			}
+
+			ret.put(node, calls);
+		}
 
 		return ret;
 	}
@@ -177,8 +242,9 @@ class ExpectedFailureContextAnalysis {
 	 *
 	 * @param begins The blocks invoking {@code __begin__} on the guard's context manager.
 	 * @param ends The blocks invoking {@code __end__} on it, on normal completion and on the exception path.
+	 * @param guard The exception classes the guard admits.
 	 */
-	private record GuardRegion(Set<ISSABasicBlock> begins, Set<ISSABasicBlock> ends) {
+	private record GuardRegion(Set<ISSABasicBlock> begins, Set<ISSABasicBlock> ends, Guard guard) {
 
 		/** True iff {@code block} lies within this body. */
 		boolean contains(ISSABasicBlock block, Dominators<ISSABasicBlock> dominators) {
@@ -219,7 +285,7 @@ class ExpectedFailureContextAnalysis {
 			Set<ISSABasicBlock> ends = this.regionBlocks(node, ir, defUse, manager, REGION_END_MEMBER_NAME);
 
 			if (!begins.isEmpty() && !ends.isEmpty())
-				ret.add(new GuardRegion(begins, ends));
+				ret.add(new GuardRegion(begins, ends, this.guardOf(node, invoke, defUse)));
 		}
 
 		return ret;
@@ -242,6 +308,89 @@ class ExpectedFailureContextAnalysis {
 
 		ret.remove(null);
 		return ret;
+	}
+
+	/**
+	 * The exception classes the guard call {@code invoke} admits: its first argument other than the receiver, which is the class the
+	 * {@code with} block expects ({@code assertRaises(TypeError)}, {@code pytest.raises((TypeError, ValueError))}).
+	 */
+	private Guard guardOf(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		int receiver = defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead read ? read.getObjectRef() : -1;
+
+		for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++) {
+			int use = invoke.getUse(slot);
+
+			if (use != receiver) {
+				Set<String> names = new HashSet<>();
+				return this.addExceptionNames(node, defUse, use, names, new HashSet<>()) ? new Guard(Set.copyOf(names), true)
+						: Guard.UNRESOLVED;
+			}
+		}
+
+		return Guard.UNRESOLVED;
+	}
+
+	/**
+	 * Adds the simple names of the exception classes {@code value} denotes to {@code names}: a bare name ({@code TypeError}), an attribute
+	 * ({@code tf.errors.InvalidArgumentError}), or a tuple literal of either.
+	 *
+	 * @return False iff some class could not be named.
+	 */
+	private boolean addExceptionNames(CGNode node, DefUse defUse, int value, Set<String> names, Set<Integer> seen) {
+		if (!seen.add(value))
+			return false;
+
+		SSAInstruction def = defUse.getDef(value);
+
+		// A builtin class read at module scope is bound by the front end's import of that class: `invokestatic LTypeError.import()`.
+		if (def instanceof SSAAbstractInvokeInstruction imported
+				&& IMPORT_METHOD_NAME.equals(imported.getDeclaredTarget().getName().toString())) {
+			String type = imported.getDeclaredTarget().getDeclaringClass().getName().toString();
+			names.add(type.substring(type.lastIndexOf('/') + 1).replaceFirst("^L", ""));
+			return true;
+		}
+
+		if (def instanceof AstGlobalRead global) {
+			String name = global.getGlobalName();
+			names.add(name.startsWith("global ") ? name.substring("global ".length()) : name);
+			return true;
+		}
+
+		if (def instanceof AstLexicalRead lexical) {
+			Access[] accesses = lexical.getAccesses();
+
+			if (accesses.length == 0)
+				return false;
+
+			names.add(accesses[0].getName().fst);
+			return true;
+		}
+
+		if (def instanceof PythonPropertyRead read) {
+			String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+
+			if (member == null)
+				return false;
+
+			names.add(member);
+			return true;
+		}
+
+		if (def instanceof SSANewInstruction) {
+			boolean any = false;
+
+			for (SSAInstruction use : Iterator2Iterable.make(defUse.getUses(value)))
+				if (use instanceof PythonPropertyWrite write && write.getObjectRef() == value) {
+					if (!this.addExceptionNames(node, defUse, write.getValue(), names, seen))
+						return false;
+
+					any = true;
+				}
+
+			return any;
+		}
+
+		return false;
 	}
 
 	/** True iff {@code invoke} calls an expected-failure context manager. */
