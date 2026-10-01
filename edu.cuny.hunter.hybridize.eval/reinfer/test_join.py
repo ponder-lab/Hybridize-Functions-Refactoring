@@ -535,7 +535,7 @@ class GroundTruthIdentityTest(unittest.TestCase):
         for record in records:
             entry, reason = join.ground_truth_for(truth, record, records)
             self.assertIsNone(entry)
-            self.assertIn("2 stripped functions share that name", reason)
+            self.assertIn("which of the 2 stripped functions", reason)
 
     def test_a_qualified_entry_goes_to_its_twin_only(self):
         records = [self.record("a.py", 1), self.record("b.py", 1)]
@@ -544,6 +544,19 @@ class GroundTruthIdentityTest(unittest.TestCase):
             join.ground_truth_for(truth, records[0], records), (None, None)
         )
         self.assertIs(join.ground_truth_for(truth, records[1], records)[0], truth["f"])
+
+    def test_a_file_alone_tells_twins_in_different_files_apart(self):
+        records = [self.record("a.py", 1), self.record("b.py", 1)]
+        truth = {"f": {"structure": {}, "file": "b.py"}}
+        self.assertEqual(
+            join.ground_truth_for(truth, records[0], records), (None, None)
+        )
+        self.assertIs(join.ground_truth_for(truth, records[1], records)[0], truth["f"])
+
+    def test_a_file_alone_does_not_tell_twins_in_one_file_apart(self):
+        records = [self.record("a.py", 1), self.record("a.py", 2)]
+        truth = {"f": {"structure": {}, "file": "a.py"}}
+        self.assertIsNone(join.ground_truth_for(truth, records[0], records)[0])
 
     def test_a_unique_name_needs_no_qualification(self):
         records = [self.record("a.py", 1)]

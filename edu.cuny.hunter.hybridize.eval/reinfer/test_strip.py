@@ -194,6 +194,39 @@ class StripEdgeTest(unittest.TestCase):
                     ["jit_compile"] if "jit_compile" in text else [],
                 )
 
+    def test_utf8_and_ascii_declarations_are_accepted(self):
+        for cookie in (
+            "# -*- coding: utf8 -*-",
+            "# vim: set fileencoding=UTF8 :",
+            "# coding: ascii",
+            "# coding: utf-8",
+        ):
+            text = f"{cookie}\n@tf.function(jit_compile=True, input_signature=[x])\ndef f(x):\n    return x\n"
+            with self.subTest(cookie=cookie):
+                data, _ = strip.strip_function(text.encode("utf-8"), "f")
+                self.assertIn(b"@tf.function(jit_compile=True)", data)
+
+    def test_a_byte_order_mark_does_not_shift_line_one(self):
+        for decorator, expected in (
+            (
+                "@tf.function(jit_compile=True, input_signature=[x])",
+                b"@tf.function(jit_compile=True)",
+            ),
+            (
+                "@tf.function(input_signature=[x], jit_compile=True)",
+                b"@tf.function(jit_compile=True)",
+            ),
+            ("@tf.function(input_signature=[x])", b"@tf.function()"),
+        ):
+            with self.subTest(decorator=decorator):
+                data, record = strip.strip_function(
+                    b"\xef\xbb\xbf"
+                    + f"{decorator}\ndef f(x):\n    return x\n".encode("utf-8"),
+                    "f",
+                )
+                self.assertTrue(data.startswith(b"\xef\xbb\xbf" + expected), data)
+                self.assertEqual(record["removed_source"], "[x]")
+
     def test_a_source_not_in_utf8_is_refused(self):
         text = '# -*- coding: latin-1 -*-\n@tf.function(experimental_implements="\xe9", input_signature=[x])\ndef f(x):\n    return x\n'
         with self.assertRaisesRegex(ValueError, "not UTF-8"):

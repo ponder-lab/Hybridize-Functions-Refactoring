@@ -341,9 +341,8 @@ def ground_truth_for(ground_truth, record, records):
     """The ground-truth entry for ``record``, and why there is none when one is keyed by its name.
 
     Entries are keyed by qualified name. An entry may also name its ``file`` and
-    ``definition_ordinal``; when it does, both must match. When it does not and the subject strips
-    more than one function by that name, the entry cannot say which one it describes, so neither
-    gets it.
+    ``definition_ordinal``; each one it names must match. When what it names still leaves more than one
+    stripped function by that name, the entry cannot say which one it describes, so none gets it.
     """
     entry = (ground_truth or {}).get(record["qualname"])
     if entry is None:
@@ -351,11 +350,16 @@ def ground_truth_for(ground_truth, record, records):
     for field in ("file", "definition_ordinal"):
         if field in entry and entry[field] != record[field]:
             return None, None
-    twins = sum(1 for r in records if r["qualname"] == record["qualname"])
-    if twins > 1 and not ("file" in entry and "definition_ordinal" in entry):
+    twins = sum(
+        1
+        for r in records
+        if r["qualname"] == record["qualname"]
+        and ("file" not in entry or r["file"] == record["file"])
+    )
+    if twins > 1 and "definition_ordinal" not in entry:
         return None, (
-            f"ground truth for {record['qualname']} names neither file nor definition "
-            f"ordinal, and {twins} stripped functions share that name"
+            f"ground truth for {record['qualname']} does not say which of the {twins} "
+            "stripped functions that share that name it describes"
         )
     return entry, None
 

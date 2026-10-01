@@ -11,6 +11,7 @@ one keyword deleted must equal the edited module, node for node.
 """
 
 import ast
+import codecs
 import collections
 import io
 import os
@@ -283,10 +284,17 @@ def strip_function(data, qualname, line=None, ordinal=None):
     positional or absent signature nothing is removed and ``new_data`` is ``data``.
     """
     encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
-    if encoding not in ("utf-8", "utf-8-sig"):
+    if codecs.lookup(encoding).name not in ("utf-8", "utf-8-sig", "ascii"):
         # The AST counts UTF-8 bytes of the decoded source; offsets into another encoding would cut the
-        # wrong bytes.
+        # wrong bytes. ASCII bytes are their own UTF-8.
         raise ValueError(f"source encoding {encoding} is not UTF-8")
+    if data.startswith(codecs.BOM_UTF8):
+        # The AST's line-1 columns do not count a byte-order mark, so it is set aside while offsets are
+        # taken and put back after.
+        new_data, record = strip_function(
+            data[len(codecs.BOM_UTF8) :], qualname, line, ordinal
+        )
+        return codecs.BOM_UTF8 + new_data, record
     tree = parse(data)
     ordinal, node = find_definition(tree, qualname, line=line, ordinal=ordinal)
     index, call, form = signature_decorator(node)
