@@ -13571,5 +13571,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A method called without an unpack keeps its specification.",
 				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				plainMethod.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// At the originating site the receiver is bound, so a container parameter ahead of the unpack sits one slot earlier there and is
+		// aligned with its own typed tuple; only the parameter the unpack binds withholds.
+		Function beforeStar = findFunction(functions, "M.before_star");
+		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.", List.of("y"),
+				beforeStar.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		// A static method called through an instance goes through a synthetic frame too, but binds no receiver, so its slot is unshifted.
+		Function staticThroughInstance = findFunction(functions, "K.sm_inst");
+		assertEquals("A static method's parameter bound by an unpack withholds the specification.", List.of("y"),
+				staticThroughInstance.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		Function staticOnClass = findFunction(functions, "K.sm");
+		assertEquals("A static method called on its class, without an unpack, keeps its specification.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				staticOnClass.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 }

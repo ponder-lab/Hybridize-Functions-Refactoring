@@ -1029,7 +1029,8 @@ public final class Parameter {
 			}
 
 			for (OriginatingCall call : originatingCalls(node, callGraph, slot, hasReceiver)) {
-				int use = argumentUse(call.instruction(), name, call.slot());
+				// A synthetic frame with no callers of its own leaves the originating call unknown, which is no evidence it is typed.
+				int use = call.instruction() == null ? UNALIGNED : argumentUse(call.instruction(), name, call.slot());
 
 				// An omitted parameter takes its default, which the callee's own node already reports.
 				if (use == OMITTED)
@@ -1050,22 +1051,27 @@ public final class Parameter {
 	 * that invoke passes this parameter.
 	 *
 	 * @param caller The frame containing the invoke.
-	 * @param instruction The invoke.
+	 * @param instruction The invoke, or {@code null} when a synthetic frame has no callers to name one.
 	 * @param slot The positional slot of this parameter in {@code instruction}.
 	 */
 	private record OriginatingCall(CGNode caller, SSAAbstractInvokeInstruction instruction, int slot) {
 	}
 
 	/**
-	 * The calls into {@code node} as the program writes them. A receiver trampoline is not one: it re-issues the user's call with the
-	 * receiver bound and every argument positional, so a starred unpack or a keyword at the original site is invisible in its invoke. Its
-	 * contexts are keyed on its caller, site and receiver, so its own predecessors are exactly the originating sites, where the receiver is
-	 * bound and so the parameter sits one positional slot earlier.
+	 * The calls into {@code node} as the program writes them. A synthetic frame, such as a receiver trampoline, is not one: it re-issues
+	 * the user's call with every argument positional, so a starred unpack or a keyword at the original site is invisible in its invoke. Its
+	 * contexts are keyed on its caller, site and receiver, so its own predecessors are exactly the originating sites. There a receiver the
+	 * frame bound is no longer passed, so a parameter of a function with a {@code self} parameter sits one positional slot earlier, while a
+	 * static method called through an instance keeps its slot. A synthetic frame with no callers of its own yields a call with no invoke,
+	 * which the caller reads as unknown.
+	 * <p>
+	 * The receiver is recognized by name ({@link #isSelf()}), so a class method's {@code cls}, or a receiver named otherwise, is not
+	 * shifted for; neither reaches this walk with Ariadne 0.52.104.
 	 *
 	 * @param node A call-graph node of the owning function.
 	 * @param callGraph The call graph, walked in the caller direction.
 	 * @param slot The parameter's positional slot in an invoke that calls {@code node} directly.
-	 * @param hasReceiver Whether the owning function takes a receiver that a trampoline binds.
+	 * @param hasReceiver Whether the owning function takes a receiver that a synthetic frame binds.
 	 * @return The originating calls.
 	 */
 	private static List<OriginatingCall> originatingCalls(CGNode node, CallGraph callGraph, int slot, boolean hasReceiver) {
@@ -1073,16 +1079,19 @@ public final class Parameter {
 
 		for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
 			// The same test the expected-failure analysis uses for a frame the program writes, as opposed to a synthetic one.
-			boolean trampoline = !(caller.getMethod() instanceof AstMethod);
-
-			if (trampoline && hasReceiver) {
-				for (CGNode origin : Iterator2Iterable.make(callGraph.getPredNodes(caller)))
-					addCalls(ret, origin, callGraph.getPossibleSites(origin, caller), slot - 1);
-
+			if (caller.getMethod() instanceof AstMethod) {
+				addCalls(ret, caller, callGraph.getPossibleSites(caller, node), slot);
 				continue;
 			}
 
-			addCalls(ret, caller, callGraph.getPossibleSites(caller, node), slot);
+			int originSlot = hasReceiver ? slot - 1 : slot;
+			int before = ret.size();
+
+			for (CGNode origin : Iterator2Iterable.make(callGraph.getPredNodes(caller)))
+				addCalls(ret, origin, callGraph.getPossibleSites(origin, caller), originSlot);
+
+			if (ret.size() == before)
+				ret.add(new OriginatingCall(caller, null, originSlot));
 		}
 
 		return ret;
