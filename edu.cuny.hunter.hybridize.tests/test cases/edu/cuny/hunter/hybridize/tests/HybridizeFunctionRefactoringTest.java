@@ -1884,6 +1884,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test that hybridizing a {@code tf.custom_gradient} function places {@code @tf.function} above {@code @tf.custom_gradient}, not
+	 * beneath it. Beneath it, a Keras layer calling the function can no longer infer its output shape, while above it the shape, the call
+	 * and the gradient all work.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/996">Issue 996</a>
+	 */
+	@Test
+	public void testConvertToHybridAboveCustomGradient() throws Exception {
+		helperAssertConvertToHybridAboveCustomGradient();
+	}
+
+	/**
+	 * Method variant of {@link #testConvertToHybridAboveCustomGradient()}: {@code @staticmethod} stays outermost, and {@code @tf.function}
+	 * goes between it and {@code @tf.custom_gradient}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/996">Issue 996</a>
+	 */
+	@Test
+	public void testConvertToHybridAboveCustomGradientStaticMethod() throws Exception {
+		helperAssertConvertToHybridAboveCustomGradient();
+	}
+
+	private void helperAssertConvertToHybridAboveCustomGradient() throws Exception {
+		Function f = this.getFunctions().stream().filter(fun -> fun.getIdentifier().endsWith("log1pexp")).findFirst().orElseThrow();
+		assertTrue("Fixture function should carry `tf.custom_gradient`.",
+				f.getDecoratorNames(null).contains("tensorflow.python.ops.custom_gradient.custom_gradient"));
+		assertFalse("Fixture function should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function should select CONVERT_TO_HYBRID.", f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		IDocument doc = f.getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
 	 * Test that {@code RECONFIGURE} adds an inferred {@code input_signature=[tf.TensorSpec(...)]} to an already-hybrid function whose bare
 	 * {@code @tf.function} decorator (no parentheses) carries no signature. The remaining half of #563: the eager case is
 	 * {@code CONVERT_TO_HYBRID} (#565); this is the already-hybrid case. The source-write appends a parenthesized argument list right after
