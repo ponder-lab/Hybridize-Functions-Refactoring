@@ -1449,6 +1449,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS,
 										"Can't hybridize a function called with a Keras symbolic tensor; tf.function refuses a "
 												+ "KerasTensor, so the decorator raises before anything is traced.");
+							else if (this.isBoundCustomGradientMethod())
+								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
+								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
+								// it, the gradient function's return is rejected. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
+										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
+												+ "fails with it in either decorator order.");
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1644,9 +1651,18 @@ public class Function {
 						// The reconfiguration gates minus the axis check, so the blocked case below can tell "the axis was the sole
 						// blocker" (code 18 reports alone) from "reconfiguration was never otherwise viable" (the pre-inference
 						// terminal applies); see issue 865.
-						boolean reconfigureOtherwiseViable = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
-								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-								&& this.canEmitInferredInputSignature();
+						// A bound `tf.custom_gradient` method already fails under its `tf.function` in either decorator order (issue
+						// 1000), so a signature written into that decorator would change nothing that runs; it is reported, not edited.
+						boolean boundCustomGradient = this.getInferInputSignatures() && this.isBoundCustomGradientMethod();
+
+						if (boundCustomGradient)
+							this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
+									"This hybrid tf.custom_gradient method has a bound self or cls argument, which tf.function fails "
+											+ "with in either decorator order, so its decorator is not reconfigured.");
+
+						boolean reconfigureOtherwiseViable = !boundCustomGradient && this.getInferInputSignatures()
+								&& this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects() && this.isRecursive() != null
+								&& !this.isRecursive() && this.canEmitInferredInputSignature();
 
 						boolean canReconfigure = reconfigureOtherwiseViable && !unresolvedStaticallyReadAxes;
 
@@ -5221,6 +5237,28 @@ public class Function {
 				}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * Returns true iff this function is a method whose first argument is bound, an instance method or a {@code classmethod}, and is
+	 * decorated with {@code tf.custom_gradient}. Such a method fails under {@code tf.function} in either decorator order (#1000). The test
+	 * is structural (defined directly in a class body and not a {@code staticmethod}), so it holds whether or not the analysis reaches the
+	 * method.
+	 *
+	 * @return True iff this is a bound {@code tf.custom_gradient} method.
+	 */
+	public boolean isBoundCustomGradientMethod() {
+		FunctionDef def = this.getFunctionDefinition().getFunctionDef();
+
+		if (!(def.parent instanceof ClassDef) || this.getCustomGradientDecorator().isEmpty())
+			return false;
+
+		if (def.decs != null)
+			for (decoratorsType decorator : def.decs)
+				if ("staticmethod".equals(NodeUtils.getRepresentationString(decorator.func)))
+					return false;
+
+		return true;
 	}
 
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
