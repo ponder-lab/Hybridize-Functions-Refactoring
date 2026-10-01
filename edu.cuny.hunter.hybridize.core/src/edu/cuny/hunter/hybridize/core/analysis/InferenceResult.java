@@ -165,25 +165,29 @@ public sealed interface InferenceResult {
 		 * evidence (#888), but it still runs against the signature, which validates the argument before the body does. The signature would
 		 * reject the argument that call passes and raise an exception the guard does not admit, so emitting it would turn the passing test
 		 * into a failing one: with {@code assertRaises(TypeError)} around {@code f(None)}, the body raises {@code TypeError} eagerly and
-		 * under a bare decorator, but a {@code TensorSpec} rejects {@code None} with {@code ValueError} first (TensorFlow 2.9.3). The
-		 * exception is predicted from the specification's form and the argument's kind: a flat specification rejects a non-container
-		 * argument with {@code ValueError}, a nested one rejects a non-container with {@code TypeError} and a container of another
-		 * structure with {@code ValueError}, and a flat one converts a container with no predicted exception. A guard admits it by naming
-		 * that class, {@code Exception}, or {@code BaseException}. A guard naming only {@code tf.errors} classes is left alone: the bare
-		 * decorator already reports such errors differently (a static shape error becomes a trace-time {@code ValueError}), so withholding
-		 * the signature would not restore the test. The function still converts with a bare decorator.
+		 * under a bare decorator, but a {@code TensorSpec} rejects {@code None} with {@code ValueError} first (TensorFlow 2.9.3). Like
+		 * {@link #WITHHELD_STATICALLY_READ_AXES}, the absence is a choice: a complete signature was inferred and is withheld.
+		 * <p>
+		 * The exception is predicted from the specification's form and the argument's kind, read from the parameter's points-to set in the
+		 * declared failure's node. A flat dense specification rejects any non-container argument that is not known to be a conforming
+		 * tensor with {@code ValueError}, including one that may be a tensor or {@code None}. A nested specification rejects a
+		 * non-container with {@code TypeError} and a list or tuple of another structure with {@code ValueError}. The rest is not predicted:
+		 * a flat specification converting a container, a nested one indexing a dict or set, and a sparse or ragged one, whose exception
+		 * depends on the argument. A guard admits the exception by naming that class, {@code Exception}, or {@code BaseException}; an
+		 * unpredicted one is admitted only by the last two. A {@code tf.errors} guard is judged like any other, since a data-dependent op
+		 * error survives a bare decorator. The function still converts with a bare decorator.
 		 *
 		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
 		 */
-		GUARDED_CALL_REJECTED_BY_SIGNATURE,
+		WITHHELD_DECLARED_FAILURE_EXCEPTION,
 
 		/**
 		 * A complete signature was inferred, but it leaves unresolved (wildcard) an axis the function's body reads statically (#811), so
-		 * emitting it would break the function at trace time. Unlike every other constant, the signature's absence is a choice rather than
-		 * an inference failure: the conversion proceeds with a bare decorator, which is exactly what the tool ships with inference off, and
-		 * the withholding is this third disposition, distinct from both "hybridized with a signature" and "not hybridized" (#864). The
-		 * reconfiguration path is unaffected: there an existing signature's replacement is the only action on the table, and it still
-		 * declines with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}.
+		 * emitting it would break the function at trace time. The signature's absence is a choice rather than an inference failure, as it
+		 * also is for {@link #WITHHELD_DECLARED_FAILURE_EXCEPTION}: the conversion proceeds with a bare decorator, which is exactly what
+		 * the tool ships with inference off, and the withholding is this third disposition, distinct from both "hybridized with a
+		 * signature" and "not hybridized" (#864). The reconfiguration path is unaffected: there an existing signature's replacement is the
+		 * only action on the table, and it still declines with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}.
 		 */
 		WITHHELD_STATICALLY_READ_AXES,
 

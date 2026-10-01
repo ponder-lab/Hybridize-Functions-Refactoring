@@ -9659,7 +9659,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// different reason: it would convert the rejected call's list of differently shaped tensors and raise `InvalidArgumentError`, which
 		// the call's `TypeError` guard does not admit (#1005).
 		assertEquals("The flat reduction stands, and only the declared failure withholds it.",
-				Map.of(x, InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE), function.getBlockingParameterReasons());
+				Map.of(x, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), function.getBlockingParameterReasons());
 	}
 
 	/**
@@ -9676,21 +9676,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		// `None` against a flat specification raises `ValueError`, and against a nested one `TypeError`; a list of tensors of different
-		// shapes against a flat one raises `InvalidArgumentError`, which a `ValueError` guard does not admit either.
-		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard")) {
+		// shapes against a flat one raises `InvalidArgumentError`, which a `ValueError` guard does not admit either. A `tf.errors` guard is
+		// judged like any other (`gather_oob`'s out-of-range gather survives a bare decorator), a sparse specification's rejection is not
+		// predicted (`sparse_value`), an argument that may be a tensor or `None` does not conform (`mixed`), and a dict against a nested
+		// specification raises `KeyError` (`pair_dict`).
+		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard",
+				"op_error_guard", "gather_oob", "sparse_value", "mixed", "pair_dict")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "`'s guard does not admit the signature's rejection.",
-					Optional.of(InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE),
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
 					function.getInferredInputSignatureAbsenceReason());
 			assertTrue("`" + name + "` is still hybridized, with a bare decorator.",
 					function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
 
-		// The guard admits the rejection (`value_guard`, `tuple_guard`, `broad_guard`, `nested_type_guard`, `nested_value_guard`), the
-		// argument conforms (`conforming`), or the guard names only a `tf.errors` class, which the bare decorator already reports
-		// differently (`op_error_guard`).
-		for (String name : List.of("value_guard", "tuple_guard", "broad_guard", "nested_type_guard", "nested_value_guard", "conforming",
-				"op_error_guard"))
+		// The guard admits the rejection (`value_guard`, `tuple_guard`, `broad_guard`, `nested_type_guard`, `nested_value_guard`), or the
+		// argument conforms (`conforming`).
+		for (String name : List.of("value_guard", "tuple_guard", "broad_guard", "nested_type_guard", "nested_value_guard", "conforming"))
 			assertTrue("`" + name + "` keeps its signature.", findFunction(functions, name).getInferredInputSignature().isPresent());
 
 		assertEquals("The tuple of classes is the guard's, not its pattern.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
@@ -12016,9 +12018,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Both call sites are observed, so both shapes are seen.", 2, x.getTensorTypes().size());
 		assertEquals("Only the call inside the block is a declared failure, so only its shape is set aside.", 1,
 				x.getConformingTensorTypes().size());
-		assertEquals("What survives is the square argument the call below the block passes.",
-				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
-				afterGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		// A square spec survives the reduction, but it would reject the declared failure's rank-1 argument with `ValueError` before the
+		// body's `InvalidArgumentError`, so it is withheld (#1005). The withholding is reached only from a reduced spec, so it still
+		// witnesses that the guard region set the failure aside. Under any hybridization this guarded test fails: a bare decorator also
+		// raises `ValueError` at trace time, from the static shape check. The tool cannot tell that static error from a data-dependent
+		// one that survives a bare decorator, so it withholds.
+		assertEquals("The reduced spec would change the declared failure's exception.",
+				Map.of(x, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), afterGuard.getBlockingParameterReasons());
 		assertEquals("`after_guard` converts (P1).", P1, afterGuard.getPassingPrecondition());
 
 		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
@@ -12028,9 +12034,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("Both call sites are observed under the pytest spelling too.", 2, pytestParameter.getTensorTypes().size());
 		assertEquals("Only the call inside the `pytest.raises` block is set aside.", 1, pytestParameter.getConformingTensorTypes().size());
-		assertEquals("What survives is the square argument the call below that block passes.",
-				"[tf.TensorSpec(shape=(3, 3), dtype=tf.float32)]",
-				pytestGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("The reduced spec would change that declared failure's exception too.",
+				Map.of(pytestParameter, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+				pytestGuard.getBlockingParameterReasons());
 	}
 
 	/**
@@ -12081,10 +12087,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				inputs.isTensorContainer());
 		assertEquals("The guarded node's bare tensor is left out of the extraction, so the tuple's structure survives it.", 2,
 				inputs.getContainerElementTypes().size());
-		assertEquals("The specification the conforming caller supports is recovered rather than lost with the rejected call.",
-				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
-				cin.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-		assertTrue("Nothing is withheld once the nested spec is emitted.", cin.getInferredInputSignatureAbsenceReason().isEmpty());
+		// The nested spec the conforming caller supports is recovered, but it would reject the declared failure's bare tensor with
+		// `TypeError` before the body's `InvalidArgumentError`, so it is withheld (#1005). The withholding is reached only from the reduced
+		// nested spec, so it still witnesses the recovery. Under a bare decorator this guarded test fails as well (`ValueError` at trace
+		// time); the tool cannot tell that static error from a data-dependent one, so it withholds.
+		assertEquals("The recovered nested spec would change the declared failure's exception.",
+				Map.of(inputs, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), cin.getBlockingParameterReasons());
 		assertEquals("`cin` converts (P1).", P1, cin.getPassingPrecondition());
 
 		Function usePair = findFunction(functions, "use_pair");
@@ -13449,7 +13457,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// not set aside, so `leak_inner` withholds on the untyped argument.
 		Function leakOuter = findFunction(functions, "leak_outer");
 		assertEquals("A specification would change the exception a declared failure raises.",
-				Optional.of(InferenceResult.AbsenceReason.GUARDED_CALL_REJECTED_BY_SIGNATURE),
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
 				leakOuter.getInferredInputSignatureAbsenceReason());
 		Function leakInner = findFunction(functions, "leak_inner");
 		assertEquals("A declared failure's untyped argument one level down withholds.",

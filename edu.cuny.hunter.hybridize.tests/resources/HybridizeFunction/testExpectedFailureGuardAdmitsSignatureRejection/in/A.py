@@ -161,3 +161,53 @@ nested_value_guard((tf.ones([2]), tf.ones([2])))
 
 with case.assertRaises(ValueError):
     nested_value_guard((tf.ones([2]), tf.ones([2]), tf.ones([2])))
+
+
+# Withheld: a data-dependent op error survives a bare decorator, but the signature rejects the
+# out-of-extent argument with ValueError first.
+def gather_oob(x):
+    return tf.gather(x, 3)
+
+
+gather_oob(tf.ones([5]))
+
+with case.assertRaises(tf.errors.InvalidArgumentError):
+    gather_oob(tf.ones([2]))
+
+
+# Withheld: a sparse specification rejects None with TypeError, which `ValueError` does not admit.
+def sparse_value(x):
+    if x is None:
+        raise ValueError("no input")
+    return tf.sparse.reduce_sum(x)
+
+
+sparse_value(tf.sparse.from_dense(tf.ones([2])))
+
+with case.assertRaises(ValueError):
+    sparse_value(None)
+
+
+# Withheld: the guarded call passes a tensor and then None, so its argument may be either.
+def mixed(x):
+    return x * 2
+
+
+mixed(tf.ones([2]))
+
+with case.assertRaises(TypeError):
+    for a in (tf.ones([2]), None):
+        mixed(a)
+
+
+# Withheld: a dict with string keys against a nested specification raises KeyError.
+def pair_dict(pair):
+    if isinstance(pair, dict):
+        raise ValueError("a dict")
+    return pair[0] + pair[1]
+
+
+pair_dict((tf.ones([2]), tf.ones([2])))
+
+with case.assertRaises(ValueError):
+    pair_dict({"a": tf.ones([2]), "b": tf.ones([2])})

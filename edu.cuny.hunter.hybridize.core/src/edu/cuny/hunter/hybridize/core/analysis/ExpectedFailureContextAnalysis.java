@@ -83,16 +83,6 @@ class ExpectedFailureContextAnalysis {
 	private static final Set<String> PYTEST_MODULE_GLOBAL_NAMES = Set.of("global pytest", "global py");
 
 	/**
-	 * The {@code tf.errors} exception classes, {@code OpError} and its subclasses. A guard that names only these declares a TensorFlow
-	 * runtime error, which hybridization reports differently by itself: graph construction raises a static shape error as a
-	 * {@code ValueError} at trace time, with or without a signature (#1005).
-	 */
-	private static final Set<String> TENSORFLOW_OP_ERROR_NAMES = Set.of("OpError", "AbortedError", "AlreadyExistsError", "CancelledError",
-			"DataLossError", "DeadlineExceededError", "FailedPreconditionError", "InternalError", "InvalidArgumentError", "NotFoundError",
-			"OutOfRangeError", "PermissionDeniedError", "ResourceExhaustedError", "UnauthenticatedError", "UnavailableError",
-			"UnimplementedError", "UnknownError");
-
-	/**
 	 * The exception classes one expected-failure guard admits, as written at the guard call: {@code assertRaises(TypeError)}, a tuple of
 	 * classes, or a {@code tf.errors} class. A class is named by its simple name.
 	 *
@@ -103,15 +93,6 @@ class ExpectedFailureContextAnalysis {
 
 		/** The unresolved guard: what it admits is unknown. */
 		static final Guard UNRESOLVED = new Guard(Set.of(), false);
-
-		/**
-		 * True iff every class this guard admits is a {@code tf.errors} class, so it declares only a TensorFlow runtime error.
-		 *
-		 * @return Whether the guard is resolved, nonempty, and names only op errors.
-		 */
-		boolean admitsOnlyOpErrors() {
-			return this.resolved() && !this.names().isEmpty() && TENSORFLOW_OP_ERROR_NAMES.containsAll(this.names());
-		}
 	}
 
 	private final CallGraph callGraph;
