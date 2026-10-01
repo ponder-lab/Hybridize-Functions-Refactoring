@@ -83,6 +83,25 @@ class PrepareTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(work, "tensorflow1")))
         self.assertFalse(os.path.exists(os.path.join(work, ".git")))
 
+    def test_an_ignored_file_is_refused(self):
+        with open(os.path.join(self.source, ".gitignore"), "w") as f:
+            f.write("build/\n")
+        git = ["git", "-C", self.source, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["add", ".gitignore"], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "ignore"], check=True)
+        head = subprocess.run(
+            git + ["rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        )
+        os.makedirs(os.path.join(self.source, "build"))
+        with open(os.path.join(self.source, "build", "gen.py"), "w") as f:
+            f.write("y = 2\n")
+        with self.assertRaises(RuntimeError):
+            run.prepare(
+                {"sha": head.stdout.strip()},
+                self.source,
+                os.path.join(self.directory.name, "w"),
+            )
+
     def test_a_different_head_is_refused(self):
         with self.assertRaises(RuntimeError):
             run.prepare(

@@ -115,6 +115,79 @@ class StripKeywordTest(unittest.TestCase):
         self.assertEqual(record["decorator_callee"], "tf.function")
 
 
+class StripEdgeTest(unittest.TestCase):
+    def strip(self, text, qualname="f", **kwargs):
+        return strip.strip_function(source(text), qualname, **kwargs)
+
+    def test_a_parenthesized_previous_argument_keeps_its_parenthesis(self):
+        data, _ = self.strip(
+            """
+            @tf.function((f), input_signature=[tf.TensorSpec([2])])
+            def g(x):
+                return x
+            """,
+            "g",
+        )
+        self.assertIn(b"@tf.function((f))\n", data)
+
+    def test_a_comment_after_the_keyword_survives(self):
+        data, _ = self.strip("""
+            @tf.function(input_signature=[tf.TensorSpec([2])],  # the signature
+                         jit_compile=True)
+            def f(x):
+                return x
+            """)
+        self.assertIn(b"# the signature", data)
+        self.assertIn(b"jit_compile=True)", data)
+        self.assertNotIn(b"input_signature", data)
+
+    def test_a_line_inside_a_multiline_header_names_the_definition(self):
+        tree = strip.parse(source("@tf.function\ndef f(a,\n      b):\n    return a\n"))
+        self.assertEqual(strip.find_definition(tree, "f", line=3)[0], 1)
+
+    def test_the_verification_catches_a_wrong_edit(self):
+        real = strip.strip_keyword
+        try:
+            strip.strip_keyword = lambda data, call, keyword: real(
+                data, call, keyword
+            ).replace(b"return x", b"return y")
+            with self.assertRaises(AssertionError):
+                self.strip(
+                    "@tf.function(input_signature=[tf.TensorSpec([2])])\ndef f(x):\n    return x\n"
+                )
+        finally:
+            strip.strip_keyword = real
+
+
+class StripFileGuardTest(unittest.TestCase):
+    TEXT = source(
+        "@tf.function(input_signature=[tf.TensorSpec([2])])\ndef f(x):\n    return x\n"
+    )
+
+    def test_a_symbolic_link_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, link = os.path.join(directory, "t.py"), os.path.join(
+                directory, "l.py"
+            )
+            with open(target, "wb") as f:
+                f.write(self.TEXT)
+            os.symlink(target, link)
+            with self.assertRaises(ValueError):
+                strip.strip_file(link, [{"qualname": "f", "line": 2}])
+            with open(target, "rb") as f:
+                self.assertEqual(f.read(), self.TEXT)
+
+    def test_a_function_listed_twice_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "m.py")
+            with open(path, "wb") as f:
+                f.write(self.TEXT)
+            with self.assertRaises(ValueError):
+                strip.strip_file(
+                    path, [{"qualname": "f", "line": 2}, {"qualname": "f", "line": 2}]
+                )
+
+
 class ResolveNameTest(unittest.TestCase):
     def test_a_unique_module_binding_resolves(self):
         data, record = strip.strip_function(

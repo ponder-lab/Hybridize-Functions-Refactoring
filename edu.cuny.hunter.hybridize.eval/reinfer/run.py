@@ -91,8 +91,12 @@ def prepare(subject, source, work, exclude=()):
         raise RuntimeError(
             f"{source}: HEAD is {head}, not the manifest's {subject['sha']}"
         )
-    if git(repository, "status", "--porcelain"):
-        raise RuntimeError(f"{source}: the working tree is not clean")
+    # --ignored too: ignored files (build output, a virtualenv, generated sources) are copied into the
+    # analyzed tree like any other, so a checkout carrying them is not the commit it claims to be.
+    if git(repository, "status", "--porcelain", "--ignored"):
+        raise RuntimeError(
+            f"{source}: the working tree is not clean, or carries ignored files"
+        )
     if os.path.exists(work):
         raise RuntimeError(f"{work} exists; use a fresh --out")
     excluded = {os.path.normpath(os.path.join(source, e)) for e in exclude}

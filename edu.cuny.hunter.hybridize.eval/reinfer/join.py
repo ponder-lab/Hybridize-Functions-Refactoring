@@ -227,9 +227,47 @@ def locate(record, by_location):
     return row
 
 
+UNDETERMINED = "UNDETERMINED"
+
+
+def relate_entry(removed, inferred, axis):
+    """``spec.relate_entry``, except where the inferred dtypes cannot be paired to positions.
+
+    An inferred sequence whose elements have several dtypes carries ``dtype_ambiguous`` and no element
+    dtypes; read as UNKNOWN, they would make every supplied dtype look TIGHTER. So its dtype relation is
+    UNDETERMINED, and so is the combined one, unless the shapes alone are already INCOMPARABLE, which no
+    dtype could change. The shape relation is unaffected.
+    """
+    if not inferred.get("dtype_ambiguous") or axis == "shape":
+        return spec.relate_entry(removed, inferred, axis)
+    if (
+        axis == "both"
+        and spec.relate_entry(removed, inferred, "shape") == spec.INCOMPARABLE
+    ):
+        return spec.INCOMPARABLE
+    return UNDETERMINED
+
+
+def relate_signature(removed, inferred, axis):
+    """``spec.relate_signature`` over :func:`relate_entry`: INCOMPARABLE absorbs, then UNDETERMINED does."""
+    if len(removed) != len(inferred):
+        return spec.INCOMPARABLE
+    relations = [relate_entry(r, i, axis) for r, i in zip(removed, inferred)]
+    if any(r is None for r in relations):
+        return None
+    if spec.INCOMPARABLE in relations:
+        return spec.INCOMPARABLE
+    if UNDETERMINED in relations:
+        return UNDETERMINED
+    result = spec.AGREEMENT
+    for r in relations:
+        result = spec.combine(result, r)
+    return result
+
+
 def _relations(removed, inferred):
     return {
-        axis: spec.relate_entry(removed, inferred, axis)
+        axis: relate_entry(removed, inferred, axis)
         for axis in ("both", "dtype", "shape")
     }
 
@@ -308,7 +346,10 @@ def join_subject(
             key=lambda r: int(r["param index"]),
         )
         inferred_rows = sorted(
-            specs.get(key, []), key=lambda r: int(r["param index"] or -1)
+            # A row with no parameter index (an entry past the declared parameters) sorts last, so it
+            # cannot shift the positional alignment of the indexed ones.
+            specs.get(key, []),
+            key=lambda r: (r["param index"] == "", int(r["param index"] or 0)),
         )
         inferred = [inferred_tree(r) for r in inferred_rows] if inferred_rows else None
         dimension_rows = dimensions.get(key, [])
@@ -352,11 +393,8 @@ def join_subject(
         relation = {"both": None, "dtype": None, "shape": None}
         if outcome == "scored":
             relation = {
-                axis: spec.relate_signature(removed, inferred, axis)
-                for axis in relation
+                axis: relate_signature(removed, inferred, axis) for axis in relation
             }
-            if any(t.get("dtype_ambiguous") for t in inferred):
-                relation["dtype"] = "UNDETERMINED"
 
         function_rows.append(
             {

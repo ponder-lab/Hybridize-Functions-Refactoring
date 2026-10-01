@@ -123,6 +123,42 @@ class InferredTreeTest(unittest.TestCase):
         self.assertEqual([e["dtype"] for e in tree["elements"]], [None, None])
 
 
+class AmbiguousDtypeTest(unittest.TestCase):
+    """A mixed-dtype inferred sequence has no element dtypes to compare; reading None as UNKNOWN would
+    make every supplied dtype look TIGHTER."""
+
+    INFERRED = join.inferred_tree({"dtype": "float32|int32", "shape": "[(2,), (3,)]"})
+
+    def test_matching_shapes_are_undetermined_not_tighter(self):
+        removed = spec.sequence([spec.leaf("float32", [2]), spec.leaf("int32", [3])])
+        self.assertEqual(
+            join.relate_entry(removed, self.INFERRED, "both"), join.UNDETERMINED
+        )
+        self.assertEqual(
+            join.relate_entry(removed, self.INFERRED, "dtype"), join.UNDETERMINED
+        )
+        self.assertEqual(
+            join.relate_entry(removed, self.INFERRED, "shape"), spec.AGREEMENT
+        )
+        self.assertEqual(
+            join.relate_signature([removed], [self.INFERRED], "both"), join.UNDETERMINED
+        )
+
+    def test_incomparable_shapes_stay_incomparable(self):
+        removed = spec.sequence([spec.leaf("float32", [5]), spec.leaf("int32", [3])])
+        self.assertEqual(
+            join.relate_entry(removed, self.INFERRED, "both"), spec.INCOMPARABLE
+        )
+
+    def test_an_unambiguous_signature_relates_as_the_order_does(self):
+        removed, inferred = [spec.leaf("float32", [2, 3])], [
+            spec.leaf("float32", [None, 3])
+        ]
+        self.assertEqual(
+            join.relate_signature(removed, inferred, "both"), spec.SUPPLIED_TIGHTER
+        )
+
+
 class LibraryTest(unittest.TestCase):
     def test_paths(self):
         self.assertTrue(join.is_library("tf_image/core/bboxes/resize.py"))

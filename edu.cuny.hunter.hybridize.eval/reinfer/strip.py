@@ -12,6 +12,7 @@ one keyword deleted must equal the edited module, node for node.
 
 import ast
 import collections
+import os
 import warnings
 
 SIGNATURE_KEYWORD = "input_signature"
@@ -61,7 +62,10 @@ def find_definition(tree, qualname, line=None, ordinal=None):
     matches = []
     for index, node in enumerate(nodes):
         first = min([node.lineno] + [d.lineno for d in node.decorator_list])
-        if line is None or first <= line <= node.lineno:
+        # The header runs from the first decorator to the line before the body, so a line inside a
+        # multi-line parameter list still names this definition.
+        last = max(node.lineno, node.body[0].lineno - 1) if node.body else node.lineno
+        if line is None or first <= line <= last:
             matches.append((index + 1, node))
     if len(matches) != 1:
         raise LookupError(
@@ -120,17 +124,64 @@ def _end(node):
     return node.end_lineno, node.end_col_offset
 
 
+_SPACE = (b" ", b"\t")
+
+
+def _comma_after(data, position):
+    """The offset just past the comma that follows ``position``, skipping whitespace and comments, or
+    None if something else comes first."""
+    while position < len(data):
+        char = data[position : position + 1]
+        if char in _SPACE or char in (b"\n", b"\r"):
+            position += 1
+        elif char == b"#":
+            while position < len(data) and data[position : position + 1] not in (
+                b"\n",
+                b"\r",
+            ):
+                position += 1
+        elif char == b",":
+            return position + 1
+        else:
+            return None
+    return None
+
+
+def _comma_before(data, position):
+    """The offset of the comma that precedes ``position``, skipping whitespace (not comments), or None."""
+    position -= 1
+    while position >= 0 and data[position : position + 1] in _SPACE + (b"\n", b"\r"):
+        position -= 1
+    return position if position >= 0 and data[position : position + 1] == b"," else None
+
+
 def strip_keyword(data, call, keyword):
-    """Return ``data`` (bytes) with ``keyword`` and its separating comma cut out of ``call``."""
+    """Return ``data`` (bytes) with ``keyword`` and its separating comma cut out of ``call``.
+
+    The separating comma is found in the source, not inferred from the neighbouring nodes' extents: a
+    node's extent excludes enclosing parentheses, so cutting from the previous argument's end would eat
+    the `)` of `(f), input_signature=...`. Whitespace after the comma on the same line goes with it, and
+    anything after a line break, comments included, stays.
+    """
     offsets = _Offsets(data)
     elements = sorted(list(call.args) + list(call.keywords), key=_start)
     index = elements.index(keyword)
+    start, finish = offsets.at(*_start(keyword)), offsets.at(*_end(keyword))
     if index + 1 < len(elements):
-        begin, end = offsets.at(*_start(keyword)), offsets.at(
-            *_start(elements[index + 1])
-        )
+        comma = _comma_after(data, finish)
+        if comma is None:
+            raise ValueError("no comma after the keyword")
+        end = comma
+        while end < len(data) and data[end : end + 1] in _SPACE:
+            end += 1
+        if data.rfind(b"#", finish, comma) != -1:
+            end = comma  # a comment between keyword and comma: cut only up to the comma, not beyond.
+        begin = start
     elif index > 0:
-        begin, end = offsets.at(*_end(elements[index - 1])), offsets.at(*_end(keyword))
+        comma = _comma_before(data, start)
+        if comma is None:
+            raise ValueError("no comma before the keyword")
+        begin, end = comma, finish
     else:
         begin, end = offsets.at(*_start(keyword)), offsets.at(*_end(keyword))
         rest = end
@@ -242,6 +293,9 @@ def strip_file(path, functions):
     Functions are located and stripped one at a time against the file as it stands, keyed by ordinal
     after the first lookup, so an earlier strip moving lines cannot misdirect a later one.
     """
+    if os.path.islink(path):
+        # Writing through a link could reach outside the copy, into the checkout it was made from.
+        raise ValueError(f"{path} is a symbolic link; refusing to strip through it")
     with open(path, "rb") as f:
         data = f.read()
     located = []
@@ -250,6 +304,12 @@ def strip_file(path, functions):
         ordinal, _ = find_definition(
             tree, function["qualname"], line=function.get("line")
         )
+        if any(
+            o == ordinal and f["qualname"] == function["qualname"] for f, o in located
+        ):
+            raise ValueError(
+                f"{function['qualname']} (ordinal {ordinal}) is listed twice"
+            )
         located.append((function, ordinal))
     records = []
     for function, ordinal in located:

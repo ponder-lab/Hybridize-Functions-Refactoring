@@ -9,7 +9,7 @@ A spec tree is one of three JSON-shaped dicts:
 
 The order mirrors ``InputSignature.relate`` in edu.cuny.hunter.hybridize.core, clause for clause. It is
 restated here rather than called because the harness runs outside the OSGi runtime; the two are held
-together by ``relation_cases.json``, which both this module's tests and the Java ``InputSignatureTest``
+together by ``relation_cases.txt``, which both this module's tests and the Java ``InputSignatureTest``
 read, so a change to either side that the other does not share fails a build.
 """
 
