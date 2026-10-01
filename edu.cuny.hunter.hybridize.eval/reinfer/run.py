@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 import join
 import strip
@@ -87,10 +88,9 @@ def prepare(subject, source, work, exclude=(), sparse=()):
 
     ``exclude`` names top-level paths of the checkout to leave out of the analyzed tree, for a
     repository that holds a second, separate program (VaDER's ``tensorflow1`` beside
-    ``tensorflow2``). ``sparse``, when given, is a list of git sparse-checkout patterns (non-cone:
-    ``/``-anchored, with ``*`` and ``**``), and only the files of the commit that match them are
-    copied, read from the commit itself, so that how the local checkout happens to be sparse does
-    not matter. Either trim is recorded with the run.
+    ``tensorflow2``). ``sparse``, when given, is a list of git sparse-checkout patterns, and only
+    the files of the commit that git's own non-cone sparse checkout selects are copied (see
+    ``copy_sparse``). Either trim is recorded with the run.
     """
     repository = repository_of(source)
     head = git(repository, "rev-parse", "HEAD")
@@ -123,66 +123,56 @@ def prepare(subject, source, work, exclude=(), sparse=()):
     shutil.copytree(source, work, ignore=ignore, symlinks=True)
 
 
-def sparse_matcher(pattern):
-    """A regular expression for one non-cone sparse-checkout pattern, matched against a file's path
-    from the repository root: ``/`` anchors it there, ``**/`` spans any number of directories, and
-    ``*`` and ``?`` stay within one. Negations and directory patterns are refused, so that nothing a
-    pattern means in git is silently read differently here."""
-    if not pattern.startswith("/") or pattern.startswith("!") or pattern.endswith("/"):
-        raise RuntimeError(f"unsupported sparse pattern: {pattern}")
-    expression, rest = "", pattern[1:]
-    while rest:
-        if rest.startswith("**/"):
-            expression, rest = expression + "(?:[^/]+/)*", rest[3:]
-        elif rest.startswith("*"):
-            expression, rest = expression + "[^/]*", rest[1:]
-        elif rest.startswith("?"):
-            expression, rest = expression + "[^/]", rest[1:]
-        elif rest[0] in "[\\":
-            raise RuntimeError(f"unsupported sparse pattern: {pattern}")
-        else:
-            expression, rest = expression + re.escape(rest[0]), rest[1:]
-    return re.compile(expression)
-
-
 def copy_sparse(repository, source, work, patterns):
-    """Write the files of HEAD that match ``patterns`` to ``work``. ``source`` must be the repository
-    itself, since the patterns are anchored at its root."""
-    if os.path.realpath(repository) != os.path.realpath(source):
+    """Write the files of HEAD that git's own non-cone sparse checkout of ``patterns`` selects to
+    ``work``. ``source`` must be the repository's root, since the patterns are anchored there.
+
+    The patterns are not interpreted here. A throwaway clone that shares the checkout's objects takes
+    them through ``git sparse-checkout set --no-cone`` and checks out HEAD, so directory matches,
+    ``**`` and attributes mean exactly what they mean in git. Nothing is written to the checkout, and
+    nothing is fetched: a blob a partial clone lacks fails the copy rather than being downloaded.
+    """
+    toplevel = git(source, "rev-parse", "--show-toplevel")
+    if toplevel is None or os.path.realpath(toplevel) != os.path.realpath(source):
         raise RuntimeError(
-            f"{source}: a sparse trim needs the repository itself, not {repository}"
+            f"{source}: a sparse trim needs the repository's root, not {toplevel}"
         )
-    matchers = [sparse_matcher(pattern) for pattern in patterns]
-    listed = subprocess.run(
-        ["git", "-C", repository, "ls-tree", "-r", "-z", "--name-only", "HEAD"],
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout.split("\0")
-    files = [f for f in listed if f and any(m.fullmatch(f) for m in matchers)]
-    if not files:
-        raise RuntimeError(
-            f"{source}: no file of HEAD matches the sparse patterns {patterns}"
+    head = git(source, "rev-parse", "HEAD")
+    environment = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+
+    def run_git(*arguments, **options):
+        result = subprocess.run(
+            ["git", *arguments], capture_output=True, env=environment, **options
         )
-    os.makedirs(work)
-    archive = subprocess.Popen(
-        [
-            "git",
-            "--literal-pathspecs",
+        if result.returncode != 0:
+            message = result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(
+                f"{source}: git {' '.join(arguments[:3])} failed: {message}"
+            )
+
+    with tempfile.TemporaryDirectory() as scratch:
+        clone = os.path.join(scratch, "clone")
+        run_git("clone", "-q", "--no-checkout", "--shared", source, clone)
+        run_git(
             "-C",
-            repository,
-            "archive",
-            "--format=tar",
-            "HEAD",
-            "--",
-            *files,
-        ],
-        stdout=subprocess.PIPE,
-    )
-    extract = subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout)
-    archive.stdout.close()
-    if archive.wait() != 0 or extract.returncode != 0:
-        raise RuntimeError(f"{source}: could not copy the sparse files of HEAD")
+            clone,
+            "sparse-checkout",
+            "set",
+            "--no-cone",
+            "--stdin",
+            input="".join(p + "\n" for p in patterns).encode(),
+        )
+        run_git("-C", clone, "checkout", "-q", "--detach", head)
+        selected = any(
+            files for d, _, files in os.walk(clone) if ".git" not in d.split(os.sep)
+        )
+        if not selected:
+            raise RuntimeError(
+                f"{source}: git's sparse checkout of {patterns} selects no file of HEAD"
+            )
+        shutil.copytree(
+            clone, work, ignore=shutil.ignore_patterns(".git"), symlinks=True
+        )
 
 
 # A manifest entry's trim fields, and the name each has in the recorded trim. The note is
@@ -209,6 +199,21 @@ def trim_of(subject, local):
     trim = {
         name: subject[field] for field, name in TRIM_FIELDS.items() if field in subject
     }
+    for field in ("sparse", "exclude"):
+        value = trim.get(field)
+        if value is not None and not (
+            isinstance(value, list)
+            and value
+            and all(isinstance(v, str) and v for v in value)
+        ):
+            raise RuntimeError(
+                f"{subject['path']}: {field} must be a non-empty list of strings, not {value!r}"
+            )
+    for field, kind in (("caller_scope_complete", bool), ("note", str)):
+        if field in trim and not isinstance(trim[field], kind):
+            raise RuntimeError(
+                f"{subject['path']}: {field} must be a {kind.__name__}, not {trim[field]!r}"
+            )
     trim.update(local)
     return trim
 

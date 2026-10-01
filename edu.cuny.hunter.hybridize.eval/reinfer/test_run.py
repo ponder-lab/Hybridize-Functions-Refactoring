@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -64,29 +65,83 @@ class ProjectNameTest(unittest.TestCase):
             self.assertEqual(run.project_name(work), "tf-image-15977b3c6")
 
 
-class SparseMatcherTest(unittest.TestCase):
-    def matches(self, pattern, path):
-        return bool(run.sparse_matcher(pattern).fullmatch(path))
+class CopySparseTest(unittest.TestCase):
+    """The selection is git's own non-cone sparse checkout, directory matches included."""
 
-    def test_a_star_stays_within_one_directory(self):
-        self.assertTrue(self.matches("/a/*.py", "a/x.py"))
-        self.assertFalse(self.matches("/a/*.py", "a/b/x.py"))
+    FILES = [
+        "a/x.py",
+        "a/y.txt",
+        "a/b/x.py",
+        "a/b/c/x.py",
+        "a/d.py/inner.txt",
+        "ab.py",
+        "x.py",
+        "b/x.py",
+    ]
 
-    def test_a_double_star_spans_directories(self):
-        for path in ("a/x.py", "a/b/x.py", "a/b/c/x.py"):
-            with self.subTest(path=path):
-                self.assertTrue(self.matches("/a/**/*.py", path))
-        self.assertFalse(self.matches("/a/**/*.py", "b/x.py"))
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.source = os.path.join(self.directory.name, "source")
+        for path in self.FILES:
+            os.makedirs(
+                os.path.dirname(os.path.join(self.source, path)) or self.source,
+                exist_ok=True,
+            )
+            with open(os.path.join(self.source, path), "w") as f:
+                f.write("x = 1\n")
+        with open(os.path.join(self.source, ".gitattributes"), "w") as f:
+            f.write("a/x.py export-ignore\n")
+        git = ["git", "-C", self.source, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(["git", "init", "-q", self.source], check=True)
+        subprocess.run(git + ["add", "."], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "c"], check=True)
 
-    def test_a_pattern_is_anchored_at_the_root(self):
-        self.assertTrue(self.matches("/x.py", "x.py"))
-        self.assertFalse(self.matches("/x.py", "a/x.py"))
+    def tearDown(self):
+        self.directory.cleanup()
 
-    def test_patterns_git_reads_differently_are_refused(self):
-        for pattern in ("x.py", "!/x.py", "/a/", "/[ab].py"):
-            with self.subTest(pattern=pattern):
-                with self.assertRaises(RuntimeError):
-                    run.sparse_matcher(pattern)
+    def copy(self, patterns):
+        work = os.path.join(self.directory.name, "work")
+        shutil.rmtree(work, ignore_errors=True)
+        run.copy_sparse(self.source, self.source, work, patterns)
+        return sorted(
+            os.path.relpath(os.path.join(d, f), work)
+            for d, _, fs in os.walk(work)
+            for f in fs
+            if f != ".gitattributes"
+        )
+
+    def test_selections_follow_git(self):
+        # Each expectation is what `git sparse-checkout set --no-cone` materializes: a pattern that
+        # matches a directory takes everything under it, and an export rule changes nothing.
+        cases = {
+            ("/a/**",): [
+                "a/b/c/x.py",
+                "a/b/x.py",
+                "a/d.py/inner.txt",
+                "a/x.py",
+                "a/y.txt",
+            ],
+            ("/a/*.py",): ["a/d.py/inner.txt", "a/x.py"],
+            ("/a/b",): ["a/b/c/x.py", "a/b/x.py"],
+            ("/x.py", "/a/b"): ["a/b/c/x.py", "a/b/x.py", "x.py"],
+            ("/a/**/*.py",): ["a/b/c/x.py", "a/b/x.py", "a/d.py/inner.txt", "a/x.py"],
+        }
+        for patterns, expected in cases.items():
+            with self.subTest(patterns=patterns):
+                self.assertEqual(self.copy(list(patterns)), expected)
+
+    def test_a_selection_of_nothing_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self.copy(["/missing.py"])
+
+    def test_a_subdirectory_of_a_repository_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            run.copy_sparse(
+                self.source,
+                os.path.join(self.source, "a"),
+                os.path.join(self.directory.name, "w"),
+                ["/x.py"],
+            )
 
 
 class TrimTest(unittest.TestCase):
@@ -106,6 +161,19 @@ class TrimTest(unittest.TestCase):
 
     def test_a_local_source_is_added(self):
         self.assertEqual(run.trim_of(self.SUBJECT, {"source": "/s"})["source"], "/s")
+
+    def test_a_malformed_trim_is_refused(self):
+        for field, value in (
+            ("sparse", True),
+            ("sparse", "/a.py"),
+            ("sparse", []),
+            ("exclude", "tensorflow1"),
+            ("caller_scope_complete", "yes"),
+            ("trim_note", 1),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(RuntimeError):
+                    run.trim_of({**self.SUBJECT, field: value}, {})
 
     def test_a_trim_field_in_the_local_config_is_refused(self):
         for local in ({"sparse": ["/b.py"]}, {"exclude": ["x"]}, {"note": "n"}):
