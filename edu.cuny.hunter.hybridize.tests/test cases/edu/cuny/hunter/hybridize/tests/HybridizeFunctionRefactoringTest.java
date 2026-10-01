@@ -11130,7 +11130,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				constant.isTensorComputationUnresolved());
 
 		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
-				"tuple_method", "set_method", "numpy_call", "uses_user_abs" }) {
+				"tuple_method", "set_method", "numpy_call", "uses_user_abs", "calls_recursive", "global_builtin", "user_keyed" }) {
 			Function barren = getFunction(name);
 			assertFalse("`" + name + "` performs no tensor computation.", barren.getHasTensorComputation());
 			assertFalse("`" + name + "` has no unresolved call that may compute tensors.", barren.isTensorComputationUnresolved());
@@ -11139,7 +11139,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		// Calls that read like builtins but are bound otherwise, or that call a function argument, may compute tensors.
-		for (String name : new String[] { "make.step", "rebound", "global_rebound", "mapped", "keyed", "sorted_keyed",
+		for (String name : new String[] { "make.step", "rebound", "global_rebound", "mapped", "keyed", "sorted_keyed", "global_keyed",
 				"sorted_in_place" }) {
 			Function kept = getFunction(name);
 			assertFalse("The scan finds no tensor op in `" + name + "`.", kept.getHasTensorComputation());

@@ -155,6 +155,43 @@ def uses_user_abs(x):
     return x
 
 
+def countdown(n):
+    return countdown(n - 1) if n > 0 else 0
+
+
+@tf.function
+def calls_recursive(x):
+    # Reaches the recursive `countdown`, whose call graph has a cycle.
+    countdown(3)
+    return x
+
+
+@tf.function
+def global_builtin(x):
+    # `global` makes the read of `max` a global one; with no module binding, it is the builtin.
+    global max
+    max(1, 2)
+    return x
+
+
+@tf.function
+def global_keyed(x):
+    global sorted
+    return sorted([x, x], key=tf.reduce_sum)
+
+
+class Keyed:
+    def pick(self, key=None):
+        return key
+
+
+@tf.function
+def user_keyed(x):
+    # A resolved method of a user object given `key=`: not a builtin, so it is scanned like any other call.
+    Keyed().pick(key=1)
+    return x
+
+
 t = tf.constant([1.0, 2.0, 3.0])
 opaque(t)
 opaque_constant(t)
@@ -176,3 +213,7 @@ sorted_in_place(t)
 global_rebound(t)
 sorted_keyed(t)
 uses_user_abs(t)
+calls_recursive(t)
+global_builtin(t)
+global_keyed(t)
+user_keyed(t)
