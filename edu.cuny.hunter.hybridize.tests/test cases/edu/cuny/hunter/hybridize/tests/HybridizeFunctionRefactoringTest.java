@@ -13440,11 +13440,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
-	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
-	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.
-	 */
-	/**
 	 * Test that a parameter receiving the list {@code tf.unstack} or {@code tf.split} returns, or a slice of it, gets no input signature.
 	 * Ariadne's summary of either returns a list whose one stand-in piece is written at fixed indices, and the tensor analysis types the
 	 * list itself as that piece, so the parameter read as a flat tensor and received a specification of one piece, which makes the body's
@@ -13492,6 +13487,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 	}
 
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
+	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
+	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.
+	 */
 	@Test
 	public void testInferInputSignatureUntypedCallingContext() throws Exception {
 		this.setInferInputSignatures(true);

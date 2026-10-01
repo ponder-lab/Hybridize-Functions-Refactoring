@@ -4750,8 +4750,7 @@ public class Function {
 			// list itself as that element, so the flat typing describes one piece, not the value the function receives, and a
 			// specification of it makes the body's unpacking raise. The parameter blocks, and the function is hybridized with a bare
 			// decorator (#1012). A summary whose element structure is read, such as a Keras directory iterator's batch tuple, is an
-			// ordinary
-			// modeled container and reduces as one.
+			// ordinary modeled container and reduces as one.
 			if (param.receivesLibraryContainer() && param.getContainerElementTypes() == null) {
 				this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 						+ "` receives a list a TensorFlow operation returns, such as "
