@@ -4,6 +4,7 @@ import java.util.Iterator;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.ipa.callgraph.CGNode;
@@ -163,9 +164,10 @@ class EagerOnlyCallAnalysis {
 
 	/**
 	 * True iff the training-surface member call {@code invoke} dispatches to the framework's own guarded endpoint rather than to user code.
-	 * A resolved call-graph target in the TensorFlow namespace is the endpoint itself; a resolved user-defined target is an override, whose
-	 * body the transitive walk of {@link #callsEagerOnlyApi(CGNode)} already analyzes on its own merits, so it does not block here. When
-	 * the call site resolves to no target at all, the receiver decides: a points-to set holding an instance of a summarized TensorFlow
+	 * A resolved call-graph target in the TensorFlow namespace is the endpoint itself, and a synthesized method-dispatch trampoline is read
+	 * as the methods it forwards to, since a summarized endpoint is reached through one; a resolved user-defined target is an override,
+	 * whose body the transitive walk of {@link #callsEagerOnlyApi(CGNode)} already analyzes on its own merits, so it does not block here.
+	 * When the call site resolves to no target at all, the receiver decides: a points-to set holding an instance of a summarized TensorFlow
 	 * class is the endpoint. Everything else is the unresolved residue and does not block (allow-on-unresolved): the front end does not yet
 	 * record a user model class's framework base class (wala/ML#571), so a class-hierarchy walk cannot positively identify user model
 	 * subclasses, and blocking the residue would re-import the bare-name false positives this discipline exists to avoid.
@@ -176,7 +178,7 @@ class EagerOnlyCallAnalysis {
 	 * @return True iff the call dispatches to the guarded framework endpoint.
 	 */
 	private boolean invokesGuardedModelEndpoint(CGNode node, PythonInvokeInstruction invoke, PythonPropertyRead read) {
-		Set<CGNode> targets = this.callGraph.getPossibleTargets(node, invoke.getCallSite());
+		Set<CGNode> targets = this.dispatchTargets(this.callGraph.getPossibleTargets(node, invoke.getCallSite()), Sets.newHashSet());
 
 		for (CGNode target : targets)
 			if (Util.isTensorFlowNode(target))
@@ -186,5 +188,25 @@ class EagerOnlyCallAnalysis {
 			return false;
 
 		return Util.pointsToType(node, read.getObjectRef(), this.pointerAnalysis, Util.TENSORFLOW_MODULE_TYPE_NAME, false);
+	}
+
+	/**
+	 * The methods {@code targets} dispatch to: each target that is user code or in the TensorFlow namespace, and, for each other target,
+	 * the methods it forwards to. Such a target is a synthesized trampoline, which binds the receiver and calls the method it resolves.
+	 *
+	 * @param targets A call site's call-graph targets.
+	 * @param seen The trampolines already read through.
+	 * @return The targets, with each trampoline replaced by what it calls.
+	 */
+	private Set<CGNode> dispatchTargets(Set<CGNode> targets, Set<CGNode> seen) {
+		Set<CGNode> ret = Sets.newHashSet();
+
+		for (CGNode target : targets)
+			if (target.getMethod() instanceof AstMethod || Util.isTensorFlowNode(target))
+				ret.add(target);
+			else if (seen.add(target))
+				ret.addAll(this.dispatchTargets(Sets.newHashSet(this.callGraph.getSuccNodes(target)), seen));
+
+		return ret;
 	}
 }
