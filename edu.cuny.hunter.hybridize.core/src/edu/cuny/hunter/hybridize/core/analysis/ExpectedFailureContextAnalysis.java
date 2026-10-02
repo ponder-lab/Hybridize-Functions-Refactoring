@@ -315,8 +315,10 @@ class ExpectedFailureContextAnalysis {
 	 * trampoline resolves to the frame that actually contains the call. A call in user code that no guard or {@code except} clause of its
 	 * own frame encloses is hopped too, to the sites calling that frame, since an exception the call raises propagates out of the frame
 	 * unhandled: a user {@code __call__} override forwarding to {@code super().__call__} sits between a guarded test and the layer's
-	 * {@code call}. A frame with no call site of its own keeps its call, so a root's unguarded call remains evidence. {@code memo} holds
-	 * each node's sites, so a frame calling {@code node} from two sites is walked once; a node still being walked has none, which stops a
+	 * {@code call}. A frame with no call site of its own keeps its call, so a root's unguarded call remains evidence. A hopped call counts
+	 * as guarded whether or not its argument comes from the guarded call's, such as a warm-up call in a helper the guard calls, which is
+	 * the imprecision of two calls in one guarded {@code with} body. {@code memo} holds each node's sites, so a frame the walk reaches
+	 * along two paths, as when contexts merge above it, yields its sites both times; a node still being walked has none, which stops a
 	 * cycle at the call inside it.
 	 */
 	private Set<Site> originatingSites(CGNode node, Map<CGNode, Set<Site>> memo) {

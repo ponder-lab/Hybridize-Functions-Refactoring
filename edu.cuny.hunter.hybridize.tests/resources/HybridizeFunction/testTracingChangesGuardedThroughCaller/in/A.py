@@ -46,20 +46,25 @@ with case.assertRaises(tf.errors.InvalidArgumentError):
     call_forwarded_twice(tf.ones((3,)))
 
 
-# Refused: a frame calling the function from two sites, neither guarded in that frame.
-def called_twice(x):
+# Refused: one frame reached along two paths, since the frame between calls `call_diamond` from two
+# sites.
+def diamond(x):
     return tf.matmul(x, x)
 
 
-def call_called_twice(x):
-    called_twice(x)
-    return called_twice(x)
+def call_diamond(x):
+    return diamond(x)
 
 
-called_twice(tf.ones((2, 2)))
+def call_call_diamond_twice(x):
+    call_diamond(x)
+    return call_diamond(x)
+
+
+diamond(tf.ones((2, 2)))
 
 with case.assertRaises(tf.errors.InvalidArgumentError):
-    call_called_twice(tf.ones((3,)))
+    call_call_diamond_twice(tf.ones((3,)))
 
 
 # Converted: the frame between catches every exception and raises the declared one in its place,

@@ -9935,11 +9935,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A guard around a call reaches the function the call reaches through user functions between them, since what the function raises
 	 * leaves each such frame unhandled: {@code forwarded} is reached through one frame, {@code forwarded_twice} through two, and
-	 * {@code called_twice} from two sites of the same frame. Each argument fails {@code tf.matmul}'s static shape check, as in
-	 * {@link #testTracingChangesGuardedException()}, so the conversion is refused. A frame between whose {@code try} statement catches
-	 * every exception and raises the declared one in its place ({@code call_caught}) handles the call itself, so the guard above it is not
-	 * the call's, and {@code caught} is converted. Each case was checked against TensorFlow 2.9.3 by running the program eagerly and with a
-	 * bare decorator on the function.
+	 * {@code diamond} through a frame the walk reaches along two paths, since the frame above it calls it from two sites. Each argument
+	 * fails {@code tf.matmul}'s static shape check, as in {@link #testTracingChangesGuardedException()}, so the conversion is refused. A
+	 * frame between whose {@code try} statement catches every exception and raises the declared one in its place ({@code call_caught})
+	 * handles the call itself, so the guard above it is not the call's, and {@code caught} is converted. Each case was checked against
+	 * TensorFlow 2.9.3 by running the program eagerly and with a bare decorator on the function.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
 	 */
@@ -9949,7 +9949,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			this.setInferInputSignatures(infer);
 			Set<Function> functions = this.getFunctions();
 
-			for (String name : List.of("forwarded", "forwarded_twice", "called_twice")) {
+			for (String name : List.of("forwarded", "forwarded_twice", "diamond")) {
 				Function function = findFunction(functions, name);
 				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
