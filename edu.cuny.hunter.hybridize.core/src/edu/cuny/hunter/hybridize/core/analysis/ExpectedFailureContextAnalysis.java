@@ -46,8 +46,10 @@ import com.ibm.wala.util.graph.dominators.Dominators;
  * A node is excluded only when <em>every</em> call site reaching it is guarded, since a node shared between a guarded and a conforming site
  * carries evidence from both. Ariadne interposes a synthesized trampoline between a caller and an instance method, so the walk hops through
  * any predecessor that is not user code (an {@link AstMethod}) to reach the frame the guard is written in; without that hop a Keras
- * {@code call} override would never see its test method. A node with no resolvable call site is not excluded, the allow-on-unknown polarity
- * of every sibling analysis.
+ * {@code call} override would never see its test method. It hops a user frame too where no guard or {@code except} clause of that frame
+ * encloses the call, since what the call raises leaves the frame unhandled: a user {@code __call__} override forwarding to
+ * {@code super().__call__} sits between the test and {@code call}. A node with no resolvable call site is not excluded, the
+ * allow-on-unknown polarity of every sibling analysis.
  * <p>
  * The guard test delimits the {@code with} body rather than testing dominance by the guard alone. Dominance alone was wrong in the
  * permissive direction: the body sits on the straight-line path after the {@code assertRaises(...)} invoke, but so does everything
@@ -236,7 +238,7 @@ class ExpectedFailureContextAnalysis {
 		for (CGNode node : nodes) {
 			List<List<Guard>> calls = new ArrayList<>();
 
-			for (Site site : this.originatingSites(node, new HashSet<>())) {
+			for (Site site : this.originatingSites(node, new HashMap<>())) {
 				IR ir = site.caller().getIR();
 
 				if (ir == null)
@@ -272,7 +274,7 @@ class ExpectedFailureContextAnalysis {
 	private boolean isGuardedOnly(CGNode node, boolean handlers) {
 		boolean sawSite = false;
 
-		for (Site site : this.originatingSites(node, new HashSet<>())) {
+		for (Site site : this.originatingSites(node, new HashMap<>())) {
 			sawSite = true;
 
 			if (!this.isGuarded(site, handlers))
@@ -310,23 +312,67 @@ class ExpectedFailureContextAnalysis {
 
 	/**
 	 * The call sites reaching {@code node} from user code, hopping any predecessor that is not an {@link AstMethod} so a synthesized
-	 * trampoline resolves to the frame that actually contains the call. {@code seen} guards against a cycle among synthetic frames.
+	 * trampoline resolves to the frame that actually contains the call. A call in user code that no guard or {@code except} clause of its
+	 * own frame encloses is hopped too, to the sites calling that frame, since an exception the call raises propagates out of the frame
+	 * unhandled: a user {@code __call__} override forwarding to {@code super().__call__} sits between a guarded test and the layer's
+	 * {@code call}. A frame with no call site of its own keeps its call, so a root's unguarded call remains evidence. {@code memo} holds
+	 * each node's sites, so a frame calling {@code node} from two sites is walked once; a node still being walked has none, which stops a
+	 * cycle at the call inside it.
 	 */
-	private Set<Site> originatingSites(CGNode node, Set<CGNode> seen) {
-		Set<Site> ret = new HashSet<>();
+	private Set<Site> originatingSites(CGNode node, Map<CGNode, Set<Site>> memo) {
+		Set<Site> known = memo.get(node);
 
-		if (!seen.add(node))
-			return ret;
+		if (known != null)
+			return known;
+
+		memo.put(node, Set.of());
+		Set<Site> ret = new HashSet<>();
 
 		for (CGNode predecessor : Iterator2Iterable.make(this.callGraph.getPredNodes(node)))
 			if (predecessor.getMethod() instanceof AstMethod)
-				for (CallSiteReference reference : Iterator2Iterable.make(this.callGraph.getPossibleSites(predecessor, node)))
-					ret.add(new Site(predecessor, reference));
+				for (CallSiteReference reference : Iterator2Iterable.make(this.callGraph.getPossibleSites(predecessor, node))) {
+					Set<Site> outer = this.isEnclosed(predecessor, reference) ? Set.of() : this.originatingSites(predecessor, memo);
+
+					if (outer.isEmpty())
+						ret.add(new Site(predecessor, reference));
+					else
+						// The frame does not handle what the call raises, so the guard, if any, is written further up.
+						ret.addAll(outer);
+				}
 			else
 				// A trampoline forwards the originating call, so the guard is written one frame further up.
-				ret.addAll(this.originatingSites(predecessor, seen));
+				ret.addAll(this.originatingSites(predecessor, memo));
 
+		memo.put(node, ret);
 		return ret;
+	}
+
+	/**
+	 * True iff some invoke at {@code reference} in {@code caller} lies inside an expected-failure guard's body or a {@code try} statement
+	 * with an {@code except} clause, or its frame cannot be read, in which case the walk stops at the call.
+	 */
+	private boolean isEnclosed(CGNode caller, CallSiteReference reference) {
+		IR ir = caller.getIR();
+
+		if (ir == null)
+			return true;
+
+		Set<GuardRegion> regions = this.guardRegions(caller, ir);
+		Dominators<ISSABasicBlock> dominators = regions.isEmpty() ? null
+				: Dominators.make(ir.getControlFlowGraph(), ir.getControlFlowGraph().entry());
+
+		for (SSAAbstractInvokeInstruction instruction : ir.getCalls(reference)) {
+			ISSABasicBlock block = ir.getBasicBlockForInstruction(instruction);
+
+			if (block == null || !this.handlersAround(caller, instruction).isEmpty())
+				return true;
+
+			for (GuardRegion region : regions)
+				if (region.contains(block, dominators))
+					return true;
+		}
+
+		return false;
 	}
 
 	/**
