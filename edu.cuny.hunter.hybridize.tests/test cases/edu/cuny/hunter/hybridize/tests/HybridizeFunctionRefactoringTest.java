@@ -9914,10 +9914,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * TensorFlow 2.9.3 the test passes eagerly and fails under a bare decorator, with {@code ValueError} at trace time in place of the
 	 * declared {@code InvalidArgumentError}, so the conversion is refused.
 	 * <p>
-	 * The guard is seen because the analysis dispatches {@code model(...)} through the synthesized {@code Layer.__call__} trampoline,
-	 * skipping the user's {@code Model.__call__} override, so the walk to the guarded frame hops only synthetic code. Were the override
-	 * resolved, the walk would stop at its frame, which is outside the guard: a guard in a caller further up the stack is not seen. This
-	 * test is what flags that change.
+	 * The guard is seen whether the analysis dispatches {@code model(...)} through the synthesized {@code Layer.__call__} trampoline or to
+	 * the user's {@code Model.__call__} override: the override's {@code super().__call__} is outside any guard, but nothing in the override
+	 * handles what it raises, so the walk to the guarded frame continues through it to the test
+	 * ({@link #testTracingChangesGuardedThroughCaller()}).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
 	 */
@@ -9929,6 +9929,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull("`LanguageModel.call` is refused with inference " + (infer ? "on." : "off."), call.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
 			assertFalse("`LanguageModel.call` is not hybridized.", call.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * A guard around a call reaches the function the call reaches through user functions between them, since what the function raises
+	 * leaves each such frame unhandled: {@code forwarded} is reached through one frame, {@code forwarded_twice} through two, and
+	 * {@code diamond} through a frame the walk reaches along two paths, since the frame above it calls it from two sites. Each argument
+	 * fails {@code tf.matmul}'s static shape check, as in {@link #testTracingChangesGuardedException()}, so the conversion is refused. A
+	 * frame between whose {@code try} statement catches every exception and raises the declared one in its place ({@code call_caught})
+	 * handles the call itself, so the guard above it is not the call's, and {@code caught} is converted. Each case was checked against
+	 * TensorFlow 2.9.3 by running the program eagerly and with a bare decorator on the function.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedThroughCaller() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			for (String name : List.of("forwarded", "forwarded_twice", "diamond")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			Function caught = findFunction(functions, "caught");
+			assertTrue("`caught` is hybridized with inference " + (infer ? "on." : "off."),
+					caught.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNull("`caught` is not refused.", caught.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
 		}
 	}
 
