@@ -4668,7 +4668,7 @@ public class Function {
 	/**
 	 * Returns what became of this function's inferred input signature, or {@link Optional#empty} when it has none (inference was off, never
 	 * ran, or was blocked). Exactly one {@link InputSignatureOutcome} applies to each function with an inferred signature. A signature that
-	 * is written is classified by the transformation that writes it; one that isn't is {@link InputSignatureOutcome#AGREEMENT} when it
+	 * is written is classified by whether it replaces a supplied one; one that isn't is {@link InputSignatureOutcome#AGREEMENT} when it
 	 * matches the signature a hybrid function keeps, and otherwise is split by whether the function is hybrid. Reads memoized results
 	 * without triggering inference, so it leaves the function's status untouched.
 	 *
@@ -4681,13 +4681,10 @@ public class Function {
 		if (inferred.isEmpty())
 			return Optional.empty();
 
-		if (this.getWritesInferredInputSignature()) {
-			if (this.transformations.contains(CONVERT_TO_HYBRID))
-				return Optional.of(InputSignatureOutcome.WRITTEN_BY_CONVERSION);
-
+		// A conversion and a P4 reconfiguration both add a signature where there was none; only a P5 narrowing replaces one.
+		if (this.getWritesInferredInputSignature())
 			return Optional.of(this.getPassingPrecondition() == P5 ? InputSignatureOutcome.WRITTEN_BY_NARROWING
 					: InputSignatureOutcome.WRITTEN_BY_ADDITION);
-		}
 
 		boolean hybrid = TRUE.equals(this.isHybrid());
 

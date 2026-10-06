@@ -1845,10 +1845,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// The reported outcome is read before the edit is made, as the evaluator reads it (#1028).
 		InputSignatureOutcome outcome = f.getInputSignatureOutcome().orElseThrow();
-		assertTrue("A converted function's signature is written by the conversion or not at all.",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION || outcome == InputSignatureOutcome.NOT_WRITTEN_EAGER);
+		assertTrue("A converted function's signature is added by the conversion or not written at all.",
+				outcome == InputSignatureOutcome.WRITTEN_BY_ADDITION || outcome == InputSignatureOutcome.NOT_WRITTEN_EAGER);
 		assertEquals("`getWritesInferredInputSignature` must agree with the reported outcome (#1028).",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION, f.getWritesInferredInputSignature());
+				outcome == InputSignatureOutcome.WRITTEN_BY_ADDITION, f.getWritesInferredInputSignature());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
@@ -1870,7 +1870,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Some fixtures mention the keyword in a comment, so it's the edit's change in the count that says whether it wrote one.
 		assertEquals("The reported outcome must match whether the edit wrote an `input_signature` (#1028).",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION, countInputSignatureKeywords(doc.get()) > signaturesBefore);
+				outcome == InputSignatureOutcome.WRITTEN_BY_ADDITION, countInputSignatureKeywords(doc.get()) > signaturesBefore);
 	}
 
 	/**
@@ -2281,7 +2281,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should be hybrid pre-refactoring.", f.isHybrid());
 		assertEquals("Fixture function `f` should select `RECONFIGURE` after analysis.", singleton(RECONFIGURE), f.getTransformations());
 		assertEquals("`RECONFIGURE` selection should set the P4 passing precondition.", P4, f.getPassingPrecondition());
-		assertEquals("An added signature is reported as written by addition (#1028).",
+		assertEquals("A signature added to an existing decorator is reported as written by addition (#1028).",
 				Optional.of(InputSignatureOutcome.WRITTEN_BY_ADDITION), f.getInputSignatureOutcome());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document, mirroring `helperAssertInputSignatureEmission` (the

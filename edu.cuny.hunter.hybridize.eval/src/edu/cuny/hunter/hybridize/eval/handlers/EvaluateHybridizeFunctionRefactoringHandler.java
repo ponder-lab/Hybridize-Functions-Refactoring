@@ -723,11 +723,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				| File | One row per |
 				| ---- | ----------- |
 				| `results.csv` | evaluated project (subject). Its `inferred input_signatures` column counts the functions with an \
-				inferred signature, and the six columns after it split that count by what became of the signature: written by a \
-				conversion (`WRITTEN_BY_CONVERSION`), added (`WRITTEN_BY_ADDITION`, `P4`) or narrowed (`WRITTEN_BY_NARROWING`, `P5`) \
-				by a reconfiguration, identical to the supplied one (`AGREEMENT`), or not written into a hybrid (`NOT_WRITTEN_HYBRID`) or \
-				eager (`NOT_WRITTEN_EAGER`) function. Each such function is counted in exactly one, so they sum to the total and to the \
-				non-empty `inferred input_signature` cells in `functions.csv`. |
+				inferred signature, and the five columns after it split that count by what became of the signature: added where \
+				there was none (`WRITTEN_BY_ADDITION`), whether by a conversion or a `P4` reconfiguration, narrowed over a supplied \
+				one (`WRITTEN_BY_NARROWING`, `P5`), identical to the supplied one (`AGREEMENT`), or not written into a hybrid \
+				(`NOT_WRITTEN_HYBRID`) or eager (`NOT_WRITTEN_EAGER`) function. Each such function is counted in exactly one, so they \
+				sum to the total and to the non-empty `inferred input_signature` cells in `functions.csv`. |
 				| `functions.csv` | function considered by the refactoring. |
 				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
 				| `transformations.csv` | (candidate function, transformation). `writes input_signature` says whether the \
