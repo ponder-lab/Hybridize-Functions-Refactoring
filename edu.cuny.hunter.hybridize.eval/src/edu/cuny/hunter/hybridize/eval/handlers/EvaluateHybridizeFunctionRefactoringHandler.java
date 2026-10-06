@@ -21,13 +21,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -81,7 +79,7 @@ import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
-import edu.cuny.hunter.hybridize.core.analysis.InputSignatureOutcome;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignature.Relation;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
@@ -276,11 +274,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		// What became of each inferred input signature (#1028): the transformation counts above can't tell a decorator written with a
-		// signature from one written without, and miss signatures no transformation writes. The outcome columns sum to the total.
-		resultsHeader.add("inferred input_signatures");
-
-		for (InputSignatureOutcome outcome : InputSignatureOutcome.values())
-			resultsHeader.add(outcome.toString());
+		// signature from one written without, and miss signatures no transformation writes. The last three columns sum to the first.
+		resultsHeader.addAll(Arrays.asList("inferred input_signatures", "written input_signatures", "agreeing input_signatures",
+				"unwritten input_signatures"));
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
 				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "keras symbolic arguments", "type hints",
@@ -454,15 +450,17 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						resultsRecord.add(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
 
-					// input signature outcome counts, over every function so they sum to the non-empty `inferred input_signature`
-					// cells in functions.csv (#1028).
-					Map<InputSignatureOutcome, Long> outcomeCounts = functions.stream().map(Function::getInputSignatureOutcome)
-							.flatMap(Optional::stream).collect(
-									Collectors.groupingBy(o -> o, () -> new EnumMap<>(InputSignatureOutcome.class), Collectors.counting()));
-					resultsRecord.add(outcomeCounts.values().stream().mapToLong(Long::longValue).sum());
-
-					for (InputSignatureOutcome outcome : InputSignatureOutcome.values())
-						resultsRecord.add(outcomeCounts.getOrDefault(outcome, 0L));
+					// input signature counts, over every function so the total matches the non-empty `inferred input_signature` cells
+					// in functions.csv (#1028). A written signature never agrees with a supplied one, since agreement selects no
+					// transformation, so written, agreeing, and unwritten partition the total.
+					Set<Function> inferredFunctions = functions.stream().filter(f -> f.getInferredInputSignature().isPresent())
+							.collect(Collectors.toSet());
+					long written = inferredFunctions.stream().filter(Function::getWritesInferredInputSignature).count();
+					long agreeing = inferredFunctions.stream().filter(f -> getInputSignatureRelation(f) == Relation.AGREEMENT).count();
+					resultsRecord.add(inferredFunctions.size());
+					resultsRecord.add(written);
+					resultsRecord.add(agreeing);
+					resultsRecord.add(inferredFunctions.size() - written - agreeing);
 
 					// side-effects.
 					resultsRecord.add(this.getAlwaysCheckPythonSideEffects());
@@ -693,6 +691,19 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		}
 	}
 
+	/**
+	 * Returns how the given function's supplied input signature relates to its inferred one, or {@code null} when it lacks either.
+	 *
+	 * @param function The function.
+	 * @return The relation of the supplied signature to the inferred one, or {@code null} if either is absent.
+	 */
+	private static Relation getInputSignatureRelation(Function function) {
+		HybridizationParameters hybridizationParameters = function.getHybridizationParameters();
+		return hybridizationParameters == null ? null
+				: hybridizationParameters.getSuppliedInputSignature()
+						.flatMap(supplied -> function.getInferredInputSignature().map(supplied::relate)).orElse(null);
+	}
+
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
 				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
@@ -722,12 +733,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				| File | One row per |
 				| ---- | ----------- |
-				| `results.csv` | evaluated project (subject). Its `inferred input_signatures` column counts the functions with an \
-				inferred signature, and the six columns after it split that count by what became of the signature: written by a \
-				conversion (`WRITTEN_BY_CONVERSION`), added (`WRITTEN_BY_ADDITION`, `P4`) or narrowed (`WRITTEN_BY_NARROWING`, `P5`) \
-				by a reconfiguration, identical to the supplied one (`AGREEMENT`), or not written into a hybrid (`NOT_WRITTEN_HYBRID`) or \
-				eager (`NOT_WRITTEN_EAGER`) function. Each such function is counted in exactly one, so they sum to the total and to the \
-				non-empty `inferred input_signature` cells in `functions.csv`. |
+				| `results.csv` | evaluated project (subject). `inferred input_signatures` counts the functions with an inferred \
+				signature, matching the non-empty `inferred input_signature` cells in `functions.csv`. The next three columns split it: \
+				`written input_signatures` (written by a conversion or reconfiguration), `agreeing input_signatures` (identical to the \
+				supplied one), and `unwritten input_signatures` (the rest). |
 				| `functions.csv` | function considered by the refactoring. |
 				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
 				| `transformations.csv` | (candidate function, transformation). `writes input_signature` says whether the \
@@ -943,9 +952,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		 * inferred-content column is thus blank both when inference never ran and when it ran but was blocked.)
 		 */
 		printer.print(function.getInferredInputSignature().map(s -> s.toTensorSpecList("tf.")).orElse(null));
-		printer.print(hybridizationParameters == null ? null
-				: hybridizationParameters.getSuppliedInputSignature()
-						.flatMap(supplied -> function.getInferredInputSignature().map(supplied::relate)).orElse(null));
+		printer.print(getInputSignatureRelation(function));
 		printer.print(function.getInferredInputSignatureAbsenceReason().orElse(null));
 
 		printer.print(function.getRefactoring());

@@ -160,7 +160,6 @@ import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
 import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
-import edu.cuny.hunter.hybridize.core.analysis.InputSignatureOutcome;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -1843,16 +1842,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Inferred signature should be available after analysis for an eager->hybrid candidate.",
 				f.getInferredInputSignature().isPresent());
 
-		// The reported outcome is read before the edit is made, as the evaluator reads it (#1028).
-		InputSignatureOutcome outcome = f.getInputSignatureOutcome().orElseThrow();
-		assertTrue("A converted function's signature is written by the conversion or not at all.",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION || outcome == InputSignatureOutcome.NOT_WRITTEN_EAGER);
-		assertEquals("`getWritesInferredInputSignature` must agree with the reported outcome (#1028).",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION, f.getWritesInferredInputSignature());
-
 		// Apply the `TextEdit`s directly to the function's in-memory document. The shared `compareOutputTestFile` path would do the
 		// same comparison via the existing infrastructure, but the test's `ResourceStub`-backed `IFile` can't be resolved to a URI by
 		// `TextFileBufferManager`. Tracked at #359. When that lands, these tests can collapse to setting `compareOutputTestFile`.
+		// Read before the edit is made, as the evaluator reads it (#1028).
+		final boolean writes = f.getWritesInferredInputSignature();
+
 		IDocument doc = f.getContainingDocument();
 
 		// Apply highest-offset edits first so an inserted import (low offset) does not shift the unapplied decorator edit's anchor. In
@@ -1869,8 +1864,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEqualLines(expected, doc.get());
 
 		// Some fixtures mention the keyword in a comment, so it's the edit's change in the count that says whether it wrote one.
-		assertEquals("The reported outcome must match whether the edit wrote an `input_signature` (#1028).",
-				outcome == InputSignatureOutcome.WRITTEN_BY_CONVERSION, countInputSignatureKeywords(doc.get()) > signaturesBefore);
+		assertEquals("`getWritesInferredInputSignature` must match whether the edit wrote an `input_signature` (#1028).", writes,
+				countInputSignatureKeywords(doc.get()) > signaturesBefore);
 	}
 
 	/**
@@ -2157,8 +2152,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("A signature is inferred.", f.getInferredInputSignature().isPresent());
 		assertNotNull("The withheld signature is reported as unwritable.",
 				f.getEntryMatchingFailure(INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED));
-		assertEquals("A withheld signature is reported as not written into a hybrid function (#1028).",
-				Optional.of(InputSignatureOutcome.NOT_WRITTEN_HYBRID), f.getInputSignatureOutcome());
+		assertFalse("A withheld signature is reported as not written (#1028).", f.getWritesInferredInputSignature());
 		assertNull("A function whose inferred signature is withheld isn't reported as already optimal.",
 				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
@@ -2259,8 +2253,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("With inference disabled, RECONFIGURE must not be selected.", f.getTransformations().contains(RECONFIGURE));
 		assertTrue("The default precondition matrix must be unchanged: no transformation.", f.getTransformations().isEmpty());
 		assertNull("No passing precondition with the flag off.", f.getPassingPrecondition());
-		assertEquals("With inference disabled, there is no signature to report an outcome for (#1028).", Optional.empty(),
-				f.getInputSignatureOutcome());
+		assertFalse("With inference disabled, no signature is written (#1028).", f.getWritesInferredInputSignature());
 		assertNotNull("The good-hybrid function must still hit the HAS_NO_PRIMITIVE_PARAMETERS failure when the flag is off.",
 				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
 	}
@@ -2281,8 +2274,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should be hybrid pre-refactoring.", f.isHybrid());
 		assertEquals("Fixture function `f` should select `RECONFIGURE` after analysis.", singleton(RECONFIGURE), f.getTransformations());
 		assertEquals("`RECONFIGURE` selection should set the P4 passing precondition.", P4, f.getPassingPrecondition());
-		assertEquals("An added signature is reported as written by addition (#1028).",
-				Optional.of(InputSignatureOutcome.WRITTEN_BY_ADDITION), f.getInputSignatureOutcome());
+		assertTrue("An added signature is reported as written (#1028).", f.getWritesInferredInputSignature());
 
 		// Apply the `TextEdit`s directly to the function's in-memory document, mirroring `helperAssertInputSignatureEmission` (the
 		// `ResourceStub`-backed `IFile` can't be resolved to a URI by `TextFileBufferManager`; tracked at #359).
@@ -2358,8 +2350,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertNotNull("A disagreeing supplied signature fails its precondition (#808).",
 				f.getEntryMatchingFailure(SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS));
-		assertEquals("A disagreeing signature is reported as not written into a hybrid function (#1028).",
-				Optional.of(InputSignatureOutcome.NOT_WRITTEN_HYBRID), f.getInputSignatureOutcome());
+		assertFalse("A disagreeing signature is reported as not written (#1028).", f.getWritesInferredInputSignature());
 	}
 
 	/**
@@ -2408,8 +2399,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
 		assertEquals("A broader supplied signature is narrowed.", singleton(RECONFIGURE), f.getTransformations());
 		assertEquals("Narrowing sets the P5 passing precondition.", P5, f.getPassingPrecondition());
-		assertEquals("A narrowed signature is reported as written by narrowing (#1028).",
-				Optional.of(InputSignatureOutcome.WRITTEN_BY_NARROWING), f.getInputSignatureOutcome());
+		assertTrue("A narrowed signature is reported as written (#1028).", f.getWritesInferredInputSignature());
 
 		IDocument doc = f.getContainingDocument();
 		List<TextEdit> edits = new ArrayList<>(f.transform());
@@ -3018,8 +3008,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function f = functions.iterator().next();
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
 		assertFalse("An agreeing signature must not be reconfigured.", f.getTransformations().contains(RECONFIGURE));
-		assertEquals("An agreeing signature is reported as agreement, not as unwritten (#1028).",
-				Optional.of(InputSignatureOutcome.AGREEMENT), f.getInputSignatureOutcome());
+		assertFalse("An agreeing signature is not written (#1028).", f.getWritesInferredInputSignature());
 	}
 
 	/**
