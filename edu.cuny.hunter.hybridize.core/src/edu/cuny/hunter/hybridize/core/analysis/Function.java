@@ -1718,7 +1718,6 @@ public class Function {
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
-							this.addInfo("This hybrid function has no input signature and will be reconfigured to add the inferred one.");
 							this.addTransformation(RECONFIGURE);
 							this.setPassingPrecondition(P4);
 						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
@@ -2530,8 +2529,6 @@ public class Function {
 			return;
 		}
 
-		this.addInfo("This hybrid function's input signature is broader than its call sites require and will be narrowed to the inferred "
-				+ "one; every reachable call already conforms to it.");
 		this.addTransformation(RECONFIGURE);
 		this.setPassingPrecondition(P5);
 	}
