@@ -21,11 +21,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -79,6 +81,7 @@ import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.InputSignatureOutcome;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
@@ -272,6 +275,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		for (Transformation transformation : Transformation.values())
 			resultsHeader.add(transformation.toString());
 
+		// What became of each inferred input signature (#1028): the transformation counts above can't tell a decorator written with a
+		// signature from one written without, and miss signatures no transformation writes. The outcome columns sum to the total.
+		resultsHeader.add("inferred input_signatures");
+
+		for (InputSignatureOutcome outcome : InputSignatureOutcome.values())
+			resultsHeader.add(outcome.toString());
+
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
 				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "keras symbolic arguments", "type hints",
 				"parallel", "speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
@@ -289,7 +299,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
 				CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
-						buildAttributeColumnNames("transformation"));
+						buildAttributeColumnNames("transformation", "writes input_signature"));
 				CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter nonOptimizableFunctionPrinter = createCSVPrinter(NONOPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter errorPrinter = createCSVPrinter(FAILED_PRECONDITIONS_CSV_FILENAME,
@@ -397,7 +407,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 						// transformations.
 						for (Transformation transformation : function.getTransformations())
-							transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation));
+							transformationsPrinter.printRecord(buildAttributeColumnValues(function, transformation,
+									transformation != Transformation.CONVERT_TO_EAGER && function.getWritesInferredInputSignature()));
 					}
 
 					// optimizable candidate functions.
@@ -442,6 +453,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (Transformation transformation : Transformation.values())
 						resultsRecord.add(candidates.parallelStream().map(Function::getTransformations).filter(Objects::nonNull)
 								.flatMap(as -> as.parallelStream()).filter(a -> Objects.equals(a, transformation)).count());
+
+					// input signature outcome counts, over every function so they sum to the non-empty `inferred input_signature`
+					// cells in functions.csv (#1028).
+					Map<InputSignatureOutcome, Long> outcomeCounts = functions.stream().map(Function::getInputSignatureOutcome)
+							.flatMap(Optional::stream).collect(
+									Collectors.groupingBy(o -> o, () -> new EnumMap<>(InputSignatureOutcome.class), Collectors.counting()));
+					resultsRecord.add(outcomeCounts.values().stream().mapToLong(Long::longValue).sum());
+
+					for (InputSignatureOutcome outcome : InputSignatureOutcome.values())
+						resultsRecord.add(outcomeCounts.getOrDefault(outcome, 0L));
 
 					// side-effects.
 					resultsRecord.add(this.getAlwaysCheckPythonSideEffects());
@@ -701,10 +722,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				| File | One row per |
 				| ---- | ----------- |
-				| `results.csv` | evaluated project (subject). |
+				| `results.csv` | evaluated project (subject). Its `inferred input_signatures` column counts the functions with an \
+				inferred signature, and the six columns after it split that count by what became of the signature: written by a \
+				conversion (`WRITTEN_BY_CONVERSION`), added (`WRITTEN_BY_ADDITION`, `P4`) or narrowed (`WRITTEN_BY_NARROWING`, `P5`) \
+				by a reconfiguration, identical to the supplied one (`AGREEMENT`), or not written into a hybrid (`NOT_WRITTEN_HYBRID`) or \
+				eager (`NOT_WRITTEN_EAGER`) function. Each such function is counted in exactly one, so they sum to the total and to the \
+				non-empty `inferred input_signature` cells in `functions.csv`. |
 				| `functions.csv` | function considered by the refactoring. |
 				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
-				| `transformations.csv` | (candidate function, transformation). |
+				| `transformations.csv` | (candidate function, transformation). `writes input_signature` says whether the \
+				transformation writes the inferred signature into the decorator; a conversion can write a bare one. |
 				| `optimizable.csv` | candidate function passing the preconditions. |
 				| `nonoptimizable.csv` | candidate function failing a precondition. |
 				| `failed_preconditions.csv` | error-severity status entry of a failing candidate. |

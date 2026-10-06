@@ -4652,6 +4652,55 @@ public class Function {
 	}
 
 	/**
+	 * Returns true iff this function's transformation writes its inferred input signature into the decorator: it is converted to hybrid or
+	 * reconfigured, and the signature's names are in scope under the file's import shape, the same gate the emission itself passes through.
+	 * A conversion that fails the gate writes a bare decorator. Reads the memoized inferred signature without triggering inference, so it
+	 * leaves the function's status untouched.
+	 *
+	 * @return True iff this function's transformation writes an {@code input_signature}.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1028">Issue 1028</a>
+	 */
+	public boolean getWritesInferredInputSignature() {
+		return (this.transformations.contains(CONVERT_TO_HYBRID) || this.transformations.contains(RECONFIGURE))
+				&& this.getInferredInputSignature().isPresent() && this.canEmitInferredInputSignature();
+	}
+
+	/**
+	 * Returns what became of this function's inferred input signature, or {@link Optional#empty} when it has none (inference was off, never
+	 * ran, or was blocked). Exactly one {@link InputSignatureOutcome} applies to each function with an inferred signature. A signature that
+	 * is written is classified by the transformation that writes it; one that isn't is {@link InputSignatureOutcome#AGREEMENT} when it
+	 * matches the signature a hybrid function keeps, and otherwise is split by whether the function is hybrid. Reads memoized results
+	 * without triggering inference, so it leaves the function's status untouched.
+	 *
+	 * @return The outcome of this function's inferred input signature, or {@link Optional#empty} if it has none.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1028">Issue 1028</a>
+	 */
+	public Optional<InputSignatureOutcome> getInputSignatureOutcome() {
+		Optional<InputSignature> inferred = this.getInferredInputSignature();
+
+		if (inferred.isEmpty())
+			return Optional.empty();
+
+		if (this.getWritesInferredInputSignature()) {
+			if (this.transformations.contains(CONVERT_TO_HYBRID))
+				return Optional.of(InputSignatureOutcome.WRITTEN_BY_CONVERSION);
+
+			return Optional.of(this.getPassingPrecondition() == P5 ? InputSignatureOutcome.WRITTEN_BY_NARROWING
+					: InputSignatureOutcome.WRITTEN_BY_ADDITION);
+		}
+
+		boolean hybrid = TRUE.equals(this.isHybrid());
+
+		// An agreeing signature counts as agreement only while the decorator carrying it stays; de-hybridizing removes it.
+		if (hybrid && !this.transformations.contains(CONVERT_TO_EAGER) && this.getHybridizationParameters() != null
+				&& this.getHybridizationParameters().getSuppliedInputSignature()
+						.map(supplied -> supplied.relate(inferred.get()) == InputSignature.Relation.AGREEMENT).orElse(false))
+			return Optional.of(InputSignatureOutcome.AGREEMENT);
+
+		return Optional.of(hybrid ? InputSignatureOutcome.NOT_WRITTEN_HYBRID : InputSignatureOutcome.NOT_WRITTEN_EAGER);
+	}
+
+	/**
 	 * Returns the blocking {@link InferenceResult.AbsenceReason} for each parameter that prevented input-signature inference, in parameter
 	 * declaration order, from the memoized result without triggering inference. Where {@link #getInferredInputSignatureAbsenceReason()}
 	 * collapses the function to its first blocking reason, this surfaces every blocking parameter so a consumer can report per-parameter
