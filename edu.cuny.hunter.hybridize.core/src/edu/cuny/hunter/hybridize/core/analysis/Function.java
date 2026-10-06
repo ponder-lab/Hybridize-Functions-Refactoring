@@ -1656,6 +1656,8 @@ public class Function {
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
+					this.addInfo("This hybrid function likely does not have a primitive parameter.");
+
 					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && this.isTensorComputationUnresolved())
 						// Not established as barren: a call the analysis could not resolve may compute tensors, and de-hybridizing a
 						// function that does (and possibly relies on graph mode, such as `optimizer.get_gradients`) breaks it (issue 997).
@@ -1715,6 +1717,12 @@ public class Function {
 								&& !this.isRecursive() && this.canEmitInferredInputSignature();
 
 						boolean canReconfigure = reconfigureOtherwiseViable && !unresolvedStaticallyReadAxes;
+
+						if (canReconfigure) {
+							// Narrate the reconfiguration's conditions as they're satisfied, as P1, P2, P3, and P6 do (issue 1033).
+							this.addInfo("This hybrid function does not have Python side-effects.");
+							this.addInfo("This hybrid function is not recursive.");
+						}
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.

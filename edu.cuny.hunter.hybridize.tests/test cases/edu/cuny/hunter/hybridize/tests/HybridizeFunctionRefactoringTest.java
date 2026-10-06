@@ -2253,6 +2253,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should be hybrid pre-refactoring.", f.isHybrid());
 		assertEquals("Fixture function `f` should select `RECONFIGURE` after analysis.", singleton(RECONFIGURE), f.getTransformations());
 		assertEquals("`RECONFIGURE` selection should set the P4 passing precondition.", P4, f.getPassingPrecondition());
+		assertReconfigurationConditionsNarrated(f);
 
 		// Apply the `TextEdit`s directly to the function's in-memory document, mirroring `helperAssertInputSignatureEmission` (the
 		// `ResourceStub`-backed `IFile` can't be resolved to a URI by `TextFileBufferManager`; tracked at #359).
@@ -2363,6 +2364,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Asserts that the given hybrid {@link Function}'s status narrates each condition its reconfiguration satisfied, as every other passing
+	 * precondition's does (issue 1033).
+	 *
+	 * @param f The reconfigured hybrid {@link Function}.
+	 */
+	private static void assertReconfigurationConditionsNarrated(Function f) {
+		Set<String> infos = Arrays.stream(f.getStatus().getEntries()).filter(RefactoringStatusEntry::isInfo)
+				.map(RefactoringStatusEntry::getMessage).collect(toSet());
+
+		for (String condition : new String[] { "This hybrid function likely has a tensor parameter.",
+				"This hybrid function likely does not have a primitive parameter.",
+				"This hybrid function does not have Python side-effects.", "This hybrid function is not recursive." })
+			assertTrue("Expected the condition \"" + condition + "\" to be narrated.", infos.contains(condition));
+	}
+
+	/**
 	 * Shared assertion for the narrowing tests (#808): the single hybrid fixture function selects {@code RECONFIGURE} with the {@code P5}
 	 * passing precondition, and applying its edits yields the expected output, in which the supplied literal is replaced by the inferred
 	 * signature.
@@ -2376,6 +2393,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Fixture function `f` should be hybrid.", f.isHybrid());
 		assertEquals("A broader supplied signature is narrowed.", singleton(RECONFIGURE), f.getTransformations());
 		assertEquals("Narrowing sets the P5 passing precondition.", P5, f.getPassingPrecondition());
+		assertReconfigurationConditionsNarrated(f);
 
 		IDocument doc = f.getContainingDocument();
 		List<TextEdit> edits = new ArrayList<>(f.transform());
