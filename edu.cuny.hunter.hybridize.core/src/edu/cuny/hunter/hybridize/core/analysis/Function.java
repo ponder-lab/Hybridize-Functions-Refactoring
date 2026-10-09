@@ -3820,20 +3820,19 @@ public class Function {
 			// Revert to just the name.
 			return Optional.of(containingFile.getName());
 
-		for (File pathEntry : pythonPath) {
-			String pathEntryAbsolutePath = pathEntry.getAbsoluteFile().getPath();
-			String containingFileAbsolutePath = containingFile.getAbsolutePath();
+		// Named against the most specific entry containing the file, compared by path component, as the analysis names its scripts
+		// (wala/ML#984): under nested entries, the first containing one would name a package's module as its enclosing directory's.
+		Path filePath = Paths.get(containingFile.getAbsolutePath()).normalize();
+		Path mostSpecific = null;
 
-			if (containingFileAbsolutePath.startsWith(pathEntryAbsolutePath)) {
-				// Found it.
-				Path pathEntryPath = Paths.get(pathEntryAbsolutePath);
-				Path filePath = Paths.get(containingFileAbsolutePath);
-				Path scriptRelativePath = pathEntryPath.relativize(filePath);
-				return Optional.of(scriptRelativePath.toString());
-			}
+		for (File pathEntry : pythonPath) {
+			Path pathEntryPath = Paths.get(pathEntry.getAbsoluteFile().getPath()).normalize();
+
+			if (filePath.startsWith(pathEntryPath) && (mostSpecific == null || pathEntryPath.getNameCount() > mostSpecific.getNameCount()))
+				mostSpecific = pathEntryPath;
 		}
 
-		return Optional.empty(); // Not found.
+		return mostSpecific == null ? Optional.empty() : Optional.of(mostSpecific.relativize(filePath).toString());
 	}
 
 	public Set<String> getDecoratorNames(IProgressMonitor monitor) {
