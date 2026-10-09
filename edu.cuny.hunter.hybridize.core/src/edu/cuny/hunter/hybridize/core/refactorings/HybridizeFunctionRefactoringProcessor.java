@@ -92,6 +92,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
 
+	private static final String DUMP_TENSOR_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpTensorAnalysis";
+
 	private static final String INFER_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.inferInputSignatures";
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
@@ -120,6 +122,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
 	private boolean dumpCallGraph = Boolean.getBoolean(DUMP_CALL_GRAPH_PROPERTY_KEY);
+
+	/**
+	 * True iff the whole {@link TensorTypeAnalysis} should be logged. Its rendering grows with the call graph and passes the maximum
+	 * {@link String} length on large projects, so it is off unless asked for.
+	 */
+	private boolean dumpTensorAnalysis = Boolean.getBoolean(DUMP_TENSOR_ANALYSIS_PROPERTY_KEY);
 
 	private boolean alwaysCheckPythonSideEffects;
 
@@ -427,7 +435,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				throw new CoreException(Status.error("Could not analyze tensors for: " + project.getName(), e));
 			}
 
-			LOG.info("Tensor analysis: " + analysis.toString());
+			if (this.dumpTensorAnalysis)
+				LOG.info("Tensor analysis: " + analysis.toString());
 
 			// The points-to results the tensor analysis abandoned at the targeted CFA depth limit (#670), rendered WALA-free for
 			// consumers outside this bundle. A non-empty population means raising this project's `targetedCfaDepth` may recover
