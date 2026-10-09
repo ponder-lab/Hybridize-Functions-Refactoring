@@ -170,6 +170,16 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 public class Function {
 
 	/**
+	 * The prefix Ariadne gives the name of a global's field.
+	 */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/**
+	 * The prefix Ariadne gives the name of a code body declared in a script.
+	 */
+	private static final String SCRIPT_PREFIX = "script ";
+
+	/**
 	 * Used for speculative analysis of the function name.
 	 */
 	private static final String FUNCTION_NAME_CONTEXT_REGEX = ".*(train|test).*_step|call|__call__|run_model|.*inference";
@@ -3572,6 +3582,19 @@ public class Function {
 		return Objects.equals(this.functionDefinition, other.functionDefinition);
 	}
 
+	/**
+	 * True iff the given {@link StaticFieldKey} is Ariadne's binding of a nested definition. A {@code def}, class, or comprehension nested
+	 * in a function is bound to a static field named by its path under the enclosing code body (for example, {@code script A.py/f/g} for a
+	 * {@code g} defined in {@code f}); that binding is scoped to the enclosing call like a local. A module-level global's field is instead
+	 * named by the variable alone (for example, {@code x}).
+	 *
+	 * @param staticFieldKey A {@link StaticFieldKey} in a function's mod set.
+	 * @return True iff the field is named by a path under a code body.
+	 */
+	private static boolean isNestedDefinitionBinding(StaticFieldKey staticFieldKey) {
+		return staticFieldKey.getField().getName().toString().startsWith(GLOBAL_PREFIX + SCRIPT_PREFIX);
+	}
+
 	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) throws CoreException {
 		Set<PointerKey> ret = new HashSet<>();
@@ -3592,7 +3615,10 @@ public class Function {
 					continue; // filter this pointer out.
 
 				ret.add(fieldPointerKey);
-			} else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
+			} else if (pointerKey instanceof StaticFieldKey staticFieldKey && !isNestedDefinitionBinding(staticFieldKey))
+				// A global outlives the call, so writing it is a side-effect wherever the value written was created.
+				ret.add(pointerKey);
+			else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
 
 				boolean skipPointerKey = true;
