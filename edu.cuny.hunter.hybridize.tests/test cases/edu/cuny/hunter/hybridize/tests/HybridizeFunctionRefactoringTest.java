@@ -7494,6 +7494,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("Storing a value created in the function into a global is a Python side-effect.", function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * The default of a nested {@code def} is bound with that definition, not to a module-level global, so a default the function itself
+	 * creates is not a Python side-effect of the function. Complements {@link #testPythonSideEffects70()}.
+	 */
+	@Test
+	public void testPythonSideEffects71() throws Exception {
+		Function function = this.getFunction("f");
+		assertFalse("Creating a nested definition's default is not a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
