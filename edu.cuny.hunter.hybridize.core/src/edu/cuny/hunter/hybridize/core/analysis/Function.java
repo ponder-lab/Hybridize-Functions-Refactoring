@@ -51,6 +51,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IFile;
@@ -168,6 +169,21 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function {
+
+	/**
+	 * The prefix Ariadne gives the name of a global's field.
+	 */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/**
+	 * The prefix Ariadne gives the name of a code body declared in a script.
+	 */
+	private static final String SCRIPT_PREFIX = "script ";
+
+	/**
+	 * The name the parser gives the global holding a {@code def}'s default, {@code <function>_default_<position>}.
+	 */
+	private static final Pattern PARSER_DEFAULT_BINDING = Pattern.compile(GLOBAL_PREFIX + "[A-Za-z_]\\w*_default_\\d+");
 
 	/**
 	 * Used for speculative analysis of the function name.
@@ -3572,6 +3588,28 @@ public class Function {
 		return Objects.equals(this.functionDefinition, other.functionDefinition);
 	}
 
+	/**
+	 * True iff the given {@link StaticFieldKey} is Ariadne's binding of a nested definition, which is scoped to the enclosing call like a
+	 * local rather than outliving it like a module-level global (whose field is named by the variable alone, for example, {@code x}).
+	 * Ariadne names three such bindings:
+	 * <ul>
+	 * <li>A {@code def}, class, or comprehension nested in a function, by its path under the enclosing code body (for example,
+	 * {@code script A.py/f/g} for a {@code g} defined in {@code f}).</li>
+	 * <li>Each default of a nested {@code def}, as the translator binds it, by the definition's type and the default's position (for
+	 * example, {@code Lscript A.py/f/g_defaults_0}).</li>
+	 * <li>Each default of a nested {@code def}, as the parser evaluates it, by the definition's name and the default's position (for
+	 * example, {@code g_default_0}). A user global spelled the same way would be read as a binding.</li>
+	 * </ul>
+	 *
+	 * @param staticFieldKey A {@link StaticFieldKey} in a function's mod set.
+	 * @return True iff the field is named as one of those bindings.
+	 */
+	private static boolean isNestedDefinitionBinding(StaticFieldKey staticFieldKey) {
+		String fieldName = staticFieldKey.getField().getName().toString();
+		return fieldName.startsWith(GLOBAL_PREFIX + SCRIPT_PREFIX) || fieldName.startsWith(GLOBAL_PREFIX + "L" + SCRIPT_PREFIX)
+				|| PARSER_DEFAULT_BINDING.matcher(fieldName).matches();
+	}
+
 	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) throws CoreException {
 		Set<PointerKey> ret = new HashSet<>();
@@ -3592,7 +3630,10 @@ public class Function {
 					continue; // filter this pointer out.
 
 				ret.add(fieldPointerKey);
-			} else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
+			} else if (pointerKey instanceof StaticFieldKey staticFieldKey && !isNestedDefinitionBinding(staticFieldKey))
+				// A global outlives the call, so writing it is a side-effect wherever the value written was created.
+				ret.add(pointerKey);
+			else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
 
 				boolean skipPointerKey = true;

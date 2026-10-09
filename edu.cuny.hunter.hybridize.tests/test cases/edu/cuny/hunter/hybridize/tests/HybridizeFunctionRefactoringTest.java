@@ -7483,6 +7483,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * A write to a global is a Python side-effect even when the value written is created inside the function. The function stores a list it
+	 * allocates into the module-level {@code x}; the write outlives the call, so the creation site of the value must not filter it out of
+	 * the mod set the way it does for a local or a field of an object the function itself creates.
+	 */
+	@Test
+	public void testPythonSideEffects70() throws Exception {
+		Function function = this.getFunction("leaky_function");
+		assertTrue("Storing a value created in the function into a global is a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * The default of a nested {@code def} is bound with that definition, not to a module-level global, so a default the function itself
+	 * creates is not a Python side-effect of the function. Complements {@link #testPythonSideEffects70()}.
+	 */
+	@Test
+	public void testPythonSideEffects71() throws Exception {
+		Function function = this.getFunction("f");
+		assertFalse("Creating a nested definition's default is not a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
