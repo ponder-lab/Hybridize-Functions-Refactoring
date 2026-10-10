@@ -7522,6 +7522,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * The {@link Function}s whose changes are built come in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in
+	 * the file. The processor receives them in a hash-ordered {@link Set}, whose order changes from run to run, and some analysis state is
+	 * first-come, so iterating that set directly made the output depend on the run.
+	 */
+	@Test
+	public void testProcessingOrder() throws Exception {
+		this.getFunctions();
+		List<String> order = this.lastProcessor.getOptimizableFunctions().stream().map(Function::getIdentifier).toList();
+		assertEquals(List.of("zeta", "Model.beta", "Model.omega", "alpha", "kappa", "delta", "mu", "gamma"), order);
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
