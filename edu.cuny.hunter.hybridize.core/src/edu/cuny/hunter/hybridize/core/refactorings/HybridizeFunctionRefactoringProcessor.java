@@ -10,7 +10,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +99,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	private static final String INFER_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.inferInputSignatures";
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
+
+	/**
+	 * The order {@link Function}s are processed in: by project, file, and position in the file. Some analysis state is first-come, so
+	 * processing in the hash order of a {@link Set} of {@link Function}s, which changes from run to run, could change what is emitted.
+	 */
+	public static final Comparator<Function> PROCESSING_ORDER = Comparator.comparing((Function f) -> f.getProject().getName())
+			.thenComparing(f -> f.getContainingFile().getPath()).thenComparingInt(Function::getBeginningLineNumber)
+			.thenComparingInt(Function::getDefinitionOrdinal).thenComparing(Function::getIdentifier);
 
 	private Set<Function> functions = new LinkedHashSet<>();
 
@@ -362,8 +372,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		Set<Function> allFunctions = this.getFunctions();
 
 		// collect the projects to be analyzed.
-		Map<IProject, Set<Function>> projectToFunctions = allFunctions.stream().filter(f -> f.getStatus().isOK())
-				.collect(Collectors.groupingBy(Function::getProject, Collectors.toSet()));
+		Map<IProject, Set<Function>> projectToFunctions = allFunctions.stream().filter(f -> f.getStatus().isOK()).sorted(PROCESSING_ORDER)
+				.collect(Collectors.groupingBy(Function::getProject, LinkedHashMap::new, Collectors.toCollection(LinkedHashSet::new)));
 
 		// process each project.
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
@@ -908,7 +918,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	public Set<Function> getOptimizableFunctions() {
-		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).collect(Collectors.toSet());
+		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).sorted(PROCESSING_ORDER)
+				.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 
 	@Override
