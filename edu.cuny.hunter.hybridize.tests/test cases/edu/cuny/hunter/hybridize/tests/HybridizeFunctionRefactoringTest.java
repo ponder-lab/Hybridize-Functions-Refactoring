@@ -11918,6 +11918,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * under {@code tf.function}. Its target is the builtin's summary, which is neither user code nor in the TensorFlow namespace. Reading
 	 * through every such target, rather than only trampolines, read the builtin through to nothing and left the TensorFlow receiver to
 	 * decide, which blocked the call. {@code calls_fit} is the control: it reaches the real endpoint and still blocks.
+	 * <p>
+	 * From Ariadne 0.52.105, the call also targets the trampoline for the model's own {@code predict}, since the analysis does not tell the
+	 * instance attribute from the class member, so {@code calls_replaced} blocks there and this pin moves with that bump.
 	 */
 	@Test
 	public void testEagerOnlyTrainingSurface2() throws Exception {
