@@ -11913,6 +11913,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1039. {@code calls_replaced} calls {@code predict} on a
+	 * Keras model whose {@code predict} was replaced with the builtin {@code len}, so the call never reaches the guarded endpoint and runs
+	 * under {@code tf.function}. Its target is the builtin's summary, which is neither user code nor in the TensorFlow namespace. Reading
+	 * through every such target, rather than only trampolines, read the builtin through to nothing and left the TensorFlow receiver to
+	 * decide, which blocked the call. {@code calls_fit} is the control: it reaches the real endpoint and still blocks.
+	 */
+	@Test
+	public void testEagerOnlyTrainingSurface2() throws Exception {
+		Function callsFit = getFunction("calls_fit");
+		assertTrue("`calls_fit` invokes the guarded Keras `fit` endpoint.", callsFit.getHasEagerOnlyCalls());
+
+		Function callsReplaced = getFunction("calls_replaced");
+		assertFalse("`calls_replaced` dispatches to the builtin `len` assigned over `predict`, not the guarded endpoint.",
+				callsReplaced.getHasEagerOnlyCalls());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a
 	 * function that (transitively) applies a numpy API to a value flowing from its parameters must not hybridize, since the call raises
 	 * under {@code tf.function} tracing once the parameters become symbolic (it fails with
