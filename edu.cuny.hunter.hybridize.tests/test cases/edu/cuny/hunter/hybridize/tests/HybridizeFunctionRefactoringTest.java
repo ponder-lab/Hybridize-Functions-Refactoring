@@ -7504,6 +7504,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Creating a nested definition's default is not a Python side-effect.", function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * The {@code Box} that {@code left} and {@code right} write is created in {@code make}, which both reach through {@code hub}, so
+	 * neither writes outside its closure. The closure walk skips a method it has already entered, so it can answer for a method on a cycle
+	 * before that method's walk is complete. {@code hub} calls both {@code left} and {@code right} before {@code make}: whichever function
+	 * is analyzed first, the walk reaches one of the two partners only after cutting the cycle back to {@code hub}. A remembered answer
+	 * from such a cut walk then made that partner's write an external one, and which partner it hit depended on the order the functions
+	 * were analyzed.
+	 */
+	@Test
+	public void testPythonSideEffects72() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(4, functions.size());
+
+		for (Function function : functions)
+			assertFalse(function.getIdentifier() + " writes only a Box created within its own closure.",
+					function.getHasPythonSideEffects());
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");

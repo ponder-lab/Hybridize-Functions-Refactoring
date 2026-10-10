@@ -109,7 +109,6 @@ import org.python.pydev.parser.jython.ast.stmtType;
 import org.python.pydev.parser.jython.ast.suiteType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
@@ -711,7 +710,13 @@ public class Function {
 		}
 	}
 
-	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
+	/**
+	 * Remembered answers of {@link #allCreationsWithinClosure(MethodReference, InstanceKey, CallGraph)}. Only answers that do not depend on
+	 * the order of the walk are kept: a {@code true}, found at a creating method in the closure, and a {@code false} from a walk begun at
+	 * that method, which saw its whole closure. A {@code false} for a method reached inside another walk can come from a walk cut short
+	 * where it re-entered a method still being walked, so it is not kept. Concurrent because functions may be processed in parallel.
+	 */
+	private static final Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = new ConcurrentHashMap<>();
 
 	/**
 	 * Per-node direct (non-transitive) mod sets, shared across {@link Function}s since the closure walks revisit the same nodes. Concurrent
@@ -818,21 +823,13 @@ public class Function {
 			}
 		}
 
+		// A walk begun here sees the whole closure; one entered from another walk may have been cut where it re-entered a method on it.
+		boolean complete = seen.isEmpty();
 		boolean result = allCreationsWithinClosureInteral2(methodReference, instanceKey, callGraph, seen);
 
-		if (cache2 == null) {
-			cache2 = Maps.newHashMap();
-			creationsCache.put(methodReference, cache2);
-		}
-
-		Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
-
-		if (cache3 == null) {
-			cache3 = Maps.newHashMap();
-			cache2.put(instanceKey, cache3);
-		}
-
-		cache3.put(callGraph, result);
+		if (result || complete)
+			creationsCache.computeIfAbsent(methodReference, _ -> new ConcurrentHashMap<>())
+					.computeIfAbsent(instanceKey, _ -> new ConcurrentHashMap<>()).put(callGraph, result);
 
 		return result;
 	}
