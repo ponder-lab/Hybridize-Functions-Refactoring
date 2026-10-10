@@ -7523,16 +7523,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * {@link Function}s are processed in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in the file, whatever
-	 * order the {@link Set} holding them iterates in. That order comes from hashing, which changes from run to run, and some analysis state
-	 * is first-come.
+	 * The {@link Function}s whose changes are built come in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in
+	 * the file. The processor receives them in a hash-ordered {@link Set}, whose order changes from run to run, and some analysis state is
+	 * first-come, so iterating that set directly made the output depend on the run.
 	 */
 	@Test
 	public void testProcessingOrder() throws Exception {
-		Set<Function> functions = new HashSet<>(this.getFunctions());
-		List<String> order = functions.stream().sorted(HybridizeFunctionRefactoringProcessor.PROCESSING_ORDER).map(Function::getIdentifier)
-				.toList();
-		assertEquals(List.of("zeta", "Model.beta", "alpha"), order);
+		this.getFunctions();
+		List<String> order = this.lastProcessor.getOptimizableFunctions().stream().map(Function::getIdentifier).toList();
+		assertEquals(List.of("zeta", "Model.beta", "Model.omega", "alpha", "kappa", "delta", "mu", "gamma"), order);
 	}
 
 	@Test
