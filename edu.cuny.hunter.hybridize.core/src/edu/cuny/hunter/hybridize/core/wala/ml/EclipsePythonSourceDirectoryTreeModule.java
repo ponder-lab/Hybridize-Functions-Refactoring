@@ -1,7 +1,11 @@
 package edu.cuny.hunter.hybridize.core.wala.ml;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.core.resources.IFile;
@@ -56,6 +60,23 @@ public class EclipsePythonSourceDirectoryTreeModule extends EclipseSourceDirecto
 	protected boolean includeFile(File file) {
 		return super.includeFile(file)
 				&& !this.excludedFiles.contains(this.getRootPath().append(file.getPath().substring(root.getPath().length())));
+	}
+
+	/**
+	 * Returns this module's files sorted by path. The superclass lists each directory in the order the file system returns it, which
+	 * differs between machines for the same files (ext4, for one, orders a directory by a hash of the names seeded per file system). The
+	 * analysis is sensitive to the order of its modules, so the same project would otherwise analyze differently depending on where it was
+	 * checked out (see wala/ML#168). Every entry's path starts with this module's root, so sorting by the whole path sorts by the path
+	 * relative to the root.
+	 *
+	 * @return An iterator over this module's files in path order.
+	 */
+	@Override
+	public Iterator<FileModule> getEntries() {
+		List<FileModule> entries = new ArrayList<>();
+		super.getEntries().forEachRemaining(entries::add);
+		entries.sort(Comparator.comparing(entry -> entry.getFile().getPath()));
+		return entries.iterator();
 	}
 
 	@Override
