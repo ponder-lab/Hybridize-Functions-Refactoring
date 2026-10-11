@@ -32,19 +32,22 @@ def pair_splat(pair):
 
 
 with open("batch.pkl", "rb") as f:
-    batch = pickle.load(f)
+    p0, p1, i0, i1 = pickle.load(f)
+
+pair = (p0, p1)
+items = [i0, i1]
 
 pair_sum((tf.zeros([4, 3]), tf.zeros([4, 3])))
-pair_sum(batch["pair"])
+pair_sum(pair)
 
 pair_typed((tf.zeros([4, 3]), tf.zeros([4, 3])))
 pair_typed((tf.ones([4, 3]), tf.ones([4, 3])))
 
 pair_outer((tf.zeros([4, 3]), tf.zeros([4, 3])))
-pair_outer(batch["pair"])
+pair_outer(pair)
 
 list_sum([tf.zeros([2]), tf.zeros([2])])
-list_sum(batch["items"])
+list_sum(items)
 
 pair_splat((tf.zeros([4, 3]), tf.zeros([4, 3])))
-pair_splat(**{"pair": batch["pair"]})
+pair_splat(**{"pair": pair})

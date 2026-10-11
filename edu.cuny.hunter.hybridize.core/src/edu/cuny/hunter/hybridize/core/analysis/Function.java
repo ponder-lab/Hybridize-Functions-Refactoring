@@ -3340,33 +3340,8 @@ public class Function {
 
 		if (elementReason != null)
 			blocking.put(param, elementReason);
-		else if (!this.blocksOnUntypedContainerContext(param, blocking))
+		else
 			specByParameter.put(param, new InputSignature.Sequence(reduced));
-	}
-
-	/**
-	 * Blocks the container parameter {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is
-	 * reached in a conforming calling context that supplies no container the elements were read from (#1003), including an argument after a
-	 * starred unpack, which the analysis reads as the unpacked sequence itself (#1004). The container form of
-	 * {@link #blocksOnUntypedContext}, asked, like it, only once a specification exists to store, so it relabels no other absence. See
-	 * {@link Parameter#hasUntypedContainerContext()}.
-	 *
-	 * @param param The container parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContainerContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedContainerContext())
-			return false;
-
-		// The nested specification comes from the containers the analysis saw. A context that supplies none of them passes something the
-		// specification makes no claim about, and TensorFlow enforces the nesting, so that call may be rejected.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site whose argument for parameter `" + param.getName() + "` is not a container the "
-						+ "analysis read, so a nested specification derived from the other call sites may reject that call; "
-						+ "input-signature inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
 	}
 
 	/**
@@ -4638,8 +4613,7 @@ public class Function {
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
 	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
-	 * add the reduced spec to the signature, unless the function is also reached in a conforming context that left the parameter untyped,
-	 * in which case the spec is withheld with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} (#998).
+	 * add the reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -4697,30 +4671,6 @@ public class Function {
 	 */
 	public Map<Parameter, AbsenceReason> getBlockingParameterReasons() {
 		return Collections.unmodifiableMap(this.blockingParameterReasons);
-	}
-
-	/**
-	 * Blocks {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is reached in a conforming
-	 * calling context in which the tensor-type analysis associated no type with it (#998). Asked only once the flat reduction has a
-	 * specification to store, so it relabels no other absence: a parameter whose typed contexts already fail to reduce keeps that reason.
-	 * Untyped contexts are found per call-graph node and per call site into one (see {@link Parameter#hasUntypedConformingContext()}).
-	 *
-	 * @param param The parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedConformingContext())
-			return false;
-
-		// The reduced specification comes from the contexts the analysis typed. What a context it reached without typing passes is not
-		// known to be a tensor matching that specification, so the specification would be a claim about that call too.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site where the argument for parameter `" + param.getName() + "` is not typed "
-						+ "as a tensor, so a specification derived from the other call sites may reject that call; input-signature "
-						+ "inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
 	}
 
 	/**
@@ -4969,8 +4919,7 @@ public class Function {
 									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
 									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
 
-					if (!this.blocksOnUntypedContext(param, blocking))
-						specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
 
 					continue;
 				}
@@ -4982,9 +4931,10 @@ public class Function {
 				 * `inferSpec` reduced to bottom. With the per-context reduction
 				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it drops for three reasons: heterogeneous
 				 * dtype (|D| ≠ 1), dtype-⊤ (a single agreed `UNKNOWN`), or mixed sparse/dense
-				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642). Shape-⊤ and symbolic-dim no longer drop
-				 * here—it emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own
-				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642), plus a `None` member, which a call passing
+				 * `None` contributes (wala/ML#1040). Shape-⊤ and symbolic-dim no longer drop here—it emits a coarse `TensorType(dtype,
+				 * null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own precedence order (dtype before sparseness) so
+				 * the reason is exact, and emit a per-parameter INFO naming it; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
 				AbsenceReason reason = classifyDtypeBottom(contexts);
@@ -4996,8 +4946,7 @@ public class Function {
 				continue;
 			}
 
-			if (!this.blocksOnUntypedContext(param, blocking))
-				specByParameter.put(param, new InputSignature.Single(spec.get()));
+			specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
 		// A declared failure was set aside as evidence (#888), but it still runs against the signature, which validates the argument before
@@ -5488,6 +5437,7 @@ public class Function {
 		case HETEROGENEOUS_DTYPE -> "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.";
 		case PARTIAL_DTYPE -> "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.";
 		case UNKNOWN_DTYPE -> "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.";
+		case RECEIVES_NONE -> "receives None at some call sites and a tensor at others, and a tensor specification rejects None, so a single input signature cannot be inferred; it is dropped.";
 		default -> "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.";
 		};
 	}
@@ -5506,11 +5456,15 @@ public class Function {
 	 * defect twice, which is the reason it lives here rather than at either call site.
 	 *
 	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
-	 * @return {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
+	 * @return {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}, whose dtype is meaningless (wala/ML#1040);
+	 *         {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
 	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, {@link AbsenceReason#UNKNOWN_DTYPE} when no context resolved,
 	 *         and otherwise {@link AbsenceReason#HETEROGENEOUS_SPARSITY}, the remaining reason {@code inferSpec} bottoms for.
 	 */
 	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		if (contexts.stream().anyMatch(TensorType::isNone))
+			return AbsenceReason.RECEIVES_NONE;
+
 		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
 		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
 		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();

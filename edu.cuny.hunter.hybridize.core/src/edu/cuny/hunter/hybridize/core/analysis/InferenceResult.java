@@ -133,40 +133,18 @@ public sealed interface InferenceResult {
 		UNKNOWN_DTYPE,
 
 		/**
+		 * A call passes {@code None} to a parameter that other calls pass a tensor. A {@code TensorSpec} rejects {@code None}, so no single
+		 * spec accepts every call, whether the {@code None} is passed, forwarded, or the parameter's default. The analysis reports it as a
+		 * {@code None} member of the parameter's types (wala/ML#1040).
+		 */
+		RECEIVES_NONE,
+
+		/**
 		 * A parameter is sparse at some call sites and dense at others. A {@code SparseTensorSpec} admits only sparse tensors and a dense
 		 * {@code TensorSpec} admits only dense tensors, so no single spec accepts both layouts; emitting either would reject traffic the
 		 * function accepts, so the reduction is bottom (#642). Checked after the dtype axis, mirroring {@link Function#inferSpec}.
 		 */
 		HETEROGENEOUS_SPARSITY,
-
-		/**
-		 * The function is reached in a calling context in which the tensor-type analysis associated no type with the parameter, beside
-		 * contexts whose types reduce to a specification. That specification would be a claim about every call, and what the untyped
-		 * context passes is not known to match it: a specification derived from small, concrete test calls would reject a program's own
-		 * call whose argument the analysis could not type. The untyped context therefore widens the parameter to unknown rather than
-		 * dropping out of the evidence. Reported only where a specification would otherwise have been stored, so no other absence is
-		 * relabeled. What follows is the same as for any withheld specification: the function converts with a bare decorator, except where
-		 * a bare decorator would raise (an eager-effective dtype pin), in which case the conversion is declined.
-		 * <p>
-		 * An untyped context is found two ways: a call-graph node of the function carries no type for the parameter, or a caller passes it,
-		 * at a call site into such a node, an argument the analysis did not type in the caller's own context. The second sees through a
-		 * callee node that k-limited contexts share between callers, but only one call level up: in {@code f1 -> f2 -> f3}, with only
-		 * {@code f1}'s callers differing, {@code f3}'s single node and its single caller node are both typed, so {@code f3} keeps the
-		 * specification. A caller that is itself reached only from a declared failure is not set aside at its call sites, so its untyped
-		 * argument withholds the callee's specification; that is the safer outcome, since a specification would change the exception the
-		 * failure is declared to raise (#1005).
-		 * <p>
-		 * A container parameter has no flat typing of its own, so it is checked at the granularity its evidence has: a conforming context
-		 * at which no value reaches it, or a caller whose argument has no abstract value, supplies no container the elements were read from
-		 * (#1003). So does a caller that passes it after a starred unpack, which the analysis reads as the unpacked sequence itself rather
-		 * than the element bound here (#1004).
-		 *
-		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
-		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
-		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1004">Issue 1004</a>
-		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
-		 */
-		UNTYPED_CALLING_CONTEXT,
 
 		/**
 		 * A call the developer has declared must fail ({@code with self.assertRaises(...)} or {@code pytest.raises(...)}) was set aside as

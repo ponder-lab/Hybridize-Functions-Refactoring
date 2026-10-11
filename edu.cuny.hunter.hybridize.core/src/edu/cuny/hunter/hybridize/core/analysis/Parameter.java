@@ -19,13 +19,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.CoreException;
@@ -59,9 +57,7 @@ import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
-import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
-import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
@@ -71,19 +67,14 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
-import com.ibm.wala.ipa.callgraph.propagation.HeapModel;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
-import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.IR;
-import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.types.TypeReference;
-import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
-import com.ibm.wala.util.intset.OrdinalSet;
 
 /**
  * A representation of a Python function parameter.
@@ -193,40 +184,12 @@ public final class Parameter {
 	private Set<TensorType> conformingTensorTypes = Set.of();
 
 	/**
-	 * The conforming call-graph nodes of the owning function in which the tensor-type analysis associated no type with this parameter: the
-	 * function is reached in that context, but what arrives there is untyped (#998). Populated alongside {@link #conformingTensorTypes}.
-	 */
-	private Set<CGNode> untypedConformingNodes = Set.of();
-
-	/**
 	 * This parameter's {@link TensorType}s in each call-graph node of the owning function. Read afterwards to tell whether a specification
 	 * would reject the argument a declared failure passes, and so change the exception the failure is declared to raise (#1005), and
 	 * whether that argument differs from what the other calls pass, so that tracing it may raise a different exception (#1014). A node in
 	 * which the parameter is untyped is absent. Populated alongside {@link #conformingTensorTypes}.
 	 */
 	private Map<CGNode, Set<TensorType>> tensorTypesByNode = Map.of();
-
-	/**
-	 * True iff some caller passes this parameter an argument the tensor-type analysis did not type in the caller's own context, at a call
-	 * site into a conforming node of the owning function (#998). Under k-limited contexts one callee node can serve several caller
-	 * contexts, so a callee node typed from one caller can still be reached with an untyped argument from another; this sees through that
-	 * merge one call level up.
-	 */
-	private boolean untypedCallerArgument;
-
-	/**
-	 * True iff this parameter, as a container of tensors, is reached in a conforming calling context that supplies no container whose
-	 * elements the reduction read (#1003): a conforming node at which no value reaches the parameter, or a caller whose argument has no
-	 * abstract value or cannot be aligned with the parameter, such as one passed through a starred unpack (#1004). The flat counterpart,
-	 * {@link #hasUntypedConformingContext()}, cannot serve a container: its elements, not the container itself, carry the tensor types, so
-	 * every context reads as untyped there. Populated by {@link #extractConformingContainerElements}.
-	 */
-	private boolean untypedContainerContext;
-
-	/**
-	 * The tensor-typed pointer keys of each {@link TensorTypeAnalysis}, built once per analysis and shared by every parameter that asks.
-	 */
-	private static final Map<TensorTypeAnalysis, Set<PointerKey>> TYPED_KEYS = new WeakHashMap<>();
 
 	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
@@ -1043,140 +1006,6 @@ public final class Parameter {
 				: Boolean.valueOf(this.hasTensorContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
 
 		this.extractContainerElements(tensorAnalysis, conforming, builder, subMonitor.split(1));
-		this.inferUntypedContainerContexts(conforming, builder);
-	}
-
-	/**
-	 * Records whether this parameter, as a container, is reached in a conforming calling context that supplies no container (#1003). See
-	 * {@link #hasUntypedContainerContext()}.
-	 * <p>
-	 * The container counterpart of {@link #inferTensorTypes}'s untyped nodes and {@link #inferUntypedCallerArguments}, at the granularity a
-	 * container has: whether anything reaches the parameter, rather than whether what reaches it is tensor-typed. A context that passes a
-	 * value needs no check of its own here: the element extraction reads every value reaching the parameter, so a value with no element
-	 * evidence, or one that is not a sequence, already leaves the form unreduced. What it cannot see is a context that passes nothing the
-	 * analysis models, since an empty points-to set contributes no value to refuse.
-	 *
-	 * @param nodes The owning function's conforming call-graph nodes.
-	 * @param builder The propagation-call-graph builder for the project.
-	 */
-	private void inferUntypedContainerContexts(Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
-		// Read only by the signature reduction, so with inference off the walk is pure cost.
-		if (!this.function.getInferInputSignatures())
-			return;
-
-		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
-		CallGraph callGraph = builder.getCallGraph();
-		HeapModel heapModel = pointerAnalysis.getHeapModel();
-		// The callee is the invoke's first use, so the parameter at declaration index i, with self at 0, is the IR's parameter i + 1. A
-		// direct call passes it at positional slot i + 1 too; a call through a receiver trampoline, one earlier (see originatingCalls).
-		int slot = this.getIndex() + 1;
-		String name = this.getName();
-		boolean hasReceiver = this.function.getParameters().stream().anyMatch(Parameter::isSelf);
-
-		for (CGNode node : nodes) {
-			IR ir = node.getIR();
-
-			if (ir == null || slot >= ir.getNumberOfParameters())
-				continue;
-
-			if (isEmpty(pointerAnalysis.getPointsToSet(builder.getPointerKeyForLocal(node, ir.getParameter(slot))))) {
-				this.untypedContainerContext = true;
-				return;
-			}
-
-			for (OriginatingCall call : originatingCalls(node, callGraph, slot, hasReceiver)) {
-				// A synthetic frame with no callers of its own leaves the originating call unknown, which is no evidence it is typed.
-				int use = call.instruction() == null ? UNALIGNED : argumentUse(call.instruction(), name, call.slot());
-
-				// An omitted parameter takes its default, which the callee's own node already reports.
-				if (use == OMITTED)
-					continue;
-
-				// A starred unpack at or before the parameter binds an element of the unpacked sequence here, while the analysis reads
-				// the sequence itself as the argument, so the container evidence describes a value the parameter never receives (#1004).
-				if (use == UNALIGNED || isEmpty(pointerAnalysis.getPointsToSet(heapModel.getPointerKeyForLocal(call.caller(), use)))) {
-					this.untypedContainerContext = true;
-					return;
-				}
-			}
-		}
-	}
-
-	/**
-	 * A call into the owning function as the program writes it: the frame holding the invoke, the invoke, and the positional slot at which
-	 * that invoke passes this parameter.
-	 *
-	 * @param caller The frame containing the invoke.
-	 * @param instruction The invoke, or {@code null} when a synthetic frame has no callers to name one.
-	 * @param slot The positional slot of this parameter in {@code instruction}.
-	 */
-	private record OriginatingCall(CGNode caller, SSAAbstractInvokeInstruction instruction, int slot) {
-	}
-
-	/**
-	 * The calls into {@code node} as the program writes them. A synthetic frame, such as a receiver trampoline, is not one: it re-issues
-	 * the user's call with every argument positional, so a starred unpack or a keyword at the original site is invisible in its invoke. Its
-	 * contexts are keyed on its caller, site and receiver, so its own predecessors are exactly the originating sites. There a receiver the
-	 * frame bound is no longer passed, so a parameter of a function with a {@code self} parameter sits one positional slot earlier, while a
-	 * static method called through an instance keeps its slot. A synthetic frame with no callers of its own yields a call with no invoke,
-	 * which the caller reads as unknown.
-	 * <p>
-	 * The receiver is recognized by name ({@link #isSelf()}), so a class method's {@code cls}, or a receiver named otherwise, is not
-	 * shifted for; neither reaches this walk with Ariadne 0.52.104.
-	 *
-	 * @param node A call-graph node of the owning function.
-	 * @param callGraph The call graph, walked in the caller direction.
-	 * @param slot The parameter's positional slot in an invoke that calls {@code node} directly.
-	 * @param hasReceiver Whether the owning function takes a receiver that a synthetic frame binds.
-	 * @return The originating calls.
-	 */
-	private static List<OriginatingCall> originatingCalls(CGNode node, CallGraph callGraph, int slot, boolean hasReceiver) {
-		List<OriginatingCall> ret = new ArrayList<>();
-
-		for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
-			// The same test the expected-failure analysis uses for a frame the program writes, as opposed to a synthetic one.
-			if (caller.getMethod() instanceof AstMethod) {
-				addCalls(ret, caller, callGraph.getPossibleSites(caller, node), slot);
-				continue;
-			}
-
-			int originSlot = hasReceiver ? slot - 1 : slot;
-			int before = ret.size();
-
-			for (CGNode origin : Iterator2Iterable.make(callGraph.getPredNodes(caller)))
-				addCalls(ret, origin, callGraph.getPossibleSites(origin, caller), originSlot);
-
-			if (ret.size() == before)
-				ret.add(new OriginatingCall(caller, null, originSlot));
-		}
-
-		return ret;
-	}
-
-	private static void addCalls(List<OriginatingCall> calls, CGNode caller, Iterator<CallSiteReference> sites, int slot) {
-		IR ir = caller.getIR();
-
-		if (ir == null)
-			return;
-
-		for (CallSiteReference site : Iterator2Iterable.make(sites))
-			for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site))
-				calls.add(new OriginatingCall(caller, instruction, slot));
-	}
-
-	private static boolean isEmpty(OrdinalSet<InstanceKey> pointsToSet) {
-		return pointsToSet == null || pointsToSet.isEmpty();
-	}
-
-	/**
-	 * Whether this parameter, as a container of tensors, is reached in a conforming calling context that supplies no container whose
-	 * elements the reduction read (#1003): a conforming node at which nothing the analysis models reaches it, or a caller passing an
-	 * argument with no abstract value, or one the call cannot align with it, such as an argument after a starred unpack (#1004).
-	 *
-	 * @return True iff a nested specification derived from the other contexts would be a claim about a call that supplies something else.
-	 */
-	public boolean hasUntypedContainerContext() {
-		return this.untypedContainerContext;
 	}
 
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
@@ -1342,14 +1171,11 @@ public final class Parameter {
 	 * violation rather than under any current path.
 	 *
 	 * @param analysis The {@link TensorTypeAnalysis} to query.
-	 * @param nodes The owning function's call-graph nodes, against which a node contributing no tensor type is recorded as an untyped
-	 *        calling context.
 	 */
-	void inferTensorTypes(TensorTypeAnalysis analysis, Set<CGNode> nodes) {
+	void inferTensorTypes(TensorTypeAnalysis analysis) {
 		Set<TensorType> result = new HashSet<>();
 		Set<TensorType> conforming = new HashSet<>();
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
-		Set<CGNode> typed = new HashSet<>();
 		Map<CGNode, Set<TensorType>> byNode = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
@@ -1361,7 +1187,6 @@ public final class Parameter {
 					if (tensorVariable == null)
 						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
 					result.addAll(tensorVariable.getTypes());
-					typed.add(localPointerKey.getNode());
 
 					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
 					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
@@ -1376,119 +1201,6 @@ public final class Parameter {
 		this.setTensorTypes(unmodifiableSet(result));
 		this.conformingTensorTypes = unmodifiableSet(conforming);
 		this.tensorTypesByNode = unmodifiableMap(byNode);
-
-		// The iterator reports only variables it typed, so a node where the parameter is untyped contributes nothing to the union above
-		// rather than widening it. That node is a calling context the function is reached in, and what it passes is unknown, so the
-		// reduction must see it (#998).
-		Set<CGNode> untyped = new HashSet<>();
-
-		for (CGNode node : nodes)
-			if (!excluded.contains(node) && !typed.contains(node))
-				untyped.add(node);
-
-		this.untypedConformingNodes = unmodifiableSet(untyped);
-	}
-
-	/**
-	 * Records whether some caller passes this parameter an argument the tensor-type analysis did not type in the caller's own context, at a
-	 * call site into one of the owning function's conforming nodes (#998). See {@link #hasUntypedConformingContext()}.
-	 *
-	 * @param analysis The {@link TensorTypeAnalysis} to query.
-	 * @param nodes The owning function's call-graph nodes.
-	 * @param callGraph The call graph, walked in the caller direction.
-	 * @param heapModel The heap model, for the arguments' pointer keys.
-	 */
-	void inferUntypedCallerArguments(TensorTypeAnalysis analysis, Set<CGNode> nodes, CallGraph callGraph, HeapModel heapModel) {
-		// Read only by the signature reduction, so with inference off the walk is pure cost.
-		if (!this.function.getInferInputSignatures())
-			return;
-
-		Set<PointerKey> typedKeys = typedKeys(analysis);
-		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
-		String name = this.getName();
-		// The callee occupies positional slot 0 of an invoke, so the parameter at declaration index i, with self at 0, is the invoke's
-		// positional argument i + 1.
-		int positionalSlot = this.getIndex() + 1;
-
-		for (CGNode node : nodes)
-			if (!excluded.contains(node))
-				for (CGNode caller : Iterator2Iterable.make(callGraph.getPredNodes(node)))
-					for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(caller, node))) {
-						IR ir = caller.getIR();
-
-						if (ir == null)
-							continue;
-
-						for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
-							int use = argumentUse(instruction, name, positionalSlot);
-
-							// An omitted parameter takes its default, whose typing is the callee's own and is already read per node.
-							if (use == OMITTED)
-								continue;
-
-							// A receiver trampoline is a caller like any other here: its contexts are keyed on its own caller, site and
-							// receiver, so the argument it forwards is typed in its own frame (#998).
-							if (use == UNALIGNED || !typedKeys.contains(heapModel.getPointerKeyForLocal(caller, use))) {
-								this.untypedCallerArgument = true;
-								return;
-							}
-						}
-					}
-	}
-
-	/** {@link #argumentUse}'s answer for a call that omits the parameter. */
-	private static final int OMITTED = -1;
-
-	/** {@link #argumentUse}'s answer for a call whose argument cannot be aligned with the parameter. */
-	private static final int UNALIGNED = -2;
-
-	/**
-	 * The value number {@code instruction} passes for the parameter named {@code name} at {@code positionalSlot}; {@link #OMITTED} when the
-	 * call omits it; or {@link #UNALIGNED} when it unpacks a starred argument at or before it, or is not a Python call, so that what
-	 * arrives is unknown.
-	 */
-	private static int argumentUse(SSAAbstractInvokeInstruction instruction, String name, int positionalSlot) {
-		if (!(instruction instanceof PythonInvokeInstruction invoke))
-			return UNALIGNED;
-
-		if (invoke.getKeywords().contains(name))
-			return invoke.getUse(name);
-
-		for (int starred : invoke.getStarredPositions())
-			if (starred <= positionalSlot)
-				return UNALIGNED;
-
-		return invoke.getNumberOfPositionalParameters() > positionalSlot ? invoke.getUse(positionalSlot) : OMITTED;
-	}
-
-	/**
-	 * The tensor-typed pointer keys of {@code analysis}, computed once per analysis.
-	 */
-	private static Set<PointerKey> typedKeys(TensorTypeAnalysis analysis) {
-		synchronized (TYPED_KEYS) {
-			return TYPED_KEYS.computeIfAbsent(analysis, a -> {
-				Set<PointerKey> keys = new HashSet<>();
-
-				for (Pair<PointerKey, TensorVariable> pair : a)
-					if (pair.snd != null && !pair.snd.getTypes().isEmpty())
-						keys.add(pair.fst);
-
-				return keys;
-			});
-		}
-	}
-
-	/**
-	 * Whether the owning function is reached in a conforming calling context that leaves this parameter untyped (#998): either one of its
-	 * conforming call-graph nodes carries no tensor type for the parameter, or a caller passes it, at a call site into such a node, an
-	 * argument the tensor-type analysis did not type in the caller's own context. The second catches a callee node that k-limited contexts
-	 * share between a typed and an untyped caller. This is about the parameter's flat typing only: a container parameter whose evidence
-	 * arrives through its elements reports every context here, and is asked {@link #hasUntypedContainerContext()} instead.
-	 *
-	 * @return True iff the parameter is untyped in some conforming calling context.
-	 */
-	public boolean hasUntypedConformingContext() {
-		return !this.untypedConformingNodes.isEmpty() || this.untypedCallerArgument;
 	}
 
 	/**
@@ -1635,9 +1347,7 @@ public final class Parameter {
 			// type-hint shortcut (Phase 1) `return`s before reaching the Ariadne query; populating here keeps the cache correct for
 			// type-hint parameters that Ariadne also classified from the call site.
 			if (!nodes.isEmpty()) {
-				this.inferTensorTypes(tensorAnalysis, nodes);
-				this.inferUntypedCallerArguments(tensorAnalysis, nodes, builder.getCallGraph(),
-						builder.getPointerAnalysis().getHeapModel());
+				this.inferTensorTypes(tensorAnalysis);
 			}
 
 			// check a special case where we consider type hints.
