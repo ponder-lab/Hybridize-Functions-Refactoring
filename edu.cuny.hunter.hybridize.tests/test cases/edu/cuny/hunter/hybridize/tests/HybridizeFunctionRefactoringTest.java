@@ -12318,6 +12318,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator between {@code @tf.function} and the definition withholds the signature
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1046). {@code tf.function} traces the callable the decorator
+	 * returns, so a signature constrains that callable's arguments, while the definition's parameters see only what the decorator passes
+	 * on. Here {@code convert_type} casts both arguments to {@code float32}, so a signature read off {@code flip}'s parameters is
+	 * {@code float32} and rejects the {@code int32} call (runtime-verified on the pinned TF 2.9.3: {@code ValueError}).
+	 * <p>
+	 * {@code flip_direct} has nothing in between and keeps its signature. {@code flip_eager} is eager beneath the decorator, so the added
+	 * {@code @tf.function} goes on the definition, traces it, and the cast values are exactly what it receives. {@code clip_gradient} sits
+	 * over {@code tf.custom_gradient}, which passes its arguments through unchanged, so it is not withheld for this reason.
+	 */
+	@Test
+	public void testInterveningDecorator() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function flip = findFunction(functions, "flip");
+		assertTrue("`flip` is hybrid.", flip.isHybrid());
+		assertEquals("No signature is read off the definition beneath `convert_type`.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), flip.getInferredInputSignatureAbsenceReason());
+
+		Function flipDirect = findFunction(functions, "flip_direct");
+		assertTrue("`flip_direct` has nothing between its decorator and its definition, so its signature is inferred.",
+				flipDirect.getInferredInputSignature().isPresent());
+
+		Function flipEager = findFunction(functions, "flip_eager");
+		assertTrue("`flip_eager` converts.", flipEager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("The added decorator traces the definition itself, so its signature is inferred.",
+				flipEager.getInferredInputSignature().isPresent());
+
+		Function clipGradient = findFunction(functions, "clip_gradient");
+		assertNotEquals("`tf.custom_gradient` passes its arguments through, so it does not withhold the signature.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), clipGradient.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
 	 * parameter is tensor-like. It does not answer what specification may be written for it, and it carries no dtype of its own (#494), so
 	 * a hit was reported as {@code TYPE_HINT_WITHOUT_DTYPE} however much the callers supported. Classification returned on the hint before

@@ -44,6 +44,18 @@ public sealed interface InferenceResult {
 		VARIABLE_KEYWORD_PARAMETER,
 
 		/**
+		 * A decorator other than {@code tf.custom_gradient} sits between {@code @tf.function} and the definition. {@code tf.function}
+		 * traces the callable that decorator returns, so a signature constrains that callable's arguments, while the definition's
+		 * parameters, which are what the analysis types, see only what the decorator passes on. The two can't be related in general: the
+		 * decorator may cast, reorder, or forward through {@code *args}. A signature read off the definition may therefore reject the
+		 * decorated function's own callers. Decided on the declaration, before the per-parameter dispatch, so no parameter is named.
+		 * {@code tf.custom_gradient} is exempt, since it passes its arguments through unchanged.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1046">Issue 1046</a>
+		 */
+		INTERVENING_DECORATOR,
+
+		/**
 		 * A parameter is not classified as tensor-typed by any phase and declares no default, so it is a <em>required</em> argument for
 		 * which {@code tf.function(input_signature=...)} demands a {@code TensorSpec} that cannot be synthesized (#508). A non-tensor
 		 * parameter that declares a default is not this case: TensorFlow requires a spec per required argument only, so it may be omittable

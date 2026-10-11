@@ -4706,6 +4706,16 @@ public class Function {
 			return new InferenceResult.Absent(AbsenceReason.VARIABLE_KEYWORD_PARAMETER);
 		}
 
+		// `tf.function` traces the callable an intervening decorator returns, and the analysis types the definition's parameters, which
+		// see only what that decorator passes on. A signature read off them may reject the decorated function's own callers (#1046).
+		if (this.hasInterveningDecorator()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` has a decorator between `@tf.function` and its definition, so `tf.function` traces the callable that "
+							+ "decorator returns, whose arguments the definition's parameters do not describe. Input-signature inference "
+							+ "is dropped.");
+			return new InferenceResult.Absent(AbsenceReason.INTERVENING_DECORATOR);
+		}
+
 		if (this.tensorParameterFromSpeculation) {
 			this.addInfo(INPUT_SIGNATURE_INFERENCE,
 					"`" + this + "` is classified as having a tensor parameter from its context rather than from any particular parameter, "
@@ -5828,6 +5838,38 @@ public class Function {
 				}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * Returns true iff a decorator other than {@code tf.custom_gradient} sits between this function's {@code @tf.function} and its
+	 * definition (#1046). For a hybrid function, those are the decorators beneath its {@code @tf.function}. For an eager one, the added
+	 * decorator goes on the definition, unless the function carries {@code tf.custom_gradient}, in which case it goes above the outermost
+	 * one (#996), and the decorators beneath that one count. A decorator whose name can't be resolved counts, since nothing then shows it
+	 * passes its arguments through.
+	 *
+	 * @return True iff a decorator intervenes between the hybridization decorator and the definition.
+	 */
+	public boolean hasInterveningDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs == null)
+			return false;
+
+		decoratorsType outer = this.hybridDecorator != null ? this.hybridDecorator : this.getCustomGradientDecorator().orElse(null);
+
+		if (outer == null)
+			return false;
+
+		for (int i = Arrays.asList(decs).indexOf(outer) + 1; i < decs.length; i++)
+			try {
+				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
+					return true;
+			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+				LOG.info("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				return true;
+			}
+
+		return false;
 	}
 
 	/**
