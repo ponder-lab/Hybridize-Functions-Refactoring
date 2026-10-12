@@ -133,6 +133,7 @@ import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -898,7 +899,9 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
+	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
+	 * (#1047).
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -943,6 +946,15 @@ public class Function {
 				instanceKeyToProcess = instanceKey; // use the original.
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
+
+			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
+			// learning rate, and before the model existed there were none (#1047). Built-in containers and objects of program-defined
+			// classes are still examined.
+			if (isLibraryModeled(concreteType)) {
+				subMonitor.done();
+				return false;
+			}
+
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
@@ -967,6 +979,22 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * The name of the class loader into which Ariadne registers the classes its library summaries allocate (WALA's synthetic loader).
+	 */
+	private static final Atom SYNTHETIC_LOADER_NAME = Atom.findOrCreateUnicodeAtom("Synthetic");
+
+	/**
+	 * True iff the given class is a library class that Ariadne models in a summary, rather than a built-in container or a class the program
+	 * defines.
+	 *
+	 * @param type The class in question.
+	 * @return True iff the given class is loaded from Ariadne's library summaries and is not a built-in container.
+	 */
+	private static boolean isLibraryModeled(IClass type) {
+		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
 	}
 
 	/**

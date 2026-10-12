@@ -7862,6 +7862,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This is a user-defined class with a primitive field?", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An object of a library class that Ariadne models, such as a Keras optimizer, is not examined for primitive fields, so the learning
+	 * rate its model stores doesn't make the optimizer a primitive parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). Before the model existed, such an object had no fields
+	 * to examine. An object of a program-defined class is still examined, as in {@link #testLikelyHasNonTensorParameter16()}.
+	 */
+	@Test
+	public void testLibraryModeledObjectParameter() throws Exception {
+		assertFalse("A modeled optimizer's learning rate does not make it a primitive parameter.",
+				getFunction("with_optimizer").getHasPrimitiveParameter());
+		assertTrue("Control: an object of a program-defined class with a primitive field is a primitive parameter.",
+				getFunction("with_program_object").getHasPrimitiveParameter());
+
+		// A program-defined subclass of a modeled optimizer is a program-defined class, so it is examined. Neither subclass stores a field
+		// itself, with or without its own constructor, so neither is a primitive parameter.
+		assertFalse("A program-defined subclass of a modeled optimizer is not a primitive parameter.",
+				getFunction("with_optimizer_subclass").getHasPrimitiveParameter());
+		assertFalse("A program-defined subclass forwarding its rate to the modeled constructor is not a primitive parameter.",
+				getFunction("with_optimizer_subclass_init").getHasPrimitiveParameter());
+	}
+
 	@Test
 	public void testBooleanParameter() throws Exception {
 		Function f = getFunction("f");
