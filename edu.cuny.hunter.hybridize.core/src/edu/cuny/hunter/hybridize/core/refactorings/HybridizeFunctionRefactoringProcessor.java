@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -112,7 +113,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private Map<IProject, PythonSSAPropagationCallGraphBuilder> projectToCallGraphBuilder = new HashMap<>();
 
-	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new HashMap<>();
+	/**
+	 * The mod analysis of each project, computed at most once per project. Concurrent because functions may be checked in parallel, and
+	 * {@link #computeMod(IProject, CallGraph, PointerAnalysis)} is first called from that loop.
+	 */
+	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new ConcurrentHashMap<>();
 
 	private Map<IProject, CallGraph> projectToCallGraph = new HashMap<>();
 
@@ -671,15 +676,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
-		Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = this.getProjectToMod();
-
-		if (!projectToMod.containsKey(project)) {
+		// Atomic, so parallel function checks compute the whole-program closure once rather than each racing to compute it.
+		return this.getProjectToMod().computeIfAbsent(project, p -> {
 			ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
-			Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
-			projectToMod.put(project, mod);
-		}
-
-		return projectToMod.get(project);
+			return modRef.computeMod(callGraph, pointerAnalysis);
+		});
 	}
 
 	/**
