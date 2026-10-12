@@ -684,14 +684,25 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	/**
 	 * Returns a progress monitor for one step of one function's analysis. A {@link SubMonitor} isn't thread-safe and supports one active
-	 * child at a time, so when functions are processed in parallel, each step gets a {@link NullProgressMonitor} and the progress is
-	 * reported after the loop (issue 315).
+	 * child at a time, so when functions are processed in parallel, each step gets a monitor that reports no progress, which is reported
+	 * after the loop instead, but still answers whether the loop's monitor was canceled (issue 315).
 	 *
 	 * @param monitor The monitor of the loop over the functions.
-	 * @return A child of the given monitor, or a {@link NullProgressMonitor} when functions are processed in parallel.
+	 * @return A child of the given monitor, or, when functions are processed in parallel, a monitor reporting only its cancellation.
+	 * @throws OperationCanceledException If the loop's monitor was canceled.
 	 */
 	private IProgressMonitor splitForFunction(SubMonitor monitor) {
-		return this.getProcessFunctionsInParallel() ? new NullProgressMonitor() : monitor.split(IProgressMonitor.UNKNOWN);
+		if (!this.getProcessFunctionsInParallel())
+			return monitor.split(IProgressMonitor.UNKNOWN);
+
+		monitor.checkCanceled();
+
+		return new NullProgressMonitor() {
+			@Override
+			public boolean isCanceled() {
+				return monitor.isCanceled();
+			}
+		};
 	}
 
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
