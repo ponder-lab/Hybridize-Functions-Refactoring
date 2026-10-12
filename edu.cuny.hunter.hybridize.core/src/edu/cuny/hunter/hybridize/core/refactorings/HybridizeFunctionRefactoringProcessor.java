@@ -8,10 +8,12 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,6 +23,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -500,6 +503,10 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> callerCovered = Function.computeCallerCoverage(projectFunctions, callGraph);
 			projectFunctions.forEach(func -> func.setCallerCovered(callerCovered.contains(func)));
 
+			// Measurement only: how much of the call graph the mod analysis's candidates reach.
+			logModReach("before the loop", projectFunctions, callGraph,
+					func -> this.getAlwaysCheckPythonSideEffects() || Boolean.TRUE.equals(func.isHybrid()));
+
 			// The modules whose `try` statements are read for the `except` clauses around a call (issue 1014): those of the project's
 			// functions, by the absolute path of their file, each read once and shared across the functions.
 			Map<String, ExceptionHandlerAnalysis> modules = new HashMap<>();
@@ -669,9 +676,75 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
 			});
+
+			// Measurement only: the candidates once tensor-parameter inference has run.
+			logModReach("after the loop", projectFunctions, callGraph, func -> this.getAlwaysCheckPythonSideEffects()
+					|| Boolean.TRUE.equals(func.isHybrid()) || Boolean.TRUE.equals(func.getHasTensorParameter()));
 		}
 
 		return status;
+	}
+
+	/**
+	 * Logs the call graph's size and the number of its nodes reachable from the nodes of all functions and from those of the candidates.
+	 *
+	 * @param when When the measurement is taken.
+	 * @param functions The project's functions.
+	 * @param callGraph The project's call graph.
+	 * @param candidate Which functions are candidates.
+	 */
+	private static void logModReach(String when, Set<Function> functions, CallGraph callGraph, Predicate<Function> candidate) {
+		long start = System.currentTimeMillis();
+		Set<CGNode> allRoots = new HashSet<>();
+		Set<CGNode> candidateRoots = new HashSet<>();
+		int candidates = 0;
+		int unresolved = 0;
+
+		for (Function func : functions) {
+			boolean isCandidate = candidate.test(func);
+
+			if (isCandidate)
+				++candidates;
+
+			try {
+				Set<CGNode> nodes = func.getNodes(callGraph);
+				allRoots.addAll(nodes);
+
+				if (isCandidate)
+					candidateRoots.addAll(nodes);
+			} catch (CoreException e) {
+				LOG.warn("Can't get the call graph nodes of " + func + ".", e);
+				++unresolved;
+			}
+		}
+
+		int reachAll = countReachable(callGraph, allRoots);
+		int reachCandidates = countReachable(callGraph, candidateRoots);
+
+		LOG.info("MOD-REACH " + when + ": cg=" + callGraph.getNumberOfNodes() + " functions=" + functions.size() + " unresolved="
+				+ unresolved + " roots(all)=" + allRoots.size() + " reach(all)=" + reachAll + " candidates=" + candidates
+				+ " roots(candidates)=" + candidateRoots.size() + " reach(candidates)=" + reachCandidates + " ms="
+				+ (System.currentTimeMillis() - start) + ".");
+	}
+
+	/**
+	 * Counts the nodes reachable from the given roots, the roots included.
+	 *
+	 * @param callGraph The call graph.
+	 * @param roots The roots.
+	 * @return The number of nodes reachable from the roots.
+	 */
+	private static int countReachable(CallGraph callGraph, Set<CGNode> roots) {
+		Set<CGNode> seen = new HashSet<>(roots);
+		Queue<CGNode> worklist = new ArrayDeque<>(roots);
+
+		while (!worklist.isEmpty())
+			callGraph.getSuccNodes(worklist.remove()).forEachRemaining(succ -> {
+				if (seen.add(succ))
+					worklist.add(succ);
+			});
+
+		return seen.size();
 	}
 
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
