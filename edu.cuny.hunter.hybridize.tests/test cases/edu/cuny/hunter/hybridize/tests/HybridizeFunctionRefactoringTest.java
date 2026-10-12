@@ -1017,7 +1017,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			switch (function.getIdentifier()) {
 			case "Test.value":
+				// The getter is evaluated when the instance is constructed (ponder-lab/ML#909), so it has a call-graph node and a
+				// side-effect verdict: it only reads an attribute.
+				assertFalse("The property getter is reached (ponder-lab/ML#909) and has no side effects.",
+						function.getHasPythonSideEffects());
+				break;
 			case "Test.name":
+				// A setter is not reached: `k.name = 2` is a plain attribute write.
 				checkSideEffectStatus(function);
 				break;
 			default:
@@ -9002,7 +9008,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, the analysis
 	 * models no abstract value for {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
 	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}), and the function is kept hybrid. Where the analysis doesn't reach the function
-	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes.
+	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes. The eager
+	 * {@code scale} behind the same wrapper now receives its tensor argument, since the wrapper forwards its {@code *args}
+	 * (ponder-lab/ML#908), so it hybridizes.
 	 */
 	@Test
 	public void testBareUserDecoratorWithWraps() throws Exception {
@@ -9022,7 +9030,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					hybrid.getParameters().get(0).getTensorClassificationBasis());
 
 		Function scale = getFunction("scale");
-		assertFalse("`scale`, eager behind the same wrapper, is not hybridized on no evidence.",
+		assertTrue("`scale` is reached through the forwarding wrapper with a tensor (ponder-lab/ML#908), so it hybridizes.",
 				scale.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
 
@@ -11400,10 +11408,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A generator boundary does not lose the destination's allocation.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]",
 				render(getFunction("via_generator")));
 
-		// Today's behavior, pinned rather than endorsed: through a class implementing the iterator protocol, filled in a loop indexed by
-		// a variable, no signature is emitted at all. Whether the evidence is lost on that path or never reaches the parameter here has
-		// not been separated, so this asserts what happens and claims nothing about what should.
-		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
+		// Through a class implementing the iterator protocol, filled in a loop indexed by a variable. This emitted no signature through
+		// Ariadne 0.52.104; it now reads all three allocations, and the int64 destination still decides over its float32 partners and the
+		// float64 value assigned into it.
+		assertEquals("Through a class implementing the iterator protocol, the destination allocation still decides.",
+				"[tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), "
+						+ "tf.TensorSpec(shape=(2, 4, 3), dtype=tf.int64)]",
 				render(getFunction("via_loader")));
 
 		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling,
@@ -11521,12 +11531,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
 
-		// Documents current behavior: Ariadne leaves `getattr` on a constant name unresolved. When it resolves it (ponder-lab/ML#909), the
-		// call becomes a tensor op the scan sees, so the function stays hybrid for that reason instead, and the second assertion flips.
+		// Ariadne reads `getattr` on a constant name as the attribute read (ponder-lab/ML#909), so the call resolves to `tf.reduce_sum`:
+		// the scan sees a tensor op, and the function stays hybrid because it computes tensors, not because a call is unresolved.
 		Function constant = getFunction("opaque_constant");
 		assertFalse("`opaque_constant` is not de-hybridized.", constant.getTransformations().contains(CONVERT_TO_EAGER));
-		assertTrue("`getattr(tf, \"reduce_sum\")` is still unresolved; ponder-lab/ML#909 is expected to resolve it.",
-				constant.isTensorComputationUnresolved());
+		assertFalse("`getattr(tf, \"reduce_sum\")` resolves (ponder-lab/ML#909).", constant.isTensorComputationUnresolved());
+		assertTrue("`opaque_constant`'s resolved call is a tensor op.", constant.getHasTensorComputation());
 
 		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
 				"tuple_method", "set_method", "numpy_call", "uses_user_abs", "calls_recursive", "global_builtin", "user_keyed" }) {
