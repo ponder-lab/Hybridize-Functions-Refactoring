@@ -30,6 +30,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
@@ -492,7 +493,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// consulted while checking each individual function, so its base facts must exist before any check runs.
 			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Discovering if " + func + " is hybrid.");
-				func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+				func.computeHybridization(this.splitForFunction(subMonitor));
 			});
 
 			// Which functions have every known call path dominated by a hybridized caller (issue 767, phase 1): an advisory and a
@@ -521,7 +522,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis(), modules);
 
 				try {
-					func.inferTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferTensorParameters(analysis, callGraph, builder, this.splitForFunction(subMonitor));
 				} catch (CantInferTensorParametersException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
@@ -534,14 +535,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// enough to run unconditionally: it exits immediately for a function with no defaulted parameter, and
 				// `computeInputSignature` reads only the cache it populates.
 				try {
-					func.inferSuppliedParameters(callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferSuppliedParameters(callGraph, this.splitForFunction(subMonitor));
 				} catch (CoreException e) {
 					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
 					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);
 				}
 
 				try {
-					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), this.splitForFunction(subMonitor));
 				} catch (CantInferPrimitiveParametersException e) {
 					LOG.warn("Unable to infer primitive parameters for: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
@@ -664,14 +665,44 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// check the function preconditions.
 				func.check();
 
-				status.merge(func.getStatus());
-				subMonitor.worked(1);
+				if (!this.getProcessFunctionsInParallel())
+					subMonitor.worked(1);
 
 				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
 			});
+
+			// Merged after the loop rather than inside it: a RefactoringStatus isn't thread-safe, and this keeps the entries in the
+			// functions' order however they were checked (issue 315).
+			projectFunctions.forEach(func -> status.merge(func.getStatus()));
+
+			if (this.getProcessFunctionsInParallel())
+				subMonitor.worked(projectFunctions.size());
 		}
 
 		return status;
+	}
+
+	/**
+	 * Returns a progress monitor for one step of one function's analysis. A {@link SubMonitor} isn't thread-safe and supports one active
+	 * child at a time, so when functions are processed in parallel, each step gets a monitor that reports no progress, which is reported
+	 * after the loop instead, but still answers whether the loop's monitor was canceled (issue 315).
+	 *
+	 * @param monitor The monitor of the loop over the functions.
+	 * @return A child of the given monitor, or, when functions are processed in parallel, a monitor reporting only its cancellation.
+	 * @throws OperationCanceledException If the loop's monitor was canceled.
+	 */
+	private IProgressMonitor splitForFunction(SubMonitor monitor) {
+		if (!this.getProcessFunctionsInParallel())
+			return monitor.split(IProgressMonitor.UNKNOWN);
+
+		monitor.checkCanceled();
+
+		return new NullProgressMonitor() {
+			@Override
+			public boolean isCanceled() {
+				return monitor.isCanceled();
+			}
+		};
 	}
 
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
