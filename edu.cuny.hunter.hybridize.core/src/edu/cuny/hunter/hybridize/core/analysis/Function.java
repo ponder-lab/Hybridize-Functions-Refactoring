@@ -1998,18 +1998,35 @@ public class Function {
 	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
 	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
 	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
-	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * The failure gives the rule's own reason for keeping the decorator. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
 	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
 		if (this.getHybridizationParameters().hasInputSignatureParam())
-			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE,
-					"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it is not de-hybridized.");
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
 		}
+	}
+
+	/**
+	 * The reason a hybrid function with a supplied {@code input_signature} is kept hybrid where the hybrid-to-eager rule with the given
+	 * precondition would otherwise de-hybridize it.
+	 *
+	 * @param precondition The precondition the replaced conversion would have passed: {@link PreconditionSuccess#P2},
+	 *        {@link PreconditionSuccess#P3}, or {@link PreconditionSuccess#P6}.
+	 * @return The message of the {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} failure.
+	 */
+	private static String getSuppliedInputSignatureMessage(PreconditionSuccess precondition) {
+		return switch (precondition) {
+		case P2 -> "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		case P3 -> "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		case P6 -> "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+		default -> throw new IllegalArgumentException("Not a hybrid-to-eager precondition: " + precondition + ".");
+		};
 	}
 
 	/**

@@ -11589,8 +11589,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * that contradicts its classification. Here {@code declared}'s Python {@code int} argument is converted to a tensor by the signature,
 	 * so neither "no tensor parameter" (P2) nor "a primitive parameter" (P3) holds; {@code sig_barren} is barren, but removing its
 	 * decorator would delete the boundary it enforces (P6); and {@code sig_zero} and {@code Exporter.get_step} carry an empty signature,
-	 * which converts nothing but pins the one concrete function a SavedModel export relies on. The same functions without a signature still
-	 * de-hybridize.
+	 * which converts nothing but pins the one concrete function a SavedModel export relies on. {@code sig_prim} has a tensor and a
+	 * primitive parameter (P3), and under its signature the primitive does not cause retracing. The same functions without a signature
+	 * still de-hybridize, and each kept function's failure gives its rule's reason.
 	 */
 	@Test
 	public void testSuppliedSignatureKeepsHybrid() throws Exception {
@@ -11609,7 +11610,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
-		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec" }) {
+		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec", "sig_prim" }) {
 			Function kept = getFunction(name);
 			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
 			assertTrue("`" + name + "` carries a supplied input_signature.", kept.getHybridizationParameters().hasInputSignatureParam());
@@ -11647,6 +11648,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("Without a signature, `undeclared` still de-hybridizes (P2).", P2, getFunction("undeclared").getPassingPrecondition());
 		assertEquals("Without a signature, `barren` still de-hybridizes (P6).", P6, getFunction("barren").getPassingPrecondition());
+		assertEquals("Without a signature, `prim` still de-hybridizes (P3).", P3, getFunction("prim").getPassingPrecondition());
+
+		// Each rule gives its own reason for keeping the decorator.
+		String p2 = "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		String p3 = "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		String p6 = "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+
+		for (String name : new String[] { "declared", "sig_zero", "Exporter.get_step" })
+			assertEquals("`" + name + "` has no tensor parameter (P2).", p2,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		for (String name : new String[] { "sig_prim", "rec" })
+			assertEquals("`" + name + "` has a primitive parameter (P3).", p3,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		assertEquals("`sig_barren` performs no tensor computation (P6).", p6,
+				getFunction("sig_barren").getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
 	}
 
 	/**
