@@ -4080,7 +4080,7 @@ public class Function {
 	 * @throws CoreException If resolving this function's {@link MethodReference} fails.
 	 * @apiNote There can be multiple nodes for a single {@link Function} under the current representation.
 	 */
-	Set<CGNode> getNodes(CallGraph callGraph) throws CoreException {
+	public Set<CGNode> getNodes(CallGraph callGraph) throws CoreException {
 		return getNodes(this.getMethodReference(), callGraph);
 	}
 
