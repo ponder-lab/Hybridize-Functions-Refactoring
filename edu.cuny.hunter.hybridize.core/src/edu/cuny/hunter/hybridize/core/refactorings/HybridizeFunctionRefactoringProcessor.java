@@ -752,7 +752,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		int reachAll = countReachable(callGraph, allRoots);
 		int reachCandidates = countReachable(callGraph, candidateRoots);
 
-		LOG.info("MOD-REACH " + when + ": cg=" + callGraph.getNumberOfNodes() + " functions=" + functions.size() + " unresolved="
+		LOG.warn("MOD-REACH " + when + ": cg=" + callGraph.getNumberOfNodes() + " functions=" + functions.size() + " unresolved="
 				+ unresolved + " roots(all)=" + allRoots.size() + " reach(all)=" + reachAll + " candidates=" + candidates
 				+ " roots(candidates)=" + candidateRoots.size() + " reach(candidates)=" + reachCandidates + " ms="
 				+ (System.currentTimeMillis() - start) + ".");
