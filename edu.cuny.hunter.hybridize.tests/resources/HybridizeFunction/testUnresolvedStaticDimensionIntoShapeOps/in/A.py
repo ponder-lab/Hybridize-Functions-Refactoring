@@ -39,6 +39,13 @@ def wild_truncated_normal(x):
     return tf.random.truncated_normal((x.shape[0], 1)) + tf.reduce_sum(x)
 
 
+# An integer dtype samples from [minval, maxval), so a None `maxval` raises.
+def wild_uniform_int_maxval(x):
+    return tf.random.uniform((2, 1), maxval=x.shape[0], dtype=tf.int32) + tf.cast(
+        tf.reduce_sum(x), tf.int32
+    )
+
+
 def wild_broadcast_to(x):
     return tf.broadcast_to(tf.reduce_sum(x), (x.shape[0], 1))
 
@@ -97,6 +104,7 @@ for function in (
     wild_normal,
     wild_uniform,
     wild_truncated_normal,
+    wild_uniform_int_maxval,
     wild_broadcast_to,
     wild_tile,
     wild_one_hot,

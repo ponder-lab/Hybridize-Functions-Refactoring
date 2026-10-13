@@ -12689,8 +12689,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("wild_ones", "wild_ones_keyword", "wild_zeros", "wild_fill", "wild_fill_value", "wild_eye",
-				"wild_normal", "wild_uniform", "wild_truncated_normal", "wild_broadcast_to", "wild_tile", "wild_one_hot", "wild_split",
-				"wild_range", "wild_int")) {
+				"wild_normal", "wild_uniform", "wild_truncated_normal", "wild_uniform_int_maxval", "wild_broadcast_to", "wild_tile",
+				"wild_one_hot", "wild_split", "wild_range", "wild_int")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
 					function.getHasUnresolvedStaticallyReadAxes());
