@@ -46,13 +46,10 @@ EVALUATOR_ENVIRONMENT = {
     "CHECK_TENSOR_COMPUTATION": "false",
     "CHECK_EAGER_ONLY_CALLS": "false",
     "CHECK_NUMPY_CALLS": "false",
-    "PROCESS_IN_PARALLEL": "false",
+    "PROCESS_IN_PARALLEL": "true",
     "OUTPUT_CALLS": "true",
     "MAX_HEAP": "30480m",
 }
-
-
-SUCCESS_LINE = "Evaluation completed: all 1 project(s) succeeded."
 
 
 def write_csv(path, rows, columns):
@@ -305,10 +302,11 @@ def evaluate(subject, work, out, arguments):
 def failure_of(log, code):
     """Why an evaluation did not complete, or None if it did.
 
-    The evaluator's own completion line is the witness, so a run is judged by what it logged. The exit
-    code (0 when every project succeeded, 6 when one was skipped) is only reported alongside.
+    The launcher's exit code is the witness: 0 when every project succeeded, 6 when one failed and was
+    skipped. The evaluator logs its completion line at INFO when every project succeeds, so a run whose
+    log level is WARNING or above leaves that line out, and the log only explains a failure.
     """
-    if SUCCESS_LINE in log:
+    if code == 0:
         return None
     for error in ("OutOfMemoryError", "StackOverflowError"):
         if "java.lang." + error in log:
@@ -318,6 +316,8 @@ def failure_of(log, code):
     )
     if skipped:
         return skipped.group(1)
+    if code == 6:
+        return "skipped (reason not logged)"
     return f"did-not-complete (launcher exit {code})"
 
 
