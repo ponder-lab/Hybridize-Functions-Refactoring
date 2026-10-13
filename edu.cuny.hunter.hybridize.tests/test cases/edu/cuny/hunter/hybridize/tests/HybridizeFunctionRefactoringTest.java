@@ -13989,6 +13989,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1055: one argument that is a tensor or {@code None} by a
+	 * condition is typed by its tensor branch, but a specification from that branch rejects the call that passes {@code None}. The analysis
+	 * reports the conditional's {@code None} as a {@code None} member of the parameter's types (https://github.com/wala/ML/issues/1040),
+	 * passed directly or forwarded through a parameter, so the signature is withheld. {@code initialize} and {@code dynamic_decode} follow
+	 * OpenNMT-tf's route from its decoder to {@code BeamSearch.initialize}, by keyword. {@code control} receives the same tensor, never
+	 * {@code None}, and {@code guarded} receives {@code None} only from a declared failure.
+	 */
+	@Test
+	public void testInferInputSignatureNoneArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("forward", "maybe_none", "dynamic_decode", "initialize")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("A specification for `" + name + "` would reject the call that passes `None`.",
+					Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), function.getInferredInputSignatureAbsenceReason());
+		}
+
+		String signature = "[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(), dtype=tf.int32)]";
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control receives no `None`, so it keeps its signature.", signature,
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure's `None` leaves the signature from the tensor call.", signature,
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * A container parameter's nested specification covers a call that passes a container of loaded values (cf.
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003). Each function below is called once with a tuple or list
 	 * of tensors and once with a container of values read from {@code pickle.load}, which the fixture's sidecar types; {@code pair_typed}
