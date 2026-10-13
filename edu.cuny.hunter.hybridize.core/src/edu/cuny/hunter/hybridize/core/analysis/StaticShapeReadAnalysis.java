@@ -135,14 +135,39 @@ class StaticShapeReadAnalysis {
 	/**
 	 * Fully-qualified names of the ops whose arguments require Python integers for a shape target: a statically-read dimension flowing into
 	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption;
-	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882). The rest take a shape, a count or a fill
-	 * value, and each raises at trace time on a {@code None} dimension in any argument (TensorFlow 2.9.3, issue 1058).
-	 * {@code tf.sequence_mask} is not here: a {@code None} {@code maxlen} silently means the longest length rather than raising.
+	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882).
 	 */
-	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize",
-			"tensorflow.ones", "tensorflow.zeros", "tensorflow.fill", "tensorflow.eye", "tensorflow.random.normal",
-			"tensorflow.random.uniform", "tensorflow.random.truncated_normal", "tensorflow.broadcast_to", "tensorflow.tile",
-			"tensorflow.one_hot", "tensorflow.split");
+	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
+
+	/**
+	 * The arguments of an op that a statically-read dimension breaks: positional indices, from 0 for the first argument after the callee,
+	 * and keyword names.
+	 *
+	 * @param positions The positional indices.
+	 * @param keywords The keyword names.
+	 */
+	private record ShapeArguments(Set<Integer> positions, Set<String> keywords) {
+	}
+
+	/**
+	 * The TensorFlow ops that take a shape, a count or a fill value, keyed by fully-qualified name, with the arguments in which a
+	 * {@code None} dimension raises at trace time (TensorFlow 2.9.3, issue 1058). An op's other arguments are left out: those defaulting to
+	 * {@code None} accept it and change meaning instead ({@code tf.random.uniform}'s {@code maxval} means 1 for a float dtype,
+	 * {@code tf.eye}'s {@code num_columns} means square), and a dimension rarely reaches the rest. {@code tf.sequence_mask} is not here: a
+	 * {@code None} {@code maxlen} silently means the longest length.
+	 */
+	private static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
+			Map.entry("tensorflow.ones", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.zeros", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.fill", new ShapeArguments(Set.of(0, 1), Set.of("dims", "value"))),
+			Map.entry("tensorflow.eye", new ShapeArguments(Set.of(0, 2), Set.of("num_rows", "batch_shape"))),
+			Map.entry("tensorflow.random.normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
+			Map.entry("tensorflow.random.truncated_normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
+			Map.entry("tensorflow.random.uniform", new ShapeArguments(Set.of(0, 1), Set.of("shape", "minval"))),
+			Map.entry("tensorflow.broadcast_to", new ShapeArguments(Set.of(0, 1), Set.of("input", "shape"))),
+			Map.entry("tensorflow.tile", new ShapeArguments(Set.of(0, 1), Set.of("input", "multiples"))),
+			Map.entry("tensorflow.one_hot", new ShapeArguments(Set.of(0, 1), Set.of("indices", "depth"))),
+			Map.entry("tensorflow.split", new ShapeArguments(Set.of(0, 1), Set.of("value", "num_or_size_splits"))));
 
 	/**
 	 * Names of the Python builtins that require an integer argument: a statically-read dimension reaching either is {@code None} under a
@@ -637,6 +662,15 @@ class StaticShapeReadAnalysis {
 			return true;
 		}
 
+		// An op taking a shape, a count or a fill value consuming a statically-read dimension in one of the arguments it breaks is a sink
+		// (issue 1058).
+		ShapeArguments shapeArguments = fqn == null ? null : SHAPE_ARGUMENT_OPS.get(fqn);
+
+		if (shapeArguments != null) {
+			recordShapeArguments(invoke, shapeArguments, shapeDescriptors, reads);
+			return true;
+		}
+
 		// A Python builtin requiring an integer consuming a statically-read dimension is a sink (issue 1058).
 		if (INTEGER_BUILTIN_NAMES.stream().anyMatch(name -> invokesBuiltin(invoke, defUse, name))) {
 			recordShapeArguments(invoke, shapeDescriptors, reads);
@@ -721,6 +755,34 @@ class StaticShapeReadAnalysis {
 			if (descriptor != null)
 				reads.add(descriptor);
 		}
+	}
+
+	/**
+	 * Records the statically-read dimensions {@code invoke} passes in {@code arguments}.
+	 *
+	 * @param invoke The call.
+	 * @param arguments The positional indices and keyword names to read.
+	 * @param shapeDescriptors The statically-read dimensions by value number.
+	 * @param reads The reads, to which each one found is added.
+	 */
+	private static void recordShapeArguments(PythonInvokeInstruction invoke, ShapeArguments arguments,
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads) {
+		// The callee is the invoke's first use, so the argument at index i is use i + 1.
+		for (int position : arguments.positions())
+			if (position + 1 < invoke.getNumberOfPositionalParameters()) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(position + 1));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
+
+		for (String keyword : arguments.keywords())
+			if (invoke.getKeywords().contains(keyword)) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(keyword));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
 	}
 
 	/** The outcome of descending into an invoke's user-defined callees. */

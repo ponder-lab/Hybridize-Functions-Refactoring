@@ -12677,8 +12677,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ops that take a shape ({@code tf.ones}, positionally and as {@code shape=}; {@code tf.zeros}; {@code tf.fill}, in either argument;
 	 * {@code tf.eye}; {@code tf.random.normal}, {@code uniform} and {@code truncated_normal}; {@code tf.broadcast_to}; {@code tf.tile};
 	 * {@code tf.one_hot}; {@code tf.split}) and the Python builtins {@code range} and {@code int}. So each {@code wild_*} function, called
-	 * at two extents, keeps its conversion and has its signature withheld. {@code dynamic_ones} reads the extent with {@code tf.shape}, a
-	 * tensor valid under a wildcard, and {@code ranked_ones}, called at one extent, has the axis resolved, so both keep their signatures.
+	 * at two extents, keeps its conversion and has its signature withheld. Four controls keep their signatures. {@code free_uniform_maxval}
+	 * and {@code free_eye_num_columns} pass the dimension to an argument that defaults to {@code None} and accepts it. {@code dynamic_ones}
+	 * reads the extent with {@code tf.shape}, a tensor valid under a wildcard. {@code ranked_ones}, called at one extent, has the axis
+	 * resolved.
 	 */
 	@Test
 	public void testUnresolvedStaticDimensionIntoShapeOps() throws Exception {
@@ -12699,7 +12701,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getInferredInputSignatureAbsenceReason());
 		}
 
-		for (String identifier : List.of("dynamic_ones", "ranked_ones")) {
+		for (String identifier : List.of("free_uniform_maxval", "free_eye_num_columns", "dynamic_ones", "ranked_ones")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
 			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
 			assertTrue("`" + identifier + "` keeps its signature.", function.getInferredInputSignature().isPresent());

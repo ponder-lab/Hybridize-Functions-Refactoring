@@ -67,6 +67,16 @@ def wild_int(x):
     return tf.reduce_sum(x) + tf.constant(n, tf.float32)
 
 
+# These arguments default to None and accept it, changing meaning instead of raising: `maxval` means 1 for a float dtype, and
+# `num_columns` means square.
+def free_uniform_maxval(x):
+    return tf.random.uniform((2, 1), maxval=x.shape[0]) + tf.reduce_sum(x)
+
+
+def free_eye_num_columns(x):
+    return tf.eye(2, num_columns=x.shape[0]) + tf.reduce_sum(x)
+
+
 # The dynamic shape is a tensor, valid under a wildcard axis.
 def dynamic_ones(x):
     return tf.ones((tf.shape(x)[0], 1)) + tf.reduce_sum(x)
@@ -93,6 +103,8 @@ for function in (
     wild_split,
     wild_range,
     wild_int,
+    free_uniform_maxval,
+    free_eye_num_columns,
     dynamic_ones,
 ):
     function(tf.ones([2, 3]))
