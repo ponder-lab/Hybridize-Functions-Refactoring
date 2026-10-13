@@ -135,9 +135,20 @@ class StaticShapeReadAnalysis {
 	/**
 	 * Fully-qualified names of the ops whose arguments require Python integers for a shape target: a statically-read dimension flowing into
 	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption;
-	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882).
+	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882). The rest take a shape, a count or a fill
+	 * value, and each raises at trace time on a {@code None} dimension in any argument (TensorFlow 2.9.3, issue 1058).
+	 * {@code tf.sequence_mask} is not here: a {@code None} {@code maxlen} silently means the longest length rather than raising.
 	 */
-	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
+	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize",
+			"tensorflow.ones", "tensorflow.zeros", "tensorflow.fill", "tensorflow.eye", "tensorflow.random.normal",
+			"tensorflow.random.uniform", "tensorflow.random.truncated_normal", "tensorflow.broadcast_to", "tensorflow.tile",
+			"tensorflow.one_hot", "tensorflow.split");
+
+	/**
+	 * Names of the Python builtins that require an integer argument: a statically-read dimension reaching either is {@code None} under a
+	 * wildcard axis, and {@code range(None)} and {@code int(None)} raise {@code TypeError} (issue 1058).
+	 */
+	private static final Set<String> INTEGER_BUILTIN_NAMES = Set.of("range", "int");
 
 	/**
 	 * Member names of the NumPy buffer constructors whose shape argument requires Python integers, every bit as much as {@code tf.reshape}
@@ -622,6 +633,12 @@ class StaticShapeReadAnalysis {
 
 		// A shape-target op consuming a statically-read dimension (directly or through its target list) is a sink.
 		if (fqn != null && SHAPE_TARGET_OP_FQNS.contains(fqn)) {
+			recordShapeArguments(invoke, shapeDescriptors, reads);
+			return true;
+		}
+
+		// A Python builtin requiring an integer consuming a statically-read dimension is a sink (issue 1058).
+		if (INTEGER_BUILTIN_NAMES.stream().anyMatch(name -> invokesBuiltin(invoke, defUse, name))) {
 			recordShapeArguments(invoke, shapeDescriptors, reads);
 			return true;
 		}
