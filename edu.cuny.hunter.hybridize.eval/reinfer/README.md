@@ -67,4 +67,4 @@ Each subject directory also holds `strip.json` (what was removed, and from where
 - **Mixed-dtype sequences.** A sequence parameter whose elements have different dtypes cannot be paired back to positions from `tensor_specs.csv`. For those, the dtype relation is `UNDETERMINED`, not guessed.
 - **Text search.** The text search is syntactic, and over-approximates. It separates "no caller exists" from "callers exist that the analysis did not connect". It is not a call graph.
 - **Dtype aliases.** A removed spec's dtype is read as the last name of its expression (`tf.float32` gives `float32`). Aliases such as `tf.double`, `tf.half` or a builtin `float` therefore relate as a dtype disagreement with the evaluator's canonical names. `InputSignature`'s own parser has the same gap.
-- **Launcher exit code.** The product launcher exits nonzero even after a successful evaluation, so the harness takes the evaluator's own completion line as its witness, not the exit code.
+- **Launcher exit code.** The harness takes the evaluator's own completion line as its witness and only reports the exit code, which is 0 when the project succeeded and 6 when it was skipped.
