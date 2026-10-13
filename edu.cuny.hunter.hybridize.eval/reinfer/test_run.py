@@ -49,6 +49,9 @@ class FailureOfTest(unittest.TestCase):
         )
         self.assertEqual(run.failure_of(log, 6), "CoreException")
 
+    def test_a_skip_whose_reason_was_not_logged(self):
+        self.assertEqual(run.failure_of("", 6), "skipped (reason not logged)")
+
     def test_an_unexplained_stop(self):
         self.assertEqual(
             run.failure_of("nothing useful\n", 7), "did-not-complete (launcher exit 7)"

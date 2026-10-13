@@ -35,9 +35,10 @@
 # SOURCE_FOLDERS_FROM_PACKAGING, SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
 # (e.g. the performance evaluation). PROCESS_IN_PARALLEL checks a project's
-# functions concurrently; the state they share is synchronized and their status
-# entries are merged in the functions' order (issue 315), so the results match a
-# serial run's. PROJECTS is a comma-separated list of project names to evaluate a
+# functions concurrently. The state they share in this tool is synchronized, and
+# their status entries are merged in the functions' order (issue 315), but not all
+# of PyDev's module caches are, so a parallel run isn't guaranteed to match a
+# serial one. PROJECTS is a comma-separated list of project names to evaluate a
 # subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
 # comma-separated list of entries to register in the workspace before the run
 # (issue 658). An entry is an absolute subject directory; one with a committed

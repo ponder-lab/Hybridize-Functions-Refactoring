@@ -316,6 +316,8 @@ def failure_of(log, code):
     )
     if skipped:
         return skipped.group(1)
+    if code == 6:
+        return "skipped (reason not logged)"
     return f"did-not-complete (launcher exit {code})"
 
 
