@@ -70,8 +70,11 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	/** Exit code returned when the workspace contains no open Python project to evaluate. */
 	private static final int EXIT_NO_PROJECTS = 2;
 
-	/** Exit code returned when the evaluation completes but its status is not OK. */
+	/** Exit code returned when the evaluation is aborted before it completes. */
 	private static final int EXIT_EVALUATION_FAILED = 1;
+
+	/** Exit code returned when the evaluation completes but skips a project that failed. */
+	private static final int EXIT_PROJECTS_SKIPPED = 6;
 
 	/** Exit code returned when a command-line argument is unrecognized. */
 	private static final int EXIT_BAD_ARGUMENTS = 3;
@@ -131,12 +134,18 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 		LOG.info("Evaluating " + projects.length + " Python project(s) headlessly.");
 		IStatus status = new EvaluateHybridizeFunctionRefactoringHandler().evaluate(projects, new NullProgressMonitor());
 
-		if (!status.isOK()) {
-			LOG.log(status);
+		// Logged whatever its severity: a completed run's status carries the completion line that drivers read.
+		LOG.log(status);
+
+		switch (status.getSeverity()) {
+		case IStatus.OK:
+		case IStatus.INFO:
+			return IApplication.EXIT_OK;
+		case IStatus.WARNING:
+			return EXIT_PROJECTS_SKIPPED;
+		default:
 			return EXIT_EVALUATION_FAILED;
 		}
-
-		return IApplication.EXIT_OK;
 	}
 
 	@Override

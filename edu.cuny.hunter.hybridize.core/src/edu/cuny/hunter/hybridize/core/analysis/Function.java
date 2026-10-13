@@ -5716,7 +5716,11 @@ public class Function {
 			if (selection != null) {
 				RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
 				IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
-				HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+				HierarchyNodeModel hierarchyNode;
+
+				synchronized (Util.PYDEV_LOCK) {
+					hierarchyNode = refactoring.findClassHierarchy(request, true);
+				}
 
 				if (hierarchyNode != null)
 					return getAllParentNames(hierarchyNode, onlyLastSegment);

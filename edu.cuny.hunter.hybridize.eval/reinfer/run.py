@@ -305,8 +305,8 @@ def evaluate(subject, work, out, arguments):
 def failure_of(log, code):
     """Why an evaluation did not complete, or None if it did.
 
-    The product launcher exits nonzero even after a successful evaluation, so the exit code is not a
-    witness. The evaluator's own completion line is.
+    The evaluator's own completion line is the witness, so a run is judged by what it logged. The exit
+    code (0 when every project succeeded, 6 when one was skipped) is only reported alongside.
     """
     if SUCCESS_LINE in log:
         return None

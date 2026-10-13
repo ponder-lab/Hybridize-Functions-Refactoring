@@ -56,6 +56,14 @@
 # another class-hierarchy build. Whether an uncovered file matters is the project's
 # call, so fix its metadata where it does.
 #
+# Exit codes: 0 when the evaluation completes and every project succeeds; 6 when
+# it completes but skips a project that failed (the completion line names it); 1
+# when the evaluation is aborted, or when this script is missing ECLIPSE,
+# WORKSPACE, or OUTDIR or refuses OUTDIR; 2 when the workspace has no open
+# Python project; 3 on an unrecognized argument; 4 and 5 as above. The
+# platform's own codes, such as 13 for an error that ends the application, pass
+# through unchanged.
+#
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
 # than restating them. Set MAX_HEAP to override the heap when pointing ECLIPSE at

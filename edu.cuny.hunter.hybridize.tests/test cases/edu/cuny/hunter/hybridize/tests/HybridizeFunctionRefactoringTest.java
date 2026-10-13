@@ -585,6 +585,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private int targetedCfaDepth = HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
 
+	/**
+	 * Whether the harness's processor checks functions in parallel (issue 315). Serial unless a test asks otherwise.
+	 */
+	private boolean processFunctionsInParallel = PROCESS_FUNCTIONS_IN_PARALLEL;
+
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
 		return this.createPythonNodeFromTestFile(fileNameWithoutExtension, true);
@@ -847,7 +852,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
-				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, this.processFunctionsInParallel, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 		processor.setTargetedCfaDepth(this.targetedCfaDepth);
 		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
@@ -14067,5 +14072,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.",
 				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)], tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				beforeStar.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Checking functions in parallel gives the same hybridization, tensor parameters, and status entries as checking them serially (issue
+	 * 315). The first run is the parallel one, so whatever of PyDev's caches are still cold, such as those of the fixture's own module, are
+	 * filled while functions are checked in parallel. The races this guards against don't show deterministically, so a pass is no proof of
+	 * their absence; the test keeps the parallel path exercised and its results in agreement with the serial one.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/315">Issue 315</a>
+	 */
+	@Test
+	public void testParallelMatchesSerial() throws Exception {
+		this.processFunctionsInParallel = true;
+		Map<String, String> coldParallel = summarize(this.getFunctions());
+
+		Function.clearCaches();
+		this.processFunctionsInParallel = false;
+		Map<String, String> serial = summarize(this.getFunctions());
+
+		assertEquals(5, serial.size());
+		assertTrue(serial.get("hybrid_tensor"), serial.get("hybrid_tensor").startsWith("true true "));
+		assertTrue(serial.get("hybrid_primitive"), serial.get("hybrid_primitive").startsWith("true "));
+		assertTrue(serial.get("eager_tensor"), serial.get("eager_tensor").startsWith("false true "));
+		assertTrue(serial.get("eager_primitive"), serial.get("eager_primitive").startsWith("false "));
+		assertEquals("The first run, in parallel.", serial, coldParallel);
+
+		this.processFunctionsInParallel = true;
+
+		for (int i = 0; i < 4; i++) {
+			Function.clearCaches();
+			assertEquals("Run " + i + " in parallel.", serial, summarize(this.getFunctions()));
+		}
+	}
+
+	/**
+	 * Summarizes each function's hybridization, tensor parameter, and status entries, keyed by its identifier.
+	 *
+	 * @param functions The functions to summarize.
+	 * @return Each function's summary, keyed by its identifier.
+	 */
+	private static Map<String, String> summarize(Set<Function> functions) {
+		return functions.stream()
+				.collect(Collectors.toMap(Function::getIdentifier,
+						f -> f.isHybrid() + " " + f.getHasTensorParameter() + " " + Arrays.stream(f.getStatus().getEntries())
+								.map(e -> e.getSeverity() + ":" + e.getCode() + ":" + e.getMessage()).sorted().toList()));
 	}
 }

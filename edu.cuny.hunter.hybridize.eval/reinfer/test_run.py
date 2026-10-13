@@ -18,7 +18,7 @@ class WriteCsvTest(unittest.TestCase):
 
 class FailureOfTest(unittest.TestCase):
     def test_the_completion_line_is_the_witness(self):
-        self.assertIsNone(run.failure_of("...\n!MESSAGE " + run.SUCCESS_LINE + "\n", 1))
+        self.assertIsNone(run.failure_of("...\n!MESSAGE " + run.SUCCESS_LINE + "\n", 0))
 
     def test_out_of_memory(self):
         self.assertEqual(
@@ -39,7 +39,7 @@ class FailureOfTest(unittest.TestCase):
             "!MESSAGE Evaluation completed: 0 of 1 project(s) succeeded, 1 failed and were skipped: "
             "p (CoreException: Project p has a script, a.py, that none of its PYTHONPATH entries cover)\n"
         )
-        self.assertEqual(run.failure_of(log, 1), "CoreException")
+        self.assertEqual(run.failure_of(log, 6), "CoreException")
 
     def test_an_unexplained_stop(self):
         self.assertEqual(

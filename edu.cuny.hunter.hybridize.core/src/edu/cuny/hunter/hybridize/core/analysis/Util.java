@@ -74,6 +74,14 @@ public class Util {
 	private static final ILog LOG = getLog(Util.class);
 
 	/**
+	 * Serializes PyDev's definition and class-hierarchy lookups. PyDev's source modules fill their shared token and visitor caches without
+	 * synchronizing their readers, so lookups made at once from functions checked in parallel can read a partly filled cache (issue 315).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/315">Issue 315</a>
+	 */
+	static final Object PYDEV_LOCK = new Object();
+
+	/**
 	 * Get the name of the module defining the entity described in the given {@link PySelection}.
 	 *
 	 * @param selection The {@link PySelection} in question.
@@ -104,7 +112,9 @@ public class Util {
 
 		ItemPointer[] pointers;
 		try {
-			pointers = pyRefactoring.findDefinition(request);
+			synchronized (PYDEV_LOCK) {
+				pointers = pyRefactoring.findDefinition(request);
+			}
 		} catch (TooManyMatchesException e) {
 			throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature, e);
 		}
