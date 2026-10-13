@@ -17,8 +17,16 @@ class WriteCsvTest(unittest.TestCase):
 
 
 class FailureOfTest(unittest.TestCase):
-    def test_the_completion_line_is_the_witness(self):
-        self.assertIsNone(run.failure_of("...\n!MESSAGE " + run.SUCCESS_LINE + "\n", 0))
+    def test_the_exit_code_is_the_witness(self):
+        self.assertIsNone(run.failure_of("", 0))
+
+    def test_a_completion_line_does_not_override_the_exit_code(self):
+        self.assertEqual(
+            run.failure_of(
+                "!MESSAGE Evaluation completed: all 1 project(s) succeeded.\n", 1
+            ),
+            "did-not-complete (launcher exit 1)",
+        )
 
     def test_out_of_memory(self):
         self.assertEqual(

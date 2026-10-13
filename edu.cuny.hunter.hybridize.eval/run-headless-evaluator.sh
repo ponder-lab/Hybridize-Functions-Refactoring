@@ -34,8 +34,10 @@
 # TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS, PYTHON_INTERPRETER,
 # SOURCE_FOLDERS_FROM_PACKAGING, SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
-# (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
-# (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
+# (e.g. the performance evaluation). PROCESS_IN_PARALLEL checks a project's
+# functions concurrently; the state they share is synchronized and their status
+# entries are merged in the functions' order (issue 315), so the results match a
+# serial run's. PROJECTS is a comma-separated list of project names to evaluate a
 # subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
 # comma-separated list of entries to register in the workspace before the run
 # (issue 658). An entry is an absolute subject directory; one with a committed
