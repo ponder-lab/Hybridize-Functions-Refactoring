@@ -140,6 +140,57 @@ class StaticShapeReadAnalysis {
 	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
 
 	/**
+	 * The arguments of an op that a statically-read dimension breaks: positional indices, from 0 for the first argument after the callee,
+	 * and keyword names.
+	 *
+	 * @param positions The positional indices.
+	 * @param keywords The keyword names.
+	 */
+	private record ShapeArguments(Set<Integer> positions, Set<String> keywords) {
+	}
+
+	/**
+	 * The TensorFlow ops that take a shape, a count or a fill value, keyed by fully-qualified name, with the arguments in which a
+	 * {@code None} dimension raises at trace time (TensorFlow 2.9.3, issue 1058). An op's other arguments are left out: those defaulting to
+	 * {@code None} accept it and change meaning instead ({@code tf.random.uniform}'s {@code maxval} means 1 for a float dtype and is
+	 * counted separately for any other, {@code tf.eye}'s {@code num_columns} means square), and a dimension rarely reaches the rest.
+	 * {@code tf.sequence_mask} is not here: a {@code None} {@code maxlen} silently means the longest length.
+	 */
+	private static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
+			Map.entry("tensorflow.ones", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.zeros", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.fill", new ShapeArguments(Set.of(0, 1), Set.of("dims", "value"))),
+			Map.entry("tensorflow.eye", new ShapeArguments(Set.of(0, 2), Set.of("num_rows", "batch_shape"))),
+			Map.entry("tensorflow.random.normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
+			Map.entry("tensorflow.random.truncated_normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
+			Map.entry("tensorflow.random.uniform", new ShapeArguments(Set.of(0, 1), Set.of("shape", "minval"))),
+			Map.entry("tensorflow.broadcast_to", new ShapeArguments(Set.of(0, 1), Set.of("input", "shape"))),
+			Map.entry("tensorflow.tile", new ShapeArguments(Set.of(0, 1), Set.of("input", "multiples"))),
+			Map.entry("tensorflow.one_hot", new ShapeArguments(Set.of(0, 1), Set.of("indices", "depth"))),
+			Map.entry("tensorflow.split", new ShapeArguments(Set.of(0, 1), Set.of("value", "num_or_size_splits"))));
+
+	/** The fully-qualified name of {@code tf.random.uniform}, whose {@code maxval} breaks on {@code None} only for an integer dtype. */
+	private static final String RANDOM_UNIFORM_FQN = "tensorflow.random.uniform";
+
+	/** {@code tf.random.uniform}'s {@code maxval}, its positional index 2 and its keyword. */
+	private static final ShapeArguments RANDOM_UNIFORM_MAXVAL = new ShapeArguments(Set.of(2), Set.of("maxval"));
+
+	/** {@code tf.random.uniform}'s {@code dtype} keyword and positional index. */
+	private static final String RANDOM_UNIFORM_DTYPE_KEYWORD = "dtype";
+
+	private static final int RANDOM_UNIFORM_DTYPE_POSITION = 3;
+
+	/** Fully-qualified names of the TensorFlow floating-point dtypes. */
+	private static final Set<String> FLOAT_DTYPE_FQNS = Set.of("tensorflow.float16", "tensorflow.float32", "tensorflow.float64",
+			"tensorflow.bfloat16", "tensorflow.half", "tensorflow.double");
+
+	/**
+	 * Names of the Python builtins that require an integer argument: a statically-read dimension reaching either is {@code None} under a
+	 * wildcard axis, and {@code range(None)} and {@code int(None)} raise {@code TypeError} (issue 1058).
+	 */
+	private static final Set<String> INTEGER_BUILTIN_NAMES = Set.of("range", "int");
+
+	/**
 	 * Member names of the NumPy buffer constructors whose shape argument requires Python integers, every bit as much as {@code tf.reshape}
 	 * requires them for its target (issue 882): a statically-read dimension flowing into them is a sink. NumPy attribute chains do not root
 	 * at the TensorFlow module, so these are recognized by member name on a numpy-module receiver rather than through the FQN walk.
@@ -626,6 +677,27 @@ class StaticShapeReadAnalysis {
 			return true;
 		}
 
+		// An op taking a shape, a count or a fill value consuming a statically-read dimension in one of the arguments it breaks is a sink
+		// (issue 1058).
+		ShapeArguments shapeArguments = fqn == null ? null : SHAPE_ARGUMENT_OPS.get(fqn);
+
+		if (shapeArguments != null) {
+			recordShapeArguments(invoke, shapeArguments, shapeDescriptors, reads);
+
+			// A `None` `maxval` means 1 for a float dtype, the default, but raises for an integer one, which samples from
+			// `[minval, maxval)` and requires the bound. A dtype that is not provably a float counts, in the withholding direction.
+			if (RANDOM_UNIFORM_FQN.equals(fqn) && !this.hasFloatDType(node, invoke, defUse))
+				recordShapeArguments(invoke, RANDOM_UNIFORM_MAXVAL, shapeDescriptors, reads);
+
+			return true;
+		}
+
+		// A Python builtin requiring an integer consuming a statically-read dimension is a sink (issue 1058).
+		if (INTEGER_BUILTIN_NAMES.stream().anyMatch(name -> invokesBuiltin(invoke, defUse, name))) {
+			recordShapeArguments(invoke, shapeDescriptors, reads);
+			return true;
+		}
+
 		// A NumPy buffer constructor consuming a statically-read dimension (directly or through its shape tuple) is a sink: under a
 		// wildcard the dimension is None at trace time, which NumPy rejects as a size (issue 882, the position-encoding consumption).
 		if (this.isNumpyIntegerSinkCall(node, invoke, defUse)) {
@@ -704,6 +776,58 @@ class StaticShapeReadAnalysis {
 			if (descriptor != null)
 				reads.add(descriptor);
 		}
+	}
+
+	/**
+	 * Records the statically-read dimensions {@code invoke} passes in {@code arguments}.
+	 *
+	 * @param invoke The call.
+	 * @param arguments The positional indices and keyword names to read.
+	 * @param shapeDescriptors The statically-read dimensions by value number.
+	 * @param reads The reads, to which each one found is added.
+	 */
+	private static void recordShapeArguments(PythonInvokeInstruction invoke, ShapeArguments arguments,
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads) {
+		// The callee is the invoke's first use, so the argument at index i is use i + 1.
+		for (int position : arguments.positions())
+			if (position + 1 < invoke.getNumberOfPositionalParameters()) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(position + 1));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
+
+		for (String keyword : arguments.keywords())
+			if (invoke.getKeywords().contains(keyword)) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(keyword));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
+	}
+
+	/**
+	 * Whether the {@code tf.random.uniform} call {@code invoke} samples a floating-point dtype: its {@code dtype}, by keyword or position,
+	 * resolves to one, or is absent and so defaults to {@code tf.float32}.
+	 *
+	 * @param node The call-graph node containing {@code invoke}.
+	 * @param invoke The call.
+	 * @param defUse The node's def-use information.
+	 * @return True iff the dtype is provably a float; false for an integer dtype or one that cannot be resolved.
+	 */
+	private boolean hasFloatDType(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
+		int dtype;
+
+		if (invoke.getKeywords().contains(RANDOM_UNIFORM_DTYPE_KEYWORD))
+			dtype = invoke.getUse(RANDOM_UNIFORM_DTYPE_KEYWORD);
+		// The callee is the invoke's first use, so the argument at index i is use i + 1.
+		else if (RANDOM_UNIFORM_DTYPE_POSITION + 1 < invoke.getNumberOfPositionalParameters())
+			dtype = invoke.getUse(RANDOM_UNIFORM_DTYPE_POSITION + 1);
+		else
+			return true;
+
+		String fqn = Util.resolveCalleeFullyQualifiedName(node, dtype, defUse, this.pointerAnalysis);
+		return fqn != null && FLOAT_DTYPE_FQNS.contains(fqn);
 	}
 
 	/** The outcome of descending into an invoke's user-defined callees. */
