@@ -842,7 +842,8 @@ class NumpyParameterFlowAnalysis {
 	 * top-level helper a closure calls, cannot read that scope's variables, and neither can anything it calls that is not itself nested in
 	 * the scope, which is scanned from the scope's own node. Passing only these keeps the scan's seeds, and so its memo keys, bounded by
 	 * the target's enclosing scopes (issue 1061); passing every tainted variable made sibling closures rescan one another under
-	 * ever-growing seeds.
+	 * ever-growing seeds. The filter preserves every result: a lexical read is matched on its name and defining scope together, and a
+	 * function outside a scope contains no read of that scope's variables, so a dropped variable could never have colored anything there.
 	 *
 	 * @param target The call-graph node to be scanned.
 	 * @param names Lexical variables, as (name, defining scope).
