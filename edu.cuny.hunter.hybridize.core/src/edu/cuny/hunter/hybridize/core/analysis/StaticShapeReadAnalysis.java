@@ -150,39 +150,30 @@ class StaticShapeReadAnalysis {
 	}
 
 	/**
-	 * The TensorFlow ops that take a shape, a count or a fill value, keyed by fully-qualified name, with the arguments in which a
-	 * {@code None} dimension raises at trace time (TensorFlow 2.9.3, issue 1058). An op's other arguments are left out: those defaulting to
-	 * {@code None} accept it and change meaning instead ({@code tf.random.uniform}'s {@code maxval} means 1 for a float dtype and is
-	 * counted separately for any other, {@code tf.eye}'s {@code num_columns} means square), and a dimension rarely reaches the rest.
-	 * {@code tf.sequence_mask} is not here: a {@code None} {@code maxlen} silently means the longest length.
+	 * The TensorFlow ops that take a shape, a count or a fill value, keyed by fully-qualified name, with every argument a dimension can
+	 * fill except {@code dtype} and {@code name} (TensorFlow 2.9.3). A {@code None} dimension in one of them either raises at trace time
+	 * (issue 1058) or is accepted and changes what the op computes
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066): {@code tf.random.uniform}'s float {@code maxval} means
+	 * 1, {@code tf.eye}'s {@code num_columns} means square, {@code tf.one_hot}'s {@code on_value} and {@code off_value} fall back to 1 and
+	 * 0 and its {@code axis} to -1, a random op's {@code seed} leaves it unseeded, and {@code tf.sequence_mask}'s {@code maxlen} means the
+	 * longest length. A changed meaning makes the signature as unwritable as a raise. {@code tf.split}'s {@code num} is unused beside an
+	 * integer {@code num_or_size_splits} but is counted too, as the simpler rule.
 	 */
 	private static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
 			Map.entry("tensorflow.ones", new ShapeArguments(Set.of(0), Set.of("shape"))),
 			Map.entry("tensorflow.zeros", new ShapeArguments(Set.of(0), Set.of("shape"))),
 			Map.entry("tensorflow.fill", new ShapeArguments(Set.of(0, 1), Set.of("dims", "value"))),
-			Map.entry("tensorflow.eye", new ShapeArguments(Set.of(0, 2), Set.of("num_rows", "batch_shape"))),
-			Map.entry("tensorflow.random.normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
-			Map.entry("tensorflow.random.truncated_normal", new ShapeArguments(Set.of(0, 1, 2), Set.of("shape", "mean", "stddev"))),
-			Map.entry("tensorflow.random.uniform", new ShapeArguments(Set.of(0, 1), Set.of("shape", "minval"))),
+			Map.entry("tensorflow.eye", new ShapeArguments(Set.of(0, 1, 2), Set.of("num_rows", "num_columns", "batch_shape"))),
+			Map.entry("tensorflow.random.normal", new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "mean", "stddev", "seed"))),
+			Map.entry("tensorflow.random.truncated_normal",
+					new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "mean", "stddev", "seed"))),
+			Map.entry("tensorflow.random.uniform", new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "minval", "maxval", "seed"))),
 			Map.entry("tensorflow.broadcast_to", new ShapeArguments(Set.of(0, 1), Set.of("input", "shape"))),
 			Map.entry("tensorflow.tile", new ShapeArguments(Set.of(0, 1), Set.of("input", "multiples"))),
-			Map.entry("tensorflow.one_hot", new ShapeArguments(Set.of(0, 1), Set.of("indices", "depth"))),
-			Map.entry("tensorflow.split", new ShapeArguments(Set.of(0, 1), Set.of("value", "num_or_size_splits"))));
-
-	/** The fully-qualified name of {@code tf.random.uniform}, whose {@code maxval} breaks on {@code None} only for an integer dtype. */
-	private static final String RANDOM_UNIFORM_FQN = "tensorflow.random.uniform";
-
-	/** {@code tf.random.uniform}'s {@code maxval}, its positional index 2 and its keyword. */
-	private static final ShapeArguments RANDOM_UNIFORM_MAXVAL = new ShapeArguments(Set.of(2), Set.of("maxval"));
-
-	/** {@code tf.random.uniform}'s {@code dtype} keyword and positional index. */
-	private static final String RANDOM_UNIFORM_DTYPE_KEYWORD = "dtype";
-
-	private static final int RANDOM_UNIFORM_DTYPE_POSITION = 3;
-
-	/** Fully-qualified names of the TensorFlow floating-point dtypes. */
-	private static final Set<String> FLOAT_DTYPE_FQNS = Set.of("tensorflow.float16", "tensorflow.float32", "tensorflow.float64",
-			"tensorflow.bfloat16", "tensorflow.half", "tensorflow.double");
+			Map.entry("tensorflow.one_hot",
+					new ShapeArguments(Set.of(0, 1, 2, 3, 4), Set.of("indices", "depth", "on_value", "off_value", "axis"))),
+			Map.entry("tensorflow.split", new ShapeArguments(Set.of(0, 1, 2, 3), Set.of("value", "num_or_size_splits", "axis", "num"))),
+			Map.entry("tensorflow.sequence_mask", new ShapeArguments(Set.of(0, 1), Set.of("lengths", "maxlen"))));
 
 	/**
 	 * Names of the Python builtins that require an integer argument: a statically-read dimension reaching either is {@code None} under a
@@ -670,18 +661,13 @@ class StaticShapeReadAnalysis {
 			return true;
 		}
 
-		// An op taking a shape, a count or a fill value consuming a statically-read dimension in one of the arguments it breaks is a sink
-		// (issue 1058).
+		// An op taking a shape, a count or a fill value consuming a statically-read dimension in any argument a dimension can fill is a
+		// sink, whether the None raises or changes the op's meaning (issue 1058 and
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066).
 		ShapeArguments shapeArguments = fqn == null ? null : SHAPE_ARGUMENT_OPS.get(fqn);
 
 		if (shapeArguments != null) {
 			recordShapeArguments(invoke, shapeArguments, shapeDescriptors, reads);
-
-			// A `None` `maxval` means 1 for a float dtype, the default, but raises for an integer one, which samples from
-			// `[minval, maxval)` and requires the bound. A dtype that is not provably a float counts, in the withholding direction.
-			if (RANDOM_UNIFORM_FQN.equals(fqn) && !this.hasFloatDType(node, invoke, defUse))
-				recordShapeArguments(invoke, RANDOM_UNIFORM_MAXVAL, shapeDescriptors, reads);
-
 			return true;
 		}
 
@@ -800,30 +786,6 @@ class StaticShapeReadAnalysis {
 				if (descriptor != null)
 					reads.add(descriptor);
 			}
-	}
-
-	/**
-	 * Whether the {@code tf.random.uniform} call {@code invoke} samples a floating-point dtype: its {@code dtype}, by keyword or position,
-	 * resolves to one, or is absent and so defaults to {@code tf.float32}.
-	 *
-	 * @param node The call-graph node containing {@code invoke}.
-	 * @param invoke The call.
-	 * @param defUse The node's def-use information.
-	 * @return True iff the dtype is provably a float; false for an integer dtype or one that cannot be resolved.
-	 */
-	private boolean hasFloatDType(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
-		int dtype;
-
-		if (invoke.getKeywords().contains(RANDOM_UNIFORM_DTYPE_KEYWORD))
-			dtype = invoke.getUse(RANDOM_UNIFORM_DTYPE_KEYWORD);
-		// The callee is the invoke's first use, so the argument at index i is use i + 1.
-		else if (RANDOM_UNIFORM_DTYPE_POSITION + 1 < invoke.getNumberOfPositionalParameters())
-			dtype = invoke.getUse(RANDOM_UNIFORM_DTYPE_POSITION + 1);
-		else
-			return true;
-
-		String fqn = Util.resolveCalleeFullyQualifiedName(node, dtype, defUse, this.pointerAnalysis);
-		return fqn != null && FLOAT_DTYPE_FQNS.contains(fqn);
 	}
 
 	/** The outcome of descending into an invoke's user-defined callees. */
