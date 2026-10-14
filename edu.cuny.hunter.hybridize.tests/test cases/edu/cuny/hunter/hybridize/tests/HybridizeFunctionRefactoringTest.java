@@ -12757,6 +12757,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1058: a dimension read statically from an axis its
+	 * signature leaves wild is {@code None} at trace time, and each of these consumers raises on it under TensorFlow 2.9.3: the TensorFlow
+	 * ops that take a shape ({@code tf.ones}, positionally and as {@code shape=}; {@code tf.zeros}; {@code tf.fill}, in either argument;
+	 * {@code tf.eye}; {@code tf.random.normal}, {@code uniform} and {@code truncated_normal}; {@code tf.broadcast_to}; {@code tf.tile};
+	 * {@code tf.one_hot}; {@code tf.split}) and the Python builtins {@code range} and {@code int}. So each {@code wild_*} function, called
+	 * at two extents, keeps its conversion and has its signature withheld. Four controls keep their signatures. {@code free_uniform_maxval}
+	 * and {@code free_eye_num_columns} pass the dimension to an argument that defaults to {@code None} and accepts it. {@code dynamic_ones}
+	 * reads the extent with {@code tf.shape}, a tensor valid under a wildcard. {@code ranked_ones}, called at one extent, has the axis
+	 * resolved.
+	 */
+	@Test
+	public void testUnresolvedStaticDimensionIntoShapeOps() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_ones", "wild_ones_keyword", "wild_zeros", "wild_fill", "wild_fill_value", "wild_eye",
+				"wild_normal", "wild_uniform", "wild_truncated_normal", "wild_uniform_int_maxval", "wild_broadcast_to", "wild_tile",
+				"wild_one_hot", "wild_split", "wild_range", "wild_int")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable.", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		for (String identifier : List.of("free_uniform_maxval", "free_eye_num_columns", "dynamic_ones", "ranked_ones")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
+			assertTrue("`" + identifier + "` keeps its signature.", function.getInferredInputSignature().isPresent());
+		}
+	}
+
+	/**
 	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
 	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
