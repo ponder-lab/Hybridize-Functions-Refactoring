@@ -497,14 +497,12 @@ class StaticShapeReadAnalysis {
 
 				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
 				// within the function's trace, so its reads count too; with no call site here, its result colors nothing.
-				for (CGNode candidate : this.callGraph)
-					if (!Util.isTensorFlowNode(candidate) && candidate.getIR() != null
-							&& (NumpyParameterFlowAnalysis.isNestedInAny(candidate, lexicalValues.keySet())
-									|| NumpyParameterFlowAnalysis.isNestedInAny(candidate, lexicalShapes.keySet()))) {
-						ScanResult nested = this.scan(candidate, Map.of(), Map.of(), lexicalValues, lexicalShapes);
-						reads.addAll(nested.reads());
-						rankReads.addAll(nested.rankReads());
-					}
+				for (CGNode candidate : NumpyParameterFlowAnalysis.nestedNodes(this.callGraph, lexicalValues.keySet(),
+						lexicalShapes.keySet())) {
+					ScanResult nested = this.scan(candidate, Map.of(), Map.of(), lexicalValues, lexicalShapes);
+					reads.addAll(nested.reads());
+					rankReads.addAll(nested.rankReads());
+				}
 
 				if (worklist.isEmpty())
 					break;

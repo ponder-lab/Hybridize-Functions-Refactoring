@@ -1,15 +1,18 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.WeakHashMap;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
@@ -464,7 +467,7 @@ class NumpyParameterFlowAnalysis {
 				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
 				// within the function's trace and reads the tainted variables, so it is scanned for sinks too; with no call site here,
 				// its result colors nothing.
-				for (CGNode nested : this.nestedNodes(lexicalValues, lexicalShapes.keySet()))
+				for (CGNode nested : nestedNodes(this.callGraph, lexicalValues, lexicalShapes.keySet()))
 					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(), lexicalValues,
 							lexicalShapes).sink())
 						sink = true;
@@ -782,22 +785,46 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
+	 * Per call graph, its user-code nodes with an IR, keyed by their type names with the {@code L} prefix removed, so the functions nested
+	 * in a scope are a range lookup rather than a pass over the whole graph (issue 1061).
+	 */
+	private static final Map<CallGraph, NavigableMap<String, Set<CGNode>>> NODES_BY_TYPE = Collections.synchronizedMap(new WeakHashMap<>());
+
+	/**
 	 * The call-graph nodes nested in the defining scope of one of the given lexical variables, wherever they are called from (issue 1061).
 	 *
+	 * @param callGraph The call graph.
 	 * @param values The value-tainted lexical variables.
 	 * @param shapes The shape-tainted lexical variables.
 	 * @return The nested user-code nodes with an IR.
 	 */
-	private Set<CGNode> nestedNodes(Set<Pair<String, String>> values, Set<Pair<String, String>> shapes) {
+	static Set<CGNode> nestedNodes(CallGraph callGraph, Set<Pair<String, String>> values, Set<Pair<String, String>> shapes) {
 		Set<CGNode> nodes = new HashSet<>();
 
 		if (values.isEmpty() && shapes.isEmpty())
 			return nodes;
 
-		for (CGNode candidate : this.callGraph)
-			if (!Util.isTensorFlowNode(candidate) && candidate.getIR() != null
-					&& (isNestedInAny(candidate, values) || isNestedInAny(candidate, shapes)))
-				nodes.add(candidate);
+		NavigableMap<String, Set<CGNode>> index = NODES_BY_TYPE.computeIfAbsent(callGraph, k -> {
+			NavigableMap<String, Set<CGNode>> byType = new TreeMap<>();
+
+			for (CGNode node : k)
+				if (!Util.isTensorFlowNode(node) && node.getIR() != null)
+					byType.computeIfAbsent(stripTypePrefix(node.getMethod().getDeclaringClass().getName().toString()), t -> new HashSet<>())
+							.add(node);
+
+			return byType;
+		});
+
+		Set<String> scopes = new TreeSet<>();
+
+		for (Set<Pair<String, String>> names : List.of(values, shapes))
+			for (Pair<String, String> name : names)
+				if (name.snd != null)
+					scopes.add(stripTypePrefix(name.snd));
+
+		// The types nested in a scope are exactly those that sort between "scope/" and "scope0", since '0' follows '/'.
+		for (String scope : scopes)
+			index.subMap(scope + "/", true, scope + "0", false).values().forEach(nodes::addAll);
 
 		return nodes;
 	}
