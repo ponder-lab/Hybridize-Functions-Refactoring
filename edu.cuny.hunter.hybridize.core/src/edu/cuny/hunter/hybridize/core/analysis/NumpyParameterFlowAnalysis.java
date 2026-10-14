@@ -372,12 +372,12 @@ class NumpyParameterFlowAnalysis {
 	 * Taint also crosses into nested functions through their closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061). A nested function (a comprehension, a lambda, or a
 	 * nested {@code def}) reads an enclosing function's variable lexically rather than receiving it as an argument, and the enclosing
-	 * function publishes the variable with a lexical write, including a prologue write for each parameter a nested function reads (not yet
-	 * for a comprehension, https://github.com/wala/ML/issues/1066). A tainted value written lexically taints the variable, identified by
-	 * its name and defining scope, and a lexical read of a tainted variable, in this node or in any function scanned from it, inherits the
-	 * taint. Since a nested function need not receive any tainted argument, every function nested in a tainted variable's defining scope
-	 * that this node calls is also scanned with the lexical taint, and its call's result is value-tainted when a tainted value escapes it.
-	 * A nested function's own write to an enclosing variable ({@code nonlocal}) is not followed.
+	 * function publishes the variable with a lexical write, including a prologue write for each parameter a nested function reads. A
+	 * tainted value written lexically taints the variable, identified by its name and defining scope, and a lexical read of a tainted
+	 * variable, in this node or in any function scanned from it, inherits the taint. Since a nested function need not receive any tainted
+	 * argument, every function nested in a tainted variable's defining scope that this node calls is also scanned with the lexical taint,
+	 * and its call's result is value-tainted when a tainted value escapes it. A nested function's own write to an enclosing variable
+	 * ({@code nonlocal}) is not followed.
 	 *
 	 * @param node The node to scan.
 	 * @param valueSeed The value-tainted value numbers.
