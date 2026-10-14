@@ -464,7 +464,9 @@ class StaticShapeReadAnalysis {
 											&& !NumpyParameterFlowAnalysis.isNestedInAny(target, lexicalShapes.keySet()))
 								continue;
 
-							ScanResult nested = this.scan(target, Map.of(), Map.of(), lexicalValues, lexicalShapes);
+							ScanResult nested = this.scan(target, Map.of(), Map.of(),
+									NumpyParameterFlowAnalysis.enclosingNames(target, lexicalValues),
+									NumpyParameterFlowAnalysis.enclosingNames(target, lexicalShapes));
 							reads.addAll(nested.reads());
 							rankReads.addAll(nested.rankReads());
 
@@ -483,7 +485,9 @@ class StaticShapeReadAnalysis {
 				// within the function's trace, so its reads count too; with no call site here, its result colors nothing.
 				for (CGNode candidate : NumpyParameterFlowAnalysis.nestedNodes(this.callGraph, lexicalValues.keySet(),
 						lexicalShapes.keySet())) {
-					ScanResult nested = this.scan(candidate, Map.of(), Map.of(), lexicalValues, lexicalShapes);
+					ScanResult nested = this.scan(candidate, Map.of(), Map.of(),
+							NumpyParameterFlowAnalysis.enclosingNames(candidate, lexicalValues),
+							NumpyParameterFlowAnalysis.enclosingNames(candidate, lexicalShapes));
 					reads.addAll(nested.reads());
 					rankReads.addAll(nested.rankReads());
 				}
@@ -964,7 +968,9 @@ class StaticShapeReadAnalysis {
 
 			analyzedCallee = true;
 
-			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed, lexicalValues, lexicalShapes);
+			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed,
+					NumpyParameterFlowAnalysis.enclosingNames(target, lexicalValues),
+					NumpyParameterFlowAnalysis.enclosingNames(target, lexicalShapes));
 
 			reads.addAll(result.reads());
 			rankReads.addAll(result.rankReads());
