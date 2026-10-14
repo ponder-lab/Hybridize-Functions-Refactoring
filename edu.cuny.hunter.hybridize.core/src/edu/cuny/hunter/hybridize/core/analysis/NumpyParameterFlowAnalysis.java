@@ -461,6 +461,14 @@ class NumpyParameterFlowAnalysis {
 						}
 					}
 
+				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
+				// within the function's trace and reads the tainted variables, so it is scanned for sinks too; with no call site here,
+				// its result colors nothing.
+				for (CGNode nested : this.nestedNodes(lexicalValues, lexicalShapes.keySet()))
+					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(), lexicalValues,
+							lexicalShapes).sink())
+						sink = true;
+
 				if (worklist.isEmpty())
 					break;
 			}
@@ -771,6 +779,27 @@ class NumpyParameterFlowAnalysis {
 				return true;
 
 		return false;
+	}
+
+	/**
+	 * The call-graph nodes nested in the defining scope of one of the given lexical variables, wherever they are called from (issue 1061).
+	 *
+	 * @param values The value-tainted lexical variables.
+	 * @param shapes The shape-tainted lexical variables.
+	 * @return The nested user-code nodes with an IR.
+	 */
+	private Set<CGNode> nestedNodes(Set<Pair<String, String>> values, Set<Pair<String, String>> shapes) {
+		Set<CGNode> nodes = new HashSet<>();
+
+		if (values.isEmpty() && shapes.isEmpty())
+			return nodes;
+
+		for (CGNode candidate : this.callGraph)
+			if (!Util.isTensorFlowNode(candidate) && candidate.getIR() != null
+					&& (isNestedInAny(candidate, values) || isNestedInAny(candidate, shapes)))
+				nodes.add(candidate);
+
+		return nodes;
 	}
 
 	/** The name with a leading {@code L} type-descriptor prefix removed, so a scope's entity name and its type name compare equal. */

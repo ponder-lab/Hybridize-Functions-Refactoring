@@ -38,6 +38,18 @@ def via_nested_def_arguments(mu, phi):
     return np.argmax(np.array([f(mu[i], phi[i]) for i in range(2)]))
 
 
+def apply(f):
+    return f()
+
+
+def via_helper_call(x):
+    return apply(lambda: np.sum(x))
+
+
+def via_map_fn(x):
+    return tf.map_fn(lambda e: e + np.sum(x), tf.ones(2))
+
+
 def via_own_exposed_read(x):
     g = lambda: tf.reduce_sum(x)
     return np.sum(x) + g()
@@ -66,6 +78,8 @@ assert float(via_nested_def(t)) == 6.0
 assert float(via_nested_callee(t)) == 6.0
 m = tf.constant([[1.0], [2.0]])
 assert via_nested_def_arguments(m, tf.constant([1.0, 2.0])) == 1
+assert float(via_helper_call(t)) == 6.0
+assert via_map_fn(t).shape == (2,)
 assert float(via_own_exposed_read(t)) == 12.0
 assert float(clean_closure(t)) == 6.0
 assert float(closure_over_local(t)) == 9.0
