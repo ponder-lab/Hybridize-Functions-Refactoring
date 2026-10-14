@@ -75,7 +75,7 @@ def wild_int(x):
 
 
 # These arguments default to None and accept it, changing meaning instead of raising: `maxval` means 1 for a float dtype, and
-# `num_columns` means square.
+# `num_columns` means square. A changed meaning is as unwritable as a raise.
 def free_uniform_maxval(x):
     return tf.random.uniform((2, 1), maxval=x.shape[0]) + tf.reduce_sum(x)
 
