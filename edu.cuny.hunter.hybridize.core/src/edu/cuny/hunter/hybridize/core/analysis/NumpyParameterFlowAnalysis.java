@@ -791,6 +791,14 @@ class NumpyParameterFlowAnalysis {
 	private static final Map<CallGraph, NavigableMap<String, Set<CGNode>>> NODES_BY_TYPE = Collections.synchronizedMap(new WeakHashMap<>());
 
 	/**
+	 * Clears the per-call-graph index. The map's weak keys do not release a call graph on their own, since each indexed node refers back to
+	 * its call graph, so the index is cleared with the other analysis caches between projects.
+	 */
+	static void clearCaches() {
+		NODES_BY_TYPE.clear();
+	}
+
+	/**
 	 * The call-graph nodes nested in the defining scope of one of the given lexical variables, wherever they are called from (issue 1061).
 	 *
 	 * @param callGraph The call graph.

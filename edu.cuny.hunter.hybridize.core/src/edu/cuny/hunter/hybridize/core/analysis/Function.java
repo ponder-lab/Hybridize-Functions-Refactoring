@@ -870,6 +870,7 @@ public class Function {
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
 		fileInferredSpecTypeNames.clear();
+		NumpyParameterFlowAnalysis.clearCaches();
 	}
 
 	/**
