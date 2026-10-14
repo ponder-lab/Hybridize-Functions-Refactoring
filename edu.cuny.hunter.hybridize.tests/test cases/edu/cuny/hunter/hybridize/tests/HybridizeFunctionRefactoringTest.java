@@ -13720,7 +13720,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * a tainted variable's scope from every function that can read the variable, rather than only from the function defining it, made each
 	 * sibling's scan recurse into the next, so the recursion grew with the number of siblings and overflowed the stack on a subject with
 	 * this shape. The analysis must complete, still flag {@code outer_numpy}, whose lambda applies numpy to its parameter, and leave
-	 * {@code outer} unflagged.
+	 * {@code outer} unflagged. The failure depends on the worker threads' stack size, which is why the checks run in parallel here; a
+	 * serial run of this fixture did not overflow even before the fix, so a green run without the fix is not a pass on the merits.
 	 */
 	@Test
 	public void testClosureTaintAcrossManySiblings() throws Exception {
