@@ -12709,6 +12709,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1062: a dimension read statically from an axis on which the
+	 * callers pass different extents is {@code None} at trace time under the emitted signature, whatever each calling context shows, so a
+	 * NumPy call consuming it misbehaves. Each {@code wild_*} function, called at extents 3 and 4 on axis 0, passes that axis to a NumPy
+	 * call: {@code np.arange}, {@code np.linspace}'s {@code num}, {@code np.eye} and {@code np.tile} raise {@code TypeError} under a
+	 * wildcard on TensorFlow 2.9.3, and {@code np.random.uniform(size=None)} silently returns a scalar instead of a vector. Each traces
+	 * under a bare decorator, so each keeps its conversion and has its signature withheld. Two controls keep their signatures:
+	 * {@code resolved_axis_arange} reads axis 1, on which every caller agrees, and {@code ranked_arange}, called at one extent, has the
+	 * axis resolved.
+	 */
+	@Test
+	public void testNumpyOverWildDimension() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable.", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		for (String identifier : List.of("resolved_axis_arange", "ranked_arange")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
+			assertTrue("`" + identifier + "` keeps its signature.", function.getInferredInputSignature().isPresent());
+		}
+	}
+
+	/**
 	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
 	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
