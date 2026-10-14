@@ -450,7 +450,7 @@ class NumpyParameterFlowAnalysis {
 								continue;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, new HashSet<>(), new HashSet<>(), new HashMap<>(),
-									lexicalValues, lexicalShapes);
+									enclosingNames(target, lexicalValues), enclosingNames(target, lexicalShapes));
 
 							if (r.sink())
 								sink = true;
@@ -468,8 +468,8 @@ class NumpyParameterFlowAnalysis {
 				// within the function's trace and reads the tainted variables, so it is scanned for sinks too; with no call site here,
 				// its result colors nothing.
 				for (CGNode nested : nestedNodes(this.callGraph, lexicalValues, lexicalShapes.keySet()))
-					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(), lexicalValues,
-							lexicalShapes).sink())
+					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(),
+							enclosingNames(nested, lexicalValues), enclosingNames(nested, lexicalShapes)).sink())
 						sink = true;
 
 				if (worklist.isEmpty())
@@ -653,7 +653,7 @@ class NumpyParameterFlowAnalysis {
 							analyzedCallee = true;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed,
-									targetDescriptorSeed, lexicalValues, lexicalShapes);
+									targetDescriptorSeed, enclosingNames(target, lexicalValues), enclosingNames(target, lexicalShapes));
 
 							if (r.sink())
 								sink = true;
@@ -835,6 +835,45 @@ class NumpyParameterFlowAnalysis {
 			index.subMap(scope + "/", true, scope + "0", false).values().forEach(nodes::addAll);
 
 		return nodes;
+	}
+
+	/**
+	 * The lexical variables {@code target} can read: those whose defining scope encloses it. A function outside a scope, such as a
+	 * top-level helper a closure calls, cannot read that scope's variables, and neither can anything it calls that is not itself nested in
+	 * the scope, which is scanned from the scope's own node. Passing only these keeps the scan's seeds, and so its memo keys, bounded by
+	 * the target's enclosing scopes (issue 1061); passing every tainted variable made sibling closures rescan one another under
+	 * ever-growing seeds. The filter preserves every result: a lexical read is matched on its name and defining scope together, and a
+	 * function outside a scope contains no read of that scope's variables, so a dropped variable could never have colored anything there.
+	 *
+	 * @param target The call-graph node to be scanned.
+	 * @param names Lexical variables, as (name, defining scope).
+	 * @return The variables of {@code names} defined in a scope enclosing {@code target}.
+	 */
+	static Set<Pair<String, String>> enclosingNames(CGNode target, Set<Pair<String, String>> names) {
+		Set<Pair<String, String>> ret = new HashSet<>();
+
+		for (Pair<String, String> name : names)
+			if (isNestedInAny(target, Set.of(name)))
+				ret.add(name);
+
+		return ret;
+	}
+
+	/**
+	 * The entries of {@code names} whose variable {@code target} can read; see {@link #enclosingNames(CGNode, Set)}.
+	 *
+	 * @param <V> The type of the taint each variable carries.
+	 * @param target The call-graph node to be scanned.
+	 * @param names Lexical variables, as (name, defining scope), with their taint.
+	 * @return The entries of {@code names} defined in a scope enclosing {@code target}.
+	 */
+	static <V> Map<Pair<String, String>, V> enclosingNames(CGNode target, Map<Pair<String, String>, V> names) {
+		Map<Pair<String, String>, V> ret = new HashMap<>();
+		names.forEach((name, taint) -> {
+			if (isNestedInAny(target, Set.of(name)))
+				ret.put(name, taint);
+		});
+		return ret;
 	}
 
 	/** The name with a leading {@code L} type-descriptor prefix removed, so a scope's entity name and its type name compare equal. */

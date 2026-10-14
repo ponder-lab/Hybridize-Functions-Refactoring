@@ -73,6 +73,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
@@ -13711,6 +13712,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`cat` must not pass a precondition.", cat.getPassingPrecondition());
 		assertNotNull("`cat` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				cat.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins that the closure taint of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 stays bounded. Each of
+	 * {@code outer}'s sixteen sibling lambdas passes a closure to its own top-level helper, and each helper has a closure of its own. A
+	 * helper is not nested in {@code outer}, so it cannot read {@code outer}'s variables; scanning it with them, and so rescanning every
+	 * sibling under ever-different lexical seeds, overflowed the stack on a subject with this shape and takes minutes here. The analysis
+	 * must complete in well under a minute (it took 353 s before the fix and about 3 s after), still flag {@code outer_numpy}, whose lambda
+	 * applies numpy to its parameter inside a closure a helper calls, and leave {@code outer} unflagged.
+	 */
+	@Test
+	public void testClosureTaintAcrossManyHelpers() throws Exception {
+		long start = System.nanoTime();
+		Set<Function> functions = this.getFunctions();
+		long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start);
+		assertTrue("The analysis takes " + seconds + " s; the closure scan should stay bounded.", seconds < 60);
+
+		Function numpy = findFunction(functions, "outer_numpy");
+		assertTrue("`outer_numpy` applies numpy to its parameter through a closure.", numpy.getHasNumpyCallsOnParameters());
+
+		Function outer = findFunction(functions, "outer");
+		assertFalse("`outer` applies no numpy to its parameter.", outer.getHasNumpyCallsOnParameters());
 	}
 
 	/**
