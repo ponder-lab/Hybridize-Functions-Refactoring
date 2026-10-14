@@ -12709,6 +12709,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the static-shape-read check through closures (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a
+	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
+	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
+	 * a nested {@code def}, or a comprehension and passes it to a shape op, and each raises under {@code tf.function} tracing on TensorFlow
+	 * 2.9.3, so its signature is withheld. The control {@code ranked_nested_def}, called at one extent, has the axis resolved and keeps its
+	 * signature.
+	 */
+	@Test
+	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_lambda", "wild_nested_def")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// TODO: Withhold this signature once Ariadne publishes a comprehension's captured names with lexical writes:
+		// https://github.com/wala/ML/issues/1066. Until then the read inside the comprehension is not seen, and the signature is kept.
+		Function comprehension = findFunction(functions, "wild_comprehension");
+		assertFalse("`wild_comprehension`'s read through a comprehension is not yet seen.",
+				comprehension.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`wild_comprehension` keeps its signature.", comprehension.getInferredInputSignature().isPresent());
+
+		Function ranked = findFunction(functions, "ranked_nested_def");
+		assertFalse("`ranked_nested_def`'s statically-read axes are all resolved.", ranked.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`ranked_nested_def` keeps its signature.", ranked.getInferredInputSignature().isPresent());
+	}
+
+	/**
 	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
 	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
@@ -13605,6 +13640,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`cat` must not pass a precondition.", cat.getPassingPrecondition());
 		assertNotNull("`cat` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				cat.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition through closures
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
+	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
+	 * function applies numpy to its parameter only inside a nested function, a comprehension ({@code via_comprehension}), a lambda
+	 * ({@code via_lambda}), a nested {@code def} ({@code via_nested_def}), a nested {@code def} reaching a numpy callee by argument flow
+	 * ({@code via_nested_callee}), and a nested {@code def} passed elements of the parameters from inside a comprehension
+	 * ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies numpy to a
+	 * parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under {@code tf.function} tracing
+	 * on TensorFlow 2.9.3. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow op,
+	 * and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 */
+	@Test
+	public void testNumpyCallsThroughClosure() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("via_lambda", "via_nested_def", "via_nested_callee", "via_own_exposed_read")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// TODO: Flag these once Ariadne publishes a comprehension's captured names with lexical writes, as it does for a lambda's or a
+		// nested function's: https://github.com/wala/ML/issues/1066. Until then the taint stops at the comprehension, and both still
+		// hybridize.
+		for (String identifier : List.of("via_comprehension", "via_nested_def_arguments")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "`'s numpy through a comprehension is not yet seen.", function.getHasNumpyCallsOnParameters());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		for (String identifier : List.of("clean_closure", "closure_over_local")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` applies no numpy to its parameter.", function.getHasNumpyCallsOnParameters());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**

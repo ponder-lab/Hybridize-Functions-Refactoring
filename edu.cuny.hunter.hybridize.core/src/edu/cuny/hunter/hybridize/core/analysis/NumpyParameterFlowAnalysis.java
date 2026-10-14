@@ -13,6 +13,7 @@ import java.util.TreeSet;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -132,7 +133,7 @@ class NumpyParameterFlowAnalysis {
 		if (sources.isEmpty())
 			return false;
 
-		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>()).sink();
+		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>(), new HashSet<>(), new HashMap<>()).sink();
 	}
 
 	/**
@@ -360,13 +361,37 @@ class NumpyParameterFlowAnalysis {
 	 * {@code get_shape_list}), whose result then describes the tensor argument's shape — otherwise the result is value-tainted. A callee's
 	 * {@code valueEscapes} bit records whether any value taint reached a non-shape use inside it, and is what distinguishes a shape
 	 * extractor from a value carrier. A {@code dtype} read launders taint entirely. Memoized on (node, value seed, shape seed, shape
-	 * descriptor seed) with an optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * descriptor seed, lexical seeds) with an optimistic cycle guard. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * <p>
+	 * Taint also crosses into nested functions through their closures
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061). A nested function (a comprehension, a lambda, or a
+	 * nested {@code def}) reads an enclosing function's variable lexically rather than receiving it as an argument, and the enclosing
+	 * function publishes the variable with a lexical write, including a prologue write for each parameter a nested function reads (not yet
+	 * for a comprehension, https://github.com/wala/ML/issues/1066). A tainted value written lexically taints the variable, identified by
+	 * its name and defining scope, and a lexical read of a tainted variable, in this node or in any function scanned from it, inherits the
+	 * taint. Since a nested function need not receive any tainted argument, every function nested in a tainted variable's defining scope
+	 * that this node calls is also scanned with the lexical taint, and its call's result is value-tainted when a tainted value escapes it.
+	 * A nested function's own write to an enclosing variable ({@code nonlocal}) is not followed.
+	 *
+	 * @param node The node to scan.
+	 * @param valueSeed The value-tainted value numbers.
+	 * @param shapeSeed The shape-tainted value numbers.
+	 * @param shapeDescriptorSeed The descriptors of the shape-tainted value numbers whose provenance is tracked.
+	 * @param lexicalValueSeed The value-tainted lexical variables, as (name, defining scope).
+	 * @param lexicalShapeSeed The shape-tainted lexical variables, each with its {@link ShapeDescriptor} ({@code null} when untracked).
+	 * @return The scan's result.
 	 */
 	private NumpyScanResult scanForTaintedNumpySinks(CGNode node, Set<Integer> valueSeed, Set<Integer> shapeSeed,
-			Map<Integer, ShapeDescriptor> shapeDescriptorSeed) {
+			Map<Integer, ShapeDescriptor> shapeDescriptorSeed, Set<Pair<String, String>> lexicalValueSeed,
+			Map<Pair<String, String>, ShapeDescriptor> lexicalShapeSeed) {
 		Map<Integer, String> descriptorKey = new TreeMap<>();
 		shapeDescriptorSeed.forEach((value, descriptor) -> descriptorKey.put(value, this.renderDescriptorForMemoKey(descriptor)));
-		String key = this.callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed) + ":" + descriptorKey;
+		Map<String, String> lexicalShapeKey = new TreeMap<>();
+		lexicalShapeSeed.forEach((name, descriptor) -> lexicalShapeKey.put(name.toString(),
+				descriptor == null ? "?" : this.renderDescriptorForMemoKey(descriptor)));
+		String key = this.callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed) + ":" + descriptorKey
+				+ ":" + new TreeSet<>(lexicalValueSeed.stream().map(Pair::toString).toList()) + ":" + lexicalShapeKey;
 		NumpyScanResult cached = this.memo.get(key);
 
 		if (cached != null)
@@ -389,6 +414,16 @@ class NumpyParameterFlowAnalysis {
 		Deque<Integer> worklist = new ArrayDeque<>();
 		worklist.addAll(valueSeed);
 		worklist.addAll(shapeSeed);
+		// The tainted lexical variables: those inherited from the caller, and those this node writes from a tainted value (issue 1061).
+		Set<Pair<String, String>> lexicalValues = new HashSet<>(lexicalValueSeed);
+		Map<Pair<String, String>, ShapeDescriptor> lexicalShapes = new HashMap<>(lexicalShapeSeed);
+
+		for (Pair<String, String> name : lexicalValues)
+			colorLexicalReads(ir, name, true, null, valueTainted, shapeTainted, shapeDescriptors, worklist);
+
+		lexicalShapes.forEach((name, descriptor) -> colorLexicalReads(ir, name, false, descriptor, valueTainted, shapeTainted,
+				shapeDescriptors, worklist));
+
 		boolean sink = false;
 		boolean valueEscapes = false;
 		// The descriptor this node's returns carry back to the caller: set while all tracked-shape returns agree, poisoned to
@@ -396,7 +431,40 @@ class NumpyParameterFlowAnalysis {
 		ShapeDescriptor returnDescriptor = null;
 		boolean returnedUntrackedShape = false;
 
-		while (!worklist.isEmpty()) {
+		while (true) {
+			// A nested function reading a tainted variable through its closure need receive no tainted argument, so the walk may never
+			// reach its call. Once the walk settles, scan each function this node calls that is nested in a tainted variable's defining
+			// scope, with the lexical taint alone; a value escaping it taints the call's result, which resumes the walk (issue 1061).
+			if (worklist.isEmpty()) {
+				if (!lexicalValues.isEmpty() || !lexicalShapes.isEmpty())
+					for (SSAInstruction instruction : ir.getInstructions()) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							continue;
+
+						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+							if (Util.isTensorFlowNode(target) || target.getIR() == null
+									|| !isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
+								continue;
+
+							NumpyScanResult r = this.scanForTaintedNumpySinks(target, new HashSet<>(), new HashSet<>(), new HashMap<>(),
+									lexicalValues, lexicalShapes);
+
+							if (r.sink())
+								sink = true;
+
+							if (r.valueEscapes()) {
+								valueEscapes = true;
+
+								for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+									colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
+							}
+						}
+					}
+
+				if (worklist.isEmpty())
+					break;
+			}
+
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueTainted.contains(valueNumber);
 
@@ -408,6 +476,28 @@ class NumpyParameterFlowAnalysis {
 
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
+
+				// A lexical write publishes the value to the nested functions that read the variable (issue 1061), so the variable
+				// takes the value's color, and its reads in this node inherit it.
+				if (use instanceof AstLexicalWrite write) {
+					for (Access access : write.getAccesses())
+						if (access.valueNumber() == valueNumber) {
+							Pair<String, String> name = access.getName();
+
+							if (valueColored) {
+								lexicalShapes.remove(name);
+
+								if (lexicalValues.add(name))
+									colorLexicalReads(ir, name, true, null, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							} else if (!lexicalValues.contains(name) && !lexicalShapes.containsKey(name)) {
+								ShapeDescriptor descriptor = shapeDescriptors.get(valueNumber);
+								lexicalShapes.put(name, descriptor);
+								colorLexicalReads(ir, name, false, descriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							}
+						}
+
+					continue;
+				}
 
 				// A `dtype` read is a trace-time constant and launders taint entirely; a `shape` read yields shape metadata (SHAPE color)
 				// covering every dimension of the read tensor.
@@ -552,7 +642,7 @@ class NumpyParameterFlowAnalysis {
 							analyzedCallee = true;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed,
-									targetDescriptorSeed);
+									targetDescriptorSeed, lexicalValues, lexicalShapes);
 
 							if (r.sink())
 								sink = true;
@@ -645,6 +735,47 @@ class NumpyParameterFlowAnalysis {
 		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor);
 		this.memo.put(key, result);
 		return result;
+	}
+
+	/**
+	 * Colors the definitions of this IR's lexical reads of {@code name} (issue 1061): with the value taint when {@code value}, and
+	 * otherwise with the shape taint, carrying {@code descriptor} when it is tracked.
+	 */
+	private static void colorLexicalReads(IR ir, Pair<String, String> name, boolean value, ShapeDescriptor descriptor,
+			Set<Integer> valueTainted, Set<Integer> shapeTainted, Map<Integer, ShapeDescriptor> shapeDescriptors, Deque<Integer> worklist) {
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof AstLexicalRead read)
+				for (Access access : read.getAccesses())
+					if (access.getName().equals(name))
+						if (value)
+							colorValue(access.valueNumber(), valueTainted, shapeTainted, worklist);
+						else if (descriptor != null)
+							colorShapeFrom(access.valueNumber(), descriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+						else
+							colorShape(access.valueNumber(), valueTainted, shapeTainted, worklist);
+	}
+
+	/**
+	 * True iff {@code target} is a function nested in the defining scope of one of {@code names}, so it may read that variable through its
+	 * closure (issue 1061). A nested function's type name extends its enclosing function's with a {@code /}-separated segment.
+	 *
+	 * @param target The call-graph node of a possible callee.
+	 * @param names Lexical variables, as (name, defining scope).
+	 * @return True iff {@code target} is nested in one of the defining scopes.
+	 */
+	static boolean isNestedInAny(CGNode target, Set<Pair<String, String>> names) {
+		String type = stripTypePrefix(target.getMethod().getDeclaringClass().getName().toString());
+
+		for (Pair<String, String> name : names)
+			if (name.snd != null && type.startsWith(stripTypePrefix(name.snd) + "/"))
+				return true;
+
+		return false;
+	}
+
+	/** The name with a leading {@code L} type-descriptor prefix removed, so a scope's entity name and its type name compare equal. */
+	private static String stripTypePrefix(String name) {
+		return name.startsWith("L") ? name.substring(1) : name;
 	}
 
 	/**
