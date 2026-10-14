@@ -14,6 +14,7 @@ import java.util.TreeSet;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
@@ -33,6 +34,7 @@ import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.util.collections.Pair;
 
 /**
  * The statically-read-axis analysis behind the unresolved-axis precondition
@@ -298,7 +300,7 @@ class StaticShapeReadAnalysis {
 		Set<AxisRead> rankReads = new HashSet<>();
 
 		if (!valueSeed.isEmpty()) {
-			ScanResult result = this.scan(node, valueSeed, Map.of());
+			ScanResult result = this.scan(node, valueSeed, Map.of(), Map.of(), Map.of());
 			reads.addAll(result.reads());
 			rankReads.addAll(result.rankReads());
 		}
@@ -375,7 +377,8 @@ class StaticShapeReadAnalysis {
 		if (parameters.length <= 2)
 			return;
 
-		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)));
+		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)), Map.of(),
+				Map.of());
 		reads.addAll(result.reads());
 		rankReads.addAll(result.rankReads());
 	}
@@ -396,9 +399,22 @@ class StaticShapeReadAnalysis {
 	 * {@code dtype} reads launder; constant subscripts and slices narrow a descriptor's covered axes; container writes propagate shape
 	 * taint onto the written container (a reshape target list); sinks record the consumed descriptor. Memoized per (node, seeds) with an
 	 * optimistic cycle guard, following {@link NumpyParameterFlowAnalysis}.
+	 * <p>
+	 * Taint crosses into nested functions through their closures as it does in {@link NumpyParameterFlowAnalysis}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a tainted value written lexically taints the variable,
+	 * identified by its name and defining scope, its lexical reads inherit the taint, and every function nested in its defining scope that
+	 * this node calls is also scanned with the lexical taint, its returned taint coloring the call's result.
+	 *
+	 * @param node The node to scan.
+	 * @param valueSeed The value-tainted value numbers, each with its source-parameter ordinals.
+	 * @param shapeSeed The shape-tainted value numbers, each with its {@link AxisRead} descriptor.
+	 * @param lexicalValueSeed The value-tainted lexical variables, as (name, defining scope), each with its source-parameter ordinals.
+	 * @param lexicalShapeSeed The shape-tainted lexical variables, each with its {@link AxisRead} descriptor.
+	 * @return The scan's result.
 	 */
-	private ScanResult scan(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed) {
-		String key = this.renderMemoKey(node, valueSeed, shapeSeed);
+	private ScanResult scan(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed,
+			Map<Pair<String, String>, Set<Integer>> lexicalValueSeed, Map<Pair<String, String>, AxisRead> lexicalShapeSeed) {
+		String key = this.renderMemoKey(node, valueSeed, shapeSeed, lexicalValueSeed, lexicalShapeSeed);
 		ScanResult cached = this.memo.get(key);
 
 		if (cached != null)
@@ -423,13 +439,97 @@ class StaticShapeReadAnalysis {
 		boolean valueEscapes = false;
 		AxisRead returnDescriptor = null;
 		Set<Integer> returnProvenance = null;
+		// The tainted lexical variables: those inherited from the caller, and those this node writes from a tainted value (issue 1061).
+		Map<Pair<String, String>, Set<Integer>> lexicalValues = new HashMap<>(lexicalValueSeed);
+		Map<Pair<String, String>, AxisRead> lexicalShapes = new HashMap<>(lexicalShapeSeed);
 
-		while (!worklist.isEmpty()) {
+		lexicalValues
+				.forEach((name, provenance) -> colorLexicalReads(ir, name, provenance, null, valueProvenance, shapeDescriptors, worklist));
+		lexicalShapes
+				.forEach((name, descriptor) -> colorLexicalReads(ir, name, null, descriptor, valueProvenance, shapeDescriptors, worklist));
+
+		while (true) {
+			// A nested function reading a tainted variable through its closure need receive no tainted argument, so the walk may never
+			// reach its call. Once the walk settles, scan each function this node calls that is nested in a tainted variable's defining
+			// scope, with the lexical taint alone; its returned taint colors the call's result, which resumes the walk (issue 1061).
+			if (worklist.isEmpty()) {
+				if (!lexicalValues.isEmpty() || !lexicalShapes.isEmpty())
+					for (SSAInstruction instruction : ir.getInstructions()) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							continue;
+
+						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+							if (Util.isTensorFlowNode(target) || target.getIR() == null
+									|| !NumpyParameterFlowAnalysis.isNestedInAny(target, lexicalValues.keySet())
+											&& !NumpyParameterFlowAnalysis.isNestedInAny(target, lexicalShapes.keySet()))
+								continue;
+
+							ScanResult nested = this.scan(target, Map.of(), Map.of(), lexicalValues, lexicalShapes);
+							reads.addAll(nested.reads());
+							rankReads.addAll(nested.rankReads());
+
+							if (nested.valueEscapes())
+								valueEscapes = true;
+
+							for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+								if (nested.returnProvenance() != null)
+									colorValue(invoke.getDef(d), nested.returnProvenance(), valueProvenance, shapeDescriptors, worklist);
+								else if (nested.returnDescriptor() != null)
+									colorShape(invoke.getDef(d), nested.returnDescriptor(), valueProvenance, shapeDescriptors, worklist);
+						}
+					}
+
+				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
+				// within the function's trace, so its reads count too; with no call site here, its result colors nothing.
+				for (CGNode candidate : NumpyParameterFlowAnalysis.nestedNodes(this.callGraph, lexicalValues.keySet(),
+						lexicalShapes.keySet())) {
+					ScanResult nested = this.scan(candidate, Map.of(), Map.of(), lexicalValues, lexicalShapes);
+					reads.addAll(nested.reads());
+					rankReads.addAll(nested.rankReads());
+				}
+
+				if (worklist.isEmpty())
+					break;
+			}
+
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueProvenance.containsKey(valueNumber);
 
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
+
+				// A lexical write publishes the value to the nested functions that read the variable (issue 1061), so the variable
+				// takes the value's color, and its reads in this node inherit it.
+				if (use instanceof AstLexicalWrite write) {
+					for (Access access : write.getAccesses())
+						if (access.valueNumber() == valueNumber) {
+							Pair<String, String> name = access.getName();
+
+							if (valueColored) {
+								Set<Integer> existing = lexicalValues.get(name);
+								Set<Integer> merged = new TreeSet<>(valueProvenance.get(valueNumber));
+
+								if (existing != null)
+									merged.addAll(existing);
+
+								if (!merged.equals(existing)) {
+									lexicalValues.put(name, merged);
+									lexicalShapes.remove(name);
+									colorLexicalReads(ir, name, merged, null, valueProvenance, shapeDescriptors, worklist);
+								}
+							} else if (shapeDescriptors.containsKey(valueNumber) && !lexicalValues.containsKey(name)) {
+								AxisRead existing = lexicalShapes.get(name);
+								AxisRead joined = AxisRead.join(existing, shapeDescriptors.get(valueNumber));
+
+								if (!joined.equals(existing)) {
+									lexicalShapes.put(name, joined);
+									colorLexicalReads(ir, name, null, joined, valueProvenance, shapeDescriptors, worklist);
+								}
+							}
+						}
+
+					continue;
+				}
 
 				if (use instanceof PythonPropertyRead read && read.getObjectRef() == valueNumber) {
 					String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
@@ -518,7 +618,7 @@ class StaticShapeReadAnalysis {
 
 					// Cross into user-defined callees, carrying each tainted argument's color to the corresponding parameter slot.
 					InterproceduralOutcome outcome = this.crossIntoCallees(node, invoke, valueProvenance, shapeDescriptors, reads,
-							rankReads);
+							rankReads, lexicalValues, lexicalShapes);
 
 					if (outcome.valueEscaped())
 						valueEscapes = true;
@@ -603,6 +703,22 @@ class StaticShapeReadAnalysis {
 		ScanResult result = new ScanResult(reads, rankReads, valueEscapes, returnDescriptor, returnProvenance);
 		this.memo.put(key, result);
 		return result;
+	}
+
+	/**
+	 * Colors the definitions of this IR's lexical reads of {@code name} (issue 1061): with value taint carrying {@code provenance} when it
+	 * is non-null, and otherwise with shape taint carrying {@code descriptor}.
+	 */
+	private static void colorLexicalReads(IR ir, Pair<String, String> name, Set<Integer> provenance, AxisRead descriptor,
+			Map<Integer, Set<Integer>> valueProvenance, Map<Integer, AxisRead> shapeDescriptors, Deque<Integer> worklist) {
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof AstLexicalRead read)
+				for (Access access : read.getAccesses())
+					if (access.getName().equals(name))
+						if (provenance != null)
+							colorValue(access.valueNumber(), provenance, valueProvenance, shapeDescriptors, worklist);
+						else
+							colorShape(access.valueNumber(), descriptor, valueProvenance, shapeDescriptors, worklist);
 	}
 
 	/**
@@ -795,10 +911,11 @@ class StaticShapeReadAnalysis {
 	/**
 	 * Crosses into {@code invoke}'s user-defined callees, seeding tainted argument slots, accumulating their sinks into {@code reads}, and
 	 * deriving the call-site result's color: value provenance when a value-tainted argument reached a non-shape use (or the callee is a
-	 * library summary), else the callees' returned shape descriptor.
+	 * library summary), else the callees' returned shape descriptor. The callees inherit the caller's lexical taint (issue 1061).
 	 */
 	private InterproceduralOutcome crossIntoCallees(CGNode node, PythonInvokeInstruction invoke, Map<Integer, Set<Integer>> valueProvenance,
-			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads, Set<AxisRead> rankReads) {
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads, Set<AxisRead> rankReads,
+			Map<Pair<String, String>, Set<Integer>> lexicalValues, Map<Pair<String, String>, AxisRead> lexicalShapes) {
 		Map<Integer, Set<Integer>> valueSlots = new TreeMap<>();
 		Map<Integer, AxisRead> shapeSlots = new TreeMap<>();
 
@@ -847,7 +964,7 @@ class StaticShapeReadAnalysis {
 
 			analyzedCallee = true;
 
-			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed);
+			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed, lexicalValues, lexicalShapes);
 
 			reads.addAll(result.reads());
 			rankReads.addAll(result.rankReads());
@@ -1044,13 +1161,18 @@ class StaticShapeReadAnalysis {
 		return resolved;
 	}
 
-	/** A stable memo key over the node and both seed maps. */
-	private String renderMemoKey(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed) {
+	/** A stable memo key over the node and the seed maps. */
+	private String renderMemoKey(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed,
+			Map<Pair<String, String>, Set<Integer>> lexicalValueSeed, Map<Pair<String, String>, AxisRead> lexicalShapeSeed) {
 		Map<Integer, String> values = new TreeMap<>();
 		valueSeed.forEach((value, provenance) -> values.put(value, String.valueOf(new TreeSet<>(provenance))));
 		Map<Integer, String> shapes = new TreeMap<>();
 		shapeSeed.forEach((value, descriptor) -> shapes.put(value, renderDescriptor(descriptor)));
-		return this.callGraph.getNumber(node) + ":" + values + ":" + shapes;
+		Map<String, String> lexicalValues = new TreeMap<>();
+		lexicalValueSeed.forEach((name, provenance) -> lexicalValues.put(name.toString(), String.valueOf(new TreeSet<>(provenance))));
+		Map<String, String> lexicalShapes = new TreeMap<>();
+		lexicalShapeSeed.forEach((name, descriptor) -> lexicalShapes.put(name.toString(), renderDescriptor(descriptor)));
+		return this.callGraph.getNumber(node) + ":" + values + ":" + shapes + ":" + lexicalValues + ":" + lexicalShapes;
 	}
 
 	/** A stable rendering of {@code descriptor} for the memo key ({@code *} = unknown). */

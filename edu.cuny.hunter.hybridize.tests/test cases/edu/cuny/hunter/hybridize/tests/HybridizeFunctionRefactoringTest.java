@@ -12739,6 +12739,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the static-shape-read check through closures (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a
+	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
+	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
+	 * a nested {@code def}, a lambda a helper calls or {@code tf.map_fn} runs, or a comprehension and passes it to a shape op, and each
+	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld, except that the comprehension and
+	 * {@code tf.map_fn} cases are not detected yet, for the engine reasons their TODOs cite. The control {@code ranked_nested_def}, called
+	 * at one extent, has the axis resolved and keeps its signature.
+	 */
+	@Test
+	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// TODO: Withhold this signature once Ariadne publishes a comprehension's captured names with lexical writes:
+		// https://github.com/wala/ML/issues/1066. Until then the read inside the comprehension is not seen, and the signature is kept.
+		Function comprehension = findFunction(functions, "wild_comprehension");
+		assertFalse("`wild_comprehension`'s read through a comprehension is not yet seen.",
+				comprehension.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`wild_comprehension` keeps its signature.", comprehension.getInferredInputSignature().isPresent());
+
+		// TODO: Withhold this signature once Ariadne's `tf.map_fn` summary invokes its callback:
+		// https://github.com/wala/ML/issues/942. Until then the lambda has no call-graph node, and the signature is kept.
+		Function mapFn = findFunction(functions, "wild_map_fn");
+		assertFalse("`wild_map_fn`'s read in a `tf.map_fn` callback is not yet seen.", mapFn.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`wild_map_fn` keeps its signature.", mapFn.getInferredInputSignature().isPresent());
+
+		Function ranked = findFunction(functions, "ranked_nested_def");
+		assertFalse("`ranked_nested_def`'s statically-read axes are all resolved.", ranked.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`ranked_nested_def` keeps its signature.", ranked.getInferredInputSignature().isPresent());
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1062: a dimension read statically from an axis on which the
 	 * callers pass different extents is {@code None} at trace time under the emitted signature, whatever each calling context shows, so a
 	 * NumPy call consuming it misbehaves. Each {@code wild_*} function, called at extents 3 and 4 on axis 0, passes that axis to a NumPy
@@ -13669,6 +13711,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`cat` must not pass a precondition.", cat.getPassingPrecondition());
 		assertNotNull("`cat` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				cat.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition through closures
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
+	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
+	 * function applies numpy to its parameter only inside a nested function, a comprehension ({@code via_comprehension}), a lambda
+	 * ({@code via_lambda}), a nested {@code def} ({@code via_nested_def}), a nested {@code def} reaching a numpy callee by argument flow
+	 * ({@code via_nested_callee}), a lambda that a helper calls ({@code via_helper_call}) or that {@code tf.map_fn} runs
+	 * ({@code via_map_fn}), so the body itself never calls it, and a nested {@code def} passed elements of the parameters from inside a
+	 * comprehension ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies
+	 * numpy to a parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under
+	 * {@code tf.function} tracing on TensorFlow 2.9.3. The comprehension and {@code tf.map_fn} cases are not detected yet, for the engine
+	 * reasons their TODOs cite. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow
+	 * op, and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 */
+	@Test
+	public void testNumpyCallsThroughClosure() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call", "via_own_exposed_read")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// TODO: Flag these once Ariadne publishes a comprehension's captured names with lexical writes, as it does for a lambda's or a
+		// nested function's: https://github.com/wala/ML/issues/1066. Until then the taint stops at the comprehension, and both still
+		// hybridize.
+		for (String identifier : List.of("via_comprehension", "via_nested_def_arguments")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "`'s numpy through a comprehension is not yet seen.", function.getHasNumpyCallsOnParameters());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Flag this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Until then the
+		// lambda has no call-graph node, and the function still hybridizes.
+		Function mapFn = findFunction(functions, "via_map_fn");
+		assertFalse("`via_map_fn`'s numpy in a `tf.map_fn` callback is not yet seen.", mapFn.getHasNumpyCallsOnParameters());
+		assertEquals("`via_map_fn` still hybridizes (P1).", P1, mapFn.getPassingPrecondition());
+
+		for (String identifier : List.of("clean_closure", "closure_over_local")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` applies no numpy to its parameter.", function.getHasNumpyCallsOnParameters());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**
