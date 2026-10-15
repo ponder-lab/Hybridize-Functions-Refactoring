@@ -65,6 +65,12 @@ JUL logging in test runs: tycho-surefire injects `java.util.logging.config.file`
 
 Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump: open the bump PR as a **draft**, advance the failing pins (failures are usually pins to advance, not bugs), and run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` **before merging** — it gates the merge, and a drift classified as a regression keeps the PR draft. Only after the merge, report measured deltas upstream, reopening issues whose subject-scale case persists. (The private document is authoritative on the loop's steps; this summary previously stated the verification as post-merge, which inverted the gate.)
 
+## No Ariadne workarounds
+
+HFR never derives, approximates, or patches a fact that Ariadne should provide. Ariadne is responsible for typing as a tensor every value that is a tensor at run time, including comparison results, TensorFlow operations, and values flowing through user functions, containers, and attributes. A precondition reads tensor-ness from the tensor-type analysis, not from a proxy such as a taint from the function's parameters, a syntactic name match, or a result type inferred from an operation's operands.
+
+When Ariadne misses a fact a precondition needs, the fix goes to Ariadne. HFR pins the case's current output with a `TODO` citing the Ariadne issue, so the pin fails, and is advanced, once Ariadne provides the fact. HFR's own logic is limited to what tracing does with a typed value: for example, AutoGraph converting a branch on a tensor to `tf.cond`, an identity test such as `x is None` evaluated in Python, or `bool()` raising on a symbolic tensor. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/pull/1085, which replaced such a proxy.
+
 ## Module layout
 
 Maven reactor (see `pom.xml` `<modules>`):
