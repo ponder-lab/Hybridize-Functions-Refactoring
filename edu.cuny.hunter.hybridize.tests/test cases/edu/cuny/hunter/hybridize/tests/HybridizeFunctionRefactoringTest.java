@@ -13795,6 +13795,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1081: a hybrid function with a supplied
+	 * {@code input_signature} whose inferred signature is withheld because one call site's dtype is unresolved. {@code analysis} is called
+	 * with a {@code float32} tensor and with one whose dtype comes from {@code getattr(tf, name)}, so its parameter's contexts are
+	 * {@code float32} and unknown, and the inferred signature is withheld as {@code PARTIAL_DTYPE}. The control {@code analysis_resolved}
+	 * has only the resolved call, so its broader supplied signature is narrowed ({@code RECONFIGURE}, {@code P5}).
+	 */
+	@Test
+	public void testPartialDtypeWithholdVerdict() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		Function analysis = findFunction(functions, "analysis");
+		assertTrue("`analysis` is hybrid.", analysis.isHybrid());
+		assertEquals("One call site's dtype is unresolved.", Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE),
+				analysis.getInferredInputSignatureAbsenceReason());
+		assertTrue("The supplied signature is kept.", analysis.getTransformations().isEmpty());
+		assertNull("No transformation passes.", analysis.getPassingPrecondition());
+
+		// FIXME: Report the withheld narrowing rather than the already-optimal verdict:
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1081. The signature improvement was skipped only because one
+		// context did not resolve, so `HAS_NO_PRIMITIVE_PARAMETERS`, which says the refactoring has nothing to improve, is false here.
+		assertNotNull("`analysis` reports the already-optimal verdict.",
+				analysis.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS.getCode()));
+
+		Function resolved = findFunction(functions, "analysis_resolved");
+		assertEquals("With every call site resolved, the broader supplied signature is narrowed.", singleton(RECONFIGURE),
+				resolved.getTransformations());
+		assertEquals("Narrowing sets the P5 passing precondition.", P5, resolved.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075: a value that does not cross the {@code tf.function}
 	 * boundary unchanged. Measured under {@code tf.function} on TensorFlow 2.9.3: {@code returns_variable} returns a {@code tf.Variable},
 	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples; and
