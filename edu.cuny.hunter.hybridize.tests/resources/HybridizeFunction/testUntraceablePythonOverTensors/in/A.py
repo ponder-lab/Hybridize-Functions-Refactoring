@@ -48,6 +48,12 @@ def local_in_branch(x):
     return x
 
 
+def local_after_join(x):
+    if tf.reduce_sum(x) > 0.0:
+        tmp = x + 1.0
+    return tmp
+
+
 def primitive_branch(x, n):
     if n > 0:
         return None
@@ -74,3 +80,4 @@ for f in (
 static_none(tf.constant([1.0, 2.0, 3.0]))
 local_in_branch(t)
 primitive_branch(t, 0)
+local_after_join(tf.constant([1.0, 2.0]))

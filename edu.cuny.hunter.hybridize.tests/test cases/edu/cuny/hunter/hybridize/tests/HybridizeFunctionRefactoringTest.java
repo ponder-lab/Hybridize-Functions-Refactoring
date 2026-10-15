@@ -13763,17 +13763,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * a way tracing cannot carry. Measured under {@code tf.function} on TensorFlow 2.9.3, each of these raises while the eager function
 	 * runs: {@code none_return} returns {@code None} on one path of a branch on the value and a tensor on the other, {@code none_merge}
 	 * leaves a variable {@code None} on one path of such a branch ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
-	 * {@code bool_of} takes {@code bool} of the value ({@code OperatorNotAllowedInGraphError}), and {@code via_callee} reaches
-	 * {@code none_return}. Five controls trace and still hybridize: {@code tensor_branches}, whose paths both yield tensors; {@code int_of}
-	 * and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only inside a branch
-	 * on the value, unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent.
-	 * {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
+	 * {@code bool_of} takes {@code bool} of the value ({@code OperatorNotAllowedInGraphError}), {@code local_after_join} binds a local in
+	 * only one arm of such a branch and reads it after the paths join ({@code ValueError}, since AutoGraph requires it defined on both),
+	 * and {@code via_callee} reaches {@code none_return}. Five controls trace and still hybridize: {@code tensor_branches}, whose paths
+	 * both yield tensors; {@code int_of} and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which
+	 * binds a local only inside a branch on the value, unbound rather than {@code None} on the other path; and {@code static_none}, whose
+	 * branch is on a static extent. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not
+	 * for this.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("none_return", "none_merge", "bool_of", "via_callee")) {
+		for (String identifier : List.of("none_return", "none_merge", "bool_of", "local_after_join", "via_callee")) {
 			Function function = findFunction(functions, identifier);
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", function.getStatus()
