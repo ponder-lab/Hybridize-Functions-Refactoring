@@ -662,6 +662,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckKerasSymbolicArguments() || barrenCouldDecide)
 					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis());
 
+				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075). Same
+				// reachable region and gate; a points-to query per return and per caller argument.
+				if (barrenCouldDecide)
+					func.computeUncrossableBoundaryValues(callGraph, builder);
+
 				// check the function preconditions.
 				func.check();
 

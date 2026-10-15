@@ -1230,6 +1230,14 @@ public class Function {
 	private Boolean hasKerasSymbolicArguments;
 
 	/**
+	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged: a returned
+	 * {@code tf.Variable} or {@code tf.TensorArray}, which is converted to a tensor, or a {@code tf.TensorSpec} a call site passes, which
+	 * makes the call raise, directly or inside a list, tuple, or dictionary. {@code null} when it could not be determined, in which case
+	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 */
+	private Boolean hasUncrossableBoundaryValues;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1518,6 +1526,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS,
 										"Can't hybridize a function called with a Keras symbolic tensor; tf.function refuses a "
 												+ "KerasTensor, so the decorator raises before anything is traced.");
+							else if (this.getHasUncrossableBoundaryValues() != null && this.getHasUncrossableBoundaryValues())
+								// A returned variable or tensor array is converted to a tensor at the tf.function boundary, losing its
+								// identity and mutability, and a passed tensor spec makes the call raise (issue 1075). A safety failure;
+								// it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
+										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
+												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -3196,6 +3211,55 @@ public class Function {
 	 */
 	public Boolean getHasKerasSymbolicArguments() {
 		return this.hasKerasSymbolicArguments;
+	}
+
+	/**
+	 * Computes whether a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged
+	 * ({@link UncrossableBoundaryValueAnalysis}), storing the result for {@link #getHasUncrossableBoundaryValues()}. A determinate
+	 * {@code TRUE} from either side, the returns or the call sites, decides it; otherwise ignorance on either side leaves it undetermined.
+	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 *
+	 * @param callGraph The call graph, walked in the caller direction for the arguments.
+	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the values and their elements.
+	 */
+	public void computeUncrossableBoundaryValues(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " has uncrossable boundary values.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " has uncrossable boundary values without a call graph node.");
+			return;
+		}
+
+		UncrossableBoundaryValueAnalysis analysis = new UncrossableBoundaryValueAnalysis(builder);
+		Boolean returns = analysis.returnsUncrossableValue(nodes);
+		Boolean arguments = analysis.passesUncrossableArgument(nodes, callGraph);
+
+		if (Boolean.TRUE.equals(returns) || Boolean.TRUE.equals(arguments))
+			this.hasUncrossableBoundaryValues = Boolean.TRUE;
+		else if (returns != null && arguments != null)
+			this.hasUncrossableBoundaryValues = Boolean.FALSE;
+
+		LOG.info(this + " has uncrossable boundary values: " + this.hasUncrossableBoundaryValues + ".");
+	}
+
+	/**
+	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged, {@code null} if
+	 * undetermined (issue 1075).
+	 *
+	 * @return True iff this function returns a variable or tensor array, or is passed a tensor spec, null if undetermined.
+	 */
+	public Boolean getHasUncrossableBoundaryValues() {
+		return this.hasUncrossableBoundaryValues;
 	}
 
 	/**

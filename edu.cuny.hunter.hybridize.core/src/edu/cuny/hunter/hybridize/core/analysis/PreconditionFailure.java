@@ -295,7 +295,19 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074">Issue 1074</a>
 	 */
-	HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS(35);
+	HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS(35),
+
+	/**
+	 * A value crossing the function's {@code tf.function} boundary does not cross it unchanged. A returned {@code tf.Variable}, at the top
+	 * level or inside a returned list, tuple, or dictionary, is converted to a tensor holding its value, and a returned
+	 * {@code tf.TensorArray} to a tensor. The conversion raises nothing, but the eager object's identity and mutability are lost: a caller
+	 * that assigns to the variable, compares its reference, or writes to the array fails or means something else. A {@code tf.TensorSpec}
+	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}. A variable used
+	 * inside the body, or a tensor array stacked before it is returned, crosses nothing and is left alone.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
+	 */
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36);
 
 	static {
 		// check that the codes are unique.
