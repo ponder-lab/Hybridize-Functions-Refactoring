@@ -13769,7 +13769,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * both yield tensors; {@code int_of} and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which
 	 * binds a local only inside a branch on the value, unbound rather than {@code None} on the other path; and {@code static_none}, whose
 	 * branch is on a static extent. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not
-	 * for this.
+	 * for this. Two cases are pinned as wrong today (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083):
+	 * {@code mask_or_none} is refused for a parameter's {@code is None} test, though it traces, and {@code dataset_size}, whose tensor
+	 * branch raises, is not.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
@@ -13792,6 +13794,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				primitive.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PRIMITIVE_PARAMETERS.getCode()));
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+
+		// FIXME: Leave this alone: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083. Its branch tests a parameter
+		// with `is None`, a Python `bool` decided while tracing, so the branch is not converted to `tf.cond` and the function traces with
+		// and without `sequence_length`. The rule refuses it because the condition is derived from a parameter, not because it is a tensor.
+		Function mask = findFunction(functions, "mask_or_none");
+		assertNotNull("`mask_or_none` is refused for its `is None` branch.", mask.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+
+		// TODO: Refuse this: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083. Its branch condition,
+		// `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`, so the traced function
+		// raises a `ValueError`. The parameter's value is not followed through the method call, and Ariadne models neither the method nor
+		// the constant: https://github.com/wala/ML/issues/1072.
+		Function size = findFunction(functions, "dataset_size");
+		assertNull("`dataset_size`'s tensor branch is not yet seen.", size.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 	}
 
 	/**
