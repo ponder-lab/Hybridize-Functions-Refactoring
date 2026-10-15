@@ -13759,35 +13759,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074: Python applied to a value flowing from a parameter in
-	 * a way tracing cannot carry. Measured under {@code tf.function} on TensorFlow 2.9.3, each of these raises while the eager function
-	 * runs: {@code none_return} returns {@code None} on one path of a branch on the value and a tensor on the other, {@code none_merge}
-	 * leaves a variable {@code None} on one path of such a branch ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
-	 * {@code bool_of} takes {@code bool} of the value ({@code OperatorNotAllowedInGraphError}), {@code local_after_join} binds a local in
-	 * only one arm of such a branch and reads it after the paths join ({@code ValueError}, since AutoGraph requires it defined on both),
-	 * and {@code via_callee} reaches {@code none_return}. Five controls trace and still hybridize: {@code tensor_branches}, whose paths
-	 * both yield tensors; {@code int_of} and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which
-	 * binds a local only inside a branch on the value, unbound rather than {@code None} on the other path; and {@code static_none}, whose
-	 * branch is on a static extent. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not
-	 * for this. Two cases are pinned as wrong today (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083):
-	 * {@code mask_or_none} is refused for a parameter's {@code is None} test, though it traces, and {@code dataset_size}, whose tensor
-	 * branch raises, is not.
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083: Python applied to a tensor in a way tracing cannot carry,
+	 * where the tensor-type analysis types the condition or the argument as a tensor. Measured under {@code tf.function} on TensorFlow
+	 * 2.9.3, each of these raises while the eager function runs: {@code none_return_greater} returns {@code None} on one path of a branch
+	 * on {@code tf.greater(...)} and a tensor on the other ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
+	 * {@code none_merge_greater} leaves a variable {@code None} on one path of such a branch, {@code local_after_join_greater} binds a
+	 * local in only one arm of one and reads it after the paths join ({@code ValueError} for both), {@code bool_of_greater} takes
+	 * {@code bool} of one ({@code OperatorNotAllowedInGraphError}), and {@code via_callee_greater} reaches {@code none_return_greater}. Six
+	 * controls trace and still hybridize: {@code tensor_branches} and {@code tensor_branches_greater}, whose paths both yield tensors;
+	 * {@code int_of} and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only
+	 * inside a branch, unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent.
+	 * {@code mask_or_none} tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without
+	 * the argument, so it is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12),
+	 * not for this. Seven cases raise but are not yet detected, for the engine reasons their TODOs give: {@code none_return},
+	 * {@code none_merge}, {@code bool_of}, {@code local_after_join}, and {@code via_callee} branch on, or take {@code bool} of, a Python
+	 * comparison of tensors, {@code none_return_unmodeled} branches on {@code tf.reduce_any(tf.math.is_nan(x))}, neither of which is
+	 * modeled, and {@code dataset_size} branches on {@code dataset.cardinality()}.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("none_return", "none_merge", "bool_of", "local_after_join", "via_callee")) {
+		for (String identifier : List.of("none_return_greater", "none_merge_greater", "bool_of_greater", "local_after_join_greater",
+				"via_callee_greater")) {
 			Function function = findFunction(functions, identifier);
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 		}
 
-		for (String identifier : List.of("tensor_branches", "int_of", "float_of", "local_in_branch", "static_none")) {
+		for (String identifier : List.of("tensor_branches", "tensor_branches_greater", "int_of", "float_of", "local_in_branch",
+				"static_none")) {
 			Function function = findFunction(functions, identifier);
 			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
+
+		Function mask = findFunction(functions, "mask_or_none");
+		assertEquals("The check runs on `mask_or_none` and decides it.", FALSE, mask.getHasUntraceablePythonOnParameters());
+		assertNull("`mask_or_none`'s `is None` branch is not refused.", mask.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
 		Function primitive = findFunction(functions, "primitive_branch");
 		assertNotNull("`primitive_branch` fails with HAS_PRIMITIVE_PARAMETERS.",
@@ -13795,17 +13806,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
-		// FIXME: Leave this alone: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083. Its branch tests a parameter
-		// with `is None`, a Python `bool` decided while tracing, so the branch is not converted to `tf.cond` and the function traces with
-		// and without `sequence_length`. The rule refuses it because the condition is derived from a parameter, not because it is a tensor.
-		Function mask = findFunction(functions, "mask_or_none");
-		assertNotNull("`mask_or_none` is refused for its `is None` branch.", mask.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
-				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		// TODO: Refuse these once Ariadne types the result of a Python comparison operator on a tensor:
+		// https://github.com/wala/ML/issues/1074. Each branches on, or takes `bool` of, `tf.reduce_sum(x) > 0.0`, and the traced function
+		// raises, but the comparison's
+		// result has no tensor type, so the condition is not seen to be a tensor. `via_callee` reaches `none_return`.
+		for (String identifier : List.of("none_return", "none_merge", "bool_of", "local_after_join", "via_callee")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasUntraceablePythonOnParameters());
+			assertNull("`" + identifier + "`'s comparison condition is not yet seen as a tensor.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		}
 
-		// TODO: Refuse this: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083. Its branch condition,
-		// `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`, so the traced function
-		// raises a `ValueError`. The parameter's value is not followed through the method call, and Ariadne models neither the method nor
-		// the constant: https://github.com/wala/ML/issues/1072.
+		// TODO: Refuse this once Ariadne models `tf.math.is_nan` and `tf.reduce_any`: https://github.com/wala/ML/issues/1076. Its branch
+		// condition is a tensor and its paths disagree about `None`, so the traced function raises a `ValueError`, but neither op is
+		// modeled, so the condition has no tensor type.
+		Function unmodeled = findFunction(functions, "none_return_unmodeled");
+		assertEquals("The check runs on `none_return_unmodeled` and decides it.", FALSE, unmodeled.getHasUntraceablePythonOnParameters());
+		assertNull("`none_return_unmodeled`'s unmodeled condition is not yet seen as a tensor.", unmodeled.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+
+		// TODO: Refuse this once Ariadne models `Dataset.cardinality()` and the cardinality constants:
+		// https://github.com/wala/ML/issues/1072.
+		// Its branch condition, `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`,
+		// so
+		// the traced function raises a `ValueError`, but the condition has no tensor type.
 		Function size = findFunction(functions, "dataset_size");
 		assertEquals("The check runs on `dataset_size` and decides it.", FALSE, size.getHasUntraceablePythonOnParameters());
 		assertNull("`dataset_size`'s tensor branch is not yet seen.", size.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,

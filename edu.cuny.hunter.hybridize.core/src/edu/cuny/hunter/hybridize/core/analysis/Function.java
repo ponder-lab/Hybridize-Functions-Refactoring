@@ -1322,9 +1322,10 @@ public class Function {
 	private Boolean hasNumpyCallsOnParameters;
 
 	/**
-	 * True iff this {@link Function}'s body (transitively) applies Python to a value flowing from its parameters in a way tracing cannot
-	 * carry: {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when undetermined. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074.
+	 * True iff this {@link Function}'s body (transitively) applies Python to a tensor, as the tensor-type analysis types it, in a way
+	 * tracing cannot carry: {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when undetermined.
+	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083.
 	 */
 	private Boolean hasUntraceablePythonOnParameters;
 
@@ -1478,10 +1479,10 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
 										"Can't hybridize a function that applies numpy to values derived from its parameters.");
 							else if (this.getHasUntraceablePythonOnParameters() != null && this.getHasUntraceablePythonOnParameters())
-								// Applies Python to parameter-flowing values in a way tracing cannot carry (issue 1074). A safety failure
+								// Applies Python to a tensor in a way tracing cannot carry (issues 1074 and 1083). A safety failure
 								// in the same family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
-										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, values derived from its parameters.");
+										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, a tensor.");
 							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
 								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
 								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
@@ -2136,7 +2137,7 @@ public class Function {
 	 * True iff this {@link Function}'s body (transitively) applies Python to a parameter-flowing value in a way tracing cannot carry,
 	 * {@code null} if undetermined (issue 1074).
 	 *
-	 * @return True iff this function applies untraceable Python to its parameters, null if undetermined.
+	 * @return True iff this function applies untraceable Python to a tensor, null if undetermined.
 	 */
 	public Boolean getHasUntraceablePythonOnParameters() {
 		return this.hasUntraceablePythonOnParameters;
