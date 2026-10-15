@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -34,11 +35,15 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.ISSABasicBlock;
+import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.graph.dominators.Dominators;
 
 /**
  * The parameter-flow numpy precondition: an interprocedural, two-color taint analysis deciding whether a function (transitively through
@@ -120,10 +125,30 @@ class NumpyParameterFlowAnalysis {
 	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
 	 */
 	boolean appliesNumpyToParameters(CGNode node, boolean method) {
+		NumpyScanResult result = this.scanParameters(node, method);
+		return result != null && result.sink();
+	}
+
+	/**
+	 * True iff {@code node} (transitively through user-defined callees and closures) applies Python to a value flowing from its parameters
+	 * in a way tracing cannot carry (issue 1074): {@code bool} of it, or a branch on it whose paths disagree about {@code None}. Shares
+	 * {@link #appliesNumpyToParameters}'s walk and memo.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
+	 * @return True iff such a use is reachable from {@code node}.
+	 */
+	boolean appliesUntraceablePythonToParameters(CGNode node, boolean method) {
+		NumpyScanResult result = this.scanParameters(node, method);
+		return result != null && result.untraceable();
+	}
+
+	/** The scan of {@code node} seeded with its parameters, or {@code null} when it has no IR or no parameter to seed. */
+	private NumpyScanResult scanParameters(CGNode node, boolean method) {
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return false;
+			return null;
 
 		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver for an instance method. Neither is a
 		// taint source—tainting the receiver would block any method mixing numpy over scalar fields with sanitized tensor use.
@@ -134,9 +159,9 @@ class NumpyParameterFlowAnalysis {
 			sources.add(parameters[i]);
 
 		if (sources.isEmpty())
-			return false;
+			return null;
 
-		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>(), new HashSet<>(), new HashMap<>()).sink();
+		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>(), new HashSet<>(), new HashMap<>());
 	}
 
 	/**
@@ -333,13 +358,94 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
+	 * The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). Only {@code bool}: AutoGraph
+	 * converts {@code int} and {@code float} of a tensor to casts, measured on TensorFlow 2.9.3, so those trace.
+	 */
+	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
+
+	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
+	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (!(def instanceof AstLexicalRead lexical))
+			return false;
+
+		Access[] accesses = lexical.getAccesses();
+		return accesses.length > 0 && UNTRACEABLE_CONVERSION_BUILTIN_NAMES.contains(accesses[0].getName().fst);
+	}
+
+	/**
+	 * True iff the paths out of one of {@code branches} disagree about {@code None} (issue 1074): one successor's region returns
+	 * {@code None}, explicitly or by falling off the end, while the other's returns a value, or the block where the two paths rejoin merges
+	 * {@code None} with a value. AutoGraph converts a branch on a tensor to {@code tf.cond}, which requires both paths to produce the same
+	 * structure, so either shape raises under tracing. Returns after the paths rejoin are not compared, since they follow the branch on
+	 * every path.
+	 *
+	 * @param ir The IR containing the branches.
+	 * @param branches Conditional branches on a value derived from the function's parameters.
+	 * @return Whether the paths of some branch disagree about None.
+	 */
+	private static boolean pathsDisagreeOnNone(IR ir, Set<SSAConditionalBranchInstruction> branches) {
+		var cfg = ir.getControlFlowGraph();
+		Dominators<ISSABasicBlock> dominators = Dominators.make(cfg, cfg.entry());
+		SymbolTable symbols = ir.getSymbolTable();
+
+		for (SSAConditionalBranchInstruction branch : branches) {
+			ISSABasicBlock block = cfg.getBlockForInstruction(branch.iIndex());
+			List<ISSABasicBlock> successors = new ArrayList<>(cfg.getNormalSuccessors(block));
+
+			if (successors.size() == 2) {
+				Set<Boolean> first = returnKinds(ir, dominators, successors.get(0), symbols);
+				Set<Boolean> second = returnKinds(ir, dominators, successors.get(1), symbols);
+
+				if (first.contains(true) && second.contains(false) || first.contains(false) && second.contains(true))
+					return true;
+			}
+
+			for (ISSABasicBlock merge : cfg)
+				if (dominators.getIdom(merge) == block)
+					for (Iterator<SSAPhiInstruction> phis = merge.iteratePhis(); phis.hasNext();) {
+						SSAPhiInstruction phi = phis.next();
+						boolean none = false;
+						boolean value = false;
+
+						for (int i = 0; i < phi.getNumberOfUses(); i++)
+							if (symbols.isNullConstant(phi.getUse(i)))
+								none = true;
+							else
+								value = true;
+
+						if (none && value)
+							return true;
+					}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether the returns in the region {@code head} dominates yield {@code None} (true) or a value (false). A return without a value is
+	 * {@code None}.
+	 */
+	private static Set<Boolean> returnKinds(IR ir, Dominators<ISSABasicBlock> dominators, ISSABasicBlock head, SymbolTable symbols) {
+		Set<Boolean> kinds = new HashSet<>();
+
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof SSAReturnInstruction ret
+					&& dominators.isDominatedBy(ir.getControlFlowGraph().getBlockForInstruction(ret.iIndex()), head))
+				kinds.add(ret.returnsVoid() || ret.getResult() < 0 || symbols.isNullConstant(ret.getResult()));
+
+		return kinds;
+	}
+
+	/**
 	 * The result of a two-color taint scan: whether numpy hit a value-tainted argument, whether a value taint escaped this node, and the
 	 * {@link ShapeDescriptor} the node's returns carry, so a caller keeps resolving staticness across the return boundary
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). The descriptor is {@code null} when no shape-tainted
 	 * value is returned <em>or</em> any returned shape lacks a descriptor (provenance is dropped rather than partially trusted);
 	 * conflicting tracked returns merge to the ambiguous descriptor instead.
 	 */
-	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor) {
+	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor, boolean untraceable) {
 	}
 
 	/**
@@ -401,12 +507,12 @@ class NumpyParameterFlowAnalysis {
 			return cached;
 
 		// Optimistic cycle guard: a recursive revisit contributes nothing new.
-		this.memo.put(key, new NumpyScanResult(false, false, null));
+		this.memo.put(key, new NumpyScanResult(false, false, null, false));
 
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new NumpyScanResult(false, false, null);
+			return new NumpyScanResult(false, false, null, false);
 
 		DefUse defUse = node.getDU();
 		Set<Integer> valueTainted = new HashSet<>(valueSeed);
@@ -429,6 +535,9 @@ class NumpyParameterFlowAnalysis {
 
 		boolean sink = false;
 		boolean valueEscapes = false;
+		// Python applied to a tainted value in a way tracing cannot carry, and the branches on a tainted value (issue 1074).
+		boolean untraceable = false;
+		Set<SSAConditionalBranchInstruction> taintedBranches = new HashSet<>();
 		// The descriptor this node's returns carry back to the caller: set while all tracked-shape returns agree, poisoned to
 		// AMBIGUOUS_DESCRIPTOR on a conflict, and dropped entirely (null) when an untracked shape is returned.
 		ShapeDescriptor returnDescriptor = null;
@@ -455,6 +564,9 @@ class NumpyParameterFlowAnalysis {
 							if (r.sink())
 								sink = true;
 
+							if (r.untraceable())
+								untraceable = true;
+
 							if (r.valueEscapes()) {
 								valueEscapes = true;
 
@@ -467,10 +579,16 @@ class NumpyParameterFlowAnalysis {
 				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
 				// within the function's trace and reads the tainted variables, so it is scanned for sinks too, from the function defining
 				// them; with no call site here, its result colors nothing.
-				for (CGNode nested : nestedNodes(this.callGraph, node, lexicalValues, lexicalShapes.keySet()))
-					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(),
-							enclosingNames(nested, lexicalValues), enclosingNames(nested, lexicalShapes)).sink())
+				for (CGNode nested : nestedNodes(this.callGraph, node, lexicalValues, lexicalShapes.keySet())) {
+					NumpyScanResult r = this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(),
+							enclosingNames(nested, lexicalValues), enclosingNames(nested, lexicalShapes));
+
+					if (r.sink())
 						sink = true;
+
+					if (r.untraceable())
+						untraceable = true;
+				}
 
 				if (worklist.isEmpty())
 					break;
@@ -527,6 +645,13 @@ class NumpyParameterFlowAnalysis {
 				}
 
 				if (use instanceof PythonInvokeInstruction invoke) {
+					// `bool` of a tensor value cannot be evaluated while tracing; `int` and `float` are left alone, since AutoGraph
+					// converts them to casts (issue 1074).
+					if (valueColored && invokesUntraceableConversion(invoke, defUse))
+						for (int j = 1; j < invoke.getNumberOfUses(); j++)
+							if (invoke.getUse(j) == valueNumber)
+								untraceable = true;
+
 					if (this.invokesNumpyApi(node, invoke, defUse)) {
 						// A value-tainted argument is a sink (a value escape). A shape-derived argument is a sink only on a
 						// provably-dynamic covered dimension; an unprovable shape (⊤ or untracked/ambiguous provenance) is permitted,
@@ -657,6 +782,8 @@ class NumpyParameterFlowAnalysis {
 
 							if (r.sink())
 								sink = true;
+							if (r.untraceable())
+								untraceable = true;
 							if (r.valueEscapes())
 								calleeValueEscapes = true;
 
@@ -727,6 +854,9 @@ class NumpyParameterFlowAnalysis {
 					continue;
 				}
 
+				if (valueColored && use instanceof SSAConditionalBranchInstruction branch)
+					taintedBranches.add(branch);
+
 				// Any other instruction is a non-shape use: a value-tainted operand escapes (its value flows onward), and the definitions
 				// inherit the color (value dominates).
 				if (valueColored)
@@ -743,7 +873,11 @@ class NumpyParameterFlowAnalysis {
 			}
 		}
 
-		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor);
+		// A branch on a tensor value is converted by AutoGraph to `tf.cond`, which rejects paths that disagree about None (issue 1074).
+		if (!untraceable && !taintedBranches.isEmpty() && pathsDisagreeOnNone(ir, taintedBranches))
+			untraceable = true;
+
+		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor, untraceable);
 		this.memo.put(key, result);
 		return result;
 	}
