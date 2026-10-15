@@ -13917,19 +13917,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075: a value that does not cross the {@code tf.function}
 	 * boundary unchanged. Measured under {@code tf.function} on TensorFlow 2.9.3: {@code returns_variable} returns a {@code tf.Variable},
-	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples; and
-	 * {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of {@code tf.TensorSpec}s, raises on the
-	 * latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Three more change but are not yet detected, for the
-	 * engine reasons their TODOs cite: {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which
-	 * comes back as a tensor its caller cannot write to; {@code returns_variable_pairs} builds its list with {@code +=}; and
-	 * {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only reads a
-	 * variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
+	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples;
+	 * {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which comes back as a tensor its
+	 * caller cannot write to; and {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of
+	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Two more change
+	 * but are not yet detected, for the engine reasons their TODOs cite: {@code returns_variable_pairs} builds its list with {@code +=},
+	 * and {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only
+	 * reads a variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
 	 */
 	@Test
 	public void testUncrossableBoundaryValues() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("returns_variable", "returns_variable_pair", "selects_keys", "selects_keys_by_keyword")) {
+		for (String identifier : List.of("returns_variable", "returns_variable_pair", "returns_tensor_array", "selects_keys",
+				"selects_keys_by_keyword")) {
 			Function function = findFunction(functions, identifier);
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_UNCROSSABLE_BOUNDARY_VALUES.", function.getStatus()
@@ -13941,12 +13942,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNull("`" + identifier + "` is not refused for an uncrossable value.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 		}
-
-		// TODO: Refuse this once Ariadne models `tf.TensorArray`: https://github.com/wala/ML/issues/1035, which Ariadne 0.52.105 does.
-		// Until then the call's result points to nothing, so the dictionary holding it is empty.
-		Function tensorArray = findFunction(functions, "returns_tensor_array");
-		assertNull("`returns_tensor_array`'s returned tensor array is not yet seen.", tensorArray.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
 		// TODO: Refuse this once Ariadne catalogs the elements `+=` appends to a list: https://github.com/wala/ML/issues/1069. Until then
 		// the appended tuple is held in a field that `m`'s object catalog does not name, so the walk does not see the returned variable.
