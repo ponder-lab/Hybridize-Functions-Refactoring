@@ -13807,6 +13807,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// raises a `ValueError`. The parameter's value is not followed through the method call, and Ariadne models neither the method nor
 		// the constant: https://github.com/wala/ML/issues/1072.
 		Function size = findFunction(functions, "dataset_size");
+		assertEquals("The check runs on `dataset_size` and decides it.", FALSE, size.getHasUntraceablePythonOnParameters());
 		assertNull("`dataset_size`'s tensor branch is not yet seen.", size.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 	}
