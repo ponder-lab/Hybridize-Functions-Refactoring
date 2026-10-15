@@ -17,7 +17,7 @@ def none_merge(x):
 
 
 def float_of(x):
-    return tf.constant(float(tf.reduce_sum(x)))
+    return x * float(tf.reduce_sum(x))
 
 
 def bool_of(x):
@@ -41,6 +41,19 @@ def int_of(x):
     return tf.zeros((2,)) + tf.cast(int(tf.reduce_sum(x)), tf.float32)
 
 
+def local_in_branch(x):
+    if tf.reduce_sum(x) > 0.0:
+        tmp = x + 1.0
+        x = tmp * 2.0
+    return x
+
+
+def primitive_branch(x, n):
+    if n > 0:
+        return None
+    return x + float(n)
+
+
 def static_none(x):
     if x.shape[0] == 3:
         return x + 1.0
@@ -59,3 +72,5 @@ for f in (
 ):
     f(t)
 static_none(tf.constant([1.0, 2.0, 3.0]))
+local_in_branch(t)
+primitive_branch(t, 0)

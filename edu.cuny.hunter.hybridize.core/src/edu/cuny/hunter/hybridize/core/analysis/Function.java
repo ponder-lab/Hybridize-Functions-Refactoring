@@ -1315,8 +1315,8 @@ public class Function {
 
 	/**
 	 * True iff this {@link Function}'s body (transitively) applies Python to a value flowing from its parameters in a way tracing cannot
-	 * carry: {@code float} or {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when
-	 * undetermined. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074.
+	 * carry: {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when undetermined. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074.
 	 */
 	private Boolean hasUntraceablePythonOnParameters;
 
@@ -1473,7 +1473,7 @@ public class Function {
 								// Applies Python to parameter-flowing values in a way tracing cannot carry (issue 1074). A safety failure
 								// in the same family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
-										"Can't hybridize a function that applies float or bool to, or branches with paths disagreeing about None on, values derived from its parameters.");
+										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, values derived from its parameters.");
 							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
 								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
 								// (issue 814). The third safety failure in the family; also precedes the benefit signal.

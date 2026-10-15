@@ -131,8 +131,8 @@ class NumpyParameterFlowAnalysis {
 
 	/**
 	 * True iff {@code node} (transitively through user-defined callees and closures) applies Python to a value flowing from its parameters
-	 * in a way tracing cannot carry (issue 1074): {@code float} or {@code bool} of it, or a branch on it whose paths disagree about
-	 * {@code None}. Shares {@link #appliesNumpyToParameters}'s walk and memo.
+	 * in a way tracing cannot carry (issue 1074): {@code bool} of it, or a branch on it whose paths disagree about {@code None}. Shares
+	 * {@link #appliesNumpyToParameters}'s walk and memo.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
@@ -357,8 +357,11 @@ class NumpyParameterFlowAnalysis {
 		return accesses.length > 0 && SLICE_BUILTIN_NAME.equals(accesses[0].getName().fst);
 	}
 
-	/** The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). */
-	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("float", "bool");
+	/**
+	 * The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). Only {@code bool}: AutoGraph
+	 * converts {@code int} and {@code float} of a tensor to casts, measured on TensorFlow 2.9.3, so those trace.
+	 */
+	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
 
 	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
 	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
@@ -642,8 +645,8 @@ class NumpyParameterFlowAnalysis {
 				}
 
 				if (use instanceof PythonInvokeInstruction invoke) {
-					// `float` or `bool` of a tensor value cannot be evaluated while tracing; `int` is left alone, since AutoGraph converts
-					// it to a cast (issue 1074).
+					// `bool` of a tensor value cannot be evaluated while tracing; `int` and `float` are left alone, since AutoGraph
+					// converts them to casts (issue 1074).
 					if (valueColored && invokesUntraceableConversion(invoke, defUse))
 						for (int j = 1; j < invoke.getNumberOfUses(); j++)
 							if (invoke.getUse(j) == valueNumber)

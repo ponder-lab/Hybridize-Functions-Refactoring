@@ -287,11 +287,11 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's body (transitively) applies Python to a value flowing from its parameters in a way tracing cannot carry, so
-	 * hybridization raises where the eager function runs: {@code float} or {@code bool} of the value, which tracing cannot evaluate on a
-	 * symbolic tensor, or a branch on the value where the paths disagree about {@code None} (a {@code return None} beside a returned
-	 * tensor, or a variable left {@code None} on one path), which AutoGraph's conversion of the branch to {@code tf.cond} rejects. A branch
-	 * on the value whose paths agree is converted by AutoGraph and is left alone, and so is {@code int}, which AutoGraph converts to a
-	 * cast.
+	 * hybridization raises where the eager function runs: {@code bool} of the value, which tracing cannot evaluate on a symbolic tensor, or
+	 * a branch on the value where the paths disagree about {@code None} (a {@code return None} beside a returned tensor, or a variable left
+	 * {@code None} on one path), which AutoGraph's conversion of the branch to {@code tf.cond} rejects. A branch on the value whose paths
+	 * agree is converted by AutoGraph and is left alone, and so are {@code int} and {@code float}, which AutoGraph converts to casts. A
+	 * {@code None} return under a nested condition that is constant at trace time is still counted, which costs a refusal.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074">Issue 1074</a>
 	 */
