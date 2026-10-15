@@ -130,9 +130,11 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
-	 * True iff {@code node} (transitively through user-defined callees and closures) applies Python to a value flowing from its parameters
-	 * in a way tracing cannot carry (issue 1074): {@code bool} of it, or a branch on it whose paths disagree about {@code None}. Shares
-	 * {@link #appliesNumpyToParameters}'s walk and memo.
+	 * True iff {@code node} (transitively through the user-defined callees and closures {@link #appliesNumpyToParameters}'s walk reaches)
+	 * applies Python to a tensor in a way tracing cannot carry (issues 1074 and 1083): {@code bool} of it, or a branch on it whose paths
+	 * disagree about {@code None}. That the condition or the argument is a tensor is read from the tensor-type analysis, not from the
+	 * parameter flow: a value derived from a parameter may be a Python value, such as the {@code bool} an {@code is None} test yields,
+	 * which tracing decides. Shares {@link #appliesNumpyToParameters}'s walk and memo.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
@@ -363,6 +365,39 @@ class NumpyParameterFlowAnalysis {
 	 */
 	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
 
+	/**
+	 * True iff {@code node}'s own body applies {@code bool} to a tensor, or branches on a tensor with paths that disagree about
+	 * {@code None}, where a tensor is a value the tensor-type analysis types (issues 1074 and 1083).
+	 *
+	 * @param node The call-graph node whose body is read.
+	 * @param ir The node's IR.
+	 * @param defUse The node's def-use chains.
+	 * @return True iff such a use appears in the body.
+	 */
+	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir, DefUse defUse) {
+		Set<SSAConditionalBranchInstruction> tensorBranches = new HashSet<>();
+
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof SSAConditionalBranchInstruction branch) {
+				if (this.usesTensor(node, branch, 0))
+					tensorBranches.add(branch);
+			} else if (instruction instanceof PythonInvokeInstruction invoke && invokesUntraceableConversion(invoke, defUse)
+					&& this.usesTensor(node, invoke, 1))
+				// Slot 0 of an invoke is the callee itself; the arguments start at 1.
+				return true;
+
+		return !tensorBranches.isEmpty() && pathsDisagreeOnNone(ir, tensorBranches);
+	}
+
+	/** True iff a use of {@code instruction} at or after {@code from} is a value the tensor-type analysis types in {@code node}. */
+	private boolean usesTensor(CGNode node, SSAInstruction instruction, int from) {
+		for (int i = from; i < instruction.getNumberOfUses(); i++)
+			if (instruction.getUse(i) >= 0 && !this.lookupTensorTypes(node, instruction.getUse(i)).isEmpty())
+				return true;
+
+		return false;
+	}
+
 	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
 	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
 		SSAInstruction def = defUse.getDef(invoke.getUse(0));
@@ -535,9 +570,9 @@ class NumpyParameterFlowAnalysis {
 
 		boolean sink = false;
 		boolean valueEscapes = false;
-		// Python applied to a tainted value in a way tracing cannot carry, and the branches on a tainted value (issue 1074).
+		// Python applied to a tensor in a way tracing cannot carry, from a callee or a closure (issue 1074); this node's own uses are read
+		// after the walk.
 		boolean untraceable = false;
-		Set<SSAConditionalBranchInstruction> taintedBranches = new HashSet<>();
 		// The descriptor this node's returns carry back to the caller: set while all tracked-shape returns agree, poisoned to
 		// AMBIGUOUS_DESCRIPTOR on a conflict, and dropped entirely (null) when an untracked shape is returned.
 		ShapeDescriptor returnDescriptor = null;
@@ -645,13 +680,6 @@ class NumpyParameterFlowAnalysis {
 				}
 
 				if (use instanceof PythonInvokeInstruction invoke) {
-					// `bool` of a tensor value cannot be evaluated while tracing; `int` and `float` are left alone, since AutoGraph
-					// converts them to casts (issue 1074).
-					if (valueColored && invokesUntraceableConversion(invoke, defUse))
-						for (int j = 1; j < invoke.getNumberOfUses(); j++)
-							if (invoke.getUse(j) == valueNumber)
-								untraceable = true;
-
 					if (this.invokesNumpyApi(node, invoke, defUse)) {
 						// A value-tainted argument is a sink (a value escape). A shape-derived argument is a sink only on a
 						// provably-dynamic covered dimension; an unprovable shape (⊤ or untracked/ambiguous provenance) is permitted,
@@ -854,9 +882,6 @@ class NumpyParameterFlowAnalysis {
 					continue;
 				}
 
-				if (valueColored && use instanceof SSAConditionalBranchInstruction branch)
-					taintedBranches.add(branch);
-
 				// Any other instruction is a non-shape use: a value-tainted operand escapes (its value flows onward), and the definitions
 				// inherit the color (value dominates).
 				if (valueColored)
@@ -873,9 +898,14 @@ class NumpyParameterFlowAnalysis {
 			}
 		}
 
-		// A branch on a tensor value is converted by AutoGraph to `tf.cond`, which rejects paths that disagree about None (issue 1074).
-		if (!untraceable && !taintedBranches.isEmpty() && pathsDisagreeOnNone(ir, taintedBranches))
-			untraceable = true;
+		// `bool` of a tensor cannot be evaluated while tracing, and a branch on a tensor is converted by AutoGraph to `tf.cond`, which
+		// rejects
+		// paths that disagree about None (issue 1074). Both are decided by whether the tensor-type analysis types the argument or the
+		// condition as a tensor (issue 1083), so a parameter's `is None` test, a Python `bool`, is left alone. `int` and `float` of a
+		// tensor
+		// are left alone too, since AutoGraph converts them to casts.
+		if (!untraceable)
+			untraceable = this.appliesUntraceablePythonToTensors(node, ir, defUse);
 
 		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor, untraceable);
 		this.memo.put(key, result);
