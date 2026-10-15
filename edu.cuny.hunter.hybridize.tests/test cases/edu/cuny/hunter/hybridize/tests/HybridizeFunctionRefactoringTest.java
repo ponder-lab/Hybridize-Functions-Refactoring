@@ -13795,6 +13795,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075: a value that would not cross the {@code tf.function}
+	 * boundary as written. Measured under {@code tf.function} on TensorFlow 2.9.3, each of these raises while the eager function runs:
+	 * {@code returns_variable} returns a {@code tf.Variable}, which comes back as a tensor its caller cannot assign to;
+	 * {@code returns_variable_pair} returns one inside a list of tuples; and {@code selects_keys}, which one call passes a dictionary of
+	 * tensors and another a dictionary of {@code tf.TensorSpec}s, raises on the latter call. Three more raise but are not yet detected, for
+	 * the engine reasons their TODOs cite: {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary,
+	 * which comes back as a tensor its caller cannot write to; {@code returns_variable_pairs} builds its list with {@code +=}; and
+	 * {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary as written: {@code reads_variable} only reads a
+	 * variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
+	 */
+	@Test
+	public void testUncrossableBoundaryValues() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("returns_variable", "returns_variable_pair", "selects_keys")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNCROSSABLE_BOUNDARY_VALUES.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+		}
+
+		for (String identifier : List.of("reads_variable", "stacks_tensor_array", "selects_tensor_keys")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` is not refused for an uncrossable value.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+		}
+
+		// TODO: Refuse this once Ariadne models `tf.TensorArray`: https://github.com/wala/ML/issues/1035, which Ariadne 0.52.105 does.
+		// Until then the call's result points to nothing, so the dictionary holding it is empty.
+		Function tensorArray = findFunction(functions, "returns_tensor_array");
+		assertNull("`returns_tensor_array`'s returned tensor array is not yet seen.", tensorArray.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+
+		// TODO: Refuse this once Ariadne carries list elements through `+=`: https://github.com/wala/ML/issues/1069. Until then `m` holds
+		// no element, and the
+		// returned variable is not seen.
+		Function pairs = findFunction(functions, "returns_variable_pairs");
+		assertNull("`returns_variable_pairs`'s variable, appended with `+=`, is not yet seen.",
+				pairs.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+
+		// TODO: Refuse this once Ariadne models a Keras weight as a variable rather than a tensor: https://github.com/wala/ML/issues/1068.
+		// It returns the
+		// layer's kernel, which comes back from `tf.function` as a tensor its caller cannot assign to, but `add_weight`'s summary
+		// allocates a tensor, so no variable reaches the return.
+		Function mapWeights = findFunction(functions, "Weights.map_weights");
+		assertNull("`Weights.map_weights`'s returned Keras weight is not yet seen as a variable.", mapWeights.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
