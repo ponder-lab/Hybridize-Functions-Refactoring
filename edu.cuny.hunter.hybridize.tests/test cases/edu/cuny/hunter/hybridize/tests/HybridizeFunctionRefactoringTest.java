@@ -13715,6 +13715,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins that the closure scan of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 stays shallow when one
+	 * function defines many closures. {@code outer} defines 1,500 sibling lambdas that read its parameter. Scanning each closure nested in
+	 * a tainted variable's scope from every function that can read the variable, rather than only from the function defining it, made each
+	 * sibling's scan recurse into the next, so the recursion grew with the number of siblings and overflowed the stack on a subject with
+	 * this shape. The analysis must complete, still flag {@code outer_numpy}, whose lambda applies numpy to its parameter, and leave
+	 * {@code outer} unflagged. The failure depends on the worker threads' stack size, which is why the checks run in parallel here; a
+	 * serial run of this fixture did not overflow even before the fix, so a green run without the fix is not a pass on the merits.
+	 */
+	@Test
+	public void testClosureTaintAcrossManySiblings() throws Exception {
+		// The checks run on worker threads in parallel, whose stacks are smaller than the main thread's, as in an evaluator run.
+		this.processFunctionsInParallel = true;
+		Set<Function> functions = this.getFunctions();
+
+		Function numpy = findFunction(functions, "outer_numpy");
+		assertTrue("`outer_numpy` applies numpy to its parameter through a closure.", numpy.getHasNumpyCallsOnParameters());
+
+		Function outer = findFunction(functions, "outer");
+		assertFalse("`outer` applies no numpy to its parameter.", outer.getHasNumpyCallsOnParameters());
+	}
+
+	/**
 	 * Pins that the closure taint of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 stays bounded. Each of
 	 * {@code outer}'s sixteen sibling lambdas passes a closure to its own top-level helper, and each helper has a closure of its own. A
 	 * helper is not nested in {@code outer}, so it cannot read {@code outer}'s variables; scanning it with them, and so rescanning every
