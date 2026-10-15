@@ -66,6 +66,18 @@ def static_none(x):
     return None
 
 
+def mask_or_none(inputs, sequence_length=None):
+    if sequence_length is None:
+        return None
+    return tf.sequence_mask(sequence_length, maxlen=tf.shape(inputs)[1])
+
+
+def dataset_size(dataset):
+    if dataset.cardinality() == tf.data.INFINITE_CARDINALITY:
+        return None
+    return dataset.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1)
+
+
 t = tf.constant([1.0, -2.0])
 for f in (
     none_return,
@@ -81,3 +93,6 @@ static_none(tf.constant([1.0, 2.0, 3.0]))
 local_in_branch(t)
 primitive_branch(t, 0)
 local_after_join(tf.constant([1.0, 2.0]))
+mask_or_none(tf.ones([2, 3]))
+mask_or_none(tf.ones([2, 3]), tf.constant([1, 2]))
+dataset_size(tf.data.Dataset.range(5))
