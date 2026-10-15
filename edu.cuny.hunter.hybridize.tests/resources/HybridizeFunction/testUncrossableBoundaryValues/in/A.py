@@ -32,6 +32,14 @@ def selects_keys(dictionary):
     return selected
 
 
+def selects_keys_by_keyword(dictionary):
+    selected = {}
+    for key, value in dictionary.items():
+        if key.startswith("a_"):
+            selected[key[2:]] = value
+    return selected
+
+
 class Weights(tf.keras.layers.Layer):
     def build(self, input_shape):
         self.kernel = self.add_weight("kernel", shape=[input_shape[-1], 2])
@@ -69,6 +77,13 @@ returns_tensor_array(t)
 selects_keys({"a_x": t, "b_y": t})
 selects_keys(
     {"a_x": tf.TensorSpec(t.shape, t.dtype), "b_y": tf.TensorSpec(t.shape, t.dtype)}
+)
+selects_keys_by_keyword(dictionary={"a_x": t, "b_y": t})
+selects_keys_by_keyword(
+    dictionary={
+        "a_x": tf.TensorSpec(t.shape, t.dtype),
+        "b_y": tf.TensorSpec(t.shape, t.dtype),
+    }
 )
 layer = Weights()
 layer(tf.ones([1, 3]))
