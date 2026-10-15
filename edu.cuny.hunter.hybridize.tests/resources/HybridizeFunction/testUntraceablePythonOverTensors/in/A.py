@@ -114,6 +114,12 @@ def tensor_branches_greater(x):
     return x - 1.0
 
 
+def none_return_unmodeled(x):
+    if tf.reduce_any(tf.math.is_nan(x)):
+        return None
+    return x + 1.0
+
+
 t = tf.constant([1.0, -2.0])
 for f in (
     none_return,
@@ -138,3 +144,4 @@ via_callee_greater(t)
 tensor_branches_greater(t)
 none_merge_greater(t)
 local_after_join_greater(tf.constant([1.0, 2.0]))
+none_return_unmodeled(t)

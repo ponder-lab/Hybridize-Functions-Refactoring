@@ -13772,9 +13772,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * inside a branch, unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent.
 	 * {@code mask_or_none} tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without
 	 * the argument, so it is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12),
-	 * not for this. Six cases raise but are not yet detected, for the engine reasons their TODOs give: {@code none_return},
+	 * not for this. Seven cases raise but are not yet detected, for the engine reasons their TODOs give: {@code none_return},
 	 * {@code none_merge}, {@code bool_of}, {@code local_after_join}, and {@code via_callee} branch on, or take {@code bool} of, a Python
-	 * comparison of tensors, and {@code dataset_size} branches on {@code dataset.cardinality()}.
+	 * comparison of tensors, {@code none_return_unmodeled} branches on {@code tf.reduce_any(tf.math.is_nan(x))}, neither of which is
+	 * modeled, and {@code dataset_size} branches on {@code dataset.cardinality()}.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
@@ -13815,6 +13816,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNull("`" + identifier + "`'s comparison condition is not yet seen as a tensor.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 		}
+
+		// TODO: Refuse this once Ariadne models `tf.math.is_nan` and `tf.reduce_any`: https://github.com/wala/ML/issues/1076. Its branch
+		// condition is a tensor and its paths disagree about `None`, so the traced function raises a `ValueError`, but neither op is
+		// modeled, so the condition has no tensor type.
+		Function unmodeled = findFunction(functions, "none_return_unmodeled");
+		assertEquals("The check runs on `none_return_unmodeled` and decides it.", FALSE, unmodeled.getHasUntraceablePythonOnParameters());
+		assertNull("`none_return_unmodeled`'s unmodeled condition is not yet seen as a tensor.", unmodeled.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
 		// TODO: Refuse this once Ariadne models `Dataset.cardinality()` and the cardinality constants:
 		// https://github.com/wala/ML/issues/1072.
