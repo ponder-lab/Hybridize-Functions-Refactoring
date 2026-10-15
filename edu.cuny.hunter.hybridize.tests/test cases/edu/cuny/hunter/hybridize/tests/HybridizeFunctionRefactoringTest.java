@@ -13828,9 +13828,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`returns_tensor_array`'s returned tensor array is not yet seen.", tensorArray.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
-		// TODO: Refuse this once Ariadne carries list elements through `+=`: https://github.com/wala/ML/issues/1069. Until then `m` holds
-		// no element, and the
-		// returned variable is not seen.
+		// TODO: Refuse this once Ariadne catalogs the elements `+=` appends to a list: https://github.com/wala/ML/issues/1069. Until then
+		// the appended tuple is held in a field that `m`'s object catalog does not name, so the walk does not see the returned variable.
 		Function pairs = findFunction(functions, "returns_variable_pairs");
 		assertNull("`returns_variable_pairs`'s variable, appended with `+=`, is not yet seen.",
 				pairs.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
