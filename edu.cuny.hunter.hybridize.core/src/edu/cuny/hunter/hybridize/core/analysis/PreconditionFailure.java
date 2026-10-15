@@ -286,16 +286,30 @@ public enum PreconditionFailure {
 	TRACING_CHANGES_GUARDED_EXCEPTION(34),
 
 	/**
-	 * The function's body (transitively) applies Python to a value flowing from its parameters in a way tracing cannot carry, so
-	 * hybridization raises where the eager function runs: {@code bool} of the value, which tracing cannot evaluate on a symbolic tensor, or
-	 * a branch on the value where the paths disagree about {@code None} (a {@code return None} beside a returned tensor, or a variable left
-	 * {@code None} on one path), which AutoGraph's conversion of the branch to {@code tf.cond} rejects. A branch on the value whose paths
+	 * The function's body (transitively) applies Python to a tensor in a way tracing cannot carry, so hybridization raises where the eager
+	 * function runs: {@code bool} of a tensor, which tracing cannot evaluate on a symbolic tensor, or a branch on a tensor where the paths
+	 * disagree about {@code None} (a {@code return None} beside a returned tensor, or a variable left {@code None} on one path), which
+	 * AutoGraph's conversion of the branch to {@code tf.cond} rejects. A value is a tensor when the tensor-type analysis types it, so a
+	 * Python {@code bool}, such as an {@code is None} test's, is decided while tracing and left alone. A branch on a tensor whose paths
 	 * agree is converted by AutoGraph and is left alone, and so are {@code int} and {@code float}, which AutoGraph converts to casts. A
 	 * {@code None} return under a nested condition that is constant at trace time is still counted, which costs a refusal.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074">Issue 1074</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083">Issue 1083</a>
 	 */
-	HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS(35);
+	HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS(35),
+
+	/**
+	 * A value crossing the function's {@code tf.function} boundary does not cross it unchanged. A returned {@code tf.Variable}, at the top
+	 * level or inside a returned list, tuple, or dictionary, is converted to a tensor holding its value, and a returned
+	 * {@code tf.TensorArray} to a tensor. The conversion raises nothing, but the eager object's identity and mutability are lost: a caller
+	 * that assigns to the variable, compares its reference, or writes to the array fails or means something else. A {@code tf.TensorSpec}
+	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}. A variable used
+	 * inside the body, or a tensor array stacked before it is returned, crosses nothing and is left alone.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
+	 */
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36);
 
 	static {
 		// check that the codes are unique.

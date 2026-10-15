@@ -66,6 +66,60 @@ def static_none(x):
     return None
 
 
+def mask_or_none(inputs, sequence_length=None):
+    if sequence_length is None:
+        return None
+    return tf.sequence_mask(sequence_length, maxlen=tf.shape(inputs)[1])
+
+
+def dataset_size(dataset):
+    if dataset.cardinality() == tf.data.INFINITE_CARDINALITY:
+        return None
+    return dataset.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1)
+
+
+def none_return_greater(x):
+    if tf.greater(tf.reduce_sum(x), 0.0):
+        return None
+    return x + 1.0
+
+
+def none_merge_greater(x):
+    y = None
+    if tf.greater(tf.reduce_sum(x), 0.0):
+        y = x + 1.0
+    return y
+
+
+def local_after_join_greater(x):
+    if tf.greater(tf.reduce_sum(x), 0.0):
+        tmp = x + 1.0
+    return tmp
+
+
+def bool_of_greater(x):
+    if bool(tf.greater(tf.reduce_sum(x), 0.0)):
+        return x + 1.0
+    return x - 1.0
+
+
+def via_callee_greater(x):
+    r = none_return_greater(x)
+    return x if r is None else r
+
+
+def tensor_branches_greater(x):
+    if tf.greater(tf.reduce_sum(x), 0.0):
+        return x + 1.0
+    return x - 1.0
+
+
+def none_return_unmodeled(x):
+    if tf.reduce_any(tf.math.is_nan(x)):
+        return None
+    return x + 1.0
+
+
 t = tf.constant([1.0, -2.0])
 for f in (
     none_return,
@@ -81,3 +135,13 @@ static_none(tf.constant([1.0, 2.0, 3.0]))
 local_in_branch(t)
 primitive_branch(t, 0)
 local_after_join(tf.constant([1.0, 2.0]))
+mask_or_none(tf.ones([2, 3]))
+mask_or_none(tf.ones([2, 3]), tf.constant([1, 2]))
+dataset_size(tf.data.Dataset.range(5))
+none_return_greater(t)
+bool_of_greater(t)
+via_callee_greater(t)
+tensor_branches_greater(t)
+none_merge_greater(t)
+local_after_join_greater(tf.constant([1.0, 2.0]))
+none_return_unmodeled(t)
