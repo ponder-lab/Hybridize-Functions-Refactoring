@@ -13759,6 +13759,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074: Python applied to a value flowing from a parameter in
+	 * a way tracing cannot carry. Measured under {@code tf.function} on TensorFlow 2.9.3, each of these raises while the eager function
+	 * runs: {@code none_return} returns {@code None} on one path of a branch on the value and a tensor on the other, {@code none_merge}
+	 * leaves a variable {@code None} on one path of such a branch ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
+	 * {@code float_of} takes {@code float} of the value ({@code TypeError}), {@code bool_of} takes {@code bool} of it
+	 * ({@code OperatorNotAllowedInGraphError}), and {@code via_callee} reaches {@code none_return}. Three controls trace and still
+	 * hybridize: {@code tensor_branches}, whose paths both yield tensors; {@code int_of}, whose {@code int} AutoGraph converts to a cast;
+	 * and {@code static_none}, whose branch is on a static extent, not on a tensor value.
+	 */
+	@Test
+	public void testUntraceablePythonOverTensors() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("none_return", "none_merge", "float_of", "bool_of", "via_callee")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		}
+
+		for (String identifier : List.of("tensor_branches", "int_of", "static_none")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}

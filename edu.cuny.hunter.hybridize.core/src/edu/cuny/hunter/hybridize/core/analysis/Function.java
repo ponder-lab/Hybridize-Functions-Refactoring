@@ -1314,6 +1314,13 @@ public class Function {
 	private Boolean hasNumpyCallsOnParameters;
 
 	/**
+	 * True iff this {@link Function}'s body (transitively) applies Python to a value flowing from its parameters in a way tracing cannot
+	 * carry: {@code float} or {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when
+	 * undetermined. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074.
+	 */
+	private Boolean hasUntraceablePythonOnParameters;
+
+	/**
 	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
 	 * {@code tf.sqrt(x, tf.float32)}), which raises under {@code tf.function} tracing. Unlike the call-graph-based safety checks above,
 	 * this is computed by a syntactic scan of the body. {@code null} when it could not be determined (an AST traversal failure), in which
@@ -1462,6 +1469,11 @@ public class Function {
 								// second safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
 										"Can't hybridize a function that applies numpy to values derived from its parameters.");
+							else if (this.getHasUntraceablePythonOnParameters() != null && this.getHasUntraceablePythonOnParameters())
+								// Applies Python to parameter-flowing values in a way tracing cannot carry (issue 1074). A safety failure
+								// in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
+										"Can't hybridize a function that applies float or bool to, or branches with paths disagreeing about None on, values derived from its parameters.");
 							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
 								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
 								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
@@ -2099,6 +2111,20 @@ public class Function {
 		this.hasNumpyCallsOnParameters = numpyOnParameters;
 
 		LOG.info(this + (numpyOnParameters ? " applies numpy to its parameters." : " applies no numpy to its parameters."));
+
+		// The same walk decides the untraceable Python uses (issue 1074), so its memo serves both.
+		this.hasUntraceablePythonOnParameters = nodes.stream()
+				.anyMatch(cgNode -> numpyParameterFlowAnalysis.appliesUntraceablePythonToParameters(cgNode, this.isMethod()));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body (transitively) applies Python to a parameter-flowing value in a way tracing cannot carry,
+	 * {@code null} if undetermined (issue 1074).
+	 *
+	 * @return True iff this function applies untraceable Python to its parameters, null if undetermined.
+	 */
+	public Boolean getHasUntraceablePythonOnParameters() {
+		return this.hasUntraceablePythonOnParameters;
 	}
 
 	/**
