@@ -467,9 +467,9 @@ class NumpyParameterFlowAnalysis {
 					}
 
 				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
-				// within the function's trace and reads the tainted variables, so it is scanned for sinks too; with no call site here,
-				// its result colors nothing.
-				for (CGNode nested : nestedNodes(this.callGraph, lexicalValues, lexicalShapes.keySet()))
+				// within the function's trace and reads the tainted variables, so it is scanned for sinks too, from the function defining
+				// them; with no call site here, its result colors nothing.
+				for (CGNode nested : nestedNodes(this.callGraph, node, lexicalValues, lexicalShapes.keySet()))
 					if (this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(),
 							enclosingNames(nested, lexicalValues), enclosingNames(nested, lexicalShapes)).sink())
 						sink = true;
@@ -801,14 +801,19 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
-	 * The call-graph nodes nested in the defining scope of one of the given lexical variables, wherever they are called from (issue 1061).
+	 * The call-graph nodes nested in {@code definer}'s own scope, wherever they are called from, when one of the given lexical variables is
+	 * defined there (issue 1061). Only the function defining a scope scans the functions nested in it: a function nested in a scope reads
+	 * that scope's variables too, but it is itself scanned from the scope's definer, along with every other function nested there, so
+	 * scanning the scope again from each of them would only recurse from sibling to sibling, as deep as the scope has functions.
 	 *
 	 * @param callGraph The call graph.
+	 * @param definer The node whose own scope's nested functions are wanted.
 	 * @param values The value-tainted lexical variables.
 	 * @param shapes The shape-tainted lexical variables.
-	 * @return The nested user-code nodes with an IR.
+	 * @return The user-code nodes with an IR nested in {@code definer}'s scope, or none when no given variable is defined there.
 	 */
-	static Set<CGNode> nestedNodes(CallGraph callGraph, Set<Pair<String, String>> values, Set<Pair<String, String>> shapes) {
+	static Set<CGNode> nestedNodes(CallGraph callGraph, CGNode definer, Set<Pair<String, String>> values,
+			Set<Pair<String, String>> shapes) {
 		Set<CGNode> nodes = new HashSet<>();
 
 		if (values.isEmpty() && shapes.isEmpty())
@@ -825,12 +830,13 @@ class NumpyParameterFlowAnalysis {
 			return byType;
 		});
 
+		String own = stripTypePrefix(definer.getMethod().getDeclaringClass().getName().toString());
 		Set<String> scopes = new TreeSet<>();
 
 		for (Set<Pair<String, String>> names : List.of(values, shapes))
 			for (Pair<String, String> name : names)
-				if (name.snd != null)
-					scopes.add(stripTypePrefix(name.snd));
+				if (name.snd != null && stripTypePrefix(name.snd).equals(own))
+					scopes.add(own);
 
 		// The types nested in a scope are exactly those that sort between "scope/" and "scope0", since '0' follows '/'.
 		for (String scope : scopes)
