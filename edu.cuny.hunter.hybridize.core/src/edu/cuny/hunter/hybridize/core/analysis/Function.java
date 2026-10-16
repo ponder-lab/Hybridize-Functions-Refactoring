@@ -1182,9 +1182,10 @@ public class Function {
 
 	/**
 	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
-	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). {@code null} until computed or when not a method.
+	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
+	 * walk finds no such class, in which case the PyDev walk alone decides.
 	 */
-	private Boolean extendsKerasCallableClass;
+	private boolean extendsKerasCallableClass;
 
 	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
@@ -2487,42 +2488,33 @@ public class Function {
 		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
 
 		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
-		IClass enclosingClass = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, classTypeName));
-
-		if (enclosingClass == null) {
-			// Undeterminable; leave the verdict unset, and the PyDev walk alone decides.
-			LOG.info("Can't find the class enclosing " + this + " in the class hierarchy.");
-			return;
-		}
-
 		Set<TypeName> seen = new HashSet<>();
-		Deque<IClass> worklist = new ArrayDeque<>();
-		worklist.add(enclosingClass);
+		Deque<TypeName> worklist = new ArrayDeque<>();
+		worklist.add(classTypeName);
 
 		while (!worklist.isEmpty()) {
-			IClass cls = worklist.remove();
+			TypeName name = worklist.remove();
 
-			if (!seen.add(cls.getName()))
+			// A diamond reaches a shared base along each path; its bases were already queued.
+			if (!seen.add(name))
 				continue;
 
-			if (KERAS_CALLABLE_TYPE_NAMES.contains(cls.getName())) {
-				this.extendsKerasCallableClass = TRUE;
+			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
+				this.extendsKerasCallableClass = true;
 				return;
 			}
 
-			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached.
-			List<TypeName> bases = cls instanceof IPythonClass ? ((IPythonClass) cls).getBaseTypeNames()
-					: cls.getSuperclass() == null ? List.of() : List.of(cls.getSuperclass().getName());
+			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
 
-			for (TypeName base : bases) {
-				IClass baseClass = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, base));
-
-				if (baseClass != null)
-					worklist.add(baseClass);
-			}
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. Each
+			// name is one the engine registered: the class it translated for this definition, then bases it resolved to classes of the
+			// unit or summary class shells (`IPythonClass#getBaseTypeNames`). A class outside the Python loader's modeled classes
+			// (`object`, the root) records only its superclass.
+			if (cls instanceof IPythonClass)
+				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
+			else if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getName());
 		}
-
-		this.extendsKerasCallableClass = FALSE;
 	}
 
 	/**
@@ -6041,7 +6033,7 @@ public class Function {
 		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
 			return false;
 
-		return TRUE.equals(this.extendsKerasCallableClass)
+		return this.extendsKerasCallableClass
 				|| this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
 	}
 

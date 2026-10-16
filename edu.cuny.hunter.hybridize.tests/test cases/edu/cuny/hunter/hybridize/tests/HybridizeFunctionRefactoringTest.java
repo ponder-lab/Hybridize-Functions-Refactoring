@@ -13156,6 +13156,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The negative side of the engine's Keras-class walk (#1099): a {@code call} override whose class is no Keras layer or model, with
+	 * bases forming a diamond over {@code object}. The walk reaches the shared base along both paths and visits it once, follows
+	 * {@code object} to the root, and finds no Keras class, so {@code training} is not taken as supplied by Keras. No call site passes it,
+	 * so it is left out of the signature, which runs.
+	 */
+	@Test
+	public void testNonKerasDiamondCallOverride() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Diamond.call");
+		assertEquals("`Diamond.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+		assertTrue("A signature is inferred; nothing supplies `training`.", call.getInferredInputSignature().isPresent());
+		assertEquals("The signature covers only `x`, `training` being omittable.", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]",
+				call.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
 	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881), through both PyDev's last segment
 	 * and the engine's class hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
