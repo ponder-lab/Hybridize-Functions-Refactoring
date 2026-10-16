@@ -12073,10 +12073,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
 		}
 
-		// TODO: Refuse this too: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `trim_zeros` without a
-		// name, so tracing it traces `trim_zeros` with `name=None` and raises, but the check reads only the function's own body.
+		// It calls `trim_zeros` without a name, so tracing it traces `trim_zeros` with `name=None`; its own body passes no invalid name.
 		Function trims = getFunction("trims");
-		assertFalse("`trims`'s callee's name argument is not yet seen.", trims.getHasInvalidNameArguments());
+		assertFalse("`trims`'s own body passes no invalid name argument.", trims.getHasInvalidNameArguments());
+		assertTrue("`trims` calls `trim_zeros` without a name.", trims.getCallsInvalidNameArguments());
+		assertNotNull("`trims` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				trims.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+	}
+
+	/**
+	 * Pins the callers half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: tracing a function traces what it
+	 * calls, so a caller of a function whose name argument raises under tracing raises too. Measured under {@code tf.function} on
+	 * TensorFlow 2.9.3: {@code evaluates} calls {@code evaluate}, which passes {@code tf.float32} as {@code tf.sqrt}'s name; {@code trims}
+	 * calls {@code trim_zeros}, distilling tf-eager-fasterrcnn's, without its {@code name}, which then reaches {@code tf.boolean_mask} as
+	 * {@code None}; and {@code calls_trims} calls {@code trims}. Each raises. {@code trims_named} and {@code trims_positional} pass
+	 * {@code trim_zeros} a name, by keyword and by position, and trace.
+	 */
+	@Test
+	public void testInvalidNameArgumentCallers() throws Exception {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
+			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
+					function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("trims_named", "trims_positional")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes `trim_zeros` a name.", function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for a name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
 	}
 
 	/**

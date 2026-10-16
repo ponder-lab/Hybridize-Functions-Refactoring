@@ -1337,6 +1337,18 @@ public class Function {
 	 */
 	private Boolean hasInvalidNameArguments;
 
+	/** Whether this function calls, directly or transitively, a function whose name argument raises under tracing (issue 1087). */
+	private boolean callsInvalidNameArguments;
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string, so that a call omitting one raises under tracing (issue 1087). Filled by {@link #computeInvalidNameArguments()}.
+	 */
+	private final Set<String> forwardedNoneNameParameters = new HashSet<>();
+
+	/** Whether this function's body passes an invalid name argument that is not a forwarded {@code None}-defaulting parameter. */
+	private boolean unconditionalInvalidNameArguments;
+
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
@@ -1483,11 +1495,12 @@ public class Function {
 								// in the same family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
 										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, a tensor.");
-							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
-								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
-								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
+							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments()
+									|| this.getCallsInvalidNameArguments())
+								// Passes, or calls a function that passes, a name argument that only tracing validates and rejects
+								// (issues 814 and 1087). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
-										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
+										"Can't hybridize a function that passes, or calls a function that passes, an invalid name argument to a TensorFlow API.");
 							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
 								// Snapshots a model's variables before the model's first call, which raises under tracing when
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
@@ -3624,28 +3637,49 @@ public class Function {
 
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
-				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && (isNonStringConstant(keyword.value)
-						|| STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && this.isNone(keyword.value)))
-					return true;
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id)) {
+					if (isNonStringConstant(keyword.value))
+						return this.passesUnconditionally();
+
+					if (STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && keyword.value instanceof Name value) {
+						if ("None".equals(value.id))
+							return this.passesUnconditionally();
+
+						if (this.isUnreboundNoneParameter(value.id)) {
+							this.forwardedNoneNameParameters.add(value.id);
+							return true;
+						}
+					}
+				}
 
 		String calleeName = NodeUtils.getRepresentationString(call.func);
-		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
-				&& isNonStringConstant(call.args[1]);
+
+		if (calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
+				&& isNonStringConstant(call.args[1]))
+			return this.passesUnconditionally();
+
+		return false;
 	}
 
 	/**
-	 * True iff the given expression is {@code None} when this {@link Function} runs with its parameters' defaults: the literal, or a
-	 * parameter of this function that defaults to {@code None} and that the body never rebinds (as {@code name = name or "kept"} does).
+	 * Records that this {@link Function}'s body passes an invalid name argument whatever its callers pass.
 	 *
-	 * @param expression The expression to inspect.
-	 * @return True iff the expression is {@code None} or an unrebound parameter defaulting to it.
+	 * @return True, the call's verdict.
 	 */
-	private boolean isNone(exprType expression) {
-		if (!(expression instanceof Name name))
-			return false;
+	private boolean passesUnconditionally() {
+		this.unconditionalInvalidNameArguments = true;
+		return true;
+	}
 
-		return "None".equals(name.id)
-				|| this.getParameters().stream().anyMatch(p -> name.id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(name.id);
+	/**
+	 * True iff the given name is a parameter of this {@link Function} that defaults to {@code None} and that the body never rebinds (as
+	 * {@code name = name or "kept"} does), so it is {@code None} whenever a call omits it.
+	 *
+	 * @param id The name.
+	 * @return True iff {@code id} is an unrebound parameter defaulting to {@code None}.
+	 */
+	private boolean isUnreboundNoneParameter(String id) {
+		return this.getParameters().stream().anyMatch(p -> id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(id);
 	}
 
 	/**
@@ -3724,8 +3758,8 @@ public class Function {
 	/**
 	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
 	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged here—it is most APIs' declared default for {@code name}, and
-	 * {@link #isNone(exprType)} covers the APIs it is not—and anything whose value is unknown (a variable, a call) is conservatively
-	 * accepted.
+	 * {@link #STRING_DEFAULT_NAME_OP_PATHS} lists the APIs it is not—and anything whose value is unknown (a variable, a call) is
+	 * conservatively accepted.
 	 *
 	 * @param expression The expression bound to a {@code name} argument.
 	 * @return True iff the expression is a non-string constant.
@@ -3753,6 +3787,56 @@ public class Function {
 	 */
 	public Boolean getHasInvalidNameArguments() {
 		return this.hasInvalidNameArguments;
+	}
+
+	/**
+	 * True iff this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @return True iff such a call is reachable.
+	 */
+	public boolean getCallsInvalidNameArguments() {
+		return this.callsInvalidNameArguments;
+	}
+
+	/**
+	 * Sets whether this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @param callsInvalidNameArguments Whether such a call is reachable.
+	 */
+	void setCallsInvalidNameArguments(boolean callsInvalidNameArguments) {
+		this.callsInvalidNameArguments = callsInvalidNameArguments;
+	}
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string. A call to this function that omits one passes that API {@code None}.
+	 *
+	 * @return The forwarded parameters' names.
+	 */
+	Set<String> getForwardedNoneNameParameters() {
+		return Collections.unmodifiableSet(this.forwardedNoneNameParameters);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes an invalid name argument whatever its callers pass: one that is not a forwarded
+	 * parameter defaulting to {@code None}.
+	 *
+	 * @return True iff the body's own invalid name argument does not depend on the call.
+	 */
+	boolean passesInvalidNameArgumentsUnconditionally() {
+		return TRUE.equals(this.hasInvalidNameArguments) && this.unconditionalInvalidNameArguments;
+	}
+
+	/**
+	 * Computes, over {@code functions}, which call a function whose name argument raises under tracing, directly or through other such
+	 * callers, and records it on each (issue 1087). Every function's own {@link #computeInvalidNameArguments()} must already have run.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 */
+	public static void computeInvalidNameArgumentCallers(Set<Function> functions, CallGraph callGraph) {
+		Set<Function> callers = InvalidNameCallerAnalysis.computeCallers(functions, callGraph);
+		functions.forEach(f -> f.setCallsInvalidNameArguments(callers.contains(f)));
 	}
 
 	@Override
