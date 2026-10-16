@@ -548,6 +548,15 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);
 				}
 
+				// Whether the function's class extends a Keras layer or model as the engine models it, which decides whether Keras
+				// supplies `training` and `mask` to it (issue 1099). Cheap: a walk over the class's bases, with no points-to query.
+				try {
+					func.computeExtendsKerasCallableClass(callGraph);
+				} catch (CoreException e) {
+					LOG.error("Can't determine whether the class of " + func + " extends a Keras layer or model.", e);
+					throw new RuntimeException("Can't determine whether the class of " + func + " extends a Keras layer or model.", e);
+				}
+
 				try {
 					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), this.splitForFunction(subMonitor));
 				} catch (CantInferPrimitiveParametersException e) {

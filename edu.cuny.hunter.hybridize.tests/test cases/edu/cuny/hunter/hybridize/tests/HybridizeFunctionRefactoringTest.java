@@ -13089,6 +13089,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the framework-supplied parameter rule (#881) on a subclass of a built-in Keras layer
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099), reducing TensorFlow2.0-Examples' YOLOV3
+	 * {@code core/common.py}. The class extends {@code tf.keras.layers.BatchNormalization}, whose own {@code Layer} ancestor is declared in
+	 * TensorFlow's sources. PyDev's hierarchy stops at the unresolved base and sees only its last segment, {@code BatchNormalization}, and
+	 * the engine drops the base altogether, because the layer's summary declares no superclass and so has no class shell
+	 * (https://github.com/wala/ML/issues/1098). Neither walk reaches {@code Layer}, so {@code training} is not recognized as supplied by
+	 * Keras and a signature covering only {@code x} is inferred. That signature is wrong: {@code Layer.__call__} passes {@code training} on
+	 * every invocation, and the first call raises ("got keyword argument `training` that was not included in input_signature", TF 2.9.3).
+	 */
+	@Test
+	public void testKerasBuiltinLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
+		assertEquals("`BatchNormalization.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		// TODO: https://github.com/wala/ML/issues/1098 (and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099).
+		// Once
+		// the built-in layer summaries declare their superclass, the engine's walk reaches `Layer`, and this flips to no signature with
+		// `DEFAULTED_PARAMETER_SUPPLIED`, as in `testKerasLayerSubclassSuppliedParameters`.
+		assertTrue("A signature is inferred today, omitting `training`.", call.getInferredInputSignature().isPresent());
+		assertEquals("The inferred signature covers only `x`.", "[tf.TensorSpec(shape=(1, 4, 4, 3), dtype=tf.float32)]",
+				call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals("No absence reason is reported.", Optional.empty(), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} pin (#1099) over a second built-in base,
+	 * {@code tf.keras.layers.Dense}, so the gap is not specific to one layer class.
+	 */
+	@Test
+	public void testKerasBuiltinDenseSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Affine.call");
+		assertEquals("`Affine.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		// TODO: https://github.com/wala/ML/issues/1098 (and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099).
+		// Once
+		// the built-in layer summaries declare their superclass, the engine's walk reaches `Layer`, and this flips to no signature with
+		// `DEFAULTED_PARAMETER_SUPPLIED`, as in `testKerasLayerSubclassSuppliedParameters`.
+		assertTrue("A signature is inferred today, omitting `training`.", call.getInferredInputSignature().isPresent());
+		assertEquals("The inferred signature covers only `x`.", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]",
+				call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		assertEquals("No absence reason is reported.", Optional.empty(), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The framework-supplied parameter rule (#881) recognized through the engine's class hierarchy alone (#1099). The class extends
+	 * {@code tf.keras.Sequential}: PyDev's hierarchy stops at the unresolved base and sees only {@code Sequential}, which is neither
+	 * {@code Layer} nor {@code Model}, while the engine resolves the base to its summary class, whose superclass chain reaches
+	 * {@code Ltensorflow/keras/models/Model}. Keras supplies {@code training} from {@code Layer.__call__}, so inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED} while the function still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasSequentialSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Stack.call");
+		assertEquals("`Stack.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
+	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881), through both PyDev's last segment
+	 * and the engine's class hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
+	 */
+	@Test
+	public void testKerasLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Doubled.call");
+		assertEquals("`Doubled.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the container question of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reduced from its batch-tuple
 	 * case. A tuple of tensors reaching a parameter reports as the <em>union</em> of its elements' types, which is indistinguishable from a
 	 * tensor parameter that several call sites type differently. Classification returned on that typing and put the container question only
