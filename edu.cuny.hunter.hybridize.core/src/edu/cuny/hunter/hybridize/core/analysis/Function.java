@@ -2495,10 +2495,6 @@ public class Function {
 		while (!worklist.isEmpty()) {
 			TypeName name = worklist.remove();
 
-			// A diamond reaches a shared base along each path; its bases were already queued.
-			if (!seen.add(name))
-				continue;
-
 			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
 				this.extendsKerasCallableClass = true;
 				return;
@@ -2506,10 +2502,15 @@ public class Function {
 
 			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
 
-			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. Each
-			// name is one the engine registered: the class it translated for this definition, then bases it resolved to classes of the
-			// unit or summary class shells (`IPythonClass#getBaseTypeNames`). A class outside the Python loader's modeled classes
-			// (`object`, the root) records only its superclass.
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
+			// leaving the PyDev walk to decide: the first name is derived from the declaring class's, and the bases are resolved at the
+			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
+			if (cls == null || !seen.add(name))
+				continue;
+
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
+			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
 			if (cls instanceof IPythonClass)
 				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
 			else if (cls.getSuperclass() != null)
