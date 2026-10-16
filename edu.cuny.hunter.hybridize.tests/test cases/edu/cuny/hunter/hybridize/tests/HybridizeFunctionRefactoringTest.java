@@ -11972,11 +11972,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077. A function whose body, directly or through the
 	 * program's own code it calls, does Python file I/O, reads the clock, or draws Python-level randomness must not hybridize, since that
 	 * code runs once, when {@code tf.function} traces the function, rather than on every call (it fails with
-	 * {@link PreconditionFailure#HAS_TRACE_TIME_PYTHON_EFFECTS}). The fixture distills the five functions the issue cites, from OpenNMT-tf,
-	 * FCN, and NLPGNN, and adds one function per API family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under
-	 * {@code tf.function}, with the files it reads changed between the calls: both {@code get_dataset_size} overrides, which count lines
-	 * through {@code tf.io.gfile.GFile}, return the first call's count again; {@code Model.visualize} writes its projector file only on the
-	 * first call; {@code process_image_label}, {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time}
+	 * {@link PreconditionFailure#HAS_PYTHON_SIDE_EFFECTS}). The fixture distills the five functions the issue cites, from OpenNMT-tf, FCN,
+	 * and NLPGNN, and adds one function per API family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under {@code tf.function},
+	 * with the files it reads changed between the calls: both {@code get_dataset_size} overrides, which count lines through
+	 * {@code tf.io.gfile.GFile}, return the first call's count again; {@code Model.visualize} writes its projector file only on the first
+	 * call; {@code process_image_label}, {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time}
 	 * functions return the same value on both calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and
 	 * {@code predict_dataset} raises {@code AttributeError} from the {@code numpy()} call in its lambda.
 	 * <p>
@@ -11996,10 +11996,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"draws_aliased_numpy_random", "calls_reader")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
 			assertEquals("`" + name + "` runs Python I/O, a clock read, or a Python-level random draw at trace time.", TRUE,
-					function.getHasTraceTimePythonEffects());
+					function.getHasPythonSideEffects());
 			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
-			assertNotNull("`" + name + "` fails with HAS_TRACE_TIME_PYTHON_EFFECTS: " + function.getStatus(),
-					function.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
+			assertNotNull("`" + name + "` fails with HAS_PYTHON_SIDE_EFFECTS: " + function.getStatus(),
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
 		}
 
 		// TODO: Refuse these once reads of `random`, `time`, and `cv2` point to their modules
@@ -12008,7 +12008,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// `process_image_label` and `predict_dataset` are refused above only for their `open` calls.
 		for (String name : List.of("reads_clock", "draws_python_random", "reads_image")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
-			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasTraceTimePythonEffects());
+			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasPythonSideEffects());
 			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
 		}
 
@@ -12021,9 +12021,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
 			assertEquals("`" + name + "` runs nothing at trace time that the traced function would not run per call.", FALSE,
-					function.getHasTraceTimePythonEffects());
-			assertNull("`" + name + "` must not fail with HAS_TRACE_TIME_PYTHON_EFFECTS.",
-					function.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not fail with HAS_PYTHON_SIDE_EFFECTS.",
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
 			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
 	}
@@ -12886,10 +12886,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * call: {@code np.arange}, {@code np.linspace}'s {@code num}, {@code np.eye} and {@code np.tile} raise {@code TypeError} under a
 	 * wildcard on TensorFlow 2.9.3, and {@code np.random.uniform(size=None)} silently returns a scalar instead of a vector. Each traces
 	 * under a bare decorator, so each keeps its conversion and has its signature withheld, except {@code wild_random_size}: its
-	 * {@code np.random.uniform} draw runs once at trace time, so it is refused with
-	 * {@link PreconditionFailure#HAS_TRACE_TIME_PYTHON_EFFECTS} (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077)
-	 * before any signature is considered. Two controls keep their signatures: {@code resolved_axis_arange} reads axis 1, on which every
-	 * caller agrees, and {@code ranked_arange}, called at one extent, has the axis resolved.
+	 * {@code np.random.uniform} draw runs once at trace time, so it is refused with {@link PreconditionFailure#HAS_PYTHON_SIDE_EFFECTS}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077) before any signature is considered. Two controls keep
+	 * their signatures: {@code resolved_axis_arange} reads axis 1, on which every caller agrees, and {@code ranked_arange}, called at one
+	 * extent, has the axis resolved.
 	 */
 	@Test
 	public void testNumpyOverWildDimension() throws Exception {
@@ -12911,8 +12911,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function random = findFunction(functions, "wild_random_size");
 		assertTrue("`wild_random_size` consumes an axis its signature leaves unresolved.", random.getHasUnresolvedStaticallyReadAxes());
 		assertNull("`wild_random_size` draws from `np.random` at trace time, so it is not converted.", random.getPassingPrecondition());
-		assertNotNull("`wild_random_size` fails with HAS_TRACE_TIME_PYTHON_EFFECTS.",
-				random.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
+		assertNotNull("`wild_random_size` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				random.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
 		for (String identifier : List.of("resolved_axis_arange", "ranked_arange")) {
 			Function function = findFunction(functions, identifier);

@@ -311,24 +311,7 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
 	 */
-	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
-
-	/**
-	 * The function's body, directly or through the program's own code it calls, does Python I/O, reads the clock, or draws Python-level
-	 * randomness. Under {@code tf.function} that Python runs once, while the function is traced, and its result is frozen into the graph: a
-	 * file read on every eager call is read on the first call only, a write happens only then, and a random draw or clock read is the same
-	 * on every call. The calls recognized are the builtin {@code open}; the clock reads of the {@code time} module ({@code time},
-	 * {@code perf_counter}, {@code monotonic}, {@code process_time}, and their {@code _ns} forms); any function of the {@code random} or
-	 * {@code numpy.random} module; OpenCV's file reads and writes ({@code cv2.imread}, {@code cv2.imreadmulti}, {@code cv2.imwrite}); and
-	 * any function of {@code tf.io.gfile}, whose file operations run in Python rather than as graph ops. A call is recognized by the module
-	 * its attribute chain roots at, so {@code tf.random.uniform}, which draws on every call of the traced function, and a method named
-	 * {@code time} on the program's own object are left alone, as are {@code tf.print} and the other traced operations. The module is
-	 * recognized by the type of the object its read points to, so a module the analysis does not model, as it does not model
-	 * {@code random}, {@code time}, or {@code cv2} today, is not recognized and its calls are not refused.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077">Issue 1077</a>
-	 */
-	HAS_TRACE_TIME_PYTHON_EFFECTS(37);
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36);
 
 	static {
 		// check that the codes are unique.

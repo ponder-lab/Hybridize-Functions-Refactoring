@@ -593,30 +593,6 @@ public class Util {
 	}
 
 	/**
-	 * True iff {@code invoke} calls the Python builtin {@code name} by name, read from a script's scope that does not rebind it, as
-	 * {@link #callsPythonBuiltin} reads a builtin.
-	 *
-	 * @param node The call-graph node whose IR contains {@code invoke}.
-	 * @param invoke The call.
-	 * @param defUse The def-use chains of {@code node}'s IR.
-	 * @param callGraph The call graph, used to read the names the script binds.
-	 * @param name The builtin's name, one of {@link #PYTHON_BUILTIN_CALLABLES}.
-	 * @return True iff {@code invoke} calls the builtin {@code name}.
-	 */
-	static boolean callsBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph, String name) {
-		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-
-		if (def instanceof AstLexicalRead lexical) {
-			Access[] accesses = lexical.getAccesses();
-			return accesses.length > 0 && name.equals(accesses[0].getName().fst)
-					&& isUnboundBuiltin(name, accesses[0].getName().snd, invoke, callGraph);
-		}
-
-		return def instanceof AstGlobalRead global && global.getGlobalName().equals(GLOBAL_PREFIX + name)
-				&& isUnboundBuiltin(name, scriptOf(node), invoke, callGraph);
-	}
-
-	/**
 	 * True iff {@code invoke} gives {@code key=} to a keyed builtin ({@code min}, {@code max} or {@code sorted}) or to a method on a
 	 * builtin value ({@code list.sort}). The key function may compute tensors, and Ariadne may resolve the call to the builtin's summary
 	 * without following the key function, so such a call counts whatever its targets.
@@ -866,7 +842,7 @@ public class Util {
 	 * named {@code tf} would match; that is incompleteness-safe here, since over-recognizing a tensor op only lets an eager function
 	 * hybridize (the pre-benefit-signal default). See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/709.
 	 */
-	static boolean isTensorFlowModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	private static boolean isTensorFlowModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
 		if (pointsToType(node, use, pointerAnalysis, TENSORFLOW_MODULE_TYPE_NAME, true))
 			return true;
 

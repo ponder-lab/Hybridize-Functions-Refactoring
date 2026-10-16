@@ -208,8 +208,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private boolean alwaysCheckKerasSymbolicArguments = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_KERAS_SYMBOLIC_ARGUMENTS.key());
 
-	private boolean alwaysCheckTraceTimePythonEffects = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TRACE_TIME_PYTHON_EFFECTS.key());
-
 	private boolean skipScriptsOutsidePythonPath = Boolean.getBoolean(EvaluationOption.SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.key());
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
@@ -275,9 +273,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 			resultsHeader.add(transformation.toString());
 
 		String[] experimentalSettingsHeader = new String[] { "side-effects", "recursion", "tensor computation", "eager-only calls",
-				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "keras symbolic arguments",
-				"trace-time python effects", "type hints", "parallel", "speculative", "test entrypoints", "infer input signatures",
-				"targeted CFA depth" };
+				"numpy calls", "static shape reads", "stale variable reads", "tensor iteration", "keras symbolic arguments", "type hints",
+				"parallel", "speculative", "test entrypoints", "infer input signatures", "targeted CFA depth" };
 		resultsHeader.addAll(Arrays.asList(experimentalSettingsHeader));
 
 		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
@@ -358,7 +355,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
 					processor.setAlwaysCheckKerasSymbolicArguments(this.getAlwaysCheckKerasSymbolicArguments());
-					processor.setAlwaysCheckTraceTimePythonEffects(this.getAlwaysCheckTraceTimePythonEffects());
 					processor.setSkipScriptsOutsidePythonPath(this.getSkipScriptsOutsidePythonPath());
 					resultsTimeCollector.stop();
 
@@ -473,9 +469,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					// Keras symbolic arguments.
 					resultsRecord.add(this.getAlwaysCheckKerasSymbolicArguments());
-
-					// trace-time Python effects.
-					resultsRecord.add(this.getAlwaysCheckTraceTimePythonEffects());
 
 					// type hints.
 					resultsRecord.add(this.getAlwaysFollowTypeHints());
@@ -686,7 +679,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				"tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
 				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
-				"refactoring", "passing precondition", "status", "tensor computation unresolved", "trace-time python effects");
+				"refactoring", "passing precondition", "status", "tensor computation unresolved");
 	}
 
 	/**
@@ -934,7 +927,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 		// Appended last, rather than beside `tensor computation`, so that the earlier columns keep their positions for positional readers.
 		printer.print(function.isTensorComputationUnresolved());
-		printer.print(function.getHasTraceTimePythonEffects());
 
 		// end the record.
 		printer.println();
@@ -1027,10 +1019,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckKerasSymbolicArguments() {
 		return alwaysCheckKerasSymbolicArguments;
-	}
-
-	public boolean getAlwaysCheckTraceTimePythonEffects() {
-		return alwaysCheckTraceTimePythonEffects;
 	}
 
 	public boolean getSkipScriptsOutsidePythonPath() {
