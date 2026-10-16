@@ -13423,28 +13423,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
-	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate} or {@code zip}, which iterate their arguments, fails
-	 * with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}, and storing into a parameter-derived tensor by subscript fails with
-	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT}. Both work eagerly on a NumPy array but raise under tracing once the
-	 * parameter is symbolic. Enumerating a Python list of tensors (issue 832's exemption), storing into a list built in the body, and
-	 * setting an attribute on a tensor remain P1.
+	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate} or {@code zip}, which iterate their arguments, works
+	 * eagerly but raises under tracing once the parameter is symbolic, so it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Enumerating a Python list of tensors (issue 832's exemption) remains P1.
 	 */
 	@Test
-	public void testTensorParameterEnumerateAndItemAssignmentBlockHybridization() throws Exception {
-		Function toBinaryClass = getFunction("to_binary_class");
-		assertTrue("`to_binary_class` iterates its tensor parameter through `enumerate`.", toBinaryClass.getHasTensorParameterIteration());
-		assertTrue("`to_binary_class` assigns into its tensor parameter by index.", toBinaryClass.getHasTensorParameterItemAssignment());
-		assertNull("`to_binary_class` must not pass a precondition; tracing cannot iterate or assign into a symbolic tensor.",
-				toBinaryClass.getPassingPrecondition());
-		assertNotNull("`to_binary_class` fails with HAS_TENSOR_PARAMETER_ITERATION, the first of the two in the chain.", toBinaryClass
-				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
-
-		for (String identifier : List.of("enumerate_param", "zip_param")) {
+	public void testTensorParameterEnumerateBlocksHybridization() throws Exception {
+		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
-			assertFalse("`" + identifier + "` assigns into nothing.", function.getHasTensorParameterItemAssignment());
-			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNull("`" + identifier + "` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
+					function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_ITERATION.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
@@ -13457,55 +13447,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				reversedParam.getHasTensorParameterIteration());
 		assertEquals("`reversed_param` is converted (P1), a known miss.", P1, reversedParam.getPassingPrecondition());
 
-		Function storeIntoDerived = getFunction("store_into_derived");
-		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
-		assertTrue("`store_into_derived` assigns by index into a tensor computed from its parameter.",
-				storeIntoDerived.getHasTensorParameterItemAssignment());
-		assertNull("`store_into_derived` must not pass a precondition; a symbolic tensor does not support item assignment.",
-				storeIntoDerived.getPassingPrecondition());
-		assertNotNull("`store_into_derived` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeIntoDerived.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
-
-		Function storeMultiIndex = getFunction("store_multi_index");
-		assertTrue("`store_multi_index` assigns into a tensor computed from its parameter by a tuple index.",
-				storeMultiIndex.getHasTensorParameterItemAssignment());
-		assertNull("`store_multi_index` must not pass a precondition.", storeMultiIndex.getPassingPrecondition());
-		assertNotNull("`store_multi_index` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeMultiIndex.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
-
-		// TODO: Ariadne's IR gives a string-keyed subscript store the form of an attribute store, so the store is taken for an attribute
-		// store and `store_string_key` is converted although tracing raises a TypeError. See https://github.com/wala/ML/issues/1100.
-		Function storeStringKey = getFunction("store_string_key");
-		assertFalse("`store_string_key`'s string-keyed store reads as an attribute store.",
-				storeStringKey.getHasTensorParameterItemAssignment());
-		assertEquals("`store_string_key` is converted (P1), a known miss.", P1, storeStringKey.getPassingPrecondition());
-
-		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
-		for (String identifier : List.of("set_first", "add_to_first")) {
-			Function function = getFunction(identifier);
-			assertFalse("`" + identifier + "` iterates nothing.", function.getHasTensorParameterIteration());
-			assertTrue("`" + identifier + "` assigns into its tensor parameter by index.", function.getHasTensorParameterItemAssignment());
-			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
-		}
-
 		Function enumerateList = getFunction("enumerate_list");
 		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
 				enumerateList.getHasTensorParameterIteration());
-		assertFalse("`enumerate_list` assigns into nothing.", enumerateList.getHasTensorParameterItemAssignment());
 		assertEquals("`enumerate_list` remains convertible (P1).", P1, enumerateList.getPassingPrecondition());
-
-		Function storeIntoLocalList = getFunction("store_into_local_list");
-		assertFalse("`store_into_local_list` iterates nothing.", storeIntoLocalList.getHasTensorParameterIteration());
-		assertFalse("`store_into_local_list` stores into a Python list, not a tensor.",
-				storeIntoLocalList.getHasTensorParameterItemAssignment());
-		assertEquals("`store_into_local_list` stores into a list built in its body and remains convertible (P1).", P1,
-				storeIntoLocalList.getPassingPrecondition());
-
-		Function tagDerived = getFunction("tag_derived");
-		assertFalse(
-				"`tag_derived` sets an attribute on a tensor, which shares the IR form of a subscript store but is legal under tracing.",
-				tagDerived.getHasTensorParameterItemAssignment());
-		assertEquals("`tag_derived` remains convertible (P1).", P1, tagDerived.getPassingPrecondition());
 	}
 
 	/**

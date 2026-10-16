@@ -13,7 +13,6 @@ import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
-import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
@@ -40,10 +39,6 @@ import com.ibm.wala.util.collections.Pair;
  * become a symbolic tensor at trace time. Iteration through a builtin that iterates its argument ({@code enumerate}, {@code zip}) fires
  * too: the loop iterates the builtin's result, but the builtin's model iterates the tensor
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098).
- * <p>
- * The same scan backs the item-assignment precondition (issue 1098): a subscript store ({@code y[i] = v}, augmented forms included) into a
- * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
- * a {@code TypeError}.
  */
 class TensorIterationAnalysis {
 
@@ -99,25 +94,6 @@ class TensorIterationAnalysis {
 
 			return false;
 		});
-	}
-
-	/**
-	 * True iff {@code node}'s body stores into a parameter-derived, tensor-typed value by subscript ({@code y[i] = v}, augmented forms
-	 * included), which a symbolic tensor does not support (issue 1098).
-	 *
-	 * @param node The call-graph node to scan.
-	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
-	 * @return True iff a subscript store writes into a parameter-derived tensor.
-	 */
-	boolean assignsIntoTensorParameter(CGNode node, boolean method) {
-		// The container exemption keeps a store into a Python collection of tensors out, which tracing supports. Attribute stores share
-		// the IR form (https://github.com/wala/ML/issues/1100), but their member is always a string constant, the attribute's name, so
-		// a string-keyed write is treated as an attribute store (legal on a symbolic tensor) and does not fire. This under-refuses a
-		// string-keyed subscript store into a tensor, which fails eagerly on a NumPy array anyway. A multi-index store (`y[0, 1] = v`)
-		// is keyed by a tuple and fires.
-		return anyTaintedUse(node, method,
-				(use, value) -> use instanceof PythonPropertyWrite write && write.getObjectRef() == value && this.isTensorTyped(node, value)
-						&& !this.pointsToContainer(node, value) && !this.isStringConstant(node, write.getMemberRef()));
 	}
 
 	/**
@@ -229,15 +205,6 @@ class TensorIterationAnalysis {
 				return true;
 
 		return false;
-	}
-
-	/**
-	 * True iff {@code value} is a string constant in {@code node}, in its symbol table or by points-to. Used to tell an attribute store
-	 * from a subscript store, which Ariadne's IR does not distinguish (https://github.com/wala/ML/issues/1100).
-	 */
-	private boolean isStringConstant(CGNode node, int value) {
-		IR ir = node.getIR();
-		return ir.getSymbolTable().isStringConstant(value) || Util.resolveStringConstant(node, value, this.pointerAnalysis) != null;
 	}
 
 	/**
