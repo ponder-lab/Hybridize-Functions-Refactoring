@@ -500,12 +500,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						skippedScriptsPrinter.printRecord(project.getName(), script);
 
 					// actually perform the refactoring if there are no fatal
-					// errors.
+					// errors. Untimed: the results time is the analysis time, whether or not the change is performed.
 					if (shouldPerformChange() && !status.hasFatalError()) {
-						resultsTimeCollector.start();
 						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
 						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
-						resultsTimeCollector.stop();
 					}
 
 					// overall results time.
