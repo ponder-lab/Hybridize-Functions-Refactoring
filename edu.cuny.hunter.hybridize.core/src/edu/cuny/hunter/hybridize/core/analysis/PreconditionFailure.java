@@ -311,7 +311,22 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
 	 */
-	HAS_UNCROSSABLE_BOUNDARY_VALUES(36);
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
+
+	/**
+	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, and another
+	 * function rebinds that field, as the same object and field per the pointer analysis, outside {@code __init__} and {@code build}, which
+	 * run once. Eagerly every call reads the field's current tensor; under {@code tf.function} the first trace captures the tensor the
+	 * field held then, and later calls reuse it after the field is rebound, so the converted function returns the first call's state. A
+	 * field set only in {@code __init__} or {@code build}, and a {@code tf.Variable} updated in place with {@code assign}, are read live
+	 * and left alone. Rebinding a field to a value that is not a tensor, such as a Python {@code int}, is stale under tracing too, but is
+	 * not covered here, and neither are the elements of a list, tuple, dictionary, or set, which {@code tf.function} passes in afresh when
+	 * the container is an argument. Objects are told apart by allocation site, so a getter of an object created afresh on each call is
+	 * refused although no instance it reads is rebound between two of its reads.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076">Issue 1076</a>
+	 */
+	HAS_REBOUND_STATE_READS(39);
 
 	static {
 		// check that the codes are unique.

@@ -1238,6 +1238,14 @@ public class Function {
 	private Boolean hasUncrossableBoundaryValues;
 
 	/**
+	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
+	 * outside {@code __init__} and {@code build}, so a trace would capture the field's first value. {@code null} when it could not be
+	 * determined, in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 */
+	private Boolean hasReboundStateReads;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1534,6 +1542,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
 										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
 												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
+							else if (this.getHasReboundStateReads() != null && this.getHasReboundStateReads())
+								// Reads a tensor from a field another function rebinds between calls, so a trace keeps the tensor the
+								// field held when it was traced (issue 1076). A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
+										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
+												+ "would keep the tensor the field held when it was traced.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -3264,6 +3278,48 @@ public class Function {
 	}
 
 	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed field that another function rebinds outside
+	 * {@code __init__} and {@code build} ({@link ReboundStateReadAnalysis}), storing the result for {@link #getHasReboundStateReads()}.
+	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 *
+	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
+	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeReboundStateReads(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reads rebound state.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reads rebound state without a call graph node.");
+			return;
+		}
+
+		this.hasReboundStateReads = new ReboundStateReadAnalysis(callGraph, pointerAnalysis, tensorTypedKeys).readsReboundState(nodes);
+		LOG.info(this + " reads rebound state: " + this.hasReboundStateReads + ".");
+	}
+
+	/**
+	 * True iff this {@link Function} reads a tensor-typed field that another function rebinds outside {@code __init__} and {@code build},
+	 * {@code null} if undetermined (issue 1076).
+	 *
+	 * @return True iff this function reads rebound tensor state, null if undetermined.
+	 */
+	public Boolean getHasReboundStateReads() {
+		return this.hasReboundStateReads;
+	}
+
+	/**
 	 * Computes the eager-effective dtypes each parameter's direct consumers impose (see {@link EagerCoercionAnalysis}), storing a
 	 * per-parameter pin when the set is a singleton that diverges from the parameter's own dtype evidence, and the conflicting verdict for
 	 * {@link #getHasConflictingEagerDtypeCoercions()} when some parameter's set is plural. An indeterminate collection (a partner operand
@@ -3906,7 +3962,7 @@ public class Function {
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @return The pointer keys directly written by {@code node}.
 	 */
-	private static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
+	static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		return directModCache.computeIfAbsent(node, n -> {
 			Set<PointerKey> ret = new HashSet<>();
