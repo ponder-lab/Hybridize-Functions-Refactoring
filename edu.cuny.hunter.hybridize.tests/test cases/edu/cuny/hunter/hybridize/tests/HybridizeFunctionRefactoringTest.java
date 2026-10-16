@@ -11974,6 +11974,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins a READ of {@code Tensor.numpy} that is never called as eager-only
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code y.numpy} is a bound method; under
+	 * {@code tf.function} {@code y} is a symbolic tensor without the attribute, so the read itself raises
+	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'}. The call form ({@code calls_numpy}) is the existing behavior and
+	 * stays blocked. {@code Model.get_loss} is the shape the issue was found in: the receiver is the result of a
+	 * {@code tf.function}-decorated method called through {@code self}.
+	 * <p>
+	 * The two controls guard the receiver scoping: unlike the call form, the read form cannot match on the member name alone, since
+	 * {@code numpy} is also an ordinary attribute of non-tensors. A user object's {@code numpy} field and the {@code tf.experimental.numpy}
+	 * module both trace fine, so neither may block.
+	 */
+	@Test
+	public void testEagerOnlyMemberRead() throws Exception {
+		Function readsNumpy = getFunction("reads_numpy");
+		assertTrue("`reads_numpy` reads `numpy` off a tensor, which raises under tracing.", readsNumpy.getHasEagerOnlyCalls());
+		assertNull("`reads_numpy` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				readsNumpy.getPassingPrecondition());
+		assertNotNull("`reads_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				readsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		// The shape #1100 was found in: the receiver is the result of a `tf.function`-decorated method called through `self`, so its
+		// tensor typing comes from the hybrid callee's return rather than from a local tensor expression.
+		Function getLoss = getFunction("Model.get_loss");
+		assertTrue("`Model.get_loss` reads `numpy` off the tensor a hybrid method returns.", getLoss.getHasEagerOnlyCalls());
+		assertNull("`Model.get_loss` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				getLoss.getPassingPrecondition());
+		assertNotNull("`Model.get_loss` fails with HAS_EAGER_ONLY_CALLS.",
+				getLoss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function callsNumpy = getFunction("calls_numpy");
+		assertTrue("`calls_numpy` calls `numpy()` on a tensor.", callsNumpy.getHasEagerOnlyCalls());
+		assertNotNull("`calls_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				callsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		for (String name : List.of("reads_holder_numpy", "reads_experimental_numpy")) {
+			Function function = getFunction(name);
+			assertFalse("`" + name + "` reads `numpy` off a non-tensor, which traces fine.", function.getHasEagerOnlyCalls());
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
 	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
 	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
