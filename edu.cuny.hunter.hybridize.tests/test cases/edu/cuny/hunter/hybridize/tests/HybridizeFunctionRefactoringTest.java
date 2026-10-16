@@ -13853,7 +13853,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// TODO: Ariadne has no model of the `reversed` builtin, so the call has no callee whose iteration of its argument could be read,
 		// and `reversed_param` is converted although tracing raises a TypeError (len of a symbolic tensor). See
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+		// https://github.com/wala/ML/issues/1099 and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
 		Function reversedParam = getFunction("reversed_param");
 		assertFalse("`reversed_param`'s `reversed` is unmodeled, so its iteration of the tensor is not seen.",
 				reversedParam.getHasTensorParameterIteration());
