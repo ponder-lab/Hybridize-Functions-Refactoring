@@ -1365,6 +1365,18 @@ public class Function {
 	 */
 	private Boolean hasInvalidNameArguments;
 
+	/** Whether this function calls, directly or transitively, a function whose name argument raises under tracing (issue 1087). */
+	private boolean callsInvalidNameArguments;
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string, so that a call omitting one raises under tracing (issue 1087). Filled by {@link #computeInvalidNameArguments()}.
+	 */
+	private final Set<String> forwardedNoneNameParameters = new HashSet<>();
+
+	/** Whether this function's body passes an invalid name argument that is not a forwarded {@code None}-defaulting parameter. */
+	private boolean unconditionalInvalidNameArguments;
+
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
@@ -1511,11 +1523,12 @@ public class Function {
 								// in the same family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
 										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, a tensor.");
-							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
-								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
-								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
+							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments()
+									|| this.getCallsInvalidNameArguments())
+								// Passes, or calls a function that passes, a name argument that only tracing validates and rejects
+								// (issues 814 and 1087). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
-										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
+										"Can't hybridize a function that passes, or calls a function that passes, an invalid name argument to a TensorFlow API.");
 							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
 								// Snapshots a model's variables before the model's first call, which raises under tracing when
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
@@ -3573,12 +3586,25 @@ public class Function {
 	private static final Set<String> TENSORFLOW_MODULE_ALIASES = Set.of("tf", "tensorflow");
 
 	/**
+	 * The export paths, after the TensorFlow module alias, of the TensorFlow APIs whose {@code name} parameter defaults to a string and
+	 * that raise under tracing when passed {@code None}: the explicit {@code None} overrides the default, and the name scope they open has
+	 * neither a name nor a default name. Measured by calling, with {@code name=None} inside {@code tf.function}, every public function of
+	 * TensorFlow 2.9.3 whose {@code name} defaults to a string; only {@code boolean_mask} and {@code matrix_transpose} raise, and these are
+	 * every path that resolves to either. Keyed by the full path rather than the trailing name, since {@code tf.ragged.boolean_mask} and
+	 * {@code tf.transpose} share trailing names and accept {@code None}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087).
+	 */
+	private static final Set<String> STRING_DEFAULT_NAME_OP_PATHS = Set.of("boolean_mask", "compat.v1.boolean_mask",
+			"compat.v2.boolean_mask", "linalg.matrix_transpose", "compat.v1.matrix_transpose", "compat.v1.linalg.matrix_transpose",
+			"compat.v1.linalg.transpose", "compat.v2.linalg.matrix_transpose");
+
+	/**
 	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
-	 * parameter, storing the result for {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens
-	 * a name scope with it and raises, so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely
-	 * syntactic scan of the body; no call graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned,
-	 * the result is left {@code null} and the precondition does not block. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * parameter, or {@code None} where the API's own default name is a string, storing the result for
+	 * {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens a name scope with it and raises,
+	 * so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely syntactic scan of the body; no call
+	 * graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned, the result is left {@code null} and
+	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	public void computeInvalidNameArguments() {
 		boolean[] found = { false };
@@ -3617,25 +3643,120 @@ public class Function {
 	}
 
 	/**
-	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter. A keyword {@code name=...}
-	 * argument binds unambiguously for any TensorFlow callee; a positional argument is only recognized for the ops in
-	 * {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare {@code name} second.
+	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter, or passes {@code None} by
+	 * keyword to one of {@link #STRING_DEFAULT_NAME_OP_PATHS}. A keyword {@code name=...} argument binds unambiguously for any TensorFlow
+	 * callee; a positional argument is only recognized for the ops in {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare
+	 * {@code name} second.
 	 *
 	 * @param call A call in this {@link Function}'s body.
-	 * @return True iff the call passes a non-string constant as its {@code name} argument.
+	 * @return True iff the call passes an invalid {@code name} argument.
 	 */
-	private static boolean passesInvalidNameArgument(Call call) {
+	private boolean passesInvalidNameArgument(Call call) {
 		if (!isTensorFlowRooted(call.func))
 			return false;
 
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
-				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && isNonStringConstant(keyword.value))
-					return true;
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id)) {
+					if (isNonStringConstant(keyword.value))
+						return this.passesUnconditionally();
+
+					if (STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && keyword.value instanceof Name value) {
+						if ("None".equals(value.id))
+							return this.passesUnconditionally();
+
+						if (this.isUnreboundNoneParameter(value.id)) {
+							this.forwardedNoneNameParameters.add(value.id);
+							return true;
+						}
+					}
+				}
 
 		String calleeName = NodeUtils.getRepresentationString(call.func);
-		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
-				&& isNonStringConstant(call.args[1]);
+
+		if (calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
+				&& isNonStringConstant(call.args[1]))
+			return this.passesUnconditionally();
+
+		return false;
+	}
+
+	/**
+	 * Records that this {@link Function}'s body passes an invalid name argument whatever its callers pass.
+	 *
+	 * @return True, the call's verdict.
+	 */
+	private boolean passesUnconditionally() {
+		this.unconditionalInvalidNameArguments = true;
+		return true;
+	}
+
+	/**
+	 * True iff the given name is a parameter of this {@link Function} that defaults to {@code None} and that the body never rebinds (as
+	 * {@code name = name or "kept"} does), so it is {@code None} whenever a call omits it.
+	 *
+	 * @param id The name.
+	 * @return True iff {@code id} is an unrebound parameter defaulting to {@code None}.
+	 */
+	private boolean isUnreboundNoneParameter(String id) {
+		return this.getParameters().stream().anyMatch(p -> id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(id);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body binds the given name: assigns it, or names it as a loop, {@code with}, or comprehension target.
+	 *
+	 * @param id The name.
+	 * @return True iff the body binds {@code id}, or if the body cannot be scanned.
+	 */
+	private boolean rebinds(String id) {
+		boolean[] found = { false };
+
+		try {
+			for (stmtType statement : this.getFunctionDefinition().getFunctionDef().body)
+				statement.accept(new VisitorBase() {
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) throws Exception {
+						return null;
+					}
+
+					@Override
+					public Object visitName(Name node) throws Exception {
+						if (id.equals(node.id) && (node.ctx == expr_contextType.Store || node.ctx == expr_contextType.AugStore))
+							found[0] = true;
+						return null;
+					}
+				});
+		} catch (Exception e) {
+			LOG.warn("Can't determine whether " + this + " rebinds " + id + ".", e);
+			return true;
+		}
+
+		return found[0];
+	}
+
+	/**
+	 * The attribute path of the given callee after its TensorFlow module alias (e.g., {@code compat.v1.boolean_mask} for
+	 * {@code tf.compat.v1.boolean_mask}), or {@code null} if it is not an attribute chain rooted at one.
+	 *
+	 * @param callee A call's callee expression.
+	 * @return The path after the alias, or {@code null}.
+	 */
+	private static String tensorFlowPath(exprType callee) {
+		Deque<String> path = new ArrayDeque<>();
+		exprType node = callee;
+
+		while (node instanceof Attribute attribute && attribute.attr instanceof NameTok attr) {
+			path.addFirst(attr.id);
+			node = attribute.value;
+		}
+
+		return node instanceof Name root && TENSORFLOW_MODULE_ALIASES.contains(root.id) && !path.isEmpty() ? String.join(".", path) : null;
 	}
 
 	/**
@@ -3656,8 +3777,9 @@ public class Function {
 
 	/**
 	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
-	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged—it is the declared default for {@code name}—and anything whose
-	 * value is unknown (a variable, a call) is conservatively accepted.
+	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged here—it is most APIs' declared default for {@code name}, and
+	 * {@link #STRING_DEFAULT_NAME_OP_PATHS} lists the APIs it is not—and anything whose value is unknown (a variable, a call) is
+	 * conservatively accepted.
 	 *
 	 * @param expression The expression bound to a {@code name} argument.
 	 * @return True iff the expression is a non-string constant.
@@ -3685,6 +3807,56 @@ public class Function {
 	 */
 	public Boolean getHasInvalidNameArguments() {
 		return this.hasInvalidNameArguments;
+	}
+
+	/**
+	 * True iff this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @return True iff such a call is reachable.
+	 */
+	public boolean getCallsInvalidNameArguments() {
+		return this.callsInvalidNameArguments;
+	}
+
+	/**
+	 * Sets whether this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @param callsInvalidNameArguments Whether such a call is reachable.
+	 */
+	void setCallsInvalidNameArguments(boolean callsInvalidNameArguments) {
+		this.callsInvalidNameArguments = callsInvalidNameArguments;
+	}
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string. A call to this function that omits one passes that API {@code None}.
+	 *
+	 * @return The forwarded parameters' names.
+	 */
+	Set<String> getForwardedNoneNameParameters() {
+		return Collections.unmodifiableSet(this.forwardedNoneNameParameters);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes an invalid name argument whatever its callers pass: one that is not a forwarded
+	 * parameter defaulting to {@code None}.
+	 *
+	 * @return True iff the body's own invalid name argument does not depend on the call.
+	 */
+	boolean passesInvalidNameArgumentsUnconditionally() {
+		return TRUE.equals(this.hasInvalidNameArguments) && this.unconditionalInvalidNameArguments;
+	}
+
+	/**
+	 * Computes, over {@code functions}, which call a function whose name argument raises under tracing, directly or through other such
+	 * callers, and records it on each (issue 1087). Every function's own {@link #computeInvalidNameArguments()} must already have run.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 */
+	public static void computeInvalidNameArgumentCallers(Set<Function> functions, CallGraph callGraph) {
+		Set<Function> callers = InvalidNameCallerAnalysis.computeCallers(functions, callGraph);
+		functions.forEach(f -> f.setCallsInvalidNameArguments(callers.contains(f)));
 	}
 
 	@Override

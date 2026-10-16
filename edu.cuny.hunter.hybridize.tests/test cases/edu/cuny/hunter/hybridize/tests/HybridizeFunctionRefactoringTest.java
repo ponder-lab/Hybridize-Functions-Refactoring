@@ -12091,6 +12091,96 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: a {@code name} argument of {@code None} where the
+	 * TensorFlow API's own default is a string. Passing {@code None} overrides that default, and tracing then opens a name scope with
+	 * neither a name nor a default name and raises. Measured on TensorFlow 2.9.3, {@code tf.boolean_mask} and
+	 * {@code tf.linalg.matrix_transpose} are the public APIs that raise this way, under each of their export paths. {@code trim_zeros},
+	 * distilling tf-eager-fasterrcnn's, forwards its own parameter, which defaults to {@code None}, as do {@code not_last}, whose
+	 * {@code None} default precedes another default, and {@code keyword_only}, a keyword-only parameter; {@code mask_none},
+	 * {@code transpose_none}, {@code compat_mask}, and {@code compat_transpose} pass the literal, the last two under {@code compat.v1}
+	 * paths. Seven controls trace: {@code sqrt_none} passes {@code None} to {@code tf.sqrt}, whose own default is {@code None}, and
+	 * {@code ragged_none} to {@code tf.ragged.boolean_mask}, which shares {@code tf.boolean_mask}'s trailing name but accepts it;
+	 * {@code reassigned} rebinds its {@code None}-defaulting parameter before forwarding it; {@code mask_named} forwards a parameter
+	 * defaulting to a string, and {@code mask_constant} one defaulting to a module constant; and {@code mask_default} passes no name.
+	 */
+	@Test
+	public void testNoneNameArgumentsBlockHybridization() throws Exception {
+		for (String identifier : List.of("trim_zeros", "not_last", "keyword_only", "mask_none", "transpose_none", "compat_mask",
+				"compat_transpose")) {
+			Function function = getFunction(identifier);
+			assertTrue("`" + identifier + "` passes `None` where the API's default name is a string.",
+					function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("sqrt_none", "ragged_none", "reassigned", "mask_named", "mask_constant", "mask_default")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes a valid name argument.", function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for its name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		// It calls `trim_zeros` without a name, so tracing it traces `trim_zeros` with `name=None`; its own body passes no invalid name.
+		Function trims = getFunction("trims");
+		assertFalse("`trims`'s own body passes no invalid name argument.", trims.getHasInvalidNameArguments());
+		assertTrue("`trims` calls `trim_zeros` without a name.", trims.getCallsInvalidNameArguments());
+		assertNotNull("`trims` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				trims.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+	}
+
+	/**
+	 * Pins the callers half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: tracing a function traces what it
+	 * calls, so a caller of a function whose name argument raises under tracing raises too. Measured under {@code tf.function} on
+	 * TensorFlow 2.9.3: {@code evaluates} calls {@code evaluate}, which passes {@code tf.float32} as {@code tf.sqrt}'s name; {@code trims}
+	 * calls {@code trim_zeros}, distilling tf-eager-fasterrcnn's, without its {@code name}, which then reaches {@code tf.boolean_mask} as
+	 * {@code None}; and {@code calls_trims} calls {@code trims}. Each raises. {@code trims_named} and {@code trims_positional} pass
+	 * {@code trim_zeros} a name, by keyword and by position, and trace.
+	 */
+	@Test
+	public void testInvalidNameArgumentCallers() throws Exception {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
+			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
+					function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("trims_named", "trims_positional", "this_positional", "unbound_positional",
+				"classmethod_positional")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes `trim_zeros` a name.", function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for a name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+			// TODO: Refuse this once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1047, released in 0.52.105. Until
+			// then a classmethod called through its class reaches no method body, so the call to `Masker.trim` without a name is not seen.
+			Function classmethodOmitted = getFunction("classmethod_omitted");
+			assertFalse("`classmethod_omitted`'s classmethod is not yet reached.", classmethodOmitted.getCallsInvalidNameArguments());
+
+			// TODO: Refuse this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Tracing it
+			// traces
+			// `row_sum`, which calls `trim_zeros` without a name and raises, but `row_sum` gets no call-graph node.
+			Function mapsCaller = getFunction("maps_caller");
+			assertFalse("`maps_caller`'s callback is not yet reached.", mapsCaller.getCallsInvalidNameArguments());
+
+			// TODO: Refuse this once a forwarder is followed through user callees:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `forwards` without a name, which forwards
+			// its
+			// own `None` to `trim_zeros` by keyword, so it raises; but `forwards` passes `trim_zeros` a name, so it is no caller, and its
+			// callee
+			// is not a TensorFlow API, so it is no forwarder.
+			Function callsForwards = getFunction("calls_forwards");
+			assertFalse("`calls_forwards`'s forwarding through a user function is not yet seen.",
+					callsForwards.getCallsInvalidNameArguments());
+		}
+	}
+
+	/**
 	 * Pins the unresolved statically-read-axis condition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when
 	 * the inferred input signature leaves unresolved an axis the body reads statically and consumes where a Python integer is required,
 	 * emitting it would break the function at trace time. Since https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/864

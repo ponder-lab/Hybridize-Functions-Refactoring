@@ -34,6 +34,7 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -327,6 +328,16 @@ public final class Parameter {
 	public boolean hasDefault() {
 		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
 		return defaults != null && this.index < defaults.length && defaults[this.index] != null;
+	}
+
+	/**
+	 * Returns true iff this parameter's declared default value is {@code None} (e.g. the {@code name} of {@code def f(x, name=None)}).
+	 *
+	 * @return True iff this parameter defaults to {@code None}.
+	 */
+	public boolean defaultsToNone() {
+		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
+		return this.hasDefault() && defaults[this.index] instanceof Name name && "None".equals(name.id);
 	}
 
 	/**

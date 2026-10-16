@@ -64,9 +64,12 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
-	 * {@code tf.sqrt(x, tf.float32)}). Eager execution never validates the name, but {@code tf.function} tracing opens a name scope with it
-	 * and raises, so hybridization would not preserve semantics. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * {@code tf.sqrt(x, tf.float32)}), or passes {@code None}, literally or through a parameter defaulting to it, where the API's own
+	 * default name is a string (e.g., {@code tf.boolean_mask(x, mask, name=None)}). Eager execution never validates the name, but
+	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. Since tracing a
+	 * function traces its callees, a function calling one of these, without passing the name such a callee forwards, fails too. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087.
 	 */
 	HAS_INVALID_NAME_ARGUMENTS(17),
 
