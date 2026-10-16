@@ -3553,13 +3553,17 @@ public class Function {
 	private static final Set<String> TENSORFLOW_MODULE_ALIASES = Set.of("tf", "tensorflow");
 
 	/**
-	 * TensorFlow APIs whose {@code name} parameter defaults to a string and that raise under tracing when passed {@code None}: the explicit
-	 * {@code None} overrides the default, and the name scope they open has neither a name nor a default name. Keyed by the trailing
-	 * attribute name. Measured by calling, with {@code name=None} inside {@code tf.function}, every public function of TensorFlow 2.9.3
-	 * whose {@code name} defaults to a string; the others accept {@code None}
+	 * The export paths, after the TensorFlow module alias, of the TensorFlow APIs whose {@code name} parameter defaults to a string and
+	 * that raise under tracing when passed {@code None}: the explicit {@code None} overrides the default, and the name scope they open has
+	 * neither a name nor a default name. Measured by calling, with {@code name=None} inside {@code tf.function}, every public function of
+	 * TensorFlow 2.9.3 whose {@code name} defaults to a string; only {@code boolean_mask} and {@code matrix_transpose} raise, and these are
+	 * every path that resolves to either. Keyed by the full path rather than the trailing name, since {@code tf.ragged.boolean_mask} and
+	 * {@code tf.transpose} share trailing names and accept {@code None}
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087).
 	 */
-	private static final Set<String> STRING_DEFAULT_NAME_OP_NAMES = Set.of("boolean_mask", "matrix_transpose");
+	private static final Set<String> STRING_DEFAULT_NAME_OP_PATHS = Set.of("boolean_mask", "compat.v1.boolean_mask",
+			"compat.v2.boolean_mask", "linalg.matrix_transpose", "compat.v1.matrix_transpose", "compat.v1.linalg.matrix_transpose",
+			"compat.v1.linalg.transpose", "compat.v2.linalg.matrix_transpose");
 
 	/**
 	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
@@ -3607,7 +3611,7 @@ public class Function {
 
 	/**
 	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter, or passes {@code None} by
-	 * keyword to one of {@link #STRING_DEFAULT_NAME_OP_NAMES}. A keyword {@code name=...} argument binds unambiguously for any TensorFlow
+	 * keyword to one of {@link #STRING_DEFAULT_NAME_OP_PATHS}. A keyword {@code name=...} argument binds unambiguously for any TensorFlow
 	 * callee; a positional argument is only recognized for the ops in {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare
 	 * {@code name} second.
 	 *
@@ -3618,30 +3622,87 @@ public class Function {
 		if (!isTensorFlowRooted(call.func))
 			return false;
 
-		String calleeName = NodeUtils.getRepresentationString(call.func);
-
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
 				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && (isNonStringConstant(keyword.value)
-						|| calleeName != null && STRING_DEFAULT_NAME_OP_NAMES.contains(calleeName) && this.isNone(keyword.value)))
+						|| STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && this.isNone(keyword.value)))
 					return true;
 
+		String calleeName = NodeUtils.getRepresentationString(call.func);
 		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
 				&& isNonStringConstant(call.args[1]);
 	}
 
 	/**
 	 * True iff the given expression is {@code None} when this {@link Function} runs with its parameters' defaults: the literal, or a
-	 * parameter of this function that defaults to {@code None}.
+	 * parameter of this function that defaults to {@code None} and that the body never rebinds (as {@code name = name or "kept"} does).
 	 *
 	 * @param expression The expression to inspect.
-	 * @return True iff the expression is {@code None} or a parameter defaulting to it.
+	 * @return True iff the expression is {@code None} or an unrebound parameter defaulting to it.
 	 */
 	private boolean isNone(exprType expression) {
 		if (!(expression instanceof Name name))
 			return false;
 
-		return "None".equals(name.id) || this.getParameters().stream().anyMatch(p -> name.id.equals(p.getName()) && p.defaultsToNone());
+		return "None".equals(name.id)
+				|| this.getParameters().stream().anyMatch(p -> name.id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(name.id);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body binds the given name: assigns it, or names it as a loop, {@code with}, or comprehension target.
+	 *
+	 * @param id The name.
+	 * @return True iff the body binds {@code id}, or if the body cannot be scanned.
+	 */
+	private boolean rebinds(String id) {
+		boolean[] found = { false };
+
+		try {
+			for (stmtType statement : this.getFunctionDefinition().getFunctionDef().body)
+				statement.accept(new VisitorBase() {
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) throws Exception {
+						return null;
+					}
+
+					@Override
+					public Object visitName(Name node) throws Exception {
+						if (id.equals(node.id) && (node.ctx == expr_contextType.Store || node.ctx == expr_contextType.AugStore))
+							found[0] = true;
+						return null;
+					}
+				});
+		} catch (Exception e) {
+			LOG.warn("Can't determine whether " + this + " rebinds " + id + ".", e);
+			return true;
+		}
+
+		return found[0];
+	}
+
+	/**
+	 * The attribute path of the given callee after its TensorFlow module alias (e.g., {@code compat.v1.boolean_mask} for
+	 * {@code tf.compat.v1.boolean_mask}), or {@code null} if it is not an attribute chain rooted at one.
+	 *
+	 * @param callee A call's callee expression.
+	 * @return The path after the alias, or {@code null}.
+	 */
+	private static String tensorFlowPath(exprType callee) {
+		Deque<String> path = new ArrayDeque<>();
+		exprType node = callee;
+
+		while (node instanceof Attribute attribute && attribute.attr instanceof NameTok attr) {
+			path.addFirst(attr.id);
+			node = attribute.value;
+		}
+
+		return node instanceof Name root && TENSORFLOW_MODULE_ALIASES.contains(root.id) && !path.isEmpty() ? String.join(".", path) : null;
 	}
 
 	/**

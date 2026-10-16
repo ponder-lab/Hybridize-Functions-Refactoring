@@ -12045,15 +12045,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: a {@code name} argument of {@code None} where the
 	 * TensorFlow API's own default is a string. Passing {@code None} overrides that default, and tracing then opens a name scope with
 	 * neither a name nor a default name and raises. Measured on TensorFlow 2.9.3, {@code tf.boolean_mask} and
-	 * {@code tf.linalg.matrix_transpose} are the public APIs that raise this way. {@code trim_zeros}, distilling tf-eager-fasterrcnn's,
-	 * forwards its own parameter, which defaults to {@code None}; {@code mask_none} and {@code transpose_none} pass the literal. Four
-	 * controls trace: {@code sqrt_none} passes {@code None} to {@code tf.sqrt}, whose own default is {@code None}; {@code mask_named}
-	 * forwards a parameter defaulting to a string, and {@code mask_constant} one defaulting to a module constant; and {@code mask_default}
-	 * passes no name.
+	 * {@code tf.linalg.matrix_transpose} are the public APIs that raise this way, under each of their export paths. {@code trim_zeros},
+	 * distilling tf-eager-fasterrcnn's, forwards its own parameter, which defaults to {@code None}, as do {@code not_last}, whose
+	 * {@code None} default precedes another default, and {@code keyword_only}, a keyword-only parameter; {@code mask_none},
+	 * {@code transpose_none}, {@code compat_mask}, and {@code compat_transpose} pass the literal, the last two under {@code compat.v1}
+	 * paths. Seven controls trace: {@code sqrt_none} passes {@code None} to {@code tf.sqrt}, whose own default is {@code None}, and
+	 * {@code ragged_none} to {@code tf.ragged.boolean_mask}, which shares {@code tf.boolean_mask}'s trailing name but accepts it;
+	 * {@code reassigned} rebinds its {@code None}-defaulting parameter before forwarding it; {@code mask_named} forwards a parameter
+	 * defaulting to a string, and {@code mask_constant} one defaulting to a module constant; and {@code mask_default} passes no name.
 	 */
 	@Test
 	public void testNoneNameArgumentsBlockHybridization() throws Exception {
-		for (String identifier : List.of("trim_zeros", "mask_none", "transpose_none")) {
+		for (String identifier : List.of("trim_zeros", "not_last", "keyword_only", "mask_none", "transpose_none", "compat_mask",
+				"compat_transpose")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` passes `None` where the API's default name is a string.",
 					function.getHasInvalidNameArguments());
@@ -12062,7 +12066,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
 		}
 
-		for (String identifier : List.of("sqrt_none", "mask_named", "mask_constant", "mask_default")) {
+		for (String identifier : List.of("sqrt_none", "ragged_none", "reassigned", "mask_named", "mask_constant", "mask_default")) {
 			Function function = getFunction(identifier);
 			assertFalse("`" + identifier + "` passes a valid name argument.", function.getHasInvalidNameArguments());
 			assertNull("`" + identifier + "` is not refused for its name argument.", function.getStatus()
