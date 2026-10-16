@@ -13924,6 +13924,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1078: a function reaching a replica context's
+	 * {@code merge_call}, nested in a function a {@code tf.distribute.MirroredStrategy} runs per replica. Measured on TensorFlow 2.9.3 with
+	 * two logical CPU devices, with {@code strategy.run} called eagerly and from a {@code tf.function}: with {@code apply_step}, which
+	 * calls {@code optimizer.apply_gradients}, converted, {@code strategy.run(nested_step, ...)} raises
+	 * {@code RuntimeError: merge_call called while defining a new graph or a tf.function} (TensorFlow's {@code mirrored_run.py}, its "case
+	 * 2"). Converting any of the others raises nothing: {@code nested_step} and {@code direct_step}, which calls {@code apply_gradients}
+	 * itself, are the functions passed to {@code run}, which the strategy rewrites when converted ("case 1"), and {@code scale}, called
+	 * from {@code math_step}, does only math.
+	 */
+	@Test
+	public void testNestedMergeCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Refuse this once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1050, released in 0.52.105, which
+		// models the Keras optimizers so that `apply_gradients` resolves to a node; the precondition then follows (#1078). Until then
+		// the call graph has the `strategy.run` edge to `nested_step`, but the `apply_gradients` call resolves to no node.
+		Function apply = findFunction(functions, "apply_step");
+		assertEquals("`apply_step`'s merge call under the replica step is not yet seen.", P1, apply.getPassingPrecondition());
+		assertTrue("`apply_step` is still converted.", apply.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		for (String identifier : List.of("nested_step", "direct_step", "scale", "math_step")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+			assertTrue("`" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
