@@ -13065,6 +13065,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the Keras symbolic-argument decline across frames of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097,
+	 * reducing TensorFlow2.0-Examples' YOLOv3, where the {@code KerasTensor} reaches the call site from another frame rather than being
+	 * built in the caller's own. {@code model_fn} takes the {@code Input} directly, the #887 form. {@code upsample} takes a built-in
+	 * {@code Conv2D}'s output over {@code model_fn}'s parameter, and {@code head} takes {@code model_fn}'s return value; neither caller's
+	 * frame holds an {@code Input} call. The {@code _eager} arms repeat the same shapes rooted at a real tensor, which the Functional API
+	 * leaves eager. {@code scale_inside} is called from a custom layer's own {@code call} with the layer applied to the {@code Input},
+	 * which pins that the walk stops at the synthesized caller: Keras gives the body a placeholder, not a {@code KerasTensor}.
+	 * Runtime-verified on the pinned TF 2.9.3: decorating {@code model_fn}, {@code upsample}, or {@code head} raises the {@code TypeError};
+	 * decorating {@code upsample_eager}, {@code head_eager}, or {@code scale_inside} runs. ({@code model_fn_eager} decorated fails for an
+	 * unrelated reason, creating the layer's variables inside the trace, so only its Keras verdict is pinned.)
+	 */
+	@Test
+	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : Set.of("model_fn", "upsample", "head")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		}
+
+		for (String name : Set.of("model_fn_eager", "upsample_eager", "head_eager"))
+			assertEquals("`" + name + "` is called only with values rooted at a real tensor.", FALSE,
+					findFunction(functions, name).getHasKerasSymbolicArguments());
+
+		assertEquals("`scale_inside` is called from a layer body, which receives a placeholder.", FALSE,
+				findFunction(functions, "scale_inside").getHasKerasSymbolicArguments());
+
+		for (String name : Set.of("upsample_eager", "head_eager"))
+			assertEquals("`" + name + "` still converts (P1).", P1, findFunction(functions, name).getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the dict-valued tensor parameter, the multi-input Keras shape and the form deep_recommenders' estimator rankers take as
 	 * {@code call(self, features)}. A dict of tensors classifies as a container, the nested reduction models only positionally-indexed
 	 * sequences, so the form is reported unsupported and the function hybridizes bare at P1 with no specification. That is the desired
