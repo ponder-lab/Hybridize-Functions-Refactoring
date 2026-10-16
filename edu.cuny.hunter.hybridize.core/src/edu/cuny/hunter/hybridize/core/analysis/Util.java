@@ -482,7 +482,7 @@ public class Util {
 	private static final String BUILTIN_IMPORT_METHOD_NAME = "import";
 
 	/** The type-name prefix of Ariadne's prelude objects for Python builtins. */
-	private static final String BUILTIN_PRELUDE_TYPE_NAME_PREFIX = "Lwala/builtin/";
+	static final String BUILTIN_PRELUDE_TYPE_NAME_PREFIX = "Lwala/builtin/";
 
 	/** The keyword through which {@code min}, {@code max}, {@code sorted} and {@code list.sort} take a function to call. */
 	private static final String KEY_KEYWORD = "key";

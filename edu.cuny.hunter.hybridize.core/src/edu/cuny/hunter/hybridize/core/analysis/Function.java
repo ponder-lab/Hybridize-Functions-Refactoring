@@ -1201,6 +1201,13 @@ public class Function {
 	private Boolean hasTensorParameterIteration;
 
 	/**
+	 * True iff this {@link Function}'s body stores into a parameter-derived, tensor-typed value by subscript, which a symbolic tensor does
+	 * not support under {@code tf.function} tracing. {@code null} when it could not be determined (no call-graph node), in which case the
+	 * precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+	 */
+	private Boolean hasTensorParameterItemAssignment;
+
+	/**
 	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites (a call inside {@code assertRaises} or
 	 * {@code pytest.raises}), whose evidence a specification must not be derived from (#888). Empty when none is, when the question was not
 	 * asked, or when every node is guarded, in which case nothing is excluded: a function called only from expected-failure tests would
@@ -1542,6 +1549,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION,
 										"Can't hybridize a function that iterates one of its tensor arguments with a Python loop; "
 												+ "tracing makes the argument symbolic, which cannot be iterated.");
+							else if (this.getHasTensorParameterItemAssignment() != null && this.getHasTensorParameterItemAssignment())
+								// Stores into a parameter-derived tensor by subscript, which a symbolic tensor does not support (issue
+								// 1098). A safety failure in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT,
+										"Can't hybridize a function that assigns into one of its tensor arguments by index; "
+												+ "tracing makes the argument symbolic, which does not support item assignment.");
 							else if (this.getHasConflictingEagerDtypeCoercions() != null && this.getHasConflictingEagerDtypeCoercions())
 								// A parameter's direct consumers impose different eager-effective dtypes (issue 861, Case 1): eager
 								// execution coerces the argument differently at each op, so no single input signature preserves
@@ -3039,12 +3052,14 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
-	 * {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the parameter is symbolic and iterating it
-	 * raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at earlier Ariadne
-	 * versions). When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 * {@link #getHasTensorParameterIteration()}, and whether it stores into one by subscript, storing that for
+	 * {@link #getHasTensorParameterItemAssignment()}. Eagerly both work; under tracing the parameter is symbolic, and iterating it or
+	 * assigning into it raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at
+	 * earlier Ariadne versions; issue 1098). When the function has no call-graph node, the results are left undetermined, mirroring the
+	 * sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
 	 *
-	 * @param callGraph The call graph.
+	 * @param callGraph The call graph, used to resolve the builtin a tensor is passed to.
 	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
 	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
 	 */
@@ -3066,12 +3081,15 @@ public class Function {
 			return;
 		}
 
-		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(callGraph, pointerAnalysis, tensorTypeAnalysis);
 		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
+		boolean assigns = nodes.stream().anyMatch(node -> analysis.assignsIntoTensorParameter(node, this.isMethod()));
 
 		this.hasTensorParameterIteration = iterates;
+		this.hasTensorParameterItemAssignment = assigns;
 
 		LOG.info(this + (iterates ? " iterates a tensor parameter." : " iterates no tensor parameter."));
+		LOG.info(this + (assigns ? " assigns into a tensor parameter by index." : " assigns into no tensor parameter by index."));
 	}
 
 	/**
@@ -3091,6 +3109,15 @@ public class Function {
 
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * True iff this {@link Function}'s body stores into a parameter-derived, tensor-typed value by subscript, {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter is assigned into by index, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterItemAssignment() {
+		return this.hasTensorParameterItemAssignment;
 	}
 
 	/**
