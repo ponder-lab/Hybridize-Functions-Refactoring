@@ -12730,12 +12730,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Runtime-verified on the pinned TF 2.9.3: decorating {@code model_fn}, {@code upsample}, or {@code head} raises the {@code TypeError};
 	 * decorating {@code upsample_eager}, {@code head_eager}, or {@code scale_inside} runs. ({@code model_fn_eager} decorated fails for an
 	 * unrelated reason, creating the layer's variables inside the trace, so only its Keras verdict is pinned.)
+	 * <p>
+	 * The remaining arms follow the rest of YOLOv3's shapes, and all of them receive a {@code KerasTensor} at run time. Of those, the walk
+	 * reaches {@code model_fn_list}, {@code scale_op} (a layer's output, directly), {@code convolutional}, and {@code model_fn_bn}. It does
+	 * not reach {@code head_elem} or {@code decode}, which take elements of {@code model_fn_list}'s returned list, the second the way
+	 * YOLOv3's driver iterates {@code enumerate(conv_tensors)}; {@code op_head}, which takes {@code inp * 2.0}; or {@code upsample_bn},
+	 * which takes {@code convolutional}'s result, a merge over a user {@code BatchNormalization} subclass's application, as YOLOv3's
+	 * {@code common.convolutional} is. Those four are pinned as converted, which is wrong.
 	 */
 	@Test
 	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : Set.of("model_fn", "upsample", "head")) {
+		for (String name : Set.of("model_fn", "upsample", "head", "model_fn_list", "scale_op", "convolutional", "model_fn_bn")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
@@ -12749,6 +12756,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("`scale_inside` is called from a layer body, which receives a placeholder.", FALSE,
 				findFunction(functions, "scale_inside").getHasKerasSymbolicArguments());
+
+		// TODO: Each of these receives a KerasTensor, and decorating it raises, but the walk does not reach the Input: `head_elem` and
+		// `decode` read it back out of a returned list, `op_head` receives an operator's result, and `upsample_bn` receives a merge one of
+		// whose operands applies a user subclass of a built-in layer. Pinned converted until the missing provenance is decided; see
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		for (String name : Set.of("head_elem", "decode", "op_head", "upsample_bn")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is not yet found to be called with a Keras symbolic tensor.", FALSE,
+					function.getHasKerasSymbolicArguments());
+			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
+		}
 
 		for (String name : Set.of("upsample_eager", "head_eager"))
 			assertEquals("`" + name + "` still converts (P1).", P1, findFunction(functions, name).getPassingPrecondition());
