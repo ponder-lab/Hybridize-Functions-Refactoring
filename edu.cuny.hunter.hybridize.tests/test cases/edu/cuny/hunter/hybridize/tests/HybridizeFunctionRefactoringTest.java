@@ -1023,7 +1023,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			switch (function.getIdentifier()) {
 			case "Test.value":
+				// The getter is evaluated when the instance is constructed (ponder-lab/ML#909), so it has a call-graph node and a
+				// side-effect verdict: it only reads an attribute.
+				assertFalse("The property getter is reached (ponder-lab/ML#909) and has no side effects.",
+						function.getHasPythonSideEffects());
+				break;
 			case "Test.name":
+				// A setter is not reached: `k.name = 2` is a plain attribute write.
 				checkSideEffectStatus(function);
 				break;
 			default:
@@ -7862,6 +7868,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This is a user-defined class with a primitive field?", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An object of a library class that Ariadne models, such as a Keras optimizer, is not examined for primitive fields, so the learning
+	 * rate its model stores doesn't make the optimizer a primitive parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). Before the model existed, such an object had no fields
+	 * to examine. An object of a program-defined class is still examined, as in {@link #testLikelyHasNonTensorParameter16()}.
+	 */
+	@Test
+	public void testLibraryModeledObjectParameter() throws Exception {
+		assertFalse("A modeled optimizer's learning rate does not make it a primitive parameter.",
+				getFunction("with_optimizer").getHasPrimitiveParameter());
+		assertTrue("Control: an object of a program-defined class with a primitive field is a primitive parameter.",
+				getFunction("with_program_object").getHasPrimitiveParameter());
+
+		// A program-defined subclass of a modeled optimizer is a program-defined class, so it is examined. Neither subclass stores a field
+		// itself, with or without its own constructor, so neither is a primitive parameter.
+		assertFalse("A program-defined subclass of a modeled optimizer is not a primitive parameter.",
+				getFunction("with_optimizer_subclass").getHasPrimitiveParameter());
+		assertFalse("A program-defined subclass forwarding its rate to the modeled constructor is not a primitive parameter.",
+				getFunction("with_optimizer_subclass_init").getHasPrimitiveParameter());
+	}
+
 	@Test
 	public void testBooleanParameter() throws Exception {
 		Function f = getFunction("f");
@@ -9008,7 +9035,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, the analysis
 	 * models no abstract value for {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
 	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}), and the function is kept hybrid. Where the analysis doesn't reach the function
-	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes.
+	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes. The eager
+	 * {@code scale} behind the same wrapper now receives its tensor argument, since the wrapper forwards its {@code *args}
+	 * (ponder-lab/ML#908), so it hybridizes.
 	 */
 	@Test
 	public void testBareUserDecoratorWithWraps() throws Exception {
@@ -9028,7 +9057,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					hybrid.getParameters().get(0).getTensorClassificationBasis());
 
 		Function scale = getFunction("scale");
-		assertFalse("`scale`, eager behind the same wrapper, is not hybridized on no evidence.",
+		assertTrue("`scale` is reached through the forwarding wrapper with a tensor (ponder-lab/ML#908), so it hybridizes.",
 				scale.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
 
@@ -11406,10 +11435,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A generator boundary does not lose the destination's allocation.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]",
 				render(getFunction("via_generator")));
 
-		// Today's behavior, pinned rather than endorsed: through a class implementing the iterator protocol, filled in a loop indexed by
-		// a variable, no signature is emitted at all. Whether the evidence is lost on that path or never reaches the parameter here has
-		// not been separated, so this asserts what happens and claims nothing about what should.
-		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
+		// Through a class implementing the iterator protocol, filled in a loop indexed by a variable. This emitted no signature through
+		// Ariadne 0.52.104; it now reads all three allocations, and the int64 destination still decides over its float32 partners and the
+		// float64 value assigned into it.
+		assertEquals("Through a class implementing the iterator protocol, the destination allocation still decides.",
+				"[tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), "
+						+ "tf.TensorSpec(shape=(2, 4, 3), dtype=tf.int64)]",
 				render(getFunction("via_loader")));
 
 		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling,
@@ -11527,12 +11558,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
 
-		// Documents current behavior: Ariadne leaves `getattr` on a constant name unresolved. When it resolves it (ponder-lab/ML#909), the
-		// call becomes a tensor op the scan sees, so the function stays hybrid for that reason instead, and the second assertion flips.
+		// Ariadne reads `getattr` on a constant name as the attribute read (ponder-lab/ML#909), so the call resolves to `tf.reduce_sum`:
+		// the scan sees a tensor op, and the function stays hybrid because it computes tensors, not because a call is unresolved.
 		Function constant = getFunction("opaque_constant");
 		assertFalse("`opaque_constant` is not de-hybridized.", constant.getTransformations().contains(CONVERT_TO_EAGER));
-		assertTrue("`getattr(tf, \"reduce_sum\")` is still unresolved; ponder-lab/ML#909 is expected to resolve it.",
-				constant.isTensorComputationUnresolved());
+		assertFalse("`getattr(tf, \"reduce_sum\")` resolves (ponder-lab/ML#909).", constant.isTensorComputationUnresolved());
+		assertTrue("`opaque_constant`'s resolved call is a tensor op.", constant.getHasTensorComputation());
 
 		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
 				"tuple_method", "set_method", "numpy_call", "uses_user_abs", "calls_recursive", "global_builtin", "user_keyed" }) {
@@ -11564,8 +11595,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * that contradicts its classification. Here {@code declared}'s Python {@code int} argument is converted to a tensor by the signature,
 	 * so neither "no tensor parameter" (P2) nor "a primitive parameter" (P3) holds; {@code sig_barren} is barren, but removing its
 	 * decorator would delete the boundary it enforces (P6); and {@code sig_zero} and {@code Exporter.get_step} carry an empty signature,
-	 * which converts nothing but pins the one concrete function a SavedModel export relies on. The same functions without a signature still
-	 * de-hybridize.
+	 * which converts nothing but pins the one concrete function a SavedModel export relies on. {@code sig_prim} has a tensor and a
+	 * primitive parameter (P3), and under its signature the primitive does not cause retracing. The same functions without a signature
+	 * still de-hybridize, and each kept function's failure gives its rule's reason.
 	 */
 	@Test
 	public void testSuppliedSignatureKeepsHybrid() throws Exception {
@@ -11584,7 +11616,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
-		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec" }) {
+		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec", "sig_prim" }) {
 			Function kept = getFunction(name);
 			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
 			assertTrue("`" + name + "` carries a supplied input_signature.", kept.getHybridizationParameters().hasInputSignatureParam());
@@ -11622,6 +11654,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("Without a signature, `undeclared` still de-hybridizes (P2).", P2, getFunction("undeclared").getPassingPrecondition());
 		assertEquals("Without a signature, `barren` still de-hybridizes (P6).", P6, getFunction("barren").getPassingPrecondition());
+		assertEquals("Without a signature, `prim` still de-hybridizes (P3).", P3, getFunction("prim").getPassingPrecondition());
+
+		// Each rule gives its own reason for keeping the decorator.
+		String p2 = "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		String p3 = "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		String p6 = "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+
+		for (String name : new String[] { "declared", "sig_zero", "Exporter.get_step" })
+			assertEquals("`" + name + "` has no tensor parameter (P2).", p2,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		for (String name : new String[] { "sig_prim", "rec" })
+			assertEquals("`" + name + "` has a primitive parameter (P3).", p3,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		assertEquals("`sig_barren` performs no tensor computation (P6).", p6,
+				getFunction("sig_barren").getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
 	}
 
 	/**
@@ -12414,6 +12463,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator between {@code @tf.function} and the definition withholds the signature
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1046). {@code tf.function} traces the callable the decorator
+	 * returns, so a signature constrains that callable's arguments, while the definition's parameters see only what the decorator passes
+	 * on. Here {@code convert_type} casts both arguments to {@code float32}, so a signature read off {@code flip}'s parameters is
+	 * {@code float32} and rejects the {@code int32} call (runtime-verified on the pinned TF 2.9.3: {@code ValueError}).
+	 * <p>
+	 * {@code flip_direct} has nothing in between and keeps its signature. {@code flip_eager} is eager beneath the decorator, so the added
+	 * {@code @tf.function} goes on the definition, traces it, and the cast values are exactly what it receives. {@code clip_gradient} sits
+	 * over {@code tf.custom_gradient}, which passes its arguments through unchanged, so it is not withheld for this reason.
+	 */
+	@Test
+	public void testInterveningDecorator() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function flip = findFunction(functions, "flip");
+		assertTrue("`flip` is hybrid.", flip.isHybrid());
+		assertEquals("No signature is read off the definition beneath `convert_type`.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), flip.getInferredInputSignatureAbsenceReason());
+
+		Function flipDirect = findFunction(functions, "flip_direct");
+		assertTrue("`flip_direct` has nothing between its decorator and its definition, so its signature is inferred.",
+				flipDirect.getInferredInputSignature().isPresent());
+
+		Function flipEager = findFunction(functions, "flip_eager");
+		assertTrue("`flip_eager` converts.", flipEager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("The added decorator traces the definition itself, so its signature is inferred.",
+				flipEager.getInferredInputSignature().isPresent());
+
+		Function clipGradient = findFunction(functions, "clip_gradient");
+		assertNotEquals("`tf.custom_gradient` passes its arguments through, so it does not withhold the signature.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), clipGradient.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
 	 * parameter is tensor-like. It does not answer what specification may be written for it, and it carries no dtype of its own (#494), so
 	 * a hit was reported as {@code TYPE_HINT_WITHOUT_DTYPE} however much the callers supported. Classification returned on the hint before
@@ -12834,9 +12919,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
 	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
 	 * a nested {@code def}, a lambda a helper calls or {@code tf.map_fn} runs, or a comprehension and passes it to a shape op, and each
-	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld, except that the comprehension and
-	 * {@code tf.map_fn} cases are not detected yet, for the engine reasons their TODOs cite. The control {@code ranked_nested_def}, called
-	 * at one extent, has the axis resolved and keeps its signature.
+	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld, except that the {@code tf.map_fn} case is
+	 * not detected yet, for the engine reason its TODO cites. The control {@code ranked_nested_def}, called at one extent, has the axis
+	 * resolved and keeps its signature.
 	 */
 	@Test
 	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
@@ -12844,7 +12929,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call")) {
+		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_comprehension")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
 					function.getHasUnresolvedStaticallyReadAxes());
@@ -12852,13 +12937,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
 					function.getInferredInputSignatureAbsenceReason());
 		}
-
-		// TODO: Withhold this signature once Ariadne publishes a comprehension's captured names with lexical writes:
-		// https://github.com/wala/ML/issues/1066. Until then the read inside the comprehension is not seen, and the signature is kept.
-		Function comprehension = findFunction(functions, "wild_comprehension");
-		assertFalse("`wild_comprehension`'s read through a comprehension is not yet seen.",
-				comprehension.getHasUnresolvedStaticallyReadAxes());
-		assertTrue("`wild_comprehension` keeps its signature.", comprehension.getInferredInputSignature().isPresent());
 
 		// TODO: Withhold this signature once Ariadne's `tf.map_fn` summary invokes its callback:
 		// https://github.com/wala/ML/issues/942. Until then the lambda has no call-graph node, and the signature is kept.
@@ -13856,23 +13934,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * on {@code tf.greater(...)} and a tensor on the other ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
 	 * {@code none_merge_greater} leaves a variable {@code None} on one path of such a branch, {@code local_after_join_greater} binds a
 	 * local in only one arm of one and reads it after the paths join ({@code ValueError} for both), {@code bool_of_greater} takes
-	 * {@code bool} of one ({@code OperatorNotAllowedInGraphError}), and {@code via_callee_greater} reaches {@code none_return_greater}. Six
-	 * controls trace and still hybridize: {@code tensor_branches} and {@code tensor_branches_greater}, whose paths both yield tensors;
-	 * {@code int_of} and {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only
-	 * inside a branch, unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent.
-	 * {@code mask_or_none} tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without
-	 * the argument, so it is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12),
-	 * not for this. Seven cases raise but are not yet detected, for the engine reasons their TODOs give: {@code none_return},
-	 * {@code none_merge}, {@code bool_of}, {@code local_after_join}, and {@code via_callee} branch on, or take {@code bool} of, a Python
-	 * comparison of tensors, {@code none_return_unmodeled} branches on {@code tf.reduce_any(tf.math.is_nan(x))}, neither of which is
-	 * modeled, and {@code dataset_size} branches on {@code dataset.cardinality()}.
+	 * {@code bool} of one ({@code OperatorNotAllowedInGraphError}), and {@code via_callee_greater} reaches {@code none_return_greater}.
+	 * {@code none_return}, {@code none_merge}, {@code bool_of}, {@code local_after_join}, and {@code via_callee} do the same with a Python
+	 * comparison of tensors, and {@code none_return_unmodeled} branches on {@code tf.reduce_any(tf.math.is_nan(x))}. Six controls trace and
+	 * still hybridize: {@code tensor_branches} and {@code tensor_branches_greater}, whose paths both yield tensors; {@code int_of} and
+	 * {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only inside a branch,
+	 * unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent. {@code mask_or_none}
+	 * tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without the argument, so it
+	 * is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
+	 * {@code dataset_size} raises but is not yet detected, for the engine reason its TODO gives: it branches on
+	 * {@code dataset.cardinality()}.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("none_return_greater", "none_merge_greater", "bool_of_greater", "local_after_join_greater",
-				"via_callee_greater")) {
+				"via_callee_greater", "none_return", "none_merge", "bool_of", "local_after_join", "via_callee", "none_return_unmodeled")) {
 			Function function = findFunction(functions, identifier);
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", function.getStatus()
@@ -13896,25 +13974,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
-		// TODO: Refuse these once Ariadne types the result of a Python comparison operator on a tensor:
-		// https://github.com/wala/ML/issues/1074. Each branches on, or takes `bool` of, `tf.reduce_sum(x) > 0.0`, and the traced function
-		// raises, but the comparison's
-		// result has no tensor type, so the condition is not seen to be a tensor. `via_callee` reaches `none_return`.
-		for (String identifier : List.of("none_return", "none_merge", "bool_of", "local_after_join", "via_callee")) {
-			Function function = findFunction(functions, identifier);
-			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasUntraceablePythonOnParameters());
-			assertNull("`" + identifier + "`'s comparison condition is not yet seen as a tensor.", function.getStatus()
-					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
-		}
-
-		// TODO: Refuse this once Ariadne models `tf.math.is_nan` and `tf.reduce_any`: https://github.com/wala/ML/issues/1076. Its branch
-		// condition is a tensor and its paths disagree about `None`, so the traced function raises a `ValueError`, but neither op is
-		// modeled, so the condition has no tensor type.
-		Function unmodeled = findFunction(functions, "none_return_unmodeled");
-		assertEquals("The check runs on `none_return_unmodeled` and decides it.", FALSE, unmodeled.getHasUntraceablePythonOnParameters());
-		assertNull("`none_return_unmodeled`'s unmodeled condition is not yet seen as a tensor.", unmodeled.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
-
 		// TODO: Refuse this once Ariadne models `Dataset.cardinality()` and the cardinality constants:
 		// https://github.com/wala/ML/issues/1072.
 		// Its branch condition, `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`,
@@ -13929,19 +13988,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075: a value that does not cross the {@code tf.function}
 	 * boundary unchanged. Measured under {@code tf.function} on TensorFlow 2.9.3: {@code returns_variable} returns a {@code tf.Variable},
-	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples; and
-	 * {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of {@code tf.TensorSpec}s, raises on the
-	 * latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Three more change but are not yet detected, for the
-	 * engine reasons their TODOs cite: {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which
-	 * comes back as a tensor its caller cannot write to; {@code returns_variable_pairs} builds its list with {@code +=}; and
-	 * {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only reads a
-	 * variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
+	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples;
+	 * {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which comes back as a tensor its
+	 * caller cannot write to; and {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of
+	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Two more change
+	 * but are not yet detected, for the engine reasons their TODOs cite: {@code returns_variable_pairs} builds its list with {@code +=},
+	 * and {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only
+	 * reads a variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
 	 */
 	@Test
 	public void testUncrossableBoundaryValues() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("returns_variable", "returns_variable_pair", "selects_keys", "selects_keys_by_keyword")) {
+		for (String identifier : List.of("returns_variable", "returns_variable_pair", "returns_tensor_array", "selects_keys",
+				"selects_keys_by_keyword")) {
 			Function function = findFunction(functions, identifier);
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_UNCROSSABLE_BOUNDARY_VALUES.", function.getStatus()
@@ -13953,12 +14013,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNull("`" + identifier + "` is not refused for an uncrossable value.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 		}
-
-		// TODO: Refuse this once Ariadne models `tf.TensorArray`: https://github.com/wala/ML/issues/1035, which Ariadne 0.52.105 does.
-		// Until then the call's result points to nothing, so the dictionary holding it is empty.
-		Function tensorArray = findFunction(functions, "returns_tensor_array");
-		assertNull("`returns_tensor_array`'s returned tensor array is not yet seen.", tensorArray.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
 		// TODO: Refuse this once Ariadne catalogs the elements `+=` appends to a list: https://github.com/wala/ML/issues/1069. Until then
 		// the appended tuple is held in a field that `m`'s object catalog does not name, so the walk does not see the returned variable.
@@ -13985,29 +14039,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code via_map_fn}), so the body itself never calls it, and a nested {@code def} passed elements of the parameters from inside a
 	 * comprehension ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies
 	 * numpy to a parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under
-	 * {@code tf.function} tracing on TensorFlow 2.9.3. The comprehension and {@code tf.map_fn} cases are not detected yet, for the engine
-	 * reasons their TODOs cite. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow
-	 * op, and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 * {@code tf.function} tracing on TensorFlow 2.9.3. The {@code tf.map_fn} case is not detected yet, for the engine reason its TODO
+	 * cites. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow op, and
+	 * {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
 	 */
 	@Test
 	public void testNumpyCallsThroughClosure() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call", "via_own_exposed_read")) {
+		for (String identifier : List.of("via_comprehension", "via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call",
+				"via_nested_def_arguments", "via_own_exposed_read")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
-		}
-
-		// TODO: Flag these once Ariadne publishes a comprehension's captured names with lexical writes, as it does for a lambda's or a
-		// nested function's: https://github.com/wala/ML/issues/1066. Until then the taint stops at the comprehension, and both still
-		// hybridize.
-		for (String identifier : List.of("via_comprehension", "via_nested_def_arguments")) {
-			Function function = findFunction(functions, identifier);
-			assertFalse("`" + identifier + "`'s numpy through a comprehension is not yet seen.", function.getHasNumpyCallsOnParameters());
-			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
 
 		// TODO: Flag this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Until then the
@@ -14143,21 +14189,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Barren counterpart of {@link #testRecursion2}: {@code not_recursive_fn} computes {@code abs(n - 1)}. The {@code n - 1} subtraction
-	 * types as tensor computation in isolation, but wrapping it in the opaque Python builtin {@code abs()} suppresses the analysis's typing
-	 * of the intermediate, so no tensor computation is detected and the function fails with
-	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709). This is an analysis-modeling limitation;
-	 * blocking the eager-to-hybrid conversion here is incompleteness-safe (we decline to hybridize but never violate semantics).
+	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
+	 * returns {@code abs(n - 1)} when {@code n > 0}. The comparison {@code n > 0} on the tensor parameter is tensor computation, so the
+	 * function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the comparison untyped, so this test pinned
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
+	 * <p>
+	 * TODO: {@code abs(n - 1)} is tensor computation too, but Ariadne doesn't model the builtin {@code abs()} on a tensor, so it and
+	 * {@code n - 1} stay untyped (https://github.com/wala/ML/issues/1087).
 	 */
 	@Test
 	public void testRecursion2Barren() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 		assertTrue(f.getHasTensorParameter());
 		assertFalse(f.isRecursive());
-		assertFalse("The abs() wrapper suppresses typing of the n - 1 intermediate, so no tensor computation is detected.",
-				f.getHasTensorComputation());
-		assertNull(f.getPassingPrecondition());
-		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		assertTrue("The comparison n > 0 on a tensor is tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		assertFalse(f.getStatus().hasError());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	/**
@@ -14285,9 +14334,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998: a calling context that the analysis reaches but cannot
-	 * type must not drop out of the evidence. {@code mixed} is called once with small concrete tensors, as a test would call it, and once
-	 * with arguments read from {@code pickle.load}, which the analysis does not model. {@code control} receives only the concrete call.
+	 * Calls whose arguments come from an external dataset, typed by the fixture's sidecar, count as evidence like any other call (cf.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998). {@code mixed} is called once with small concrete tensors,
+	 * as a test would call it, and once with arguments read from {@code pickle.load}. {@code control} receives only the concrete call.
 	 */
 	@Test
 	public void testInferInputSignatureUntypedCallingContext() throws Exception {
@@ -14300,44 +14349,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float64), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
 				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		Function mixed = findFunction(functions, "mixed");
-		assertTrue("`mixed` is still hybridized.", mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertFalse("A signature derived from the concrete call alone would reject the untyped call.",
-				mixed.getInferredInputSignature().isPresent());
-		assertEquals("The untyped context widens the parameters to unknown.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), mixed.getInferredInputSignatureAbsenceReason());
-		assertEquals("Both parameters are untyped in that context, so both block.", List.of("inputs", "sequence_length"),
-				mixed.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-		assertTrue("Every blocking parameter reports the untyped context.", mixed.getBlockingParameterReasons().values().stream()
-				.allMatch(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT::equals));
-		assertTrue("The control reaches no untyped context.",
-				control.getParameters().stream().noneMatch(Parameter::hasUntypedConformingContext));
+		// The sidecar types the loaded call's `inputs` as float32, which no specification shares with the concrete call's float64.
+		for (String name : List.of("mixed", "outer", "inner")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s calls disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+			assertEquals("Only `inputs` disagrees.", List.of("inputs"),
+					function.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		}
 
-		// The call inside `assertRaises` passes `None`, which the analysis does not type, but it is a declared failure and so not a
-		// conforming context: the signature from the tensor call stands.
+		// The call inside `assertRaises` passes `None`, and `tf.reduce_sum(None)` raises `ValueError` under the specification too, so the
+		// signature from the tensor call stands.
 		Function guarded = findFunction(functions, "guarded");
-		assertEquals("A declared failure leaves no untyped context.", "[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+		assertEquals("A declared failure the specification preserves keeps the signature.",
+				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
 				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		// The typed calls already disagree in dtype, so no specification exists to withhold, and that reason is kept.
 		Function mixedDtypes = findFunction(functions, "mixed_dtypes");
-		assertEquals("A parameter whose typed contexts do not reduce keeps its own reason.",
+		assertEquals("Calls that disagree in dtype withhold the specification.",
 				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), mixedDtypes.getInferredInputSignatureAbsenceReason());
-		assertTrue("It does reach an untyped context.", mixedDtypes.getParameters().get(0).hasUntypedConformingContext());
 
-		// Under depth-1 call strings `inner` has one node, typed from the concrete call, so only the caller's untyped argument shows the
-		// pickled call.
-		Function outer = findFunction(functions, "outer");
-		Function inner = findFunction(functions, "inner");
-		assertEquals("The caller withholds on its own untyped node.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
-				outer.getInferredInputSignatureAbsenceReason());
-		assertEquals("The callee withholds on the caller's untyped argument.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), inner.getInferredInputSignatureAbsenceReason());
-
-		// A specification covering `mask` rejects the call that omits it, so the omission is an untyped context.
+		// The call that omits `mask` leaves it to its `None` default, which a specification covering `mask` rejects, so the specification
+		// is withheld (https://github.com/wala/ML/issues/1040).
 		Function optional = findFunction(functions, "optional");
-		assertEquals("The omitted tensor parameter withholds the specification.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), optional.getInferredInputSignatureAbsenceReason());
+		assertEquals("A parameter that one call leaves to its `None` default withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), optional.getInferredInputSignatureAbsenceReason());
 		assertEquals("Only `mask` blocks.", List.of("mask"),
 				optional.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
 
@@ -14347,23 +14384,64 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
 				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		// The guarded `leak_outer(None)` has its own node set aside as evidence, but a specification would reject `None` with `ValueError`
-		// before the body raises the `TypeError` the guard declares, so `leak_outer` withholds too (#1005). Its call into `leak_inner` is
-		// not set aside, so `leak_inner` withholds on the untyped argument.
+		// A specification would reject the guarded `leak_outer(None)` with `ValueError` before the body raises the `TypeError` the guard
+		// declares (#1005).
 		Function leakOuter = findFunction(functions, "leak_outer");
 		assertEquals("A specification would change the exception a declared failure raises.",
 				Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
 				leakOuter.getInferredInputSignatureAbsenceReason());
+
+		// The guarded call reaches `leak_inner` with `None`, which a specification rejects with `ValueError` instead of the declared
+		// `TypeError`, so the specification is withheld (https://github.com/wala/ML/issues/1040).
 		Function leakInner = findFunction(functions, "leak_inner");
-		assertEquals("A declared failure's untyped argument one level down withholds.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), leakInner.getInferredInputSignatureAbsenceReason());
+		assertEquals("A `None` forwarded from a declared failure one level up withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), leakInner.getInferredInputSignatureAbsenceReason());
+
+		// FIXME: No sidecar entry can address `batch["x"]`, so the loaded call contributes nothing and the pinned signature, from the
+		// concrete call alone, is known wrong
+		// (https://github.com/wala/ML/issues/1041).
+		Function subscripted = findFunction(functions, "subscripted");
+		assertEquals("Today's signature, from the concrete call alone.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				subscripted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003: a container parameter reached from a call site that
-	 * supplies no container the analysis read must not keep a nested specification derived from the other call sites. Each function below
-	 * is called once with a tuple or list of tensors and once with a value read from {@code pickle.load}, which the analysis does not
-	 * model; {@code pair_typed} receives only typed tuples.
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1055: one argument that is a tensor or {@code None} by a
+	 * condition is typed by its tensor branch, but a specification from that branch rejects the call that passes {@code None}. The analysis
+	 * reports the conditional's {@code None} as a {@code None} member of the parameter's types (https://github.com/wala/ML/issues/1040),
+	 * passed directly or forwarded through a parameter, so the signature is withheld. {@code initialize} and {@code dynamic_decode} follow
+	 * OpenNMT-tf's route from its decoder to {@code BeamSearch.initialize}, by keyword. {@code control} receives the same tensor, never
+	 * {@code None}, and {@code guarded} receives {@code None} only from a declared failure.
+	 */
+	@Test
+	public void testInferInputSignatureNoneArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("forward", "maybe_none", "dynamic_decode", "initialize")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("A specification for `" + name + "` would reject the call that passes `None`.",
+					Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), function.getInferredInputSignatureAbsenceReason());
+		}
+
+		String signature = "[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(), dtype=tf.int32)]";
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control receives no `None`, so it keeps its signature.", signature,
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure's `None` leaves the signature from the tensor call.", signature,
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A container parameter's nested specification covers a call that passes a container of loaded values (cf.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003). Each function below is called once with a tuple or list
+	 * of tensors and once with a container of values read from {@code pickle.load}, which the fixture's sidecar types; {@code pair_typed}
+	 * receives only typed tuples.
 	 */
 	@Test
 	public void testInferInputSignatureUntypedContainerContext() throws Exception {
@@ -14375,32 +14453,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A container parameter reached only with typed tuples keeps its nested specification.",
 				"[[tf.TensorSpec(shape=(4, 3), dtype=tf.float32), tf.TensorSpec(shape=(4, 3), dtype=tf.float32)]]",
 				typed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-		assertFalse("The control reaches no untyped container context.", typed.getParameters().get(0).hasUntypedContainerContext());
 
-		for (String name : List.of("pair_sum", "list_sum", "pair_outer", "pair_inner")) {
+		// The sidecar types the loaded pair's elements as (8, 3), which joins with the concrete (4, 3) on the first axis. A `**` splat and
+		// a
+		// call through `pair_outer` reach the parameter the same way.
+		for (String name : List.of("pair_sum", "pair_outer", "pair_inner", "pair_splat")) {
 			Function function = findFunction(functions, name);
-			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-			assertEquals("`" + name + "`'s nested specification would be a claim about the untyped call too.",
-					Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), function.getInferredInputSignatureAbsenceReason());
+			assertEquals("`" + name + "`'s nested specification covers both calls.",
+					"[[tf.TensorSpec(shape=(None, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		}
 
-		// Under depth-1 call strings `pair_inner` has one node, reached from `pair_outer`'s single call site and typed from the tuple, so
-		// only the caller's argument, which has no abstract value in the pickled context, shows the other call.
-		assertTrue("The callee's container context is untyped through its caller's argument.",
-				findFunction(functions, "pair_inner").getParameters().get(0).hasUntypedContainerContext());
-
-		// The analysis does not represent a `**` splat at the call site, which reads as omitting `pair`, so only the callee's own node,
-		// which nothing modeled reaches, shows the call.
-		assertEquals("A splatted call that passes nothing modeled withholds the nested specification.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
-				findFunction(functions, "pair_splat").getInferredInputSignatureAbsenceReason());
+		Function listSum = findFunction(functions, "list_sum");
+		assertEquals("A loaded list whose elements agree with the concrete call keeps the specification.",
+				"[[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				listSum.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
-	 * A container parameter that withholds on an untyped context in a function whose other parameter needs a dtype pin: without the
-	 * specification no pin can be written, and a bare decorator raises on the pinned argument, so the conversion is declined rather than
-	 * converted bare. {@code pin_typed} is the control, reached only with typed tuples, and keeps both the pin and the nested
-	 * specification.
+	 * A container parameter reached with loaded values, in a function whose other parameter needs a dtype pin, keeps the specification that
+	 * carries the pin. {@code pin_typed} is the control, reached only with typed tuples.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
 	 */
@@ -14410,23 +14482,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		Function typed = findFunction(functions, "pin_typed");
-		assertTrue("The control converts.", typed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertTrue("The control keeps a specification, which carries the pin.", typed.getInferredInputSignature().isPresent());
+		String expected = "[tf.TensorSpec(shape=(2,), dtype=tf.float32), [tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.float32)]]";
 
-		Function mixed = findFunction(functions, "pin_mix");
-		assertEquals("The container withholds on the untyped call.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
-				mixed.getInferredInputSignatureAbsenceReason());
-		assertFalse("With no specification to carry the pin, a bare decorator would raise, so the conversion is declined.",
-				mixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertNotNull("The decline reports the unwritable pin.",
-				mixed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN.getCode()));
+		// The float64 `X64` multiplies a float32 variable, so its specification pins float32, which TensorFlow casts the NumPy argument to.
+		for (String name : List.of("pin_typed", "pin_mix")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` converts.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s specification carries the pin and the nested pair.", expected,
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function flatAndCont = findFunction(functions, "flat_and_cont");
+		assertEquals("A flat and a container parameter, both loaded in one call, keep their specification.", expected,
+				flatAndCont.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1004: an argument passed through a starred unpack binds an
-	 * element of the unpacked sequence, which the analysis reads as the sequence itself, so the parameter must not get a nested
-	 * specification. On TensorFlow 2.9.3 the nested one rejects the very call it was derived from.
+	 * element of the unpacked sequence, so the parameter gets a flat specification. On TensorFlow 2.9.3 a nested one rejects the very call
+	 * it was derived from.
 	 */
 	@Test
 	public void testInferInputSignatureStarredArgument() throws Exception {
@@ -14434,51 +14508,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		Function plain = findFunction(functions, "t4");
-		assertEquals("Plain positional calls are unaffected.",
-				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
-				plain.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		// Each unpack binds the parameter to the sequence's element, so every function gets the flat specification its calls pass.
+		for (String name : List.of("t3", "t4", "t5", "M.m", "M.plain", "K.sm_inst", "K.sm")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s parameters are flat.",
+					"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
 
-		Function trailing = findFunction(functions, "t3");
-		assertEquals("The parameter bound by the unpack withholds the specification.",
-				Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT), trailing.getInferredInputSignatureAbsenceReason());
-		assertEquals("Only the unpacked parameter blocks.", List.of("y"),
-				trailing.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-
-		Function leading = findFunction(functions, "t5");
-		assertEquals("A leading unpack withholds the parameter it binds.", List.of("x"),
-				leading.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-		assertTrue("Both still hybridize.", trailing.getTransformations().contains(Transformation.CONVERT_TO_HYBRID)
-				&& leading.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-
-		// A method is reached through a receiver trampoline, which re-issues the call with every argument positional, so the unpack is
-		// visible only at the originating site one frame further up.
-		Function method = findFunction(functions, "M.m");
-		assertEquals("A method's parameter bound by an unpack withholds the specification.", List.of("y"),
-				method.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-		assertEquals("Its reason is the untyped context.", Optional.of(InferenceResult.AbsenceReason.UNTYPED_CALLING_CONTEXT),
-				method.getInferredInputSignatureAbsenceReason());
-
-		Function plainMethod = findFunction(functions, "M.plain");
-		assertEquals("A method called without an unpack keeps its specification.",
-				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
-				plainMethod.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// At the originating site the receiver is bound, so a container parameter ahead of the unpack sits one slot earlier there and is
-		// aligned with its own typed tuple; only the parameter the unpack binds withholds.
+		// At the originating site the receiver is bound, so a container parameter ahead of the unpack keeps its own nested specification.
 		Function beforeStar = findFunction(functions, "M.before_star");
-		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.", List.of("y"),
-				beforeStar.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-
-		// A static method called through an instance goes through a synthetic frame too, but binds no receiver, so its slot is unshifted.
-		Function staticThroughInstance = findFunction(functions, "K.sm_inst");
-		assertEquals("A static method's parameter bound by an unpack withholds the specification.", List.of("y"),
-				staticThroughInstance.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
-
-		Function staticOnClass = findFunction(functions, "K.sm");
-		assertEquals("A static method called on its class, without an unpack, keeps its specification.",
-				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
-				staticOnClass.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)], tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				beforeStar.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**

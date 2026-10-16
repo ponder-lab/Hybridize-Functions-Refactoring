@@ -133,6 +133,7 @@ import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -899,7 +900,9 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
+	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
+	 * (#1047).
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -944,6 +947,15 @@ public class Function {
 				instanceKeyToProcess = instanceKey; // use the original.
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
+
+			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
+			// learning rate, and before the model existed there were none (#1047). Built-in containers and objects of program-defined
+			// classes are still examined.
+			if (isLibraryModeled(concreteType)) {
+				subMonitor.done();
+				return false;
+			}
+
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
@@ -968,6 +980,22 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * The name of the class loader into which Ariadne registers the classes its library summaries allocate (WALA's synthetic loader).
+	 */
+	private static final Atom SYNTHETIC_LOADER_NAME = Atom.findOrCreateUnicodeAtom("Synthetic");
+
+	/**
+	 * True iff the given class is a library class that Ariadne models in a summary, rather than a built-in container or a class the program
+	 * defines.
+	 *
+	 * @param type The class in question.
+	 * @return True iff the given class is loaded from Ariadne's library summaries and is not a built-in container.
+	 */
+	private static boolean isLibraryModeled(IClass type) {
+		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
 	}
 
 	/**
@@ -2012,18 +2040,35 @@ public class Function {
 	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
 	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
 	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
-	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * The failure gives the rule's own reason for keeping the decorator. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
 	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
 		if (this.getHybridizationParameters().hasInputSignatureParam())
-			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE,
-					"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it is not de-hybridized.");
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
 		}
+	}
+
+	/**
+	 * The reason a hybrid function with a supplied {@code input_signature} is kept hybrid where the hybrid-to-eager rule with the given
+	 * precondition would otherwise de-hybridize it.
+	 *
+	 * @param precondition The precondition the replaced conversion would have passed: {@link PreconditionSuccess#P2},
+	 *        {@link PreconditionSuccess#P3}, or {@link PreconditionSuccess#P6}.
+	 * @return The message of the {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} failure.
+	 */
+	private static String getSuppliedInputSignatureMessage(PreconditionSuccess precondition) {
+		return switch (precondition) {
+		case P2 -> "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		case P3 -> "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		case P6 -> "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+		default -> throw new IllegalArgumentException("Not a hybrid-to-eager precondition: " + precondition + ".");
+		};
 	}
 
 	/**
@@ -3445,33 +3490,8 @@ public class Function {
 
 		if (elementReason != null)
 			blocking.put(param, elementReason);
-		else if (!this.blocksOnUntypedContainerContext(param, blocking))
+		else
 			specByParameter.put(param, new InputSignature.Sequence(reduced));
-	}
-
-	/**
-	 * Blocks the container parameter {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is
-	 * reached in a conforming calling context that supplies no container the elements were read from (#1003), including an argument after a
-	 * starred unpack, which the analysis reads as the unpacked sequence itself (#1004). The container form of
-	 * {@link #blocksOnUntypedContext}, asked, like it, only once a specification exists to store, so it relabels no other absence. See
-	 * {@link Parameter#hasUntypedContainerContext()}.
-	 *
-	 * @param param The container parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContainerContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedContainerContext())
-			return false;
-
-		// The nested specification comes from the containers the analysis saw. A context that supplies none of them passes something the
-		// specification makes no claim about, and TensorFlow enforces the nesting, so that call may be rejected.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site whose argument for parameter `" + param.getName() + "` is not a container the "
-						+ "analysis read, so a nested specification derived from the other call sites may reject that call; "
-						+ "input-signature inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
 	}
 
 	/**
@@ -4902,8 +4922,7 @@ public class Function {
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
 	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
-	 * add the reduced spec to the signature, unless the function is also reached in a conforming context that left the parameter untyped,
-	 * in which case the spec is withheld with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} (#998).
+	 * add the reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -4964,30 +4983,6 @@ public class Function {
 	}
 
 	/**
-	 * Blocks {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is reached in a conforming
-	 * calling context in which the tensor-type analysis associated no type with it (#998). Asked only once the flat reduction has a
-	 * specification to store, so it relabels no other absence: a parameter whose typed contexts already fail to reduce keeps that reason.
-	 * Untyped contexts are found per call-graph node and per call site into one (see {@link Parameter#hasUntypedConformingContext()}).
-	 *
-	 * @param param The parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedConformingContext())
-			return false;
-
-		// The reduced specification comes from the contexts the analysis typed. What a context it reached without typing passes is not
-		// known to be a tensor matching that specification, so the specification would be a claim about that call too.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site where the argument for parameter `" + param.getName() + "` is not typed "
-						+ "as a tensor, so a specification derived from the other call sites may reject that call; input-signature "
-						+ "inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
-	}
-
-	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the recovery
 	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per blocking parameter. The
 	 * {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason} encountered, but the
@@ -5018,6 +5013,16 @@ public class Function {
 							+ "that caller is Keras itself, which passes `training`. Input-signature inference is dropped and the function "
 							+ "is hybridized with a bare decorator.");
 			return new InferenceResult.Absent(AbsenceReason.VARIABLE_KEYWORD_PARAMETER);
+		}
+
+		// `tf.function` traces the callable an intervening decorator returns, and the analysis types the definition's parameters, which
+		// see only what that decorator passes on. A signature read off them may reject the decorated function's own callers (#1046).
+		if (this.hasInterveningDecorator()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` has a decorator between `@tf.function` and its definition, so `tf.function` traces the callable that "
+							+ "decorator returns, whose arguments the definition's parameters do not describe. Input-signature inference "
+							+ "is dropped.");
+			return new InferenceResult.Absent(AbsenceReason.INTERVENING_DECORATOR);
 		}
 
 		if (this.tensorParameterFromSpeculation) {
@@ -5233,8 +5238,7 @@ public class Function {
 									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
 									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
 
-					if (!this.blocksOnUntypedContext(param, blocking))
-						specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
 
 					continue;
 				}
@@ -5246,9 +5250,10 @@ public class Function {
 				 * `inferSpec` reduced to bottom. With the per-context reduction
 				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it drops for three reasons: heterogeneous
 				 * dtype (|D| ≠ 1), dtype-⊤ (a single agreed `UNKNOWN`), or mixed sparse/dense
-				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642). Shape-⊤ and symbolic-dim no longer drop
-				 * here—it emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own
-				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642), plus a `None` member, which a call passing
+				 * `None` contributes (wala/ML#1040). Shape-⊤ and symbolic-dim no longer drop here—it emits a coarse `TensorType(dtype,
+				 * null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own precedence order (dtype before sparseness) so
+				 * the reason is exact, and emit a per-parameter INFO naming it; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
 				AbsenceReason reason = classifyDtypeBottom(contexts);
@@ -5260,8 +5265,7 @@ public class Function {
 				continue;
 			}
 
-			if (!this.blocksOnUntypedContext(param, blocking))
-				specByParameter.put(param, new InputSignature.Single(spec.get()));
+			specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
 		// A declared failure was set aside as evidence (#888), but it still runs against the signature, which validates the argument before
@@ -5752,6 +5756,7 @@ public class Function {
 		case HETEROGENEOUS_DTYPE -> "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.";
 		case PARTIAL_DTYPE -> "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.";
 		case UNKNOWN_DTYPE -> "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.";
+		case RECEIVES_NONE -> "receives None at some call sites and a tensor at others, and a tensor specification rejects None, so a single input signature cannot be inferred; it is dropped.";
 		default -> "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.";
 		};
 	}
@@ -5770,11 +5775,15 @@ public class Function {
 	 * defect twice, which is the reason it lives here rather than at either call site.
 	 *
 	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
-	 * @return {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
+	 * @return {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}, whose dtype is meaningless (wala/ML#1040);
+	 *         {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
 	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, {@link AbsenceReason#UNKNOWN_DTYPE} when no context resolved,
 	 *         and otherwise {@link AbsenceReason#HETEROGENEOUS_SPARSITY}, the remaining reason {@code inferSpec} bottoms for.
 	 */
 	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		if (contexts.stream().anyMatch(TensorType::isNone))
+			return AbsenceReason.RECEIVES_NONE;
+
 		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
 		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
 		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();
@@ -6142,6 +6151,38 @@ public class Function {
 				}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * Returns true iff a decorator other than {@code tf.custom_gradient} sits between this function's {@code @tf.function} and its
+	 * definition (#1046). For a hybrid function, those are the decorators beneath its {@code @tf.function}. For an eager one, the added
+	 * decorator goes on the definition, unless the function carries {@code tf.custom_gradient}, in which case it goes above the outermost
+	 * one (#996), and the decorators beneath that one count. A decorator whose name can't be resolved counts, since nothing then shows it
+	 * passes its arguments through.
+	 *
+	 * @return True iff a decorator intervenes between the hybridization decorator and the definition.
+	 */
+	public boolean hasInterveningDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs == null)
+			return false;
+
+		decoratorsType outer = this.hybridDecorator != null ? this.hybridDecorator : this.getCustomGradientDecorator().orElse(null);
+
+		if (outer == null)
+			return false;
+
+		for (int i = Arrays.asList(decs).indexOf(outer) + 1; i < decs.length; i++)
+			try {
+				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
+					return true;
+			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+				LOG.info("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				return true;
+			}
+
+		return false;
 	}
 
 	/**
