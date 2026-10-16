@@ -3238,7 +3238,7 @@ public class Function {
 	 * declined. When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
 	 *
-	 * @param callGraph The call graph, walked in the caller direction.
+	 * @param callGraph The call graph, walked in the caller direction, and into the callees whose results are passed.
 	 * @param pointerAnalysis The pointer analysis, used to resolve each argument's producing API.
 	 */
 	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
@@ -3258,7 +3258,7 @@ public class Function {
 			return;
 		}
 
-		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis).hasKerasSymbolicArgument(nodes, callGraph);
+		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(callGraph, pointerAnalysis).hasKerasSymbolicArgument(nodes);
 
 		LOG.info(this + " passed a Keras symbolic tensor: " + this.hasKerasSymbolicArguments + ".");
 	}
