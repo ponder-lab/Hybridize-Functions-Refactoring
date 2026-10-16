@@ -11978,7 +11978,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code y.numpy} is a bound method; under
 	 * {@code tf.function} {@code y} is a symbolic tensor without the attribute, so the read itself raises
 	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'}. The call form ({@code calls_numpy}) is the existing behavior and
-	 * stays blocked.
+	 * stays blocked. {@code Model.get_loss} is the shape the issue was found in: the receiver is the result of a
+	 * {@code tf.function}-decorated method called through {@code self}.
 	 * <p>
 	 * The two controls guard the receiver scoping: unlike the call form, the read form cannot match on the member name alone, since
 	 * {@code numpy} is also an ordinary attribute of non-tensors. A user object's {@code numpy} field and the {@code tf.experimental.numpy}
@@ -11992,6 +11993,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				readsNumpy.getPassingPrecondition());
 		assertNotNull("`reads_numpy` fails with HAS_EAGER_ONLY_CALLS.",
 				readsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		// The shape #1100 was found in: the receiver is the result of a `tf.function`-decorated method called through `self`, so its
+		// tensor typing comes from the hybrid callee's return rather than from a local tensor expression.
+		Function getLoss = getFunction("Model.get_loss");
+		assertTrue("`Model.get_loss` reads `numpy` off the tensor a hybrid method returns.", getLoss.getHasEagerOnlyCalls());
+		assertNull("`Model.get_loss` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				getLoss.getPassingPrecondition());
+		assertNotNull("`Model.get_loss` fails with HAS_EAGER_ONLY_CALLS.",
+				getLoss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
 
 		Function callsNumpy = getFunction("calls_numpy");
 		assertTrue("`calls_numpy` calls `numpy()` on a tensor.", callsNumpy.getHasEagerOnlyCalls());
