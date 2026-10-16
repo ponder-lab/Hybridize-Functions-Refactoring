@@ -14189,21 +14189,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Barren counterpart of {@link #testRecursion2}: {@code not_recursive_fn} computes {@code abs(n - 1)}. The {@code n - 1} subtraction
-	 * types as tensor computation in isolation, but wrapping it in the opaque Python builtin {@code abs()} suppresses the analysis's typing
-	 * of the intermediate, so no tensor computation is detected and the function fails with
-	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709). This is an analysis-modeling limitation;
-	 * blocking the eager-to-hybrid conversion here is incompleteness-safe (we decline to hybridize but never violate semantics).
+	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
+	 * computes {@code abs(n - 1)}. On a tensor, {@code abs()} dispatches to the tensor's {@code __abs__}, so it is tensor computation, and
+	 * the function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the builtin's result untyped, so this test
+	 * pinned {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
 	 */
 	@Test
 	public void testRecursion2Barren() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 		assertTrue(f.getHasTensorParameter());
 		assertFalse(f.isRecursive());
-		assertFalse("The abs() wrapper suppresses typing of the n - 1 intermediate, so no tensor computation is detected.",
-				f.getHasTensorComputation());
-		assertNull(f.getPassingPrecondition());
-		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		assertTrue("abs() on a tensor is tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		assertFalse(f.getStatus().hasError());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	/**
