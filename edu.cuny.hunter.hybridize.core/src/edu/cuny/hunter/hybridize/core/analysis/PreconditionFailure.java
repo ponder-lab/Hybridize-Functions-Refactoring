@@ -322,7 +322,9 @@ public enum PreconditionFailure {
 	 * {@code numpy.random} module; OpenCV's file reads and writes ({@code cv2.imread}, {@code cv2.imreadmulti}, {@code cv2.imwrite}); and
 	 * any function of {@code tf.io.gfile}, whose file operations run in Python rather than as graph ops. A call is recognized by the module
 	 * its attribute chain roots at, so {@code tf.random.uniform}, which draws on every call of the traced function, and a method named
-	 * {@code time} on the program's own object are left alone, as are {@code tf.print} and the other traced operations.
+	 * {@code time} on the program's own object are left alone, as are {@code tf.print} and the other traced operations. The module is
+	 * recognized by the type of the object its read points to, so a module the analysis does not model, as it does not model
+	 * {@code random}, {@code time}, or {@code cv2} today, is not recognized and its calls are not refused.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077">Issue 1077</a>
 	 */

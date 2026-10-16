@@ -617,30 +617,6 @@ public class Util {
 	}
 
 	/**
-	 * The name {@code def} reads from a script's scope: a global read's, or a lexical read's whose defining scope is a script rather than
-	 * an enclosing function. {@code null} for any other instruction.
-	 *
-	 * @param def The instruction defining a value, possibly {@code null}.
-	 * @return The name read from a script's scope, or {@code null}.
-	 */
-	static String scriptScopeReadName(SSAInstruction def) {
-		if (def instanceof AstLexicalRead lexical) {
-			Access[] accesses = lexical.getAccesses();
-
-			if (accesses.length == 0)
-				return null;
-
-			String definer = accesses[0].getName().snd;
-			return definer != null && definer.equals(scriptOf(definer)) ? accesses[0].getName().fst : null;
-		}
-
-		if (def instanceof AstGlobalRead global && global.getGlobalName().startsWith(GLOBAL_PREFIX))
-			return global.getGlobalName().substring(GLOBAL_PREFIX.length());
-
-		return null;
-	}
-
-	/**
 	 * True iff {@code invoke} gives {@code key=} to a keyed builtin ({@code min}, {@code max} or {@code sorted}) or to a method on a
 	 * builtin value ({@code list.sort}). The key function may compute tensors, and Ariadne may resolve the call to the builtin's summary
 	 * without following the key function, so such a call counts whatever its targets.

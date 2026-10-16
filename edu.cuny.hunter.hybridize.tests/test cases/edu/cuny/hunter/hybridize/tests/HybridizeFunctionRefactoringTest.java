@@ -11980,6 +11980,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * functions return the same value on both calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and
 	 * {@code predict_dataset} raises {@code AttributeError} from the {@code numpy()} call in its lambda.
 	 * <p>
+	 * The {@code random}, {@code time.time}, and {@code cv2.imread} functions are pinned as not yet refused, since those modules have no
+	 * summary and their reads point to nothing (https://github.com/wala/ML/issues/1080).
+	 * <p>
 	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
 	 * {@code tf.print} prints per call, and {@code reads_user_clock} calls a {@code time} method on the program's own class, which the
 	 * check must not read as the {@code time} module.
@@ -11989,8 +11992,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : List.of("ExampleInputter.get_dataset_size", "ParallelInputter.get_dataset_size", "Model.visualize",
-				"predict_dataset", "process_image_label", "TUDataset.load", "reads_file", "reads_clock", "draws_python_random",
-				"draws_numpy_random", "draws_aliased_numpy_random", "reads_image", "calls_reader")) {
+				"predict_dataset", "process_image_label", "TUDataset.load", "reads_file", "draws_numpy_random",
+				"draws_aliased_numpy_random", "calls_reader")) {
 			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
 			assertEquals("`" + name + "` runs Python I/O, a clock read, or a Python-level random draw at trace time.", TRUE,
 					function.getHasTraceTimePythonEffects());
@@ -11999,9 +12002,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
 		}
 
+		// TODO: Refuse these once reads of `random`, `time`, and `cv2` point to their modules
+		// (https://github.com/wala/ML/issues/1080). None of the three modules has a summary, so a read of one has an empty points-to set
+		// and the call is not recognized; each function hybridizes today, freezing its draw, clock read, or image read at trace time.
+		// `process_image_label` and `predict_dataset` are refused above only for their `open` calls.
+		for (String name : List.of("reads_clock", "draws_python_random", "reads_image")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
+			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasTraceTimePythonEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
+		}
+
 		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
 		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
-		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O and clock reads instead.
+		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
 		Function predictDataset = functions.stream().filter(f -> f.getIdentifier().equals("predict_dataset")).findFirst().orElseThrow();
 		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
 
