@@ -12,6 +12,7 @@ import java.util.Set;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 
+import com.ibm.wala.cast.python.ipa.summaries.PythonInstanceMethodTrampoline;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -29,12 +30,29 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * it raises, or it forwards a parameter defaulting to {@code None} as the name of an API whose own default name is a string, and only a
  * call omitting that parameter raises. A call passes the parameter when it names it by keyword or supplies enough positional arguments to
  * reach it; a call that spreads a starred argument is read as passing it. The set of callers is a least fixpoint over the call graph, so a
- * caller of a caller raises too. Call sites are read through Ariadne's synthesized trampolines, which bind {@code self} before forwarding
- * to a method.
+ * caller of a caller raises too.
+ * <p>
+ * A call's arguments line up with the callee's parameters only when the call reaches the callee itself, or reaches it through an
+ * instance-method trampoline ({@link PythonInstanceMethodTrampoline}), which binds the method's first parameter, whatever its name, and
+ * forwards the rest. A callee the call reaches through any other node, such as a library summary calling user code back, receives arguments
+ * the call does not show, so whether the call omits a forwarded parameter is undetermined and does not block. Whether that callee raises
+ * for every call still does.
  */
 class InvalidNameCallerAnalysis {
 
 	private static final ILog LOG = getLog(InvalidNameCallerAnalysis.class);
+
+	/** How a call's arguments line up with a callee's parameters. */
+	private enum Alignment {
+		/** The call reaches the callee itself, so its arguments are the callee's. */
+		DIRECT,
+
+		/** The call reaches the callee through an instance-method trampoline, which binds the callee's first parameter. */
+		BOUND,
+
+		/** The call reaches the callee through another node, which passes it arguments the call does not show. */
+		UNDETERMINED
+	}
 
 	private InvalidNameCallerAnalysis() {
 	}
@@ -98,11 +116,13 @@ class InvalidNameCallerAnalysis {
 			if (ir != null)
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
 					if (instruction instanceof PythonInvokeInstruction invoke)
-						for (CGNode target : dispatchTargets(callGraph, node, invoke)) {
-							Function callee = functionsByReference.get(target.getMethod().getReference());
+						for (Map.Entry<CGNode, Alignment> target : calleesOf(callGraph, node, invoke).entrySet()) {
+							Function callee = functionsByReference.get(target.getKey().getMethod().getReference());
 
-							if (callee != null && callee != function && (callee.passesInvalidNameArgumentsUnconditionally()
-									|| callers.contains(callee) || omitsForwardedNoneParameter(invoke, callee)))
+							if (callee != null && callee != function
+									&& (callee.passesInvalidNameArgumentsUnconditionally() || callers.contains(callee)
+											|| target.getValue() != Alignment.UNDETERMINED
+													&& omitsForwardedNoneParameter(invoke, callee, target.getValue() == Alignment.BOUND)))
 								return true;
 						}
 		}
@@ -111,27 +131,39 @@ class InvalidNameCallerAnalysis {
 	}
 
 	/**
-	 * The methods {@code invoke} reaches from {@code node}: each call-graph target, with a synthesized trampoline replaced by the methods
-	 * it forwards to.
+	 * The nodes {@code invoke} reaches from {@code node}, each with how the call's arguments line up with its parameters: each call-graph
+	 * target, and each node a target calls in turn.
+	 *
+	 * @param callGraph The call graph.
+	 * @param node The node containing the call.
+	 * @param invoke The call.
+	 * @return The reached nodes and their alignment.
 	 */
-	private static Set<CGNode> dispatchTargets(CallGraph callGraph, CGNode node, PythonInvokeInstruction invoke) {
-		Set<CGNode> targets = new HashSet<>();
+	private static Map<CGNode, Alignment> calleesOf(CallGraph callGraph, CGNode node, PythonInvokeInstruction invoke) {
+		Map<CGNode, Alignment> callees = new HashMap<>();
 
-		for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite()))
-			if (target.getMethod().isSynthetic())
-				for (Iterator<CGNode> forwarded = callGraph.getSuccNodes(target); forwarded.hasNext();)
-					targets.add(forwarded.next());
-			else
-				targets.add(target);
+		for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+			callees.put(target, Alignment.DIRECT);
+			Alignment forwarding = target.getMethod().getDeclaringClass() instanceof PythonInstanceMethodTrampoline ? Alignment.BOUND
+					: Alignment.UNDETERMINED;
 
-		return targets;
+			for (Iterator<CGNode> forwarded = callGraph.getSuccNodes(target); forwarded.hasNext();)
+				callees.putIfAbsent(forwarded.next(), forwarding);
+		}
+
+		return callees;
 	}
 
 	/**
 	 * True iff {@code invoke} omits a parameter that {@code callee} forwards, defaulting to {@code None}, as the name of an API whose own
 	 * default name is a string.
+	 *
+	 * @param invoke The call.
+	 * @param callee The function the call reaches.
+	 * @param bound Whether the call reaches {@code callee} through a trampoline that binds its first parameter.
+	 * @return True iff the call omits a forwarded parameter.
 	 */
-	private static boolean omitsForwardedNoneParameter(PythonInvokeInstruction invoke, Function callee) {
+	private static boolean omitsForwardedNoneParameter(PythonInvokeInstruction invoke, Function callee, boolean bound) {
 		Set<String> forwarded = callee.getForwardedNoneNameParameters();
 
 		if (forwarded.isEmpty() || invoke.getStarredPositions().length > 0)
@@ -139,13 +171,16 @@ class InvalidNameCallerAnalysis {
 
 		// The callee is the invoke's first use, so the call's positional arguments are the rest.
 		int positionalArguments = invoke.getNumberOfPositionalParameters() - 1;
-		List<Parameter> positional = callee.getParameters().stream().filter(p -> !p.isSelf() && !p.isKeywordOnly()).toList();
+		List<String> positional = callee.getParameters().stream().filter(p -> !p.isKeywordOnly()).map(Parameter::getName).toList();
+
+		if (bound && !positional.isEmpty())
+			positional = positional.subList(1, positional.size());
 
 		for (String name : forwarded) {
 			if (invoke.getKeywords().contains(name))
 				continue;
 
-			int index = positional.stream().map(Parameter::getName).toList().indexOf(name);
+			int index = positional.indexOf(name);
 
 			if (index < 0 || positionalArguments <= index)
 				return true;

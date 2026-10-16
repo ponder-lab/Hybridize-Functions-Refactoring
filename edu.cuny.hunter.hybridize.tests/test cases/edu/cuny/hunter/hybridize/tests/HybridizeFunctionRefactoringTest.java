@@ -12091,7 +12091,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testInvalidNameArgumentCallers() throws Exception {
-		for (String identifier : List.of("evaluates", "trims", "calls_trims")) {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted")) {
 			Function function = getFunction(identifier);
 			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
 			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
@@ -12101,11 +12101,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
 		}
 
-		for (String identifier : List.of("trims_named", "trims_positional")) {
+		for (String identifier : List.of("trims_named", "trims_positional", "this_positional", "unbound_positional",
+				"classmethod_positional")) {
 			Function function = getFunction(identifier);
 			assertFalse("`" + identifier + "` passes `trim_zeros` a name.", function.getCallsInvalidNameArguments());
 			assertNull("`" + identifier + "` is not refused for a name argument.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+			// TODO: Refuse this once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1047, released in 0.52.105. Until
+			// then a classmethod called through its class reaches no method body, so the call to `Masker.trim` without a name is not seen.
+			Function classmethodOmitted = getFunction("classmethod_omitted");
+			assertFalse("`classmethod_omitted`'s classmethod is not yet reached.", classmethodOmitted.getCallsInvalidNameArguments());
+
+			// TODO: Refuse this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Tracing it
+			// traces
+			// `row_sum`, which calls `trim_zeros` without a name and raises, but `row_sum` gets no call-graph node.
+			Function mapsCaller = getFunction("maps_caller");
+			assertFalse("`maps_caller`'s callback is not yet reached.", mapsCaller.getCallsInvalidNameArguments());
+
+			// TODO: Refuse this once a forwarder is followed through user callees:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `forwards` without a name, which forwards
+			// its
+			// own `None` to `trim_zeros` by keyword, so it raises; but `forwards` passes `trim_zeros` a name, so it is no caller, and its
+			// callee
+			// is not a TensorFlow API, so it is no forwarder.
+			Function callsForwards = getFunction("calls_forwards");
+			assertFalse("`calls_forwards`'s forwarding through a user function is not yet seen.",
+					callsForwards.getCallsInvalidNameArguments());
 		}
 	}
 
