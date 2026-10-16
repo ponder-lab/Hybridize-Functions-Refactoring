@@ -323,8 +323,14 @@ public enum PreconditionFailure {
 	 * not covered here, and neither are the elements of a list, tuple, dictionary, or set, which {@code tf.function} passes in afresh when
 	 * the container is an argument. Objects are told apart by allocation site, so a getter of an object created afresh on each call is
 	 * refused although no instance it reads is rebound between two of its reads.
+	 * <p>
+	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
+	 * among them, does not retrace, and the value read when the function was traced persists.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076">Issue 1076</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#rules_of_tracing">Better performance with tf.function: Rules of tracing</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with
+	 *      tf.function: Changing Python global and free variables</a>
 	 */
 	HAS_REBOUND_STATE_READS(39);
 

@@ -43,6 +43,13 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * though its element reads are stale too once another function rebuilds it. Objects are told apart by allocation site, so instances
  * allocated at one site are one object here: a getter of an object created afresh on each call is refused, though no instance it reads is
  * ever rebound between two of its reads.
+ * <p>
+ * The verdict is the function's, whatever its callers are: the guide documents that a trace is keyed on the arguments, so a change to a
+ * Python global or free variable, which a field read through {@code self} is, does not retrace, and the trace-time value persists.
+ *
+ * @see <a href="https://www.tensorflow.org/guide/function#rules_of_tracing">Better performance with tf.function: Rules of tracing</a>
+ * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with tf.function:
+ *      Changing Python global and free variables</a>
  */
 class ReboundStateReadAnalysis {
 
