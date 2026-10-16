@@ -2110,8 +2110,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), used to scope a read of an eager-only tensor member to a tensor receiver.
 	 */
-	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -2130,7 +2133,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis, tensorTypedKeys);
 		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
@@ -2149,8 +2152,9 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters,
-	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
-	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors
+	 * {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}: when the function has no call-graph node, the result is left
+	 * undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.

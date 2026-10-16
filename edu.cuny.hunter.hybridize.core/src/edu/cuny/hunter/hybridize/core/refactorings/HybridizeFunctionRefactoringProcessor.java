@@ -626,7 +626,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// precondition region as the barren check, so it shares the gate; overridable independently via
 				// alwaysCheckEagerOnlyCalls.
 				if (this.getAlwaysCheckEagerOnlyCalls() || barrenCouldDecide)
-					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis());
+					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
 				// gate; overridable independently via alwaysCheckNumpyCalls.
