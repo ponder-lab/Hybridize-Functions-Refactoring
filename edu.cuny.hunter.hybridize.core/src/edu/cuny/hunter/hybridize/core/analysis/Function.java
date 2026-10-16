@@ -3553,12 +3553,21 @@ public class Function {
 	private static final Set<String> TENSORFLOW_MODULE_ALIASES = Set.of("tf", "tensorflow");
 
 	/**
+	 * TensorFlow APIs whose {@code name} parameter defaults to a string and that raise under tracing when passed {@code None}: the explicit
+	 * {@code None} overrides the default, and the name scope they open has neither a name nor a default name. Keyed by the trailing
+	 * attribute name. Measured by calling, with {@code name=None} inside {@code tf.function}, every public function of TensorFlow 2.9.3
+	 * whose {@code name} defaults to a string; the others accept {@code None}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087).
+	 */
+	private static final Set<String> STRING_DEFAULT_NAME_OP_NAMES = Set.of("boolean_mask", "matrix_transpose");
+
+	/**
 	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
-	 * parameter, storing the result for {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens
-	 * a name scope with it and raises, so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely
-	 * syntactic scan of the body; no call graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned,
-	 * the result is left {@code null} and the precondition does not block. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * parameter, or {@code None} where the API's own default name is a string, storing the result for
+	 * {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens a name scope with it and raises,
+	 * so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely syntactic scan of the body; no call
+	 * graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned, the result is left {@code null} and
+	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	public void computeInvalidNameArguments() {
 		boolean[] found = { false };
@@ -3597,25 +3606,42 @@ public class Function {
 	}
 
 	/**
-	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter. A keyword {@code name=...}
-	 * argument binds unambiguously for any TensorFlow callee; a positional argument is only recognized for the ops in
-	 * {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare {@code name} second.
+	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter, or passes {@code None} by
+	 * keyword to one of {@link #STRING_DEFAULT_NAME_OP_NAMES}. A keyword {@code name=...} argument binds unambiguously for any TensorFlow
+	 * callee; a positional argument is only recognized for the ops in {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare
+	 * {@code name} second.
 	 *
 	 * @param call A call in this {@link Function}'s body.
-	 * @return True iff the call passes a non-string constant as its {@code name} argument.
+	 * @return True iff the call passes an invalid {@code name} argument.
 	 */
-	private static boolean passesInvalidNameArgument(Call call) {
+	private boolean passesInvalidNameArgument(Call call) {
 		if (!isTensorFlowRooted(call.func))
 			return false;
 
+		String calleeName = NodeUtils.getRepresentationString(call.func);
+
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
-				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && isNonStringConstant(keyword.value))
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && (isNonStringConstant(keyword.value)
+						|| calleeName != null && STRING_DEFAULT_NAME_OP_NAMES.contains(calleeName) && this.isNone(keyword.value)))
 					return true;
 
-		String calleeName = NodeUtils.getRepresentationString(call.func);
 		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
 				&& isNonStringConstant(call.args[1]);
+	}
+
+	/**
+	 * True iff the given expression is {@code None} when this {@link Function} runs with its parameters' defaults: the literal, or a
+	 * parameter of this function that defaults to {@code None}.
+	 *
+	 * @param expression The expression to inspect.
+	 * @return True iff the expression is {@code None} or a parameter defaulting to it.
+	 */
+	private boolean isNone(exprType expression) {
+		if (!(expression instanceof Name name))
+			return false;
+
+		return "None".equals(name.id) || this.getParameters().stream().anyMatch(p -> name.id.equals(p.getName()) && p.defaultsToNone());
 	}
 
 	/**
@@ -3636,8 +3662,9 @@ public class Function {
 
 	/**
 	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
-	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged—it is the declared default for {@code name}—and anything whose
-	 * value is unknown (a variable, a call) is conservatively accepted.
+	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged here—it is most APIs' declared default for {@code name}, and
+	 * {@link #isNone(exprType)} covers the APIs it is not—and anything whose value is unknown (a variable, a call) is conservatively
+	 * accepted.
 	 *
 	 * @param expression The expression bound to a {@code name} argument.
 	 * @return True iff the expression is a non-string constant.

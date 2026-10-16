@@ -12042,6 +12042,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: a {@code name} argument of {@code None} where the
+	 * TensorFlow API's own default is a string. Passing {@code None} overrides that default, and tracing then opens a name scope with
+	 * neither a name nor a default name and raises. Measured on TensorFlow 2.9.3, {@code tf.boolean_mask} and
+	 * {@code tf.linalg.matrix_transpose} are the public APIs that raise this way. {@code trim_zeros}, distilling tf-eager-fasterrcnn's,
+	 * forwards its own parameter, which defaults to {@code None}; {@code mask_none} and {@code transpose_none} pass the literal. Four
+	 * controls trace: {@code sqrt_none} passes {@code None} to {@code tf.sqrt}, whose own default is {@code None}; {@code mask_named}
+	 * forwards a parameter defaulting to a string, and {@code mask_constant} one defaulting to a module constant; and {@code mask_default}
+	 * passes no name.
+	 */
+	@Test
+	public void testNoneNameArgumentsBlockHybridization() throws Exception {
+		for (String identifier : List.of("trim_zeros", "mask_none", "transpose_none")) {
+			Function function = getFunction(identifier);
+			assertTrue("`" + identifier + "` passes `None` where the API's default name is a string.",
+					function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("sqrt_none", "mask_named", "mask_constant", "mask_default")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes a valid name argument.", function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for its name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		// TODO: Refuse this too: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `trim_zeros` without a
+		// name, so tracing it traces `trim_zeros` with `name=None` and raises, but the check reads only the function's own body.
+		Function trims = getFunction("trims");
+		assertFalse("`trims`'s callee's name argument is not yet seen.", trims.getHasInvalidNameArguments());
+	}
+
+	/**
 	 * Pins the unresolved statically-read-axis condition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): when
 	 * the inferred input signature leaves unresolved an axis the body reads statically and consumes where a Python integer is required,
 	 * emitting it would break the function at trace time. Since https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/864
