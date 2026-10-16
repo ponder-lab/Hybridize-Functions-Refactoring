@@ -80,6 +80,18 @@ def tag_derived(x):
     return y
 
 
+def store_string_key(y):
+    z = y * 2.0
+    z["k"] = 0.0
+    return z
+
+
+def store_multi_index(y):
+    z = y * 2.0
+    z[0, 1] = 0.0
+    return tf.reduce_sum(z)
+
+
 y_train_binary = to_binary_class(copy.deepcopy(y_train))
 assert set(y_train_binary) <= {0.0, 1.0}
 
@@ -93,3 +105,10 @@ assert float(store_into_derived(np.array([10.0, 30.0]))) == 60.0
 assert float(enumerate_list(t, t)) == 12.0
 assert float(tf.reduce_sum(store_into_local_list(t))) == 18.0
 assert float(tf.reduce_sum(tag_derived(t))) == 12.0
+assert float(store_multi_index(np.array([[1.0, 2.0], [3.0, 4.0]]))) == 16.0
+
+try:
+    store_string_key(np.array([10.0, 30.0]))
+    raise AssertionError("A NumPy array has no string-keyed items.")
+except IndexError:
+    pass
