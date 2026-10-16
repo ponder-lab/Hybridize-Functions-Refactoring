@@ -163,6 +163,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private boolean alwaysCheckKerasSymbolicArguments;
 
+	private boolean alwaysCheckTraceTimePythonEffects;
+
 	private boolean ignoreBooleansInLiteralCheck = true;
 
 	private boolean processFunctionsInParallel;
@@ -667,6 +669,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
+				// Check whether the function does Python I/O, reads the clock, or draws Python-level randomness, which tracing runs
+				// once (issue 1077). Same reachable region, same gate; overridable independently via alwaysCheckTraceTimePythonEffects.
+				if (this.getAlwaysCheckTraceTimePythonEffects() || barrenCouldDecide)
+					func.computeTraceTimePythonEffects(callGraph, builder.getPointerAnalysis());
+
 				// check the function preconditions.
 				func.check();
 
@@ -1124,6 +1131,21 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckKerasSymbolicArguments(boolean alwaysCheckKerasSymbolicArguments) {
 		this.alwaysCheckKerasSymbolicArguments = alwaysCheckKerasSymbolicArguments;
+	}
+
+	public boolean getAlwaysCheckTraceTimePythonEffects() {
+		return this.alwaysCheckTraceTimePythonEffects;
+	}
+
+	/**
+	 * Force the trace-time Python effect check (issue 1077) on every candidate, not only tensor-parameter ones. Off by default; for
+	 * measurement, mirroring {@code alwaysCheckEagerOnlyCalls}.
+	 *
+	 * @param alwaysCheckTraceTimePythonEffects Whether to always compute whether a function does Python I/O, reads the clock, or draws
+	 *        Python-level randomness.
+	 */
+	public void setAlwaysCheckTraceTimePythonEffects(boolean alwaysCheckTraceTimePythonEffects) {
+		this.alwaysCheckTraceTimePythonEffects = alwaysCheckTraceTimePythonEffects;
 	}
 
 	@Override

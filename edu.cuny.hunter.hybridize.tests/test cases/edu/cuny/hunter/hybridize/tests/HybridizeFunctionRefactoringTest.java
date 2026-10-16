@@ -11969,6 +11969,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077. A function whose body, directly or through the
+	 * program's own code it calls, does Python file I/O, reads the clock, or draws Python-level randomness must not hybridize, since that
+	 * code runs once, when {@code tf.function} traces the function, rather than on every call (it fails with
+	 * {@link PreconditionFailure#HAS_TRACE_TIME_PYTHON_EFFECTS}). The fixture distills the five functions the issue cites, from OpenNMT-tf,
+	 * FCN, and NLPGNN, and adds one function per API family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under
+	 * {@code tf.function}, with the files it reads changed between the calls: both {@code get_dataset_size} overrides, which count lines
+	 * through {@code tf.io.gfile.GFile}, return the first call's count again; {@code Model.visualize} writes its projector file only on the
+	 * first call; {@code process_image_label}, {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time}
+	 * functions return the same value on both calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and
+	 * {@code predict_dataset} raises {@code AttributeError} from the {@code numpy()} call in its lambda.
+	 * <p>
+	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
+	 * {@code tf.print} prints per call, and {@code reads_user_clock} calls a {@code time} method on the program's own class, which the
+	 * check must not read as the {@code time} module.
+	 */
+	@Test
+	public void testTraceTimePythonEffects() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("ExampleInputter.get_dataset_size", "ParallelInputter.get_dataset_size", "Model.visualize",
+				"predict_dataset", "process_image_label", "TUDataset.load", "reads_file", "reads_clock", "draws_python_random",
+				"draws_numpy_random", "draws_aliased_numpy_random", "reads_image", "calls_reader")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
+			assertEquals("`" + name + "` runs Python I/O, a clock read, or a Python-level random draw at trace time.", TRUE,
+					function.getHasTraceTimePythonEffects());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_TRACE_TIME_PYTHON_EFFECTS: " + function.getStatus(),
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
+		}
+
+		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
+		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
+		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O and clock reads instead.
+		Function predictDataset = functions.stream().filter(f -> f.getIdentifier().equals("predict_dataset")).findFirst().orElseThrow();
+		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+
+		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(name)).findFirst().orElseThrow();
+			assertEquals("`" + name + "` runs nothing at trace time that the traced function would not run per call.", FALSE,
+					function.getHasTraceTimePythonEffects());
+			assertNull("`" + name + "` must not fail with HAS_TRACE_TIME_PYTHON_EFFECTS.",
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the parameter-flow numpy safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a
 	 * function that (transitively) applies a numpy API to a value flowing from its parameters must not hybridize, since the call raises
 	 * under {@code tf.function} tracing once the parameters become symbolic (it fails with
@@ -12787,9 +12834,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * NumPy call consuming it misbehaves. Each {@code wild_*} function, called at extents 3 and 4 on axis 0, passes that axis to a NumPy
 	 * call: {@code np.arange}, {@code np.linspace}'s {@code num}, {@code np.eye} and {@code np.tile} raise {@code TypeError} under a
 	 * wildcard on TensorFlow 2.9.3, and {@code np.random.uniform(size=None)} silently returns a scalar instead of a vector. Each traces
-	 * under a bare decorator, so each keeps its conversion and has its signature withheld. Two controls keep their signatures:
-	 * {@code resolved_axis_arange} reads axis 1, on which every caller agrees, and {@code ranked_arange}, called at one extent, has the
-	 * axis resolved.
+	 * under a bare decorator, so each keeps its conversion and has its signature withheld, except {@code wild_random_size}: its
+	 * {@code np.random.uniform} draw runs once at trace time, so it is refused with
+	 * {@link PreconditionFailure#HAS_TRACE_TIME_PYTHON_EFFECTS} (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077)
+	 * before any signature is considered. Two controls keep their signatures: {@code resolved_axis_arange} reads axis 1, on which every
+	 * caller agrees, and {@code ranked_arange}, called at one extent, has the axis resolved.
 	 */
 	@Test
 	public void testNumpyOverWildDimension() throws Exception {
@@ -12797,7 +12846,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
+		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
 					function.getHasUnresolvedStaticallyReadAxes());
@@ -12807,6 +12856,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
 					function.getInferredInputSignatureAbsenceReason());
 		}
+
+		Function random = findFunction(functions, "wild_random_size");
+		assertTrue("`wild_random_size` consumes an axis its signature leaves unresolved.", random.getHasUnresolvedStaticallyReadAxes());
+		assertNull("`wild_random_size` draws from `np.random` at trace time, so it is not converted.", random.getPassingPrecondition());
+		assertNotNull("`wild_random_size` fails with HAS_TRACE_TIME_PYTHON_EFFECTS.",
+				random.getStatus().getEntryMatchingCode(PLUGIN_ID, PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS.getCode()));
 
 		for (String identifier : List.of("resolved_axis_arange", "ranked_arange")) {
 			Function function = findFunction(functions, identifier);

@@ -1315,6 +1315,14 @@ public class Function {
 	private Boolean hasEagerOnlyCalls;
 
 	/**
+	 * True iff this {@link Function}'s body (transitively) does Python I/O, reads the clock, or draws Python-level randomness, which
+	 * {@code tf.function} runs once at trace time rather than on every call. {@code null} when it could not be determined (e.g., no
+	 * call-graph node), in which case the precondition does not block hybridization. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077.
+	 */
+	private Boolean hasTraceTimePythonEffects;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises
 	 * under {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the
 	 * precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
@@ -1534,6 +1542,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
 										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
 												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
+							else if (this.getHasTraceTimePythonEffects() != null && this.getHasTraceTimePythonEffects())
+								// Does Python I/O, reads the clock, or draws Python-level randomness, which tf.function runs once at
+								// trace time instead of on every call (issue 1077). A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TRACE_TIME_PYTHON_EFFECTS,
+										"Can't hybridize a function that does Python I/O, reads the clock, or draws Python-level "
+												+ "randomness; tf.function runs it once, when tracing, rather than on every call.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -2087,6 +2101,50 @@ public class Function {
 	 */
 	public Boolean getHasEagerOnlyCalls() {
 		return this.hasEagerOnlyCalls;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body (transitively) does Python I/O, reads the clock, or draws Python-level randomness,
+	 * storing the result for {@link #getHasTraceTimePythonEffects()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
+	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 */
+	public void computeTraceTimePythonEffects(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " runs Python effects at trace time.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " runs Python effects at trace time without a call graph node.");
+			return;
+		}
+
+		// Any of the function's nodes (context-sensitive copies, trampolines) reaching a call decides, as for the eager-only calls.
+		TraceTimePythonEffectAnalysis analysis = new TraceTimePythonEffectAnalysis(callGraph, pointerAnalysis);
+		boolean effects = nodes.stream().anyMatch(analysis::hasTraceTimePythonEffects);
+
+		this.hasTraceTimePythonEffects = effects;
+
+		LOG.info(this + (effects ? " runs Python effects at trace time." : " runs no Python effects at trace time."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body (transitively) does Python I/O, reads the clock, or draws Python-level randomness, {@code null}
+	 * if undetermined.
+	 *
+	 * @return True iff this function runs Python effects that tracing would freeze, null if undetermined.
+	 */
+	public Boolean getHasTraceTimePythonEffects() {
+		return this.hasTraceTimePythonEffects;
 	}
 
 	/**
