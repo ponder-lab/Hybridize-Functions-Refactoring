@@ -13466,6 +13466,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`store_into_derived` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeIntoDerived.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
 
+		Function storeMultiIndex = getFunction("store_multi_index");
+		assertTrue("`store_multi_index` assigns into a tensor computed from its parameter by a tuple index.",
+				storeMultiIndex.getHasTensorParameterItemAssignment());
+		assertNull("`store_multi_index` must not pass a precondition.", storeMultiIndex.getPassingPrecondition());
+		assertNotNull("`store_multi_index` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeMultiIndex.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		// TODO: Ariadne's IR gives a string-keyed subscript store the form of an attribute store, so the store is taken for an attribute
+		// store and `store_string_key` is converted although tracing raises a TypeError. See https://github.com/wala/ML/issues/1100.
+		Function storeStringKey = getFunction("store_string_key");
+		assertFalse("`store_string_key`'s string-keyed store reads as an attribute store.",
+				storeStringKey.getHasTensorParameterItemAssignment());
+		assertEquals("`store_string_key` is converted (P1), a known miss.", P1, storeStringKey.getPassingPrecondition());
+
 		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
 		for (String identifier : List.of("set_first", "add_to_first")) {
 			Function function = getFunction(identifier);
