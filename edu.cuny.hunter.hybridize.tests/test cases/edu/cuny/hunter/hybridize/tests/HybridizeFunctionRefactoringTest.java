@@ -14190,16 +14190,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
-	 * computes {@code abs(n - 1)}. On a tensor, {@code abs()} dispatches to the tensor's {@code __abs__}, so it is tensor computation, and
-	 * the function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the builtin's result untyped, so this test
-	 * pinned {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
+	 * returns {@code abs(n - 1)} when {@code n > 0}. The comparison {@code n > 0} on the tensor parameter is tensor computation, so the
+	 * function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the comparison untyped, so this test pinned
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
+	 * <p>
+	 * TODO: {@code abs(n - 1)} is tensor computation too, but Ariadne doesn't model the builtin {@code abs()} on a tensor, so it and
+	 * {@code n - 1} stay untyped (https://github.com/wala/ML/issues/1087).
 	 */
 	@Test
 	public void testRecursion2Barren() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 		assertTrue(f.getHasTensorParameter());
 		assertFalse(f.isRecursive());
-		assertTrue("abs() on a tensor is tensor computation.", f.getHasTensorComputation());
+		assertTrue("The comparison n > 0 on a tensor is tensor computation.", f.getHasTensorComputation());
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
 		assertFalse(f.getStatus().hasError());
 		assertEquals(P1, f.getPassingPrecondition());
