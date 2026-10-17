@@ -13029,14 +13029,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: `merged`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
-		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
-		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
-		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
-		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// `merged`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program runs
+		// eagerly, so decorating it runs. The engine folds the call in the module's own body to `True`, so only the eager arm reaches the
+		// merge (https://github.com/wala/ML/issues/1110).
 		Function merged = findFunction(functions, "merged");
-		assertTrue("`merged` carries the Keras symbolic origin from one path of its merge.", merged.getHasKerasSymbolicArguments());
-		assertNull("`merged` does not convert.", merged.getPassingPrecondition());
+		assertFalse("`merged` receives only the eager arm of its merge.", merged.getHasKerasSymbolicArguments());
+		assertEquals("`merged` still converts (P1).", P1, merged.getPassingPrecondition());
 	}
 
 	/**
@@ -14251,38 +14249,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function nil = getFunction("nil_prod");
 		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
-		// TODO: `nil_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
-		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
-		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
-		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
-		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
-		assertNull("`nil_prod` does not convert.", nil.getPassingPrecondition());
-		assertNotNull("`nil_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
-				nil.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		// The Keras `Input` reaches `nil_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
+		// the module's own body (https://github.com/wala/ML/issues/1110).
+		assertEquals("`nil_prod` still converts (P1).", P1, nil.getPassingPrecondition());
 
 		Function stride = getFunction("stride_prod");
 		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				stride.getHasNumpyCallsOnParameters());
-		// TODO: `stride_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
-		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
-		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
-		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
-		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
-		assertNull("`stride_prod` does not convert.", stride.getPassingPrecondition());
-		assertNotNull("`stride_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
-				stride.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		// The Keras `Input` reaches `stride_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
+		// the module's own body (https://github.com/wala/ML/issues/1110).
+		assertEquals("`stride_prod` still converts (P1).", P1, stride.getPassingPrecondition());
 
 		Function rest = getFunction("rest_prod");
 		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				rest.getHasNumpyCallsOnParameters());
-		// TODO: `rest_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
-		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
-		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
-		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
-		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
-		assertNull("`rest_prod` does not convert.", rest.getPassingPrecondition());
-		assertNotNull("`rest_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
-				rest.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		// The Keras `Input` reaches `rest_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
+		// the module's own body (https://github.com/wala/ML/issues/1110).
+		assertEquals("`rest_prod` still converts (P1).", P1, rest.getPassingPrecondition());
 	}
 
 	/**
