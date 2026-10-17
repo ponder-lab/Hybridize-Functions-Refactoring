@@ -13825,8 +13825,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
-	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate} or {@code zip}, which iterate their arguments, works
-	 * eagerly but raises under tracing once the parameter is symbolic, so it fails with
+	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate}, {@code zip}, or {@code reversed}, which iterate
+	 * their arguments, works eagerly but raises under tracing once the parameter is symbolic, so it fails with
 	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Enumerating a Python list of tensors (issue 832's exemption) remains P1.
 	 */
 	@Test
@@ -13841,13 +13841,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
 
-		// TODO: Ariadne has no model of the `reversed` builtin, so the call has no callee whose iteration of its argument could be read,
-		// and `reversed_param` is converted although tracing raises a TypeError (len of a symbolic tensor). See
-		// https://github.com/wala/ML/issues/1099 and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+		// Ariadne models `reversed` as iterating its argument since https://github.com/wala/ML/issues/1099, so `reversed_param` is refused
+		// like the other wrappers; tracing raises a TypeError there (len of a symbolic tensor).
 		Function reversedParam = getFunction("reversed_param");
-		assertFalse("`reversed_param`'s `reversed` is unmodeled, so its iteration of the tensor is not seen.",
-				reversedParam.getHasTensorParameterIteration());
-		assertEquals("`reversed_param` is converted (P1), a known miss.", P1, reversedParam.getPassingPrecondition());
+		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
+		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
+		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
 		Function enumerateList = getFunction("enumerate_list");
 		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
