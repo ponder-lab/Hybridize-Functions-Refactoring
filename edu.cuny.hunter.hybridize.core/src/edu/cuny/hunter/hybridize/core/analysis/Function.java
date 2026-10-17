@@ -3143,13 +3143,14 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
-	 * {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the parameter is symbolic and iterating it
-	 * raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at earlier Ariadne
-	 * versions). When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, directly or through a builtin that
+	 * iterates it, storing the result for {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the
+	 * parameter is symbolic and iterating it raises, so the conversion must be declined (issue 830, the shield the barren verdict
+	 * accidentally provided at earlier Ariadne versions). When the function has no call-graph node, the result is left undetermined,
+	 * mirroring the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
 	 *
-	 * @param callGraph The call graph.
+	 * @param callGraph The call graph, used to resolve the builtin a tensor is passed to.
 	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
 	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
 	 */
@@ -3171,7 +3172,7 @@ public class Function {
 			return;
 		}
 
-		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(callGraph, pointerAnalysis, tensorTypeAnalysis);
 		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
 
 		this.hasTensorParameterIteration = iterates;
