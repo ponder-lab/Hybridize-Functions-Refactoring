@@ -1,0 +1,28 @@
+{
+ "types": [
+  {
+   "module": "A.py",
+   "function": "",
+   "variable": "inputs",
+   "dtype": "float32",
+   "shape": "118 26 512",
+   "attribution": "Content of batch.pkl, an external dataset the program loads, so its types cannot be computed from code. The dtype and shape are this fixture's assumption; no file was observed."
+  },
+  {
+   "module": "A.py",
+   "function": "",
+   "variable": "length",
+   "dtype": "int32",
+   "shape": "118",
+   "attribution": "Content of batch.pkl, an external dataset the program loads, so its types cannot be computed from code. The dtype and shape are this fixture's assumption; no file was observed."
+  },
+  {
+   "module": "A.py",
+   "function": "",
+   "variable": "other",
+   "dtype": "float64",
+   "shape": "3",
+   "attribution": "Content of batch.pkl, an external dataset the program loads, so its types cannot be computed from code. The dtype and shape are this fixture's assumption; no file was observed."
+  }
+ ]
+}
