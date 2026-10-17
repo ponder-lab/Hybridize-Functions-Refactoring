@@ -501,6 +501,13 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> callerCovered = Function.computeCallerCoverage(projectFunctions, callGraph);
 			projectFunctions.forEach(func -> func.setCallerCovered(callerCovered.contains(func)));
 
+			// Whether each function passes an invalid name argument to a TensorFlow API (issues 814 and 1087), and then which call
+			// one whose name argument raises under tracing. The scan is purely syntactic—no call-graph prerequisite and negligible
+			// cost—so it runs unconditionally rather than sharing the gate, and before any check, since a caller's verdict reads its
+			// callees'.
+			projectFunctions.forEach(Function::computeInvalidNameArguments);
+			Function.computeInvalidNameArgumentCallers(projectFunctions, callGraph);
+
 			// The modules whose `try` statements are read for the `except` clauses around a call (issue 1014): those of the project's
 			// functions, by the absolute path of their file, each read once and shared across the functions.
 			Map<String, ExceptionHandlerAnalysis> modules = new HashMap<>();
@@ -534,8 +541,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Which defaulted parameters no caller supplies, and so may be left out of an inferred input signature (#787). Cheap
 				// enough to run unconditionally: it exits immediately for a function with no defaulted parameter, and
 				// `computeInputSignature` reads only the cache it populates.
+				// Whether the function's class extends a Keras layer or model as the engine models it is the other half of that question:
+				// Keras itself supplies `training` and `mask` to such a class's `call` (issue 1099). Also cheap: a walk over the class's
+				// bases, with no points-to query.
 				try {
 					func.inferSuppliedParameters(callGraph, this.splitForFunction(subMonitor));
+					func.computeExtendsKerasCallableClass(callGraph);
 				} catch (CoreException e) {
 					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
 					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);
@@ -619,17 +630,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// precondition region as the barren check, so it shares the gate; overridable independently via
 				// alwaysCheckEagerOnlyCalls.
 				if (this.getAlwaysCheckEagerOnlyCalls() || barrenCouldDecide)
-					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis());
+					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
 				// gate; overridable independently via alwaysCheckNumpyCalls.
 				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
 					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis(), analysis);
-
-				// Check whether the function passes a non-string constant where a TensorFlow API declares `name` (issue 814). Its
-				// failure is reachable in the same precondition region as the other safety checks, but the scan is purely
-				// syntactic—no call-graph prerequisite and negligible cost—so it runs unconditionally rather than sharing the gate.
-				func.computeInvalidNameArguments();
 
 				// Check whether the inferred input signature leaves unresolved an axis the body reads statically (issue 811). Same
 				// reachable region, same gate; overridable independently via alwaysCheckStaticShapeReads. The compute short-circuits

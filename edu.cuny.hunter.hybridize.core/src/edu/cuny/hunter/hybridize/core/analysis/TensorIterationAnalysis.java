@@ -51,8 +51,10 @@ class TensorIterationAnalysis {
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
 			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				index.computeIfAbsent(local.getNode(), n -> new HashMap<>()).computeIfAbsent(local.getValueNumber(), v -> new HashSet<>())
-						.addAll(pair.snd.getTypes());
+				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
+				pair.snd.getTypes().stream().filter(type -> !type.isNone())
+						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
+								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
 
 		this.tensorTypeIndex = index;
 	}

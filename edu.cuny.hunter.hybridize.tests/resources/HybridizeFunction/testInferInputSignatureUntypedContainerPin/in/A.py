@@ -8,7 +8,9 @@ V = tf.Variable(tf.zeros([2]), name="weight")
 X64 = np.array([1.5, 2.5])
 
 with open("batch.pkl", "rb") as f:
-    batch = pickle.load(f)
+    p0, p1, x = pickle.load(f)
+
+pair = (p0, p1)
 
 
 def pin_mix(x, pair):
@@ -27,9 +29,9 @@ def flat_and_cont(x, pair):
 
 
 pin_mix(X64, (tf.zeros([2]), tf.zeros([2])))
-pin_mix(X64, batch["pair"])
+pin_mix(X64, pair)
 
 pin_typed(X64, (tf.zeros([2]), tf.zeros([2])))
 
 flat_and_cont(tf.zeros([2]), (tf.zeros([2]), tf.zeros([2])))
-flat_and_cont(batch["x"], batch["pair"])
+flat_and_cont(x, pair)

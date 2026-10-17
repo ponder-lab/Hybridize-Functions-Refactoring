@@ -66,7 +66,8 @@ public enum PreconditionFailure {
 	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
 	 * {@code tf.sqrt(x, tf.float32)}), or passes {@code None}, literally or through a parameter defaulting to it, where the API's own
 	 * default name is a string (e.g., {@code tf.boolean_mask(x, mask, name=None)}). Eager execution never validates the name, but
-	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. See
+	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. Since tracing a
+	 * function traces its callees, a function calling one of these, without passing the name such a callee forwards, fails too. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814 and
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087.
 	 */
@@ -215,10 +216,10 @@ public enum PreconditionFailure {
 
 	/**
 	 * A hybrid function that a hybrid-to-eager rule (no tensor parameter, a primitive parameter, or no tensor computation) would otherwise
-	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. The signature converts each argument to its declared
-	 * tensor type at the boundary, which overrides how the analysis types the parameters those rules read, and removing the decorator would
-	 * delete the boundary the signature enforces and the single concrete function it pins (which a SavedModel export relies on, even when
-	 * the signature is empty and converts nothing). The function selects no transformation.
+	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. Each rule has its own reason. Under no tensor
+	 * parameter (P2), the body receives tensors, and removing the decorator changes how the arguments are converted and validated. Under a
+	 * primitive parameter (P3), the signature means a primitive argument does not cause retracing. Under no tensor computation (P6),
+	 * removing the decorator deletes the validation and conversion of the arguments. The function selects no transformation.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997">Issue 997</a>
 	 */

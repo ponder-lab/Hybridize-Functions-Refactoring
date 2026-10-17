@@ -37,6 +37,22 @@ class Exporter(tf.Module):
         return self.step
 
 
+@tf.function(
+    input_signature=[
+        tf.TensorSpec(shape=[3], dtype=tf.float32),
+        tf.TensorSpec(shape=[], dtype=tf.int32),
+    ]
+)
+def sig_prim(x, n):
+    # A tensor and a primitive parameter: the signature converts the primitive, so it doesn't retrace.
+    return x * tf.cast(n, tf.float32)
+
+
+@tf.function
+def prim(x, n):
+    return x * tf.cast(n, tf.float32)
+
+
 l = []
 
 
@@ -75,3 +91,5 @@ barren(tf.constant([1.0, 2.0, 3.0]))
 sig_zero()
 e = Exporter()
 e.get_step()
+sig_prim(tf.constant([1.0, 2.0, 3.0]), 3)
+prim(tf.constant([1.0, 2.0, 3.0]), 3)

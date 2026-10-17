@@ -115,6 +115,7 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -133,6 +134,7 @@ import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
+import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -144,6 +146,7 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
@@ -151,6 +154,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
@@ -899,7 +903,9 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
+	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
+	 * (#1047).
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -944,6 +950,15 @@ public class Function {
 				instanceKeyToProcess = instanceKey; // use the original.
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
+
+			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
+			// learning rate, and before the model existed there were none (#1047). Built-in containers and objects of program-defined
+			// classes are still examined.
+			if (isLibraryModeled(concreteType)) {
+				subMonitor.done();
+				return false;
+			}
+
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
@@ -968,6 +983,22 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * The name of the class loader into which Ariadne registers the classes its library summaries allocate (WALA's synthetic loader).
+	 */
+	private static final Atom SYNTHETIC_LOADER_NAME = Atom.findOrCreateUnicodeAtom("Synthetic");
+
+	/**
+	 * True iff the given class is a library class that Ariadne models in a summary, rather than a built-in container or a class the program
+	 * defines.
+	 *
+	 * @param type The class in question.
+	 * @return True iff the given class is loaded from Ariadne's library summaries and is not a built-in container.
+	 */
+	private static boolean isLibraryModeled(IClass type) {
+		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
 	}
 
 	/**
@@ -1148,6 +1179,13 @@ public class Function {
 	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
 	 */
 	private Boolean replicaInvoked;
+
+	/**
+	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
+	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
+	 * walk finds no such class, in which case the PyDev walk alone decides.
+	 */
+	private boolean extendsKerasCallableClass;
 
 	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
@@ -1345,6 +1383,18 @@ public class Function {
 	 */
 	private Boolean hasInvalidNameArguments;
 
+	/** Whether this function calls, directly or transitively, a function whose name argument raises under tracing (issue 1087). */
+	private boolean callsInvalidNameArguments;
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string, so that a call omitting one raises under tracing (issue 1087). Filled by {@link #computeInvalidNameArguments()}.
+	 */
+	private final Set<String> forwardedNoneNameParameters = new HashSet<>();
+
+	/** Whether this function's body passes an invalid name argument that is not a forwarded {@code None}-defaulting parameter. */
+	private boolean unconditionalInvalidNameArguments;
+
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
 	 */
@@ -1491,11 +1541,12 @@ public class Function {
 								// in the same family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
 										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, a tensor.");
-							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
-								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
-								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
+							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments()
+									|| this.getCallsInvalidNameArguments())
+								// Passes, or calls a function that passes, a name argument that only tracing validates and rejects
+								// (issues 814 and 1087). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
-										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
+										"Can't hybridize a function that passes, or calls a function that passes, an invalid name argument to a TensorFlow API.");
 							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
 								// Snapshots a model's variables before the model's first call, which raises under tracing when
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
@@ -2013,18 +2064,35 @@ public class Function {
 	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
 	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
 	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
-	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * The failure gives the rule's own reason for keeping the decorator. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
 	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
 		if (this.getHybridizationParameters().hasInputSignatureParam())
-			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE,
-					"This hybrid function has a supplied input_signature, which converts its arguments to the declared tensor types and pins one concrete function, so it is not de-hybridized.");
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
 		}
+	}
+
+	/**
+	 * The reason a hybrid function with a supplied {@code input_signature} is kept hybrid where the hybrid-to-eager rule with the given
+	 * precondition would otherwise de-hybridize it.
+	 *
+	 * @param precondition The precondition the replaced conversion would have passed: {@link PreconditionSuccess#P2},
+	 *        {@link PreconditionSuccess#P3}, or {@link PreconditionSuccess#P6}.
+	 * @return The message of the {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} failure.
+	 */
+	private static String getSuppliedInputSignatureMessage(PreconditionSuccess precondition) {
+		return switch (precondition) {
+		case P2 -> "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		case P3 -> "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		case P6 -> "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+		default -> throw new IllegalArgumentException("Not a hybrid-to-eager precondition: " + precondition + ".");
+		};
 	}
 
 	/**
@@ -2066,8 +2134,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), used to scope a read of an eager-only tensor member to a tensor receiver.
 	 */
-	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -2086,7 +2157,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis, tensorTypedKeys);
 		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
@@ -2105,8 +2176,9 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters,
-	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
-	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors
+	 * {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}: when the function has no call-graph node, the result is left
+	 * undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
@@ -2399,6 +2471,69 @@ public class Function {
 				}
 
 		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * The engine type names of the Keras classes whose {@code call} overrides Keras dispatches to: the summary classes of {@code Layer} and
+	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
+	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
+	 */
+	private static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
+
+	/**
+	 * Computes whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine
+	 * models it, storing the result for {@link #isKerasCallOverride()}. The bases are the engine's: a base the program defines is followed
+	 * to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose superclass
+	 * the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
+	 * <p>
+	 * This sits beside the PyDev walk in {@link #isKerasCallOverride()} because that walk stops at a base PyDev can't resolve, and a base
+	 * written through {@code tf.keras} is one: it then sees only the base's own last segment, so {@code tf.keras.Sequential} answers
+	 * {@code Sequential}, not {@code Model} (issue 1099). The engine's walk reaches {@code Model} through the summary's superclass chain. A
+	 * base whose summary class declares no superclass resolves to nothing here, which today is every built-in layer
+	 * ({@code BatchNormalization}, {@code Dense}, ...): https://github.com/wala/ML/issues/1098. Once those summaries declare their
+	 * superclass, the walk reaches {@code Layer} and the built-in subclasses are recognized with no change here.
+	 *
+	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
+	 * @throws CoreException If this function's declaring class can't be determined.
+	 */
+	public void computeExtendsKerasCallableClass(CallGraph callGraph) throws CoreException {
+		if (!(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return;
+
+		// The function's own type is its class's type followed by its name.
+		String functionTypeName = this.getDeclaringClass().getName().toString();
+		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
+
+		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
+		Set<TypeName> seen = new HashSet<>();
+		Deque<TypeName> worklist = new ArrayDeque<>();
+		worklist.add(classTypeName);
+
+		while (!worklist.isEmpty()) {
+			TypeName name = worklist.remove();
+
+			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
+				this.extendsKerasCallableClass = true;
+				return;
+			}
+
+			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
+			// leaving the PyDev walk to decide: the first name is derived from the declaring class's, and the bases are resolved at the
+			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
+			if (cls == null || !seen.add(name))
+				continue;
+
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
+			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
+			if (cls instanceof IPythonClass)
+				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
+			else if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getName());
+		}
 	}
 
 	/**
@@ -3488,33 +3623,8 @@ public class Function {
 
 		if (elementReason != null)
 			blocking.put(param, elementReason);
-		else if (!this.blocksOnUntypedContainerContext(param, blocking))
+		else
 			specByParameter.put(param, new InputSignature.Sequence(reduced));
-	}
-
-	/**
-	 * Blocks the container parameter {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is
-	 * reached in a conforming calling context that supplies no container the elements were read from (#1003), including an argument after a
-	 * starred unpack, which the analysis reads as the unpacked sequence itself (#1004). The container form of
-	 * {@link #blocksOnUntypedContext}, asked, like it, only once a specification exists to store, so it relabels no other absence. See
-	 * {@link Parameter#hasUntypedContainerContext()}.
-	 *
-	 * @param param The container parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContainerContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedContainerContext())
-			return false;
-
-		// The nested specification comes from the containers the analysis saw. A context that supplies none of them passes something the
-		// specification makes no claim about, and TensorFlow enforces the nesting, so that call may be rejected.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site whose argument for parameter `" + param.getName() + "` is not a container the "
-						+ "analysis read, so a nested specification derived from the other call sites may reject that call; "
-						+ "input-signature inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
 	}
 
 	/**
@@ -3680,28 +3790,49 @@ public class Function {
 
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
-				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && (isNonStringConstant(keyword.value)
-						|| STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && this.isNone(keyword.value)))
-					return true;
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id)) {
+					if (isNonStringConstant(keyword.value))
+						return this.passesUnconditionally();
+
+					if (STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && keyword.value instanceof Name value) {
+						if ("None".equals(value.id))
+							return this.passesUnconditionally();
+
+						if (this.isUnreboundNoneParameter(value.id)) {
+							this.forwardedNoneNameParameters.add(value.id);
+							return true;
+						}
+					}
+				}
 
 		String calleeName = NodeUtils.getRepresentationString(call.func);
-		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
-				&& isNonStringConstant(call.args[1]);
+
+		if (calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
+				&& isNonStringConstant(call.args[1]))
+			return this.passesUnconditionally();
+
+		return false;
 	}
 
 	/**
-	 * True iff the given expression is {@code None} when this {@link Function} runs with its parameters' defaults: the literal, or a
-	 * parameter of this function that defaults to {@code None} and that the body never rebinds (as {@code name = name or "kept"} does).
+	 * Records that this {@link Function}'s body passes an invalid name argument whatever its callers pass.
 	 *
-	 * @param expression The expression to inspect.
-	 * @return True iff the expression is {@code None} or an unrebound parameter defaulting to it.
+	 * @return True, the call's verdict.
 	 */
-	private boolean isNone(exprType expression) {
-		if (!(expression instanceof Name name))
-			return false;
+	private boolean passesUnconditionally() {
+		this.unconditionalInvalidNameArguments = true;
+		return true;
+	}
 
-		return "None".equals(name.id)
-				|| this.getParameters().stream().anyMatch(p -> name.id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(name.id);
+	/**
+	 * True iff the given name is a parameter of this {@link Function} that defaults to {@code None} and that the body never rebinds (as
+	 * {@code name = name or "kept"} does), so it is {@code None} whenever a call omits it.
+	 *
+	 * @param id The name.
+	 * @return True iff {@code id} is an unrebound parameter defaulting to {@code None}.
+	 */
+	private boolean isUnreboundNoneParameter(String id) {
+		return this.getParameters().stream().anyMatch(p -> id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(id);
 	}
 
 	/**
@@ -3780,8 +3911,8 @@ public class Function {
 	/**
 	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
 	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged here—it is most APIs' declared default for {@code name}, and
-	 * {@link #isNone(exprType)} covers the APIs it is not—and anything whose value is unknown (a variable, a call) is conservatively
-	 * accepted.
+	 * {@link #STRING_DEFAULT_NAME_OP_PATHS} lists the APIs it is not—and anything whose value is unknown (a variable, a call) is
+	 * conservatively accepted.
 	 *
 	 * @param expression The expression bound to a {@code name} argument.
 	 * @return True iff the expression is a non-string constant.
@@ -3809,6 +3940,56 @@ public class Function {
 	 */
 	public Boolean getHasInvalidNameArguments() {
 		return this.hasInvalidNameArguments;
+	}
+
+	/**
+	 * True iff this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @return True iff such a call is reachable.
+	 */
+	public boolean getCallsInvalidNameArguments() {
+		return this.callsInvalidNameArguments;
+	}
+
+	/**
+	 * Sets whether this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @param callsInvalidNameArguments Whether such a call is reachable.
+	 */
+	void setCallsInvalidNameArguments(boolean callsInvalidNameArguments) {
+		this.callsInvalidNameArguments = callsInvalidNameArguments;
+	}
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string. A call to this function that omits one passes that API {@code None}.
+	 *
+	 * @return The forwarded parameters' names.
+	 */
+	Set<String> getForwardedNoneNameParameters() {
+		return Collections.unmodifiableSet(this.forwardedNoneNameParameters);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes an invalid name argument whatever its callers pass: one that is not a forwarded
+	 * parameter defaulting to {@code None}.
+	 *
+	 * @return True iff the body's own invalid name argument does not depend on the call.
+	 */
+	boolean passesInvalidNameArgumentsUnconditionally() {
+		return TRUE.equals(this.hasInvalidNameArguments) && this.unconditionalInvalidNameArguments;
+	}
+
+	/**
+	 * Computes, over {@code functions}, which call a function whose name argument raises under tracing, directly or through other such
+	 * callers, and records it on each (issue 1087). Every function's own {@link #computeInvalidNameArguments()} must already have run.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 */
+	public static void computeInvalidNameArgumentCallers(Set<Function> functions, CallGraph callGraph) {
+		Set<Function> callers = InvalidNameCallerAnalysis.computeCallers(functions, callGraph);
+		functions.forEach(f -> f.setCallsInvalidNameArguments(callers.contains(f)));
 	}
 
 	@Override
@@ -4874,8 +5055,7 @@ public class Function {
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
 	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
-	 * add the reduced spec to the signature, unless the function is also reached in a conforming context that left the parameter untyped,
-	 * in which case the spec is withheld with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} (#998).
+	 * add the reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -4936,30 +5116,6 @@ public class Function {
 	}
 
 	/**
-	 * Blocks {@code param} with {@link InferenceResult.AbsenceReason#UNTYPED_CALLING_CONTEXT} when the function is reached in a conforming
-	 * calling context in which the tensor-type analysis associated no type with it (#998). Asked only once the flat reduction has a
-	 * specification to store, so it relabels no other absence: a parameter whose typed contexts already fail to reduce keeps that reason.
-	 * Untyped contexts are found per call-graph node and per call site into one (see {@link Parameter#hasUntypedConformingContext()}).
-	 *
-	 * @param param The parameter whose reduced specification is about to be stored.
-	 * @param blocking The blocking reasons collected so far, to which the parameter is added when it blocks.
-	 * @return True iff the parameter blocks, in which case its specification must not be stored.
-	 */
-	private boolean blocksOnUntypedContext(Parameter param, Map<Parameter, AbsenceReason> blocking) {
-		if (!param.hasUntypedConformingContext())
-			return false;
-
-		// The reduced specification comes from the contexts the analysis typed. What a context it reached without typing passes is not
-		// known to be a tensor matching that specification, so the specification would be a claim about that call too.
-		this.addInfo(INPUT_SIGNATURE_INFERENCE,
-				"`" + this + "` is reached from a call site where the argument for parameter `" + param.getName() + "` is not typed "
-						+ "as a tensor, so a specification derived from the other call sites may reject that call; input-signature "
-						+ "inference is dropped.");
-		blocking.put(param, AbsenceReason.UNTYPED_CALLING_CONTEXT);
-		return true;
-	}
-
-	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the recovery
 	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per blocking parameter. The
 	 * {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason} encountered, but the
@@ -4990,6 +5146,16 @@ public class Function {
 							+ "that caller is Keras itself, which passes `training`. Input-signature inference is dropped and the function "
 							+ "is hybridized with a bare decorator.");
 			return new InferenceResult.Absent(AbsenceReason.VARIABLE_KEYWORD_PARAMETER);
+		}
+
+		// `tf.function` traces the callable an intervening decorator returns, and the analysis types the definition's parameters, which
+		// see only what that decorator passes on. A signature read off them may reject the decorated function's own callers (#1046).
+		if (this.hasInterveningDecorator()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` has a decorator between `@tf.function` and its definition, so `tf.function` traces the callable that "
+							+ "decorator returns, whose arguments the definition's parameters do not describe. Input-signature inference "
+							+ "is dropped.");
+			return new InferenceResult.Absent(AbsenceReason.INTERVENING_DECORATOR);
 		}
 
 		if (this.tensorParameterFromSpeculation) {
@@ -5205,8 +5371,7 @@ public class Function {
 									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
 									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
 
-					if (!this.blocksOnUntypedContext(param, blocking))
-						specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
 
 					continue;
 				}
@@ -5218,9 +5383,10 @@ public class Function {
 				 * `inferSpec` reduced to bottom. With the per-context reduction
 				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it drops for three reasons: heterogeneous
 				 * dtype (|D| ≠ 1), dtype-⊤ (a single agreed `UNKNOWN`), or mixed sparse/dense
-				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642). Shape-⊤ and symbolic-dim no longer drop
-				 * here—it emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own
-				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642), plus a `None` member, which a call passing
+				 * `None` contributes (wala/ML#1040). Shape-⊤ and symbolic-dim no longer drop here—it emits a coarse `TensorType(dtype,
+				 * null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own precedence order (dtype before sparseness) so
+				 * the reason is exact, and emit a per-parameter INFO naming it; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
 				AbsenceReason reason = classifyDtypeBottom(contexts);
@@ -5232,8 +5398,7 @@ public class Function {
 				continue;
 			}
 
-			if (!this.blocksOnUntypedContext(param, blocking))
-				specByParameter.put(param, new InputSignature.Single(spec.get()));
+			specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
 
 		// A declared failure was set aside as evidence (#888), but it still runs against the signature, which validates the argument before
@@ -5724,6 +5889,7 @@ public class Function {
 		case HETEROGENEOUS_DTYPE -> "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.";
 		case PARTIAL_DTYPE -> "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.";
 		case UNKNOWN_DTYPE -> "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.";
+		case RECEIVES_NONE -> "receives None at some call sites and a tensor at others, and a tensor specification rejects None, so a single input signature cannot be inferred; it is dropped.";
 		default -> "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.";
 		};
 	}
@@ -5742,11 +5908,15 @@ public class Function {
 	 * defect twice, which is the reason it lives here rather than at either call site.
 	 *
 	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
-	 * @return {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
+	 * @return {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}, whose dtype is meaningless (wala/ML#1040);
+	 *         {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
 	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, {@link AbsenceReason#UNKNOWN_DTYPE} when no context resolved,
 	 *         and otherwise {@link AbsenceReason#HETEROGENEOUS_SPARSITY}, the remaining reason {@code inferSpec} bottoms for.
 	 */
 	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		if (contexts.stream().anyMatch(TensorType::isNone))
+			return AbsenceReason.RECEIVES_NONE;
+
 		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
 		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
 		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();
@@ -5913,9 +6083,10 @@ public class Function {
 	/**
 	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
 	 * class transitively extends a base whose last segment is {@code Model} or {@code Layer}, resolved through the PyDev class hierarchy
-	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition). Matching by last segment
-	 * over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable signature (#881), the conservative
-	 * default.
+	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition), or whose enclosing class
+	 * the engine resolves to a subclass of Keras's {@code Layer} or {@code Model} ({@link #computeExtendsKerasCallableClass(CallGraph)},
+	 * issue 1099). Matching by last segment over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable
+	 * signature (#881), the conservative default.
 	 *
 	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
 	 */
@@ -5923,7 +6094,8 @@ public class Function {
 		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
 			return false;
 
-		return this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
+		return this.extendsKerasCallableClass
+				|| this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
 	}
 
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
@@ -6114,6 +6286,38 @@ public class Function {
 				}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * Returns true iff a decorator other than {@code tf.custom_gradient} sits between this function's {@code @tf.function} and its
+	 * definition (#1046). For a hybrid function, those are the decorators beneath its {@code @tf.function}. For an eager one, the added
+	 * decorator goes on the definition, unless the function carries {@code tf.custom_gradient}, in which case it goes above the outermost
+	 * one (#996), and the decorators beneath that one count. A decorator whose name can't be resolved counts, since nothing then shows it
+	 * passes its arguments through.
+	 *
+	 * @return True iff a decorator intervenes between the hybridization decorator and the definition.
+	 */
+	public boolean hasInterveningDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs == null)
+			return false;
+
+		decoratorsType outer = this.hybridDecorator != null ? this.hybridDecorator : this.getCustomGradientDecorator().orElse(null);
+
+		if (outer == null)
+			return false;
+
+		for (int i = Arrays.asList(decs).indexOf(outer) + 1; i < decs.length; i++)
+			try {
+				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
+					return true;
+			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+				LOG.info("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				return true;
+			}
+
+		return false;
 	}
 
 	/**
