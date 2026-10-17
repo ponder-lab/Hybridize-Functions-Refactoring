@@ -7535,6 +7535,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code Layer.add_loss} appends to the layer's losses (https://github.com/wala/ML/issues/1095), so a {@code call} that registers a
+	 * loss writes the layer, an object that outlives the call. {@code Var.call} adds a loss to its own layer, {@code Outer.call} reaches
+	 * that write by calling its inner {@code Var}, and {@code Vae.call} adds one to a subclassed {@code tf.keras.Model}. Each has a Python
+	 * side-effect and fails P1. {@code Plain.call} adds no loss and hybridizes.
+	 */
+	@Test
+	public void testLayerAddLossIsSideEffect() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Var.call", "Outer.call", "Vae.call")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse(function.isHybrid());
+			assertTrue("`" + identifier + "` registers a loss on a layer, which is a Python side-effect.",
+					function.getHasPythonSideEffects());
+
+			RefactoringStatus status = function.getStatus();
+			assertTrue(status.hasError());
+			assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+			assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+			assertNull(function.getPassingPrecondition());
+			assertEquals(Collections.emptySet(), function.getTransformations());
+		}
+
+		Function plain = findFunction(functions, "Plain.call");
+		assertFalse(plain.isHybrid());
+		assertFalse("`Plain.call` registers no loss.", plain.getHasPythonSideEffects());
+		assertFalse(plain.getStatus().hasError());
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, plain.getRefactoring());
+		assertEquals(P1, plain.getPassingPrecondition());
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), plain.getTransformations());
+	}
+
+	/**
 	 * The {@link Function}s whose changes are built come in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in
 	 * the file. The processor receives them in a hash-ordered {@link Set}, whose order changes from run to run, and some analysis state is
 	 * first-come, so iterating that set directly made the output depend on the run.
