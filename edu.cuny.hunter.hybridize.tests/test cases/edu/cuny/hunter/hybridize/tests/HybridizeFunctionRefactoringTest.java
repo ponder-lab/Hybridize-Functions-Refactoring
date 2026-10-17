@@ -13111,6 +13111,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the Keras symbolic-argument decline through an instance call of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1110, reducing transformer's {@code text_classification.py}:
+	 * {@code Encoder}, a plain class rather than a Keras layer, is applied to an in-frame {@code Input} as {@code Encoder(args)(inp)},
+	 * which dispatches to {@code __call__} through Ariadne's synthesized trampoline. The engine carries the {@code KERAS_SYMBOLIC} origin
+	 * (https://github.com/wala/ML/issues/1101) across that binding onto {@code __call__}'s parameter, so the method declines. The control,
+	 * {@code Scaler.__call__}, is applied the same way to a real tensor and converts. Both arms were runtime-verified on the pinned TF
+	 * 2.9.3: decorating {@code Encoder.__call__} raises the {@code TypeError}, and decorating {@code Scaler.__call__} runs.
+	 */
+	@Test
+	public void testKerasSymbolicArgumentInstanceCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function encoder = findFunction(functions, "Encoder.__call__");
+		assertEquals("`Encoder.__call__` is called with a Keras symbolic tensor.", TRUE, encoder.getHasKerasSymbolicArguments());
+		assertNull("`Encoder.__call__` does not convert.", encoder.getPassingPrecondition());
+		assertNotNull("`Encoder.__call__` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				encoder.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+
+		Function scaler = findFunction(functions, "Scaler.__call__");
+		assertEquals("`Scaler.__call__` is called only with a real tensor.", FALSE, scaler.getHasKerasSymbolicArguments());
+		assertEquals("`Scaler.__call__` still converts (P1).", P1, scaler.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the dict-valued tensor parameter, the multi-input Keras shape and the form deep_recommenders' estimator rankers take as
 	 * {@code call(self, features)}. A dict of tensors classifies as a container, the nested reduction models only positionally-indexed
 	 * sequences, so the form is reported unsupported and the function hybridizes bare at P1 with no specification. That is the desired
