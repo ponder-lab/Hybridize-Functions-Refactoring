@@ -673,6 +673,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
+				// Check whether a returned value may be a Python primitive, which the tf.function boundary converts to a tensor (issue
+				// 1117). Same reachable region and gate; a points-to query per return.
+				if (barrenCouldDecide)
+					func.computeReturnsPrimitive(callGraph, builder);
+
 				// check the function preconditions.
 				func.check();
 

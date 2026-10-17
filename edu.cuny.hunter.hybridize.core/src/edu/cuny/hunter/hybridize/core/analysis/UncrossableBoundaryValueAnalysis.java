@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
@@ -43,6 +44,10 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * variable, or one call passing a spec, is enough to change what the decorated function does. Ignorance is {@code null} rather than
  * {@code FALSE}, the polarity of every sibling safety check: a node or a caller without an IR, or a non-Python invoke, leaves the verdict
  * undetermined.
+ * <p>
+ * The same return-side walk answers the precondition of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117: whether
+ * a function returns a Python primitive, which the boundary converts to a tensor just the same. There the value reached is a primitive
+ * constant rather than an allocation of a given type, and booleans count, since a returned {@code bool} becomes a tensor too.
  */
 class UncrossableBoundaryValueAnalysis {
 
@@ -81,11 +86,44 @@ class UncrossableBoundaryValueAnalysis {
 
 			for (SSAInstruction instruction : ir.getInstructions())
 				if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
-						&& this.reaches(node, ret.getResult(), UNCROSSABLE_RETURN_TYPE_NAMES))
+						&& this.reaches(node, ret.getResult(), hasTypeIn(UNCROSSABLE_RETURN_TYPE_NAMES)))
 					return Boolean.TRUE;
 		}
 
 		return Boolean.FALSE;
+	}
+
+	/**
+	 * Whether the body of {@code nodes} may return a Python primitive, directly or as a container element, per
+	 * {@link Function#isPrimitiveConstant(InstanceKey, boolean)} with booleans counted (issue 1117).
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @return {@code TRUE} if some return reaches a primitive constant, {@code FALSE} if none does, or {@code null} if a node has no IR.
+	 */
+	Boolean returnsPrimitive(Set<CGNode> nodes) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null)
+				return null;
+
+			for (SSAInstruction instruction : ir.getInstructions())
+				if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
+						&& this.reaches(node, ret.getResult(), instanceKey -> Function.isPrimitiveConstant(instanceKey, false)))
+					return Boolean.TRUE;
+		}
+
+		return Boolean.FALSE;
+	}
+
+	/**
+	 * The predicate an allocation of one of the given types satisfies.
+	 *
+	 * @param typeNames The type names in question.
+	 * @return True of an {@link InstanceKey} whose concrete type is named in {@code typeNames}.
+	 */
+	private static Predicate<InstanceKey> hasTypeIn(Set<String> typeNames) {
+		return instanceKey -> typeNames.contains(instanceKey.concreteType().getReference().getName().toString());
 	}
 
 	/**
@@ -111,11 +149,11 @@ class UncrossableBoundaryValueAnalysis {
 
 						// Positional slot 0 is the callee itself; the arguments start at 1.
 						for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
-							if (this.reaches(predecessor, invoke.getUse(slot), UNCROSSABLE_ARGUMENT_TYPE_NAMES))
+							if (this.reaches(predecessor, invoke.getUse(slot), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
 								return Boolean.TRUE;
 
 						for (String keyword : invoke.getKeywords())
-							if (this.reaches(predecessor, invoke.getUse(keyword), UNCROSSABLE_ARGUMENT_TYPE_NAMES))
+							if (this.reaches(predecessor, invoke.getUse(keyword), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
 								return Boolean.TRUE;
 					}
 			}
@@ -123,26 +161,28 @@ class UncrossableBoundaryValueAnalysis {
 		return Boolean.FALSE;
 	}
 
-	/** True iff {@code value} in {@code node}'s frame may hold, directly or as a container element, an allocation of one of the types. */
-	private boolean reaches(CGNode node, int value, Set<String> typeNames) {
+	/**
+	 * True iff {@code value} in {@code node}'s frame may hold, directly or as a container element, an instance satisfying {@code target}.
+	 */
+	private boolean reaches(CGNode node, int value, Predicate<InstanceKey> target) {
 		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
 		Set<InstanceKey> seen = new HashSet<>();
 
 		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey))
-			if (this.reaches(instanceKey, typeNames, seen))
+			if (this.reaches(instanceKey, target, seen))
 				return true;
 
 		return false;
 	}
 
-	private boolean reaches(InstanceKey instanceKey, Set<String> typeNames, Set<InstanceKey> seen) {
+	private boolean reaches(InstanceKey instanceKey, Predicate<InstanceKey> target, Set<InstanceKey> seen) {
 		if (!seen.add(instanceKey))
 			return false;
 
-		TypeReference reference = instanceKey.concreteType().getReference();
-
-		if (typeNames.contains(reference.getName().toString()))
+		if (target.test(instanceKey))
 			return true;
+
+		TypeReference reference = instanceKey.concreteType().getReference();
 
 		if (!Util.isContainerType(reference))
 			return false;
@@ -160,7 +200,7 @@ class UncrossableBoundaryValueAnalysis {
 
 				for (InstanceKey element : this.pointerAnalysis
 						.getPointsToSet(this.builder.getPointerKeyForInstanceField(instanceKey, field)))
-					if (this.reaches(element, typeNames, seen))
+					if (this.reaches(element, target, seen))
 						return true;
 			}
 
