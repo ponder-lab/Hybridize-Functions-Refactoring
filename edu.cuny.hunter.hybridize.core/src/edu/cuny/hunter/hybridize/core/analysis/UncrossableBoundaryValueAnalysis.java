@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
@@ -47,7 +48,8 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * <p>
  * The same return-side walk answers the precondition of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117: whether
  * a function returns a Python primitive, which the boundary converts to a tensor just the same. There the value reached is a primitive
- * constant rather than an allocation of a given type, and booleans count, since a returned {@code bool} becomes a tensor too.
+ * constant rather than an allocation of a given type, and booleans count, since a returned {@code bool} becomes a tensor too. The
+ * caller-side walk also asks whether any call site uses the result, since a result every caller discards changes nothing it can see.
  */
 class UncrossableBoundaryValueAnalysis {
 
@@ -78,19 +80,7 @@ class UncrossableBoundaryValueAnalysis {
 	 *         no IR.
 	 */
 	Boolean returnsUncrossableValue(Set<CGNode> nodes) {
-		for (CGNode node : nodes) {
-			IR ir = node.getIR();
-
-			if (ir == null)
-				return null;
-
-			for (SSAInstruction instruction : ir.getInstructions())
-				if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
-						&& this.reaches(node, ret.getResult(), hasTypeIn(UNCROSSABLE_RETURN_TYPE_NAMES)))
-					return Boolean.TRUE;
-		}
-
-		return Boolean.FALSE;
+		return this.returns(nodes, hasTypeIn(UNCROSSABLE_RETURN_TYPE_NAMES));
 	}
 
 	/**
@@ -101,6 +91,17 @@ class UncrossableBoundaryValueAnalysis {
 	 * @return {@code TRUE} if some return reaches a primitive constant, {@code FALSE} if none does, or {@code null} if a node has no IR.
 	 */
 	Boolean returnsPrimitive(Set<CGNode> nodes) {
+		return this.returns(nodes, instanceKey -> Function.isPrimitiveConstant(instanceKey, false));
+	}
+
+	/**
+	 * Whether the body of {@code nodes} returns, directly or as a container element, an instance satisfying {@code target}.
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param target The predicate a returned instance is tested against.
+	 * @return {@code TRUE} if some return reaches such an instance, {@code FALSE} if none does, or {@code null} if a node has no IR.
+	 */
+	private Boolean returns(Set<CGNode> nodes, Predicate<InstanceKey> target) {
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
 
@@ -108,8 +109,7 @@ class UncrossableBoundaryValueAnalysis {
 				return null;
 
 			for (SSAInstruction instruction : ir.getInstructions())
-				if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
-						&& this.reaches(node, ret.getResult(), instanceKey -> Function.isPrimitiveConstant(instanceKey, false)))
+				if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0 && this.reaches(node, ret.getResult(), target))
 					return Boolean.TRUE;
 		}
 
@@ -135,6 +135,43 @@ class UncrossableBoundaryValueAnalysis {
 	 *         if a caller could not be examined at all.
 	 */
 	Boolean passesUncrossableArgument(Set<CGNode> nodes, CallGraph callGraph) {
+		return anyCallSite(nodes, callGraph, (predecessor, invoke) -> {
+			// Positional slot 0 is the callee itself; the arguments start at 1.
+			for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
+				if (this.reaches(predecessor, invoke.getUse(slot), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
+					return true;
+
+			for (String keyword : invoke.getKeywords())
+				if (this.reaches(predecessor, invoke.getUse(keyword), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
+					return true;
+
+			return false;
+		});
+	}
+
+	/**
+	 * Whether some call site of {@code nodes} uses the call's result, per the caller's {@link com.ibm.wala.ssa.DefUse} (issue 1117). A call
+	 * made as a statement defines a result nothing uses, so the type the function returns cannot matter to it.
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @return {@code TRUE} if some call site's result has a use, {@code FALSE} if no examined call site's does, or {@code null} if a caller
+	 *         could not be examined at all.
+	 */
+	static Boolean usesResult(Set<CGNode> nodes, CallGraph callGraph) {
+		return anyCallSite(nodes, callGraph, (predecessor, invoke) -> predecessor.getDU().getNumberOfUses(invoke.getDef()) > 0);
+	}
+
+	/**
+	 * Whether some call site of {@code nodes} satisfies {@code test}.
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @param test The predicate a call site, given by its caller node and invoke instruction, is tested against.
+	 * @return {@code TRUE} if some call site satisfies {@code test}, {@code FALSE} if no examined call site does, or {@code null} if a
+	 *         caller has no IR or a call site is not a Python invoke.
+	 */
+	private static Boolean anyCallSite(Set<CGNode> nodes, CallGraph callGraph, BiPredicate<CGNode, PythonInvokeInstruction> test) {
 		for (CGNode node : nodes)
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
 				IR ir = predecessor.getIR();
@@ -147,14 +184,8 @@ class UncrossableBoundaryValueAnalysis {
 						if (!(instruction instanceof PythonInvokeInstruction invoke))
 							return null;
 
-						// Positional slot 0 is the callee itself; the arguments start at 1.
-						for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
-							if (this.reaches(predecessor, invoke.getUse(slot), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
-								return Boolean.TRUE;
-
-						for (String keyword : invoke.getKeywords())
-							if (this.reaches(predecessor, invoke.getUse(keyword), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
-								return Boolean.TRUE;
+						if (test.test(predecessor, invoke))
+							return Boolean.TRUE;
 					}
 			}
 

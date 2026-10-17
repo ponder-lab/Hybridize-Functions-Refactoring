@@ -17,6 +17,11 @@ def scaled_and_size(x):
     return x * 2.0, tf.size(x)
 
 
+def discarded_width(x):
+    tf.debugging.assert_all_finite(x, "not finite")
+    return 6
+
+
 t = tf.constant([1.0, 2.0])
 
 y, stats = scaled(t)
@@ -26,3 +31,6 @@ print(accumulate(t) is None)
 
 y, n = scaled_and_size(t)
 print(y.numpy(), int(n))
+
+discarded_width(t)
+discarded_width(t * 2.0)

@@ -7590,6 +7590,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		// Unlike testRecursion2's `not_recursive_fn`, the recursive call returns its result, so a caller uses it (issue 1117).
+		assertTrue(f.getReturnsPrimitive());
+		assertTrue(f.getHasUsedResults());
 	}
 
 	@Test
@@ -7608,12 +7612,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.isRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
 
-		// The `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117). Measured on TensorFlow 2.9.3,
-		// with n = 0 the eager function returns `1` and the converted one `tf.Tensor(1)`, so a caller's dictionary lookup raises.
+		// The `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117), but the only call is a
+		// statement that discards the result, so no caller can see the change and the function still hybridizes.
 		assertTrue(f.getReturnsPrimitive());
-		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
-		assertNull(f.getPassingPrecondition());
-		assertTrue(f.getTransformations().isEmpty());
+		assertFalse(f.getHasUsedResults());
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
+
+		assertFalse(f.getStatus().hasError());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	@Test
@@ -14228,6 +14235,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String identifier : List.of("hidden_units", "grid", "is_training")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` may return a Python primitive.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with RETURNS_PYTHON_PRIMITIVE.",
 					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
@@ -14255,10 +14263,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * The controls of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117, each of which returns the same values
-	 * converted on TensorFlow 2.9.3: {@code scaled} returns only tensors, one inside a dictionary; {@code accumulate} returns {@code None},
-	 * which {@code tf.function} returns as {@code None}; and {@code scaled_and_size} returns a tensor and an integer computed by a
-	 * TensorFlow operation, which is already a tensor.
+	 * The controls of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117, each of which behaves the same converted
+	 * on TensorFlow 2.9.3: {@code scaled} returns only tensors, one inside a dictionary; {@code accumulate} returns {@code None}, which
+	 * {@code tf.function} returns as {@code None}; {@code scaled_and_size} returns a tensor and an integer computed by a TensorFlow
+	 * operation, which is already a tensor; and {@code discarded_width} returns {@code 6}, but every call discards the result.
 	 */
 	@Test
 	public void testReturnedPrimitiveControls() throws Exception {
@@ -14267,8 +14275,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String identifier : List.of("scaled", "accumulate", "scaled_and_size")) {
 			Function function = findFunction(functions, identifier);
 			assertFalse("`" + identifier + "` returns no Python primitive.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
 			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
+
+		Function discarded = findFunction(functions, "discarded_width");
+		assertTrue("`discarded_width` returns a Python primitive.", discarded.getReturnsPrimitive());
+		assertFalse("Every call of `discarded_width` discards its result.", discarded.getHasUsedResults());
+		assertEquals("`discarded_width` still hybridizes (P1).", P1, discarded.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins scalars computed in Python for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117. Measured on TensorFlow
+	 * 2.9.3, converted, {@code scaled} returns {@code n * 2} and {@code counted} returns {@code len(xs)} as a tensor, so each caller's
+	 * dictionary lookup raises {@code TypeError: Tensor is unhashable}; eagerly, each is an {@code int}. The product of a stored constant
+	 * is seen, and {@code scaled} is refused; the length is not yet seen.
+	 */
+	@Test
+	public void testReturnedPrimitiveComputed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function scaled = findFunction(functions, "scaled");
+		assertTrue("`scaled`'s product of a stored constant is seen.", scaled.getReturnsPrimitive());
+		assertNull("`scaled` must not pass a precondition.", scaled.getPassingPrecondition());
+		assertNotNull("`scaled` fails with RETURNS_PYTHON_PRIMITIVE.",
+				scaled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+
+		// TODO: Refuse this once Ariadne gives a computed Python scalar an instance key: https://github.com/wala/ML/issues/805. Until then
+		// the points-to set of the returned `len(xs)` holds no constant, so the check doesn't see it.
+		Function counted = findFunction(functions, "counted");
+		assertFalse("`counted`'s computed length is not yet seen.", counted.getReturnsPrimitive());
+		assertEquals("`counted` still hybridizes (P1).", P1, counted.getPassingPrecondition());
 	}
 
 	/**
@@ -14426,8 +14463,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
 	 * returns {@code abs(n - 1)} when {@code n > 0}. The comparison {@code n > 0} on the tensor parameter is tensor computation, so the
-	 * function passes the benefit check, and like {@link #testRecursion2} it is refused because its {@code else} path returns a Python
-	 * {@code int} (issue 1117). Ariadne through 0.52.105 left the comparison untyped, so this test pinned
+	 * function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the comparison untyped, so this test pinned
 	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
 	 * <p>
 	 * TODO: {@code abs(n - 1)} is tensor computation too, but Ariadne doesn't model the builtin {@code abs()} on a tensor, so it and
@@ -14440,11 +14476,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.isRecursive());
 		assertTrue("The comparison n > 0 on a tensor is tensor computation.", f.getHasTensorComputation());
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
-		// As in testRecursion2, the `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117).
+		// As in testRecursion2, the `else` path returns the Python int 1 (issue 1117), but the only call discards the result.
 		assertTrue(f.getReturnsPrimitive());
-		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
-		assertNull(f.getPassingPrecondition());
-		assertTrue(f.getTransformations().isEmpty());
+		assertFalse(f.getHasUsedResults());
+		assertFalse(f.getStatus().hasError());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	/**
