@@ -187,10 +187,18 @@ class TensorIterationAnalysis {
 	}
 
 	/**
-	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin whose model iterates the corresponding parameter (an
-	 * {@link EachElementGetInstruction} over it in the builtin's summary), as Ariadne models {@code enumerate} and {@code zip}. The
+	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin whose model iterates the corresponding parameter. The
 	 * builtin's own model decides, so a builtin that only stores or returns its argument does not fire. Slots at or after a starred
 	 * argument are skipped, since their alignment to the builtin's parameters is unknown.
+	 * <p>
+	 * This reads the shape of the engine's builtin summary IR, not a fact the engine states: a summary iterates a parameter when its IR
+	 * holds an {@link EachElementGetInstruction} over it (see {@link #iteratesParameter}). Today that holds for Ariadne's
+	 * {@code enumerate}, {@code zip} (each of its first four arguments), and {@code reversed} summaries, and each has a firing pin in the
+	 * tests. If a summary is re-expressed so that the iteration no longer shows up as that instruction over the parameter, for instance
+	 * through the {@code iter} and {@code next} protocol, the check silently stops firing for that builtin, in the unsafe direction (a
+	 * conversion that raises at trace time). Out of scope: {@code next} iterates a field read off its argument rather than the argument,
+	 * and {@code list}, {@code sorted}, {@code sum}, {@code iter}, and {@code range} have summaries that don't iterate their argument at
+	 * all, although at run time most of them do. Those calls on a tensor are not refused here.
 	 */
 	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value) {
 		int starred = invoke.firstStarredPosition();
@@ -209,7 +217,11 @@ class TensorIterationAnalysis {
 		return false;
 	}
 
-	/** True iff {@code callee}'s IR iterates its parameter at {@code index} with an {@link EachElementGetInstruction}. */
+	/**
+	 * True iff {@code callee}'s IR iterates its parameter at {@code index} with an {@link EachElementGetInstruction} whose iterated value
+	 * is that parameter itself. This is the summary-IR shape {@link #builtinIterates} relies on; an iteration expressed any other way is
+	 * not seen.
+	 */
 	private static boolean iteratesParameter(CGNode callee, int index) {
 		IR ir = callee.getIR();
 
