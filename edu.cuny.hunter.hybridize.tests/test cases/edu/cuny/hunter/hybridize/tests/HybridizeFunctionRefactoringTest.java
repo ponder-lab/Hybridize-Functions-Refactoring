@@ -6702,8 +6702,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6714,8 +6716,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	@Test
@@ -11825,6 +11829,187 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
 	/**
+	 * Issue 1025, reduced from tf-image's {@code _random_augmentations}: a hybrid function's primitive parameter that every call binds to
+	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, but P3 still de-hybridizes the function.
+	 */
+	@Test
+	public void testInvariantPrimitiveForwardedDefault() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "_random_augmentations");
+
+		assertTrue(function.isHybrid());
+		assertEquals("The tensor `image` is a tensor parameter.", TRUE, function.getHasTensorParameter());
+		// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars unrepresented,
+		// it can't (https://github.com/wala/ML/issues/805).
+		assertEquals("`prob_demanding_ops` is always 0.5, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, function.getPassingPrecondition());
+	}
+
+	/**
+	 * Issue 1025, reduced from tf-image's {@code random_pad_to_square} under {@code @convert_type}. The primitive {@code max_extend} is
+	 * always its default, but the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
+	 * argument at or before the parameter's slot, and P3 de-hybridizes the function.
+	 */
+	@Test
+	public void testInvariantPrimitiveConvertTypeForwarding() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "random_pad_to_square");
+
+		assertTrue(function.isHybrid());
+		// TODO: Keep the decorator once the alignment past an unpacked argument is determined (https://github.com/wala/ML/issues/751).
+		assertEquals("`max_extend` is always 0.1, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, function.getPassingPrecondition());
+	}
+
+	/**
+	 * Issue 1025, reduced from VaDER's {@code _reconstruction_loss} and {@code _latent_loss}: the primitive arguments {@code K} and
+	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, but P3 still de-hybridizes both
+	 * methods. {@code output_activation} is a function object, not a primitive.
+	 */
+	@Test
+	public void testInvariantPrimitiveInstanceAttributes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("VaDER._reconstruction_loss", "VaDER._latent_loss")) {
+			Function function = findFunction(functions, name);
+
+			assertTrue(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
+			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s primitive arguments are each one constant, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta}: the eager function's tuple arguments are each a tuple of constants
+	 * set once in a constructor, keyed by their contents, but P1 still declines the function. {@code scale_boxes} takes a nested tuple of
+	 * constants.
+	 */
+	@Test
+	public void testInvariantPrimitiveTuples() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("bbox2delta", "scale_boxes")) {
+			Function function = findFunction(functions, name);
+
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			// TODO: Convert once the points-to set can show the value set complete. With computed Python scalars unrepresented, it can't
+			// (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s tuples of constants are fixed, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertNotNull(name, function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Issue 1025, reduced from tf-image's {@code random_aspect_ratio_deformation}: the primitive arguments differ between the three call
+	 * sites but are constant at each, so the traces are bounded by the call sites, but P3 still de-hybridizes the function. So does
+	 * {@code jitter}, whose two values share one calling context.
+	 */
+	@Test
+	public void testBoundedPrimitivePerCallSite() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("random_aspect_ratio_deformation", "jitter")) {
+			Function function = findFunction(functions, name);
+
+			assertTrue(name, function.isHybrid());
+			assertEquals(name, TRUE, function.getHasTensorParameter());
+			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
+			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s literals bound its traces, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: a primitive bound to five distinct constants makes P3 de-hybridize the hybrid function and P1
+	 * decline the eager one.
+	 */
+	@Test
+	public void testVaryingPrimitiveStillTriggers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function hybrid = findFunction(functions, "hybrid_scale");
+		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
+		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, hybrid.getPassingPrecondition());
+
+		Function eager = findFunction(functions, "eager_scale");
+		assertEquals(TRUE, eager.getHasPrimitiveParameter());
+		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: an object of a program class is keyed by its identity, and that it's allocated once isn't a
+	 * points-to fact, so it's a primitive parameter.
+	 */
+	@Test
+	public void testProgramObjectPrimitiveUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function hybrid = findFunction(functions, "hybrid_apply");
+		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
+		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, hybrid.getPassingPrecondition());
+
+		Function eager = findFunction(functions, "eager_apply");
+		assertEquals(TRUE, eager.getHasPrimitiveParameter());
+		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: each primitive points to one constant, but a call passes a value the analysis has no abstract value
+	 * for, so the set isn't complete. In {@code scaled}, that call has its own calling context, in which the parameter points to nothing;
+	 * {@code relayed} is reached from one call site whose argument points to nothing in one of its caller's contexts. {@code defaulted}'s
+	 * default has no abstract value, so the parameter points to nothing in the context of the call that omits it. A list is mutable, so
+	 * {@code listed}'s list of constants isn't a fixed value either.
+	 */
+	@Test
+	public void testUnknownPrimitiveValueSetUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("scaled", "relayed", "defaulted", "listed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: the analysis gives a computed Python scalar, the result of a binary operation, no abstract value
+	 * (wala/ML#805, wala/ML#398), so a value set merged with one keeps only its constant operands. {@code f}'s {@code n} is incremented in
+	 * a loop from 0 and points to 0 alone; {@code g}'s tuple has a computed second element whose field points to nothing. Each primitive
+	 * takes six values, six traces under {@code tf.function}, so it declines the function.
+	 */
+	@Test
+	public void testComputedPrimitiveValuesUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("f", "g")) {
+			Function function = findFunction(functions, name);
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
 	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
 	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
 	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
@@ -12090,6 +12275,83 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function callsReplaced = getFunction("calls_replaced");
 		assertFalse("`calls_replaced` dispatches to the builtin `len` assigned over `predict`, not the guarded endpoint.",
 				callsReplaced.getHasEagerOnlyCalls());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077. A function whose body, directly or through the
+	 * program's own code it calls, does Python file I/O, reads the clock, or draws Python-level randomness must not hybridize, since that
+	 * code runs once, when {@code tf.function} traces the function, rather than on every call. Such a call is a Python side-effect, so it
+	 * fails with {@link PreconditionFailure#HAS_PYTHON_SIDE_EFFECTS} once the side-effect analysis sees the state the call reads or
+	 * changes. The fixture distills the five functions the issue cites, from OpenNMT-tf, FCN, and NLPGNN, and adds one function per API
+	 * family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under {@code tf.function}, with the files it reads changed between
+	 * the calls: both {@code get_dataset_size} overrides, which count lines through {@code tf.io.gfile.GFile}, return the first call's
+	 * count again; {@code Model.visualize} writes its projector file only on the first call; {@code process_image_label},
+	 * {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time} functions return the same value on both
+	 * calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and {@code predict_dataset} raises
+	 * {@code AttributeError} from the {@code numpy()} call in its lambda.
+	 * <p>
+	 * A call to the built-in {@code open}, which the side-effect analysis recognizes by the object its callee points to, writes the file
+	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. The
+	 * others are pinned as not yet refused, since the engine models no state that their calls read or change: {@code random}, {@code time},
+	 * {@code cv2}, and {@code tf.io.gfile} have no summary, so their reads point to nothing (https://github.com/wala/ML/issues/1080), and
+	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances
+	 * (https://github.com/wala/ML/issues/1118).
+	 * <p>
+	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
+	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
+	 * {@code calls_local_open} calls its own function bound to the name {@code open}. Each was run the same way, and each behaves the same
+	 * in both modes, as {@code opens_through_alias} does not.
+	 */
+	@Test
+	public void testTraceTimePythonEffects() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("Model.visualize", "predict_dataset", "process_image_label", "reads_file", "calls_reader",
+				"opens_through_alias")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` reaches a call to `open`, which runs once at trace time.", TRUE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_PYTHON_SIDE_EFFECTS: " + function.getStatus(),
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		}
+
+		// TODO: Refuse these once reads of `random`, `time`, `cv2`, and `tf.io.gfile` point to modeled objects
+		// (https://github.com/wala/ML/issues/1080) whose summaries model the state their calls read or change. None of these modules has
+		// a summary, so a read of one has an empty points-to set and the side-effect analysis sees no write; each function hybridizes
+		// today, freezing its clock read, draw, image read, or line count at trace time. `process_image_label` and `predict_dataset`
+		// are refused above only for their `open` calls.
+		for (String name : List.of("reads_clock", "draws_python_random", "reads_image", "ExampleInputter.get_dataset_size",
+				"ParallelInputter.get_dataset_size")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
+		// (https://github.com/wala/ML/issues/1118). The summaries of `np.random.uniform` and its siblings allocate the result and write
+		// nothing else, and `np.random.choice` has no summary (https://github.com/wala/ML/issues/1008), so the side-effect analysis sees
+		// no write; each function hybridizes today, freezing its draw at trace time.
+		for (String name : List.of("draws_numpy_random", "draws_aliased_numpy_random", "TUDataset.load")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s draw changes no modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until the draw is modeled.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
+		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
+		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
+		Function predictDataset = findFunction(functions, "predict_dataset");
+		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+
+		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock", "calls_local_open")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` runs nothing at trace time that the traced function would not run per call.", FALSE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not fail with HAS_PYTHON_SIDE_EFFECTS.",
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**
@@ -13131,6 +13393,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
+		// TODO: Refuse `wild_random_size` with HAS_PYTHON_SIDE_EFFECTS once the `numpy.random` summaries model the generator state a draw
+		// advances (https://github.com/wala/ML/issues/1118; https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). Its
+		// `np.random.uniform` draw runs once at trace time, but the side-effect analysis sees no write.
 		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
@@ -14325,6 +14590,86 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function mapWeights = findFunction(functions, "Weights.map_weights");
 		assertNull("`Weights.map_weights`'s returned Keras weight is not yet seen as a variable.", mapWeights.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
+	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
+	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:
+	 * {@code Sampler.next_inputs} reads the targets {@code setup_target} rebinds (TensorFlowTTS's {@code Tacotron2Sampler}),
+	 * {@code Attention.__call__} the keys and values {@code setup_memory} rebinds, {@code Attention._compute_window_mask} the window
+	 * {@code setup_window} rebuilds (TensorFlowTTS's {@code TFTacotronLocationSensitiveAttention}), {@code Decoder.step} both of these
+	 * through its callees ({@code TFTacotronDecoder.step}), and {@code AttentionalRNNDecoder._get_initial_state} the memory
+	 * {@code initialize} rebinds (OpenNMT-tf), {@code LoopFedDecoder._get_initial_state} the same, with the memory computed from a loop
+	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, {@code Builder.read} the
+	 * batch that a {@code build} outside Keras rebinds on each call, and {@code Node.read} the field that a child's {@code __init__}
+	 * rebinds on its parent, an object it doesn't set up. {@code make_features} (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the
+	 * dictionary its caller passes, which {@code tf.function} refuses with a {@code ValueError}; the side-effect precondition refuses it.
+	 * Five controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
+	 * {@code Derived.scaled} one set only in a base's {@code __init__}, {@code BuildOnly.call} one set only in a Keras layer's
+	 * {@code build}, {@code StringField.labeled} a string field another method rebinds, used only as an op's name, and
+	 * {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads an {@code int} field
+	 * another method rebinds, which diverges under tracing too but holds no tensor, so this precondition leaves it alone. Two more controls
+	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
+	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused.
+	 * {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not yet detected, for the engine reason
+	 * its TODO gives. {@code Resetting.read}, whose field is set only in a helper that only {@code __init__} calls, matches but is refused,
+	 * for the precision reason its TODO gives.
+	 */
+	@Test
+	public void testReboundStateReads() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Sampler.next_inputs", "Attention.__call__", "Attention._compute_window_mask", "Decoder.step",
+				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read",
+				"Node.read")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads rebound tensor state.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_REBOUND_STATE_READS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// Filling in the caller's dictionary is a write to an object created outside the function, so the side-effect precondition refuses
+		// it.
+		Function makeFeatures = findFunction(functions, "make_features");
+		assertNull("`make_features` must not pass a precondition.", makeFeatures.getPassingPrecondition());
+		assertNotNull("`make_features` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				makeFeatures.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// The analysis tells objects apart by allocation site, so a holder created afresh on each call is one object to it, and its getter
+		// is
+		// refused although this program never rebinds a holder between two of its reads.
+		Function get = findFunction(functions, "Holder.get");
+		assertEquals("`Holder.get` reads a field `Holder.set` writes.", TRUE, get.getHasReboundStateReads());
+		assertNotNull("`Holder.get` fails with HAS_REBOUND_STATE_READS.",
+				get.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		for (String identifier : List.of("InitOnly.scaled", "BuildOnly.call", "StringField.labeled", "IntField.counted",
+				"VariableField.read", "sums_list", "uses_fresh_holder", "Derived.scaled")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// TODO: Convert this. A known false refusal, from a precision limit of this check rather than an engine gap: the field is set only
+		// in `_reset`, which only `__init__` calls, but a set-up method is credited only with its own writes, since a helper may also be
+		// called elsewhere. Crediting it would need the helper's callers to be the object's set-up methods alone.
+		Function resettingRead = findFunction(functions, "Resetting.read");
+		assertEquals("`Resetting.read` reads a field `Resetting._reset` writes.", TRUE, resettingRead.getHasReboundStateReads());
+		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
+				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of its
+		// dictionary, as OpenNMT-tf's `Model` does, and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute
+		// read of `copy` and the call's result point to nothing, so the only dictionary the parameter is seen to hold is the one the body
+		// creates, whose writes are not side effects.
+		Function makeFeaturesOfCopy = findFunction(functions, "make_features_of_copy");
+		assertEquals("`make_features_of_copy`'s write to the copied dictionary is not yet seen.", FALSE,
+				makeFeaturesOfCopy.getHasPythonSideEffects());
+		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
 	}
 
 	/**
