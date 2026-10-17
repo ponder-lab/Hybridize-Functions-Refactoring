@@ -18,6 +18,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getAllParentNames;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
+import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_FILE_SYSTEM_POINTER_KEY;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
@@ -1276,6 +1277,14 @@ public class Function {
 	private Boolean hasUncrossableBoundaryValues;
 
 	/**
+	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
+	 * outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's first value.
+	 * {@code null} when it could not be determined, in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 */
+	private Boolean hasReboundStateReads;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1585,6 +1594,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
 										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
 												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
+							else if (this.getHasReboundStateReads() != null && this.getHasReboundStateReads())
+								// Reads a tensor from a field another function rebinds between calls, so a trace keeps the tensor the
+								// field held when it was traced (issue 1076). A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
+										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
+												+ "would keep the tensor the field held when it was traced.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -2464,7 +2479,7 @@ public class Function {
 	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
 	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
 	 */
-	private static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+	static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
 			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
 
 	/**
@@ -2491,24 +2506,35 @@ public class Function {
 		String functionTypeName = this.getDeclaringClass().getName().toString();
 		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
 
-		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
+		this.extendsKerasCallableClass = !Collections.disjoint(getClassAndBaseNames(callGraph.getClassHierarchy(), classTypeName),
+				KERAS_CALLABLE_TYPE_NAMES);
+	}
+
+	/**
+	 * The engine type names of a class and of every base it transitively declares, as the engine's class hierarchy models them: a base the
+	 * program defines is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified
+	 * name names, whose superclass the summary declares. A name the walk reaches is included whether or not it is a class of the hierarchy,
+	 * but only a class's bases are followed.
+	 *
+	 * @param classHierarchy The engine's class hierarchy.
+	 * @param classTypeName The type name of the class to start from.
+	 * @return The type names of the class and its transitive bases.
+	 */
+	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeName classTypeName) {
+		Set<TypeName> ret = new HashSet<>();
 		Set<TypeName> seen = new HashSet<>();
 		Deque<TypeName> worklist = new ArrayDeque<>();
 		worklist.add(classTypeName);
 
 		while (!worklist.isEmpty()) {
 			TypeName name = worklist.remove();
-
-			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
-				this.extendsKerasCallableClass = true;
-				return;
-			}
+			ret.add(name);
 
 			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
 
-			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
-			// and contributes no recognition: the first name is derived from the declaring class's, and the bases are resolved at the
-			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is not followed:
+			// a caller's first name may be derived from another type's, and the bases are resolved at the loader
+			// (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
 			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
 			if (cls == null || !seen.add(name))
 				continue;
@@ -2520,6 +2546,8 @@ public class Function {
 			else if (cls.getSuperclass() != null)
 				worklist.add(cls.getSuperclass().getName());
 		}
+
+		return ret;
 	}
 
 	/**
@@ -3399,6 +3427,48 @@ public class Function {
 	}
 
 	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed field that another function rebinds outside the
+	 * {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the result for
+	 * {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring the sibling
+	 * safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 *
+	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
+	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeReboundStateReads(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reads rebound state.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reads rebound state without a call graph node.");
+			return;
+		}
+
+		this.hasReboundStateReads = new ReboundStateReadAnalysis(callGraph, pointerAnalysis, tensorTypedKeys).readsReboundState(nodes);
+		LOG.info(this + " reads rebound state: " + this.hasReboundStateReads + ".");
+	}
+
+	/**
+	 * True iff this {@link Function} reads a tensor-typed field that another function rebinds outside the methods setting its object up,
+	 * {@code null} if undetermined (issue 1076).
+	 *
+	 * @return True iff this function reads rebound tensor state, null if undetermined.
+	 */
+	public Boolean getHasReboundStateReads() {
+		return this.hasReboundStateReads;
+	}
+
+	/**
 	 * Computes the eager-effective dtypes each parameter's direct consumers impose (see {@link EagerCoercionAnalysis}), storing a
 	 * per-parameter pin when the set is a singleton that diverges from the parameter's own dtype evidence, and the conflicting verdict for
 	 * {@link #getHasConflictingEagerDtypeCoercions()} when some parameter's set is plural. An indeterminate collection (a partner operand
@@ -4006,7 +4076,7 @@ public class Function {
 			} else if (pointerKey instanceof AstGlobalPointerKey) {
 				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
-				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY))
+				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY) && !globalPointerKey.equals(GLOBAL_FILE_SYSTEM_POINTER_KEY))
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
 				ret.add(globalPointerKey);
 			} else
@@ -4087,7 +4157,7 @@ public class Function {
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @return The pointer keys directly written by {@code node}.
 	 */
-	private static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
+	static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		return directModCache.computeIfAbsent(node, n -> {
 			Set<PointerKey> ret = new HashSet<>();
