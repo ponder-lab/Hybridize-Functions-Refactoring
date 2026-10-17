@@ -13054,39 +13054,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <li>{@code head_elem} and {@code decode} take elements of {@code model_fn_list}'s returned list, the second the way YOLOv3's driver
 	 * iterates {@code enumerate(conv_tensors)}.
 	 * <li>{@code op_head} takes {@code inp * 2.0}.
+	 * <li>{@code upsample_bn} takes {@code convolutional}'s result, a merge over the application of {@code Frozen}, a user subclass of
+	 * {@code BatchNormalization}, as YOLOv3's {@code common.convolutional} is.
 	 * </ul>
-	 * {@code upsample_bn} is still converted, though it receives a {@code KerasTensor} too: its argument is {@code convolutional}'s result,
-	 * a merge over the application of {@code Frozen}, a user subclass of {@code BatchNormalization}, as YOLOv3's
-	 * {@code common.convolutional} is. The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at
-	 * {@code tf.ones(...)}. {@code scale_inside}, called from a custom layer's own {@code call}, which Keras gives a placeholder, now
-	 * declines, though decorating it runs. Of two custom layers applied to the {@code Input}, {@code after_scaled} receives one whose
-	 * {@code call} ends in an operator and converts, though decorating it raises, while {@code after_relued} receives one whose
-	 * {@code call} ends in {@code tf.nn.relu} and declines. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and
-	 * decorated. ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only
-	 * its Keras verdict is pinned.)
+	 * The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at {@code tf.ones(...)}. {@code scale_inside}, called
+	 * from a custom layer's own {@code call}, which Keras gives a placeholder, now declines, though decorating it runs. Of two custom
+	 * layers applied to the {@code Input}, {@code after_scaled} receives one whose {@code call} ends in an operator and converts, though
+	 * decorating it raises, while {@code after_relued} receives one whose {@code call} ends in {@code tf.nn.relu} and declines. Every arm
+	 * was runtime-verified on the pinned TF 2.9.3, undecorated and decorated. ({@code model_fn_eager} decorated fails for an unrelated
+	 * reason, creating the layer's variables inside the trace, so only its Keras verdict is pinned.)
 	 */
 	@Test
 	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : Set.of("model_fn", "yolo", "model_fn_list", "model_fn_bn", "scale_op", "backbone", "convolutional", "upsample",
-				"head", "head_elem", "decode", "op_head")) {
+				"head", "head_elem", "decode", "op_head", "upsample_bn")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
 			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
-
-		// TODO: `upsample_bn` is called with a KerasTensor, and decorating it raises, but its parameter carries no Keras symbolic origin.
-		// In `convolutional`, the application `Frozen()(conv)` of a user subclass of a built-in layer, which overrides `call` to return
-		// `super().call`, gives no tensor, so the merge of it with the symbolic `Conv2D` application has no origin either, and
-		// `tf.nn.leaky_relu` over the merge carries only its own TENSORFLOW origin. It should be declined; the expectation flips once the
-		// engine gives the subclass's application a tensor: https://github.com/wala/ML/issues/1108; see
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
-		Function upsampleBn = findFunction(functions, "upsample_bn");
-		assertEquals("`upsample_bn`'s parameter carries no Keras symbolic origin.", FALSE, upsampleBn.getHasKerasSymbolicArguments());
-		assertEquals("`upsample_bn` converts (P1).", P1, upsampleBn.getPassingPrecondition());
 
 		for (String name : Set.of("upsample_eager", "head_eager")) {
 			Function function = findFunction(functions, name);
