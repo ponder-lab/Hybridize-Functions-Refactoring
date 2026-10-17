@@ -18,6 +18,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getAllParentNames;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
+import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_FILE_SYSTEM_POINTER_KEY;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
@@ -4075,7 +4076,7 @@ public class Function {
 			} else if (pointerKey instanceof AstGlobalPointerKey) {
 				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
-				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY))
+				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY) && !globalPointerKey.equals(GLOBAL_FILE_SYSTEM_POINTER_KEY))
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
 				ret.add(globalPointerKey);
 			} else

@@ -6702,8 +6702,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6714,8 +6716,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	@Test
@@ -12060,6 +12064,83 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077. A function whose body, directly or through the
+	 * program's own code it calls, does Python file I/O, reads the clock, or draws Python-level randomness must not hybridize, since that
+	 * code runs once, when {@code tf.function} traces the function, rather than on every call. Such a call is a Python side-effect, so it
+	 * fails with {@link PreconditionFailure#HAS_PYTHON_SIDE_EFFECTS} once the side-effect analysis sees the state the call reads or
+	 * changes. The fixture distills the five functions the issue cites, from OpenNMT-tf, FCN, and NLPGNN, and adds one function per API
+	 * family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under {@code tf.function}, with the files it reads changed between
+	 * the calls: both {@code get_dataset_size} overrides, which count lines through {@code tf.io.gfile.GFile}, return the first call's
+	 * count again; {@code Model.visualize} writes its projector file only on the first call; {@code process_image_label},
+	 * {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time} functions return the same value on both
+	 * calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and {@code predict_dataset} raises
+	 * {@code AttributeError} from the {@code numpy()} call in its lambda.
+	 * <p>
+	 * A call to the built-in {@code open}, which the side-effect analysis recognizes by the object its callee points to, writes the file
+	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. The
+	 * others are pinned as not yet refused, since the engine models no state that their calls read or change: {@code random}, {@code time},
+	 * {@code cv2}, and {@code tf.io.gfile} have no summary, so their reads point to nothing (https://github.com/wala/ML/issues/1080), and
+	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances
+	 * (https://github.com/wala/ML/issues/1118).
+	 * <p>
+	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
+	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
+	 * {@code calls_local_open} calls its own function bound to the name {@code open}. Each was run the same way, and each behaves the same
+	 * in both modes, as {@code opens_through_alias} does not.
+	 */
+	@Test
+	public void testTraceTimePythonEffects() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("Model.visualize", "predict_dataset", "process_image_label", "reads_file", "calls_reader",
+				"opens_through_alias")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` reaches a call to `open`, which runs once at trace time.", TRUE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_PYTHON_SIDE_EFFECTS: " + function.getStatus(),
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		}
+
+		// TODO: Refuse these once reads of `random`, `time`, `cv2`, and `tf.io.gfile` point to modeled objects
+		// (https://github.com/wala/ML/issues/1080) whose summaries model the state their calls read or change. None of these modules has
+		// a summary, so a read of one has an empty points-to set and the side-effect analysis sees no write; each function hybridizes
+		// today, freezing its clock read, draw, image read, or line count at trace time. `process_image_label` and `predict_dataset`
+		// are refused above only for their `open` calls.
+		for (String name : List.of("reads_clock", "draws_python_random", "reads_image", "ExampleInputter.get_dataset_size",
+				"ParallelInputter.get_dataset_size")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
+		// (https://github.com/wala/ML/issues/1118). The summaries of `np.random.uniform` and its siblings allocate the result and write
+		// nothing else, and `np.random.choice` has no summary (https://github.com/wala/ML/issues/1008), so the side-effect analysis sees
+		// no write; each function hybridizes today, freezing its draw at trace time.
+		for (String name : List.of("draws_numpy_random", "draws_aliased_numpy_random", "TUDataset.load")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s draw changes no modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until the draw is modeled.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
+		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
+		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
+		Function predictDataset = findFunction(functions, "predict_dataset");
+		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+
+		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock", "calls_local_open")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` runs nothing at trace time that the traced function would not run per call.", FALSE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not fail with HAS_PYTHON_SIDE_EFFECTS.",
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the parameter-flow numpy safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740): a
 	 * function that (transitively) applies a numpy API to a value flowing from its parameters must not hybridize, since the call raises
 	 * under {@code tf.function} tracing once the parameters become symbolic (it fails with
@@ -13007,6 +13088,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
+		// TODO: Refuse `wild_random_size` with HAS_PYTHON_SIDE_EFFECTS once the `numpy.random` summaries model the generator state a draw
+		// advances (https://github.com/wala/ML/issues/1118; https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). Its
+		// `np.random.uniform` draw runs once at trace time, but the side-effect analysis sees no write.
 		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
