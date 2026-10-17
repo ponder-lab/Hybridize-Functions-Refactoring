@@ -14051,23 +14051,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function nil = getFunction("nil_prod");
 		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
-		// The Keras `Input` reaches `nil_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
-		// the module's own body (https://github.com/wala/ML/issues/1110).
-		assertEquals("`nil_prod` still converts (P1).", P1, nil.getPassingPrecondition());
+		// The branch on `tf.executing_eagerly()` is in `drive`'s body, where the engine keeps both arms, since a function body may be
+		// traced (https://github.com/wala/ML/issues/1110). So the rank-2 `tf.keras.Input` reaches `nil_prod`, and declining it is correct:
+		// passing a KerasTensor to the converted function raises.
+		assertNull("`nil_prod` does not convert.", nil.getPassingPrecondition());
+		assertNotNull("`nil_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				nil.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function stride = getFunction("stride_prod");
 		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				stride.getHasNumpyCallsOnParameters());
-		// The Keras `Input` reaches `stride_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
-		// the module's own body (https://github.com/wala/ML/issues/1110).
-		assertEquals("`stride_prod` still converts (P1).", P1, stride.getPassingPrecondition());
+		// The branch on `tf.executing_eagerly()` is in `drive`'s body, where the engine keeps both arms, since a function body may be
+		// traced (https://github.com/wala/ML/issues/1110). So the rank-2 `tf.keras.Input` reaches `stride_prod`, and declining it is
+		// correct: passing a KerasTensor to the converted function raises.
+		assertNull("`stride_prod` does not convert.", stride.getPassingPrecondition());
+		assertNotNull("`stride_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				stride.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function rest = getFunction("rest_prod");
 		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				rest.getHasNumpyCallsOnParameters());
-		// The Keras `Input` reaches `rest_prod` only on the graph-mode branch of `tf.executing_eagerly()`, which the engine folds away in
-		// the module's own body (https://github.com/wala/ML/issues/1110).
-		assertEquals("`rest_prod` still converts (P1).", P1, rest.getPassingPrecondition());
+		// The branch on `tf.executing_eagerly()` is in `drive`'s body, where the engine keeps both arms, since a function body may be
+		// traced (https://github.com/wala/ML/issues/1110). So the rank-2 `tf.keras.Input` reaches `rest_prod`, and declining it is correct:
+		// passing a KerasTensor to the converted function raises.
+		assertNull("`rest_prod` does not convert.", rest.getPassingPrecondition());
+		assertNotNull("`rest_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				rest.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 	}
 
 	/**
