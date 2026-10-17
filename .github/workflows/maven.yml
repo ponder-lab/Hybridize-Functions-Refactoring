@@ -80,3 +80,30 @@ jobs:
       # reporting stays best-effort and a token-less run does not fail the build. Runs with the token (including Dependabot once the token
       # is also added as a Dependabot secret) still upload.
       run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report -Dcoveralls.skip=${{ secrets.COVERALLS_REPO_TOKEN == '' }}
+    - name: Print the resolved engine build
+      # The builds run with `-q`, so the log never names the engine snapshot that resolved. Record the file name (which carries a snapshot's
+      # timestamp and build number) and SHA-1 of every resolved Ariadne and WALA jar, comparable against the registry's published `.sha1`.
+      # A `bnd-*` directory holds Tycho's wrapped copy, whose generated manifest gives it a different SHA-1 from the downloaded jar. The Maven
+      # cache can carry jars of earlier versions; `hybridize.target` names the one this build uses.
+      if: always()
+      run: |
+        repo="$HOME/.m2/repository/com/ibm/wala"
+        echo "### Resolved engine build" | tee -a "$GITHUB_STEP_SUMMARY"
+        echo "Target ML version: \`$(grep -A1 '<artifactId>com.ibm.wala.cast.python.ml</artifactId>' hybridize.target | sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p')\`" | tee -a "$GITHUB_STEP_SUMMARY"
+        for artifact in com.ibm.wala.cast.python.ml com.ibm.wala.cast com.ibm.wala.core com.ibm.wala.ide com.ibm.wala.shrike com.ibm.wala.util; do
+          dir="$repo/$artifact"
+          if [ ! -d "$dir" ]; then
+            echo "- $artifact: not resolved" | tee -a "$GITHUB_STEP_SUMMARY"
+            continue
+          fi
+          find "$dir" -name '*.jar' -type f | sort | while read -r jar; do
+            echo "- \`${jar#"$repo/"}\` SHA-1 \`$(sha1sum "$jar" | cut -d ' ' -f 1)\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          find "$dir" -name 'maven-metadata*.xml' -type f | sort | while read -r metadata; do
+            timestamp=$(sed -n 's/.*<timestamp>\(.*\)<\/timestamp>.*/\1/p' "$metadata" | head -n 1)
+            build=$(sed -n 's/.*<buildNumber>\(.*\)<\/buildNumber>.*/\1/p' "$metadata" | head -n 1)
+            if [ -n "$timestamp$build" ]; then
+              echo "- \`${metadata#"$repo/"}\` timestamp \`$timestamp\` build \`$build\`" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+        done
