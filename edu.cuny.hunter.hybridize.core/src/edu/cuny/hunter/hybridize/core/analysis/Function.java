@@ -47,7 +47,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedMap;
 import java.util.SortedSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
@@ -1393,6 +1395,12 @@ public class Function {
 	private Boolean hasPrimitiveParameter;
 
 	/**
+	 * True iff this {@link Function}'s primitive parameters take on a small fixed set of values, so they can't make it retrace without
+	 * bound; {@code null} if it has no primitive parameter or it wasn't determined (issues 1025 and 1109).
+	 */
+	private Boolean primitiveValuesBounded;
+
+	/**
 	 * True iff this {@link Function} has at least one parameter that is a tf.Tensor (https://bit.ly/3vYG7iP).
 	 */
 	private Boolean hasTensorParameter;
@@ -1511,8 +1519,12 @@ public class Function {
 
 			if (this.getHasTensorParameter() != null && this.getHasTensorParameter()) {
 				this.addInfo("This eager function likely has a tensor parameter.");
-				if (this.getHasPrimitiveParameter() != null && !this.getHasPrimitiveParameter()) {
-					this.addInfo("This eager function likely does not have a primitive parameter.");
+				if (this.getHasRetracingPrimitiveParameter() != null && !this.getHasRetracingPrimitiveParameter()) {
+					if (TRUE.equals(this.getPrimitiveValuesBounded()))
+						this.addInfo(
+								"This eager function's primitive parameters take on few enough values that they don't cause retracing.");
+					else
+						this.addInfo("This eager function likely does not have a primitive parameter.");
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This eager function does not have Python side-effects.");
 						if (this.isRecursive() != null && !this.isRecursive()) {
@@ -1680,7 +1692,7 @@ public class Function {
 						if (this.isRecursive() != null && this.isRecursive())
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
 					}
-				} else if (this.getHasPrimitiveParameter() != null) { // it has primitive parameters.
+				} else if (this.getHasRetracingPrimitiveParameter() != null) { // it has primitive parameters.
 					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
 					if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
@@ -1694,7 +1706,7 @@ public class Function {
 				this.addFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS,
 						"This function has no tensor parameters and may not benefit from hybridization.");
 
-				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter())
+				if (this.getHasRetracingPrimitiveParameter() != null && this.getHasRetracingPrimitiveParameter())
 					this.addFailure(HAS_PRIMITIVE_PARAMETERS, "Hybridizing a function with primitive parameters may induce retracing.");
 
 				if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
@@ -1740,7 +1752,7 @@ public class Function {
 			} else if (this.getHasTensorParameter() != null) { // it has a tensor parameter.
 				this.addInfo("This hybrid function likely has a tensor parameter.");
 				// if it has primitive parameters.
-				if (this.getHasPrimitiveParameter() != null && this.getHasPrimitiveParameter()) {
+				if (this.getHasRetracingPrimitiveParameter() != null && this.getHasRetracingPrimitiveParameter()) {
 					this.addInfo("This hybrid function likely has a primitive parameter.");
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
@@ -1748,7 +1760,11 @@ public class Function {
 						this.convertToEagerUnlessSignatureSupplied(P3);
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
-				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
+				} else if (this.getHasRetracingPrimitiveParameter() != null) { // no primitive parameters.
+					if (TRUE.equals(this.getPrimitiveValuesBounded()))
+						this.addInfo(
+								"This hybrid function's primitive parameters take on few enough values that they don't cause retracing.");
+
 					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && this.isTensorComputationUnresolved())
 						// Not established as barren: a call the analysis could not resolve may compute tensors, and de-hybridizing a
 						// function that does (and possibly relies on graph mode, such as `optimizer.get_gradients`) breaks it (issue 997).
@@ -4411,6 +4427,31 @@ public class Function {
 	}
 
 	/**
+	 * Returns true iff this {@link Function}'s primitive parameters take on a small fixed set of values, so they can't make it retrace
+	 * without bound (issues 1025 and 1109).
+	 *
+	 * @return True iff this {@link Function}'s primitive parameters take on a small fixed set of values; {@code null} if it has no
+	 *         primitive parameter or it wasn't determined.
+	 */
+	public Boolean getPrimitiveValuesBounded() {
+		return this.primitiveValuesBounded;
+	}
+
+	/**
+	 * Returns true iff this {@link Function} has a primitive parameter that may make it retrace: it has a primitive parameter, and its
+	 * primitive parameters don't take on a small fixed set of values. This is what {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and
+	 * {@link PreconditionSuccess#P3} consult (issues 1025 and 1109).
+	 *
+	 * @return True iff this {@link Function} has a primitive parameter that may make it retrace; {@code null} if that wasn't determined.
+	 */
+	public Boolean getHasRetracingPrimitiveParameter() {
+		if (this.hasPrimitiveParameter == null)
+			return null;
+
+		return this.hasPrimitiveParameter && !TRUE.equals(this.primitiveValuesBounded);
+	}
+
+	/**
 	 * True iff this {@link Function} likely has a tf.Tensor parameter. Since Python is dynamic, we may not be 100% sure.
 	 *
 	 * @return True iff this {@link Function} likely has a tf.Tensor parameter.
@@ -4516,6 +4557,29 @@ public class Function {
 		return true;
 	}
 
+	/**
+	 * The most combinations of values that a function's primitive arguments may take on and still not count as causing retracing (issues
+	 * 1025 and 1109). Each distinct combination is a separate trace, so a bound on the combinations is a bound on the traces the primitives
+	 * cause. Four is one less than TensorFlow's own threshold for frequent retracing: {@code tf.function} warns once five of the last ten
+	 * calls traced ({@code FREQUENT_TRACING_WARNING_THRESHOLD} and {@code FREQUENT_TRACING_WARNING_MAX_CALL_HISTORY} in TensorFlow 2.9's
+	 * {@code def_function.py}), so primitives within the bound never cause that warning on their own.
+	 */
+	private static final int MAX_PRIMITIVE_COMBINATIONS = 4;
+
+	/**
+	 * Infers whether this {@link Function} likely has a primitive parameter, a parameter that takes on Python values that make
+	 * {@code tf.function} retrace. A parameter takes on primitive values if, in some calling context, its points-to set is non-empty and
+	 * each of its instances {@link #containsPrimitive contains a primitive}. A defaulted parameter that no call site supplies is exempt
+	 * (#795; {@link #isDefaultedUnsuppliedPrimitive}). Whether the primitive parameters take on a small fixed set of values, and so can't
+	 * make the function retrace without bound, is recorded alongside (issues 1025 and 1109; {@link #arePrimitiveValuesBounded} and
+	 * {@link #getHasRetracingPrimitiveParameter}).
+	 *
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @param monitor To monitor progress.
+	 * @throws CantInferPrimitiveParametersException If this {@link Function} has no {@link CallGraph} node.
+	 * @throws CoreException If resolving this function's {@link MethodReference} fails.
+	 */
 	public void inferPrimitiveParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor)
 			throws CantInferPrimitiveParametersException, CoreException {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering primitive parameters...", IProgressMonitor.UNKNOWN);
@@ -4526,6 +4590,9 @@ public class Function {
 
 		subMonitor.beginTask("Examining nodes...", nodes.size());
 
+		// The IR parameter indices of the parameters that take on primitive values in some calling context.
+		SortedSet<Integer> primitiveParameterIndices = new TreeSet<>();
+
 		for (CGNode nodeRepresentingThisFunction : nodes) {
 			IR ir = nodeRepresentingThisFunction.getIR();
 
@@ -4535,6 +4602,12 @@ public class Function {
 			// FIXME: Also consider kwargs and default args.
 			// TODO: I wonder if ir.getParameterValueNumbers() returns kwargs as well.
 			for (int paramInx = this.isMethod() ? 2 : 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+				// Another calling context already found this parameter primitive.
+				if (primitiveParameterIndices.contains(paramInx)) {
+					subMonitor.worked(1);
+					continue;
+				}
+
 				boolean allInstancesArePrimitive = true;
 
 				int value = ir.getParameter(paramInx);
@@ -4552,10 +4625,8 @@ public class Function {
 				}
 
 				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
-					LOG.info(this + " likely has a primitive parameter.");
-					this.hasPrimitiveParameter = TRUE;
-					subMonitor.done();
-					return;
+					LOG.info("Parameter of: " + this + " with index: " + paramInx + " likely is a primitive.");
+					primitiveParameterIndices.add(paramInx);
 				}
 
 				subMonitor.worked(1);
@@ -4564,9 +4635,256 @@ public class Function {
 			subMonitor.worked(1);
 		}
 
-		LOG.info(this + " likely does not have a primitive parameter.");
-		this.hasPrimitiveParameter = FALSE;
+		if (primitiveParameterIndices.isEmpty()) {
+			LOG.info(this + " likely does not have a primitive parameter.");
+			this.hasPrimitiveParameter = FALSE;
+			subMonitor.done();
+			return;
+		}
+
+		LOG.info(this + " likely has a primitive parameter.");
+		this.hasPrimitiveParameter = TRUE;
+		this.primitiveValuesBounded = this.arePrimitiveValuesBounded(primitiveParameterIndices, nodes, callGraph, pointerAnalysis);
+
+		if (this.primitiveValuesBounded)
+			LOG.info(this + "'s primitive parameters take on a small fixed set of values, so they can't make it retrace without bound.");
+
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the given primitive parameters can't vary the {@code tf.function} trace key without bound, and so are exempt from
+	 * {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and from {@link PreconditionSuccess#P3} (issues 1025 and 1109). A primitive
+	 * argument makes {@code tf.function} retrace once per distinct value, so values that can't vary cause no retracing, and a small fixed
+	 * set of values causes at most one trace per value. The values are read from the parameters' points-to sets, which are flow-insensitive
+	 * and so cover every value stored, unioned over all of this function's calling contexts:
+	 * <ul>
+	 * <li><b>A single value.</b> A parameter whose union holds one {@link #fixedValue fixed value} can't vary the trace key, and adds no
+	 * traces.
+	 * <li><b>A small fixed set.</b> The remaining parameters bound the traces by the number of combinations of their values. That is at
+	 * most the product of the sizes of their unions. When every calling context binds each of them to a single value, as a call-string
+	 * context does for a call site that passes literals, it's also at most the number of distinct combinations among the contexts: the
+	 * values may differ between call sites but not at any one. The bound is {@value #MAX_PRIMITIVE_COMBINATIONS}.
+	 * </ul>
+	 * Conservative on ignorance: the parameters stay primitive unless the complete set of values is known, so a calling context whose
+	 * points-to set is empty or holds a value that isn't fixed, or a call site whose argument can't be shown to have a value
+	 * ({@link #argumentsHaveValues}), leaves today's behavior.
+	 *
+	 * @param parameterIndices The IR parameter indices of the parameters found primitive.
+	 * @param nodes The {@link CallGraph} nodes of this function, one per calling context.
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @return True iff the complete set of values of each given parameter is known and the combinations of those values are within the
+	 *         bound.
+	 */
+	private boolean arePrimitiveValuesBounded(SortedSet<Integer> parameterIndices, Set<CGNode> nodes, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		// The parameters with more than one value, each with its values per calling context and over all of them.
+		Map<Integer, Map<CGNode, Set<Object>>> varyingValuesByContext = new HashMap<>();
+		Map<Integer, Set<Object>> varyingValues = new HashMap<>();
+
+		for (int parameterIndex : parameterIndices) {
+			Map<CGNode, Set<Object>> valuesByContext = new HashMap<>();
+			Set<Object> values = new HashSet<>();
+
+			for (CGNode node : nodes) {
+				Set<Object> contextValues = this.fixedValues(node, parameterIndex, callGraph, pointerAnalysis);
+
+				if (contextValues == null) {
+					LOG.info("Can't determine the values of the parameter of: " + this + " with index: " + parameterIndex + ".");
+					return false;
+				}
+
+				valuesByContext.put(node, contextValues);
+				values.addAll(contextValues);
+			}
+
+			LOG.info("Parameter of: " + this + " with index: " + parameterIndex + " takes on the values: " + values + ".");
+
+			// A single value can't vary the trace key.
+			if (values.size() == 1)
+				continue;
+
+			varyingValuesByContext.put(parameterIndex, valuesByContext);
+			varyingValues.put(parameterIndex, values);
+		}
+
+		if (varyingValues.isEmpty())
+			return true;
+
+		// The combinations that can occur are at most all of them.
+		long combinations = 1;
+
+		for (Set<Object> values : varyingValues.values())
+			combinations = Math.multiplyExact(combinations, values.size());
+
+		// When each calling context binds each parameter to one value, the combinations that occur are at most the contexts' distinct ones.
+		if (varyingValuesByContext.values().stream().allMatch(byContext -> byContext.values().stream().allMatch(v -> v.size() == 1))) {
+			Set<List<Object>> contextCombinations = new HashSet<>();
+
+			for (CGNode node : nodes)
+				contextCombinations
+						.add(varyingValuesByContext.values().stream().map(byContext -> byContext.get(node).iterator().next()).toList());
+
+			combinations = Math.min(combinations, contextCombinations.size());
+		}
+
+		LOG.info(this + "'s primitive arguments take on at most " + combinations + " combinations of values.");
+		return combinations <= MAX_PRIMITIVE_COMBINATIONS;
+	}
+
+	/**
+	 * Returns the {@link #fixedValue fixed values} the parameter at the given IR parameter index takes on in the given calling context, or
+	 * {@code null} if the complete set isn't known: the parameter's points-to set there is empty, holds an instance that isn't a fixed
+	 * value, or a call site reaching the context passes an argument that can't be shown to have a value ({@link #argumentsHaveValues}).
+	 *
+	 * @param node The {@link CallGraph} node of this function for the calling context.
+	 * @param parameterIndex The IR parameter index.
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @return The fixed values the parameter takes on in the calling context, or {@code null} if they aren't known.
+	 */
+	private Set<Object> fixedValues(CGNode node, int parameterIndex, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, node.getIR().getParameter(parameterIndex));
+		OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+		if (pointsToSet.isEmpty())
+			return null;
+
+		Set<Object> values = new HashSet<>();
+
+		for (InstanceKey instanceKey : pointsToSet) {
+			Object value = fixedValue(instanceKey, pointerAnalysis, new HashSet<>());
+
+			if (value == null)
+				return null;
+
+			values.add(value);
+		}
+
+		if (!this.argumentsHaveValues(node, parameterIndex, callGraph, pointerAnalysis))
+			return null;
+
+		return values;
+	}
+
+	/**
+	 * Returns the value the given instance always has, which {@code tf.function} keys by contents, or {@code null} if it has none. A
+	 * {@link ConstantKey} is its constant. A built-in tuple is the tuple of its elements, each of which must be a single fixed value,
+	 * recursively; a tuple is immutable, so these are its contents at every call. Every other instance has no fixed value: a list or a
+	 * dictionary can change between calls, an object of a program-defined class is keyed by its identity (that it is allocated once isn't a
+	 * points-to fact), and so on. A tuple with no element the analysis knows of isn't known to be empty, so it has no fixed value either.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param pointerAnalysis The {@link PointerAnalysis} corresponding to the given {@link InstanceKey}.
+	 * @param seen The tuples being examined, to stop on a cycle.
+	 * @return An object equal to the fixed value of every instance with the same fixed value, or {@code null} if the instance has none.
+	 */
+	private static Object fixedValue(InstanceKey instanceKey, PointerAnalysis<InstanceKey> pointerAnalysis, Set<InstanceKey> seen) {
+		if (instanceKey instanceof ConstantKey<?>)
+			return instanceKey; // Equal by constant and type.
+
+		if (!(instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey))
+			return null;
+
+		InstanceKey allocation = getAllocationSiteInNode(instanceKey);
+		IClass type = allocation.concreteType();
+
+		if (!type.getReference().equals(PythonTypes.tuple) || !seen.add(allocation))
+			return null;
+
+		// The tuple's elements, by the fields that hold them.
+		SortedMap<String, Object> elements = new TreeMap<>();
+
+		for (IField field : type.getAllInstanceFields()) {
+			PointerKey fieldKey = pointerAnalysis.getHeapModel().getPointerKeyForInstanceField(allocation, field);
+			OrdinalSet<InstanceKey> fieldPointsToSet = pointerAnalysis.getPointsToSet(fieldKey);
+
+			if (fieldPointsToSet.isEmpty())
+				continue;
+
+			if (fieldPointsToSet.size() != 1)
+				return null;
+
+			Object element = fixedValue(fieldPointsToSet.iterator().next(), pointerAnalysis, seen);
+
+			if (element == null)
+				return null;
+
+			elements.put(field.getName().toString(), element);
+		}
+
+		seen.remove(allocation);
+
+		if (elements.isEmpty())
+			return null;
+
+		return List.of(PythonTypes.tuple, elements);
+	}
+
+	/**
+	 * Returns true iff every call site reaching the given calling context either omits the parameter at the given IR parameter index or
+	 * passes an argument with a non-empty points-to set. The parameter's own points-to set leaves out a value the analysis has no abstract
+	 * value for, so this is what shows the set is complete. An omitted parameter takes its default, which its own points-to set holds. A
+	 * call site that can't be aligned with the parameter (an unpacked positional argument at or before its slot, wala/ML#751, or an
+	 * unpacked keyword argument), a caller without IR, a non-Python invoke, a parameter that can't be mapped to its declaration, and a
+	 * context no call site reaches all make the answer false.
+	 *
+	 * @param node The {@link CallGraph} node of this function for the calling context.
+	 * @param parameterIndex The IR parameter index.
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @return True iff each call site reaching the context omits the parameter or passes it an argument with a value.
+	 */
+	private boolean argumentsHaveValues(CGNode node, int parameterIndex, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		// IR slot 0 is the callable, so slot i is the parameter declared at i - 1, as in `isDefaultedUnsuppliedPrimitive`.
+		int declarationIndex = parameterIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		if (parameter.isKeywordOnly() || parameter.getIndex() != declarationIndex)
+			return false;
+
+		// The callee occupies positional slot 0 of the invoke, as in `isSuppliedAtAnyCallSite`.
+		int positionalSlot = parameter.getIndex() + 1;
+		boolean sawCallSite = false;
+
+		for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+			IR ir = predecessor.getIR();
+
+			if (ir == null)
+				return false;
+
+			for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+				for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+					// An unpacked keyword argument (`**kwargs`) has no keyword name.
+					if (!(instruction instanceof PythonInvokeInstruction invoke) || hasStarredArgumentAtOrBefore(invoke, positionalSlot)
+							|| invoke.getKeywords().contains(null))
+						return false;
+
+					sawCallSite = true;
+					int use;
+
+					if (invoke.getKeywords().contains(parameter.getName()))
+						use = invoke.getUse(parameter.getName());
+					else if (invoke.getNumberOfPositionalParameters() > positionalSlot)
+						use = invoke.getUse(positionalSlot);
+					else
+						continue; // This call site omits the parameter.
+
+					PointerKey argumentKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, use);
+
+					if (pointerAnalysis.getPointsToSet(argumentKey).isEmpty())
+						return false;
+				}
+		}
+
+		return sawCallSite;
 	}
 
 	/**

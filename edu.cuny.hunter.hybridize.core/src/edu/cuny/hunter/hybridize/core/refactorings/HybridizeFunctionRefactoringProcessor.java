@@ -600,7 +600,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// there is wasted. This gate is deliberately narrower than the recursion check, whose result is consulted for every
 				// tensor-parameter candidate. Overridable to run on every function via alwaysCheckTensorComputation.
 				boolean tensorParameter = func.getHasTensorParameter() != null && func.getHasTensorParameter();
-				boolean noPrimitiveParameter = func.getHasPrimitiveParameter() != null && !func.getHasPrimitiveParameter();
+				boolean noPrimitiveParameter = func.getHasRetracingPrimitiveParameter() != null
+						&& !func.getHasRetracingPrimitiveParameter();
 				boolean barrenCouldDecide = tensorParameter && noPrimitiveParameter;
 
 				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
