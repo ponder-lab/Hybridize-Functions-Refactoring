@@ -343,9 +343,9 @@ public enum PreconditionFailure {
 	 * value, tests its type, or passes it to an API that needs a Python value, such as a layer's constructor called while Keras builds a
 	 * model, fails. A returned {@code bool} is converted too, so it counts. A returned {@code None}, and a value a TensorFlow operation
 	 * computes, such as {@code tf.size(x)}, cross unchanged and are left alone, and so is a function whose every call discards its result.
-	 * The check reads the constants in the returned values' points-to sets, so it covers literal and stored Python constants. A Python
-	 * value the engine represents without a constant, such as a scalar computed by {@code n * 2} or {@code len(xs)}, is not yet seen
-	 * (https://github.com/wala/ML/issues/805).
+	 * The check reads the constants in the returned values' points-to sets, so it covers literal Python constants, including straight-line
+	 * constant arithmetic the front end folds. A scalar computed at run time, such as {@code len(xs)} or a product of it, has no abstract
+	 * value and is not yet seen (https://github.com/wala/ML/issues/805).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
 	 */

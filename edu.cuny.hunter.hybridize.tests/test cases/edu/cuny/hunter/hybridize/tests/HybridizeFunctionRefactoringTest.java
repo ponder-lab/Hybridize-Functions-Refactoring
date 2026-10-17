@@ -14589,25 +14589,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins scalars computed in Python for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117. Measured on TensorFlow
-	 * 2.9.3, converted, {@code scaled} returns {@code n * 2} and {@code counted} returns {@code len(xs)} as a tensor, so each caller's
-	 * dictionary lookup raises {@code TypeError: Tensor is unhashable}; eagerly, each is an {@code int}. The product of a stored constant
-	 * is seen, and {@code scaled} is refused; the length is not yet seen.
+	 * 2.9.3, converted, {@code scaled} returns {@code n * 2}, {@code counted} returns {@code len(xs)}, and {@code doubled_count} returns
+	 * {@code len(xs) * 2}, each as a tensor, so each caller's dictionary lookup raises {@code TypeError: Tensor is unhashable}; eagerly,
+	 * each is an {@code int}.
 	 */
 	@Test
 	public void testReturnedPrimitiveComputed() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
+		// The front end folds straight-line constant arithmetic, so `n = 3` then `n * 2` is the literal 6 in the IR, with no binary
+		// operation, and the check catches it as a literal return.
 		Function scaled = findFunction(functions, "scaled");
-		assertTrue("`scaled`'s product of a stored constant is seen.", scaled.getReturnsPrimitive());
+		assertTrue("`scaled`'s folded literal is seen.", scaled.getReturnsPrimitive());
 		assertNull("`scaled` must not pass a precondition.", scaled.getPassingPrecondition());
 		assertNotNull("`scaled` fails with RETURNS_PYTHON_PRIMITIVE.",
 				scaled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
 
-		// TODO: Refuse this once Ariadne gives a computed Python scalar an instance key: https://github.com/wala/ML/issues/805. Until then
-		// the points-to set of the returned `len(xs)` holds no constant, so the check doesn't see it.
-		Function counted = findFunction(functions, "counted");
-		assertFalse("`counted`'s computed length is not yet seen.", counted.getReturnsPrimitive());
-		assertEquals("`counted` still hybridizes (P1).", P1, counted.getPassingPrecondition());
+		// TODO: Refuse these once Ariadne gives a computed Python scalar an abstract value: https://github.com/wala/ML/issues/805. Unlike
+		// `scaled`'s product, `len(xs)`, and the product computed from it, are computed at run time, so the returned value has no
+		// abstract value and the check doesn't see it.
+		for (String identifier : List.of("counted", "doubled_count")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "`'s computed scalar is not yet seen.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**
