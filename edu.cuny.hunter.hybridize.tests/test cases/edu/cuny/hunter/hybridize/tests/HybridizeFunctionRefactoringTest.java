@@ -14597,8 +14597,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testReturnedPrimitiveComputed() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		// The front end folds straight-line constant arithmetic, so `n = 3` then `n * 2` is the literal 6 in the IR, with no binary
-		// operation, and the check catches it as a literal return.
+		// The front end folds straight-line constant arithmetic over names bound once in the file, so `n = 3` then `n * 2` is the
+		// literal 6 in the IR, with no binary operation, and the check catches it as a literal return. That is why `doubled_count` uses
+		// `m`: a second binding of `n` anywhere in the file would stop the fold, and `scaled` would be missed.
 		Function scaled = findFunction(functions, "scaled");
 		assertTrue("`scaled`'s folded literal is seen.", scaled.getReturnsPrimitive());
 		assertNull("`scaled` must not pass a precondition.", scaled.getPassingPrecondition());
