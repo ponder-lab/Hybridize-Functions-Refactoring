@@ -13196,9 +13196,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The name side of the engine's Keras-class walk (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): the
+	 * program defines a class named {@code Layer}, and {@code Scaled} extends it, so the last segment of {@code Scaled}'s base is
+	 * {@code Layer}. Neither class is a Keras layer, and the engine's hierarchy reaches no Keras class from either, so neither {@code call}
+	 * is a Keras call override and {@code training} is not taken as supplied by Keras. No call site passes it, so it is left out of each
+	 * signature, which runs on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testNonKerasClassNamedLayer() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Layer.call", "Scaled.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
+			assertTrue("A signature is inferred for `" + identifier + "`; nothing supplies `training`.",
+					call.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s signature covers only `x`, `training` being omittable.",
+					"[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
-	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881), through both PyDev's last segment
-	 * and the engine's class hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
+	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881) through the engine's class
+	 * hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
 	 */
 	@Test
 	public void testKerasLayerSubclassSuppliedParameters() throws Exception {
