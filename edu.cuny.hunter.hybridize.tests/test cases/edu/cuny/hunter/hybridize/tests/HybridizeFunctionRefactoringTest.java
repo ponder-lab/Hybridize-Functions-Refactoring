@@ -13057,12 +13057,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <li>{@code upsample_bn} takes {@code convolutional}'s result, a merge over the application of {@code Frozen}, a user subclass of
 	 * {@code BatchNormalization}, as YOLOv3's {@code common.convolutional} is.
 	 * </ul>
-	 * The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at {@code tf.ones(...)}. {@code scale_inside}, called
-	 * from a custom layer's own {@code call}, which Keras gives a placeholder, now declines, though decorating it runs. Of two custom
-	 * layers applied to the {@code Input}, {@code after_scaled} receives one whose {@code call} ends in an operator and converts, though
-	 * decorating it raises, while {@code after_relued} receives one whose {@code call} ends in {@code tf.nn.relu} and declines. Every arm
-	 * was runtime-verified on the pinned TF 2.9.3, undecorated and decorated. ({@code model_fn_eager} decorated fails for an unrelated
-	 * reason, creating the layer's variables inside the trace, so only its Keras verdict is pinned.)
+	 * The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at {@code tf.ones(...)}, and {@code scale_inside},
+	 * called from a custom layer's own {@code call}, which Keras gives a placeholder, converts. Of two custom layers applied to the
+	 * {@code Input}, {@code after_scaled} receives one whose {@code call} ends in an operator, and {@code after_relued} one whose
+	 * {@code call} ends in {@code tf.nn.relu}; the engine puts the origin onto the application's result
+	 * (https://github.com/wala/ML/issues/1109), so both decline. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and
+	 * decorated. ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only
+	 * its Keras verdict is pinned.)
 	 */
 	@Test
 	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
@@ -13087,25 +13088,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`model_fn_eager` is called only with a real tensor.", FALSE,
 				findFunction(functions, "model_fn_eager").getHasKerasSymbolicArguments());
 
-		// TODO: `scale_inside` is called from `Scale.call`, which Keras gives a graph tensor rather than the KerasTensor the layer
-		// is applied to, so decorating it runs: a lost conversion. At the layer application, the engine passes the Keras symbolic
-		// origin into the parameter of `call` instead of onto the result, so the function declines. The expectation returns to P1
-		// once the origin stays out of `call`: https://github.com/wala/ML/issues/1109; see
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// `scale_inside` is called from `Scale.call`, which Keras gives a graph tensor rather than the KerasTensor the layer is applied
+		// to, so decorating it runs. The engine keeps the Keras symbolic origin out of `call` (https://github.com/wala/ML/issues/1109).
 		Function scaleInside = findFunction(functions, "scale_inside");
-		assertEquals("`scale_inside` carries the origin carried into the layer body.", TRUE, scaleInside.getHasKerasSymbolicArguments());
-		assertNull("`scale_inside` does not convert.", scaleInside.getPassingPrecondition());
+		assertEquals("`scale_inside` is called only with the graph tensor Keras gives the layer body.", FALSE,
+				scaleInside.getHasKerasSymbolicArguments());
+		assertEquals("`scale_inside` still converts (P1).", P1, scaleInside.getPassingPrecondition());
 
-		// TODO: `after_scaled` receives `Scale()(inp)`, a KerasTensor, and decorating it raises, so it should be declined. Because the
-		// engine passes the Keras symbolic origin into `call`'s parameter instead of onto the application's result, the result carries it
-		// only when `call` carries it back out, through a TensorFlow call; `Scale.call` ends in an operator, so the result loses it, and
-		// the function converts. The expectation flips once the origin goes onto the result: https://github.com/wala/ML/issues/1109; see
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// `after_scaled` receives `Scale()(inp)`, a KerasTensor, and decorating it raises. The engine puts the Keras symbolic origin onto
+		// the application's result, though `Scale.call` ends in an operator (https://github.com/wala/ML/issues/1109).
 		Function afterScaled = findFunction(functions, "after_scaled");
-		assertEquals("`after_scaled`'s parameter carries no Keras symbolic origin.", FALSE, afterScaled.getHasKerasSymbolicArguments());
-		assertEquals("`after_scaled` converts (P1).", P1, afterScaled.getPassingPrecondition());
+		assertEquals("`after_scaled` is called with a Keras symbolic tensor.", TRUE, afterScaled.getHasKerasSymbolicArguments());
+		assertNull("`after_scaled` does not convert.", afterScaled.getPassingPrecondition());
+		assertNotNull("`after_scaled` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterScaled.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
-		// The control: `Relued.call` ends in `tf.nn.relu`, which carries the origin back out to the result, so `after_relued` declines.
+		// The control: `Relued.call` ends in `tf.nn.relu`, and its application's result carries the origin too, so `after_relued`
+		// declines.
 		Function afterRelued = findFunction(functions, "after_relued");
 		assertEquals("`after_relued` is called with a Keras symbolic tensor.", TRUE, afterRelued.getHasKerasSymbolicArguments());
 		assertNull("`after_relued` does not convert.", afterRelued.getPassingPrecondition());
