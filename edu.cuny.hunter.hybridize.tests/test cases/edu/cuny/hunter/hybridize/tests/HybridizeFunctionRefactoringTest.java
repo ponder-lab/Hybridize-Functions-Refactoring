@@ -11974,6 +11974,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins a READ of {@code Tensor.numpy} that is never called as eager-only
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code y.numpy} is a bound method; under
+	 * {@code tf.function} {@code y} is a symbolic tensor without the attribute, so the read itself raises
+	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'}. The call form ({@code calls_numpy}) is the existing behavior and
+	 * stays blocked. {@code Model.get_loss} is the shape the issue was found in: the receiver is the result of a
+	 * {@code tf.function}-decorated method called through {@code self}.
+	 * <p>
+	 * The two controls guard the receiver scoping: unlike the call form, the read form cannot match on the member name alone, since
+	 * {@code numpy} is also an ordinary attribute of non-tensors. A user object's {@code numpy} field and the {@code tf.experimental.numpy}
+	 * module both trace fine, so neither may block.
+	 */
+	@Test
+	public void testEagerOnlyMemberRead() throws Exception {
+		Function readsNumpy = getFunction("reads_numpy");
+		assertTrue("`reads_numpy` reads `numpy` off a tensor, which raises under tracing.", readsNumpy.getHasEagerOnlyCalls());
+		assertNull("`reads_numpy` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				readsNumpy.getPassingPrecondition());
+		assertNotNull("`reads_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				readsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		// The shape #1100 was found in: the receiver is the result of a `tf.function`-decorated method called through `self`, so its
+		// tensor typing comes from the hybrid callee's return rather than from a local tensor expression.
+		Function getLoss = getFunction("Model.get_loss");
+		assertTrue("`Model.get_loss` reads `numpy` off the tensor a hybrid method returns.", getLoss.getHasEagerOnlyCalls());
+		assertNull("`Model.get_loss` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				getLoss.getPassingPrecondition());
+		assertNotNull("`Model.get_loss` fails with HAS_EAGER_ONLY_CALLS.",
+				getLoss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function callsNumpy = getFunction("calls_numpy");
+		assertTrue("`calls_numpy` calls `numpy()` on a tensor.", callsNumpy.getHasEagerOnlyCalls());
+		assertNotNull("`calls_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				callsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		for (String name : List.of("reads_holder_numpy", "reads_experimental_numpy")) {
+			Function function = getFunction(name);
+			assertFalse("`" + name + "` reads `numpy` off a non-tensor, which traces fine.", function.getHasEagerOnlyCalls());
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
 	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
 	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
@@ -12135,12 +12177,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * calls, so a caller of a function whose name argument raises under tracing raises too. Measured under {@code tf.function} on
 	 * TensorFlow 2.9.3: {@code evaluates} calls {@code evaluate}, which passes {@code tf.float32} as {@code tf.sqrt}'s name; {@code trims}
 	 * calls {@code trim_zeros}, distilling tf-eager-fasterrcnn's, without its {@code name}, which then reaches {@code tf.boolean_mask} as
-	 * {@code None}; and {@code calls_trims} calls {@code trims}. Each raises. {@code trims_named} and {@code trims_positional} pass
-	 * {@code trim_zeros} a name, by keyword and by position, and trace.
+	 * {@code None}; {@code calls_trims} calls {@code trims}; and {@code maps_caller} runs {@code row_sum}, which calls {@code trim_zeros}
+	 * without a name, through {@code tf.map_fn}. Each raises. {@code trims_named} and {@code trims_positional} pass {@code trim_zeros} a
+	 * name, by keyword and by position, and trace.
 	 */
 	@Test
 	public void testInvalidNameArgumentCallers() throws Exception {
-		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted")) {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted", "maps_caller")) {
 			Function function = getFunction(identifier);
 			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
 			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
@@ -12161,12 +12204,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			// then a classmethod called through its class reaches no method body, so the call to `Masker.trim` without a name is not seen.
 			Function classmethodOmitted = getFunction("classmethod_omitted");
 			assertFalse("`classmethod_omitted`'s classmethod is not yet reached.", classmethodOmitted.getCallsInvalidNameArguments());
-
-			// TODO: Refuse this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Tracing it
-			// traces
-			// `row_sum`, which calls `trim_zeros` without a name and raises, but `row_sum` gets no call-graph node.
-			Function mapsCaller = getFunction("maps_caller");
-			assertFalse("`maps_caller`'s callback is not yet reached.", mapsCaller.getCallsInvalidNameArguments());
 
 			// TODO: Refuse this once a forwarder is followed through user callees:
 			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `forwards` without a name, which forwards
@@ -12919,9 +12956,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
 	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
 	 * a nested {@code def}, a lambda a helper calls or {@code tf.map_fn} runs, or a comprehension and passes it to a shape op, and each
-	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld, except that the {@code tf.map_fn} case is
-	 * not detected yet, for the engine reason its TODO cites. The control {@code ranked_nested_def}, called at one extent, has the axis
-	 * resolved and keeps its signature.
+	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld. The control {@code ranked_nested_def},
+	 * called at one extent, has the axis resolved and keeps its signature.
 	 */
 	@Test
 	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
@@ -12929,7 +12965,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_comprehension")) {
+		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_map_fn", "wild_comprehension")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
 					function.getHasUnresolvedStaticallyReadAxes());
@@ -12937,12 +12973,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
 					function.getInferredInputSignatureAbsenceReason());
 		}
-
-		// TODO: Withhold this signature once Ariadne's `tf.map_fn` summary invokes its callback:
-		// https://github.com/wala/ML/issues/942. Until then the lambda has no call-graph node, and the signature is kept.
-		Function mapFn = findFunction(functions, "wild_map_fn");
-		assertFalse("`wild_map_fn`'s read in a `tf.map_fn` callback is not yet seen.", mapFn.getHasUnresolvedStaticallyReadAxes());
-		assertTrue("`wild_map_fn` keeps its signature.", mapFn.getInferredInputSignature().isPresent());
 
 		Function ranked = findFunction(functions, "ranked_nested_def");
 		assertFalse("`ranked_nested_def`'s statically-read axes are all resolved.", ranked.getHasUnresolvedStaticallyReadAxes());
@@ -13082,6 +13112,123 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function call = findFunction(this.getFunctions(), "RPNplus.call");
 		assertEquals("`RPNplus.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Pins the framework-supplied parameter rule (#881) on a subclass of a built-in Keras layer
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099), reducing TensorFlow2.0-Examples' YOLOV3
+	 * {@code core/common.py}. The class extends {@code tf.keras.layers.BatchNormalization}, whose own {@code Layer} ancestor is declared in
+	 * TensorFlow's sources. PyDev's hierarchy stops at the unresolved base and sees only its last segment, {@code BatchNormalization},
+	 * while the engine's layer summaries declare {@code Layer} as their superclass (https://github.com/wala/ML/issues/1098), so the
+	 * engine's walk reaches it and {@code training} is recognized as supplied by Keras. A signature covering only {@code x} would be wrong:
+	 * {@code Layer.__call__} passes {@code training} on every invocation, and the first call raises ("got keyword argument `training` that
+	 * was not included in input_signature", TF 2.9.3). Inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function
+	 * still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasBuiltinLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
+		assertEquals("`BatchNormalization.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} pin (#1099) over a second built-in base,
+	 * {@code tf.keras.layers.Dense}, so the rule is not specific to one layer class.
+	 */
+	@Test
+	public void testKerasBuiltinDenseSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Affine.call");
+		assertEquals("`Affine.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The framework-supplied parameter rule (#881) recognized through the engine's class hierarchy alone (#1099). The class extends
+	 * {@code tf.keras.Sequential}: PyDev's hierarchy stops at the unresolved base and sees only {@code Sequential}, which is neither
+	 * {@code Layer} nor {@code Model}, while the engine resolves the base to its summary class, whose superclass chain reaches
+	 * {@code Ltensorflow/keras/models/Model}. Keras supplies {@code training} from {@code Layer.__call__}, so inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED} while the function still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasSequentialSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Stack.call");
+		assertEquals("`Stack.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The negative side of the engine's Keras-class walk (#1099): a {@code call} override whose class is no Keras layer or model, with
+	 * bases forming a diamond over {@code object}. The walk reaches the shared base along both paths and visits it once, follows
+	 * {@code object} to the root, and finds no Keras class, so {@code training} is not taken as supplied by Keras. No call site passes it,
+	 * so it is left out of the signature, which runs.
+	 */
+	@Test
+	public void testNonKerasDiamondCallOverride() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Diamond.call");
+		assertEquals("`Diamond.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+		assertTrue("A signature is inferred; nothing supplies `training`.", call.getInferredInputSignature().isPresent());
+		assertEquals("The signature covers only `x`, `training` being omittable.", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]",
+				call.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * The name side of the engine's Keras-class walk (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): the
+	 * program defines a class named {@code Layer}, and {@code Scaled} extends it, so the last segment of {@code Scaled}'s base is
+	 * {@code Layer}. Neither class is a Keras layer, and the engine's hierarchy reaches no Keras class from either, so neither {@code call}
+	 * is a Keras call override and {@code training} is not taken as supplied by Keras. No call site passes it, so it is left out of each
+	 * signature, which runs on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testNonKerasClassNamedLayer() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Layer.call", "Scaled.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
+			assertTrue("A signature is inferred for `" + identifier + "`; nothing supplies `training`.",
+					call.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s signature covers only `x`, `training` being omittable.",
+					"[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
+	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881) through the engine's class
+	 * hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
+	 */
+	@Test
+	public void testKerasLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Doubled.call");
+		assertEquals("`Doubled.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
 		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
 				call.getInferredInputSignature().isEmpty());
 		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
@@ -14126,28 +14273,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code via_map_fn}), so the body itself never calls it, and a nested {@code def} passed elements of the parameters from inside a
 	 * comprehension ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies
 	 * numpy to a parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under
-	 * {@code tf.function} tracing on TensorFlow 2.9.3. The {@code tf.map_fn} case is not detected yet, for the engine reason its TODO
-	 * cites. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow op, and
-	 * {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 * {@code tf.function} tracing on TensorFlow 2.9.3. Two controls trace and still hybridize: {@code clean_closure}'s nested function
+	 * applies only a TensorFlow op, and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
 	 */
 	@Test
 	public void testNumpyCallsThroughClosure() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("via_comprehension", "via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call",
-				"via_nested_def_arguments", "via_own_exposed_read")) {
+				"via_map_fn", "via_nested_def_arguments", "via_own_exposed_read")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 		}
-
-		// TODO: Flag this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Until then the
-		// lambda has no call-graph node, and the function still hybridizes.
-		Function mapFn = findFunction(functions, "via_map_fn");
-		assertFalse("`via_map_fn`'s numpy in a `tf.map_fn` callback is not yet seen.", mapFn.getHasNumpyCallsOnParameters());
-		assertEquals("`via_map_fn` still hybridizes (P1).", P1, mapFn.getPassingPrecondition());
 
 		for (String identifier : List.of("clean_closure", "closure_over_local")) {
 			Function function = findFunction(functions, identifier);
