@@ -13,8 +13,8 @@ def counted(x, xs):
 
 
 def doubled_count(x, xs):
-    n = len(xs)
-    return x * 2.0, n * 2
+    m = len(xs)
+    return x * 2.0, m * 2
 
 
 t = tf.constant([1.0, 2.0])
