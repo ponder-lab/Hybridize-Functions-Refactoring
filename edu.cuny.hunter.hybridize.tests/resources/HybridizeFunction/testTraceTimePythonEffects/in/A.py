@@ -150,6 +150,13 @@ def calls_reader(x):
     return reads_file(x)
 
 
+def opens_through_alias(x):
+    opener = open
+    with opener(SRC_FILE) as f:
+        lines = f.readlines()
+    return x * len(lines)
+
+
 # Controls.
 def draws_tf_random(x):
     return x * tf.random.uniform([])
@@ -174,6 +181,11 @@ def reads_user_clock(x):
     return x * clock.time()
 
 
+def calls_local_open(x):
+    open = lambda path: len(path)
+    return x * open(SRC_FILE)
+
+
 t = tf.constant([1.0, 2.0, 3.0])
 example = ExampleInputter()
 assert example.get_dataset_size(t).numpy().tolist() == [3.0, 6.0, 9.0]
@@ -189,7 +201,9 @@ draws_numpy_random(t)
 draws_aliased_numpy_random(t)
 reads_image(t)
 calls_reader(t)
+opens_through_alias(t)
 draws_tf_random(t)
 prints_tensor(t)
 computes(t)
 reads_user_clock(t)
+calls_local_open(t)
