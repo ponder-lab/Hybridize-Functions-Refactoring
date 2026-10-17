@@ -666,7 +666,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check whether a call site passes a Keras symbolic tensor (issue 887). Same reachable region, same gate;
 				// overridable independently via alwaysCheckKerasSymbolicArguments.
 				if (this.getAlwaysCheckKerasSymbolicArguments() || barrenCouldDecide)
-					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis());
+					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075). Same
 				// reachable region and gate; a points-to query per return and per caller argument.
