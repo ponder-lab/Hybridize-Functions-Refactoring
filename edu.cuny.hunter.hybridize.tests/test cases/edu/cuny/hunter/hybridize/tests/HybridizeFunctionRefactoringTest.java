@@ -14173,6 +14173,86 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
+	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
+	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:
+	 * {@code Sampler.next_inputs} reads the targets {@code setup_target} rebinds (TensorFlowTTS's {@code Tacotron2Sampler}),
+	 * {@code Attention.__call__} the keys and values {@code setup_memory} rebinds, {@code Attention._compute_window_mask} the window
+	 * {@code setup_window} rebuilds (TensorFlowTTS's {@code TFTacotronLocationSensitiveAttention}), {@code Decoder.step} both of these
+	 * through its callees ({@code TFTacotronDecoder.step}), and {@code AttentionalRNNDecoder._get_initial_state} the memory
+	 * {@code initialize} rebinds (OpenNMT-tf), {@code LoopFedDecoder._get_initial_state} the same, with the memory computed from a loop
+	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, {@code Builder.read} the
+	 * batch that a {@code build} outside Keras rebinds on each call, and {@code Node.read} the field that a child's {@code __init__}
+	 * rebinds on its parent, an object it doesn't set up. {@code make_features} (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the
+	 * dictionary its caller passes, which {@code tf.function} refuses with a {@code ValueError}; the side-effect precondition refuses it.
+	 * Five controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
+	 * {@code Derived.scaled} one set only in a base's {@code __init__}, {@code BuildOnly.call} one set only in a Keras layer's
+	 * {@code build}, {@code StringField.labeled} a string field another method rebinds, used only as an op's name, and
+	 * {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads an {@code int} field
+	 * another method rebinds, which diverges under tracing too but holds no tensor, so this precondition leaves it alone. Two more controls
+	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
+	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused.
+	 * {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not yet detected, for the engine reason
+	 * its TODO gives. {@code Resetting.read}, whose field is set only in a helper that only {@code __init__} calls, matches but is refused,
+	 * for the precision reason its TODO gives.
+	 */
+	@Test
+	public void testReboundStateReads() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Sampler.next_inputs", "Attention.__call__", "Attention._compute_window_mask", "Decoder.step",
+				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read",
+				"Node.read")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads rebound tensor state.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_REBOUND_STATE_READS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// Filling in the caller's dictionary is a write to an object created outside the function, so the side-effect precondition refuses
+		// it.
+		Function makeFeatures = findFunction(functions, "make_features");
+		assertNull("`make_features` must not pass a precondition.", makeFeatures.getPassingPrecondition());
+		assertNotNull("`make_features` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				makeFeatures.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// The analysis tells objects apart by allocation site, so a holder created afresh on each call is one object to it, and its getter
+		// is
+		// refused although this program never rebinds a holder between two of its reads.
+		Function get = findFunction(functions, "Holder.get");
+		assertEquals("`Holder.get` reads a field `Holder.set` writes.", TRUE, get.getHasReboundStateReads());
+		assertNotNull("`Holder.get` fails with HAS_REBOUND_STATE_READS.",
+				get.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		for (String identifier : List.of("InitOnly.scaled", "BuildOnly.call", "StringField.labeled", "IntField.counted",
+				"VariableField.read", "sums_list", "uses_fresh_holder", "Derived.scaled")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// TODO: Convert this. A known false refusal, from a precision limit of this check rather than an engine gap: the field is set only
+		// in `_reset`, which only `__init__` calls, but a set-up method is credited only with its own writes, since a helper may also be
+		// called elsewhere. Crediting it would need the helper's callers to be the object's set-up methods alone.
+		Function resettingRead = findFunction(functions, "Resetting.read");
+		assertEquals("`Resetting.read` reads a field `Resetting._reset` writes.", TRUE, resettingRead.getHasReboundStateReads());
+		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
+				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of its
+		// dictionary, as OpenNMT-tf's `Model` does, and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute
+		// read of `copy` and the call's result point to nothing, so the only dictionary the parameter is seen to hold is the one the body
+		// creates, whose writes are not side effects.
+		Function makeFeaturesOfCopy = findFunction(functions, "make_features_of_copy");
+		assertEquals("`make_features_of_copy`'s write to the copied dictionary is not yet seen.", FALSE,
+				makeFeaturesOfCopy.getHasPythonSideEffects());
+		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
