@@ -115,6 +115,7 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -145,6 +146,7 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
@@ -152,6 +154,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
@@ -1178,6 +1181,13 @@ public class Function {
 	private Boolean replicaInvoked;
 
 	/**
+	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
+	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
+	 * walk finds no such class.
+	 */
+	private boolean extendsKerasCallableClass;
+
+	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
 	 * feeds the snapshot to an optimizer or gradient computation, which raises under {@code tf.function} tracing when slot creation lands
 	 * on the variable-lifting re-trace. {@code null} when it could not be determined (no call-graph node), in which case the precondition
@@ -2110,8 +2120,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), used to scope a read of an eager-only tensor member to a tensor receiver.
 	 */
-	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -2130,7 +2143,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis, tensorTypedKeys);
 		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
@@ -2149,8 +2162,9 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters,
-	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
-	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors
+	 * {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}: when the function has no call-graph node, the result is left
+	 * undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
@@ -2443,6 +2457,69 @@ public class Function {
 				}
 
 		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * The engine type names of the Keras classes whose {@code call} overrides Keras dispatches to: the summary classes of {@code Layer} and
+	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
+	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
+	 */
+	private static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
+
+	/**
+	 * Computes whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine
+	 * models it, storing the result for {@link #isKerasCallOverride()}, whose only source it is
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107). The bases are the engine's: a base the program defines
+	 * is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose
+	 * superclass the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
+	 * <p>
+	 * PyDev's class hierarchy stops at a base it can't resolve, and a base written through {@code tf.keras} is one: it then sees only the
+	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
+	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
+	 * superclass chain, and {@code Layer} from the built-in layers ({@code BatchNormalization}, {@code Dense}, ...), whose summaries
+	 * declare it as their superclass (https://github.com/wala/ML/issues/1098).
+	 *
+	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
+	 * @throws CoreException If this function's declaring class can't be determined.
+	 */
+	public void computeExtendsKerasCallableClass(CallGraph callGraph) throws CoreException {
+		if (!(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return;
+
+		// The function's own type is its class's type followed by its name.
+		String functionTypeName = this.getDeclaringClass().getName().toString();
+		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
+
+		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
+		Set<TypeName> seen = new HashSet<>();
+		Deque<TypeName> worklist = new ArrayDeque<>();
+		worklist.add(classTypeName);
+
+		while (!worklist.isEmpty()) {
+			TypeName name = worklist.remove();
+
+			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
+				this.extendsKerasCallableClass = true;
+				return;
+			}
+
+			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
+			// and contributes no recognition: the first name is derived from the declaring class's, and the bases are resolved at the
+			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
+			if (cls == null || !seen.add(name))
+				continue;
+
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
+			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
+			if (cls instanceof IPythonClass)
+				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
+			else if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getName());
+		}
 	}
 
 	/**
@@ -5945,15 +6022,12 @@ public class Function {
 	 */
 	private static final Set<String> KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES = Set.of("training", "mask");
 
-	/** The last segments of the Keras base-class names whose {@code call} overrides Keras dispatches to. */
-	private static final Set<String> KERAS_CALLABLE_BASE_LAST_SEGMENTS = Set.of("Model", "Layer");
-
 	/**
 	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
-	 * class transitively extends a base whose last segment is {@code Model} or {@code Layer}, resolved through the PyDev class hierarchy
-	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition). Matching by last segment
-	 * over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable signature (#881), the conservative
-	 * default.
+	 * class the engine's class hierarchy resolves to a subclass of Keras's {@code Layer} or {@code Model}
+	 * ({@link #computeExtendsKerasCallableClass(CallGraph)}, issue 1099). The engine's hierarchy is the only source: a base is not matched
+	 * by its name, so a program-defined class named {@code Layer} or {@code Model} is not a Keras base
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107).
 	 *
 	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
 	 */
@@ -5961,7 +6035,7 @@ public class Function {
 		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
 			return false;
 
-		return this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
+		return this.extendsKerasCallableClass;
 	}
 
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {

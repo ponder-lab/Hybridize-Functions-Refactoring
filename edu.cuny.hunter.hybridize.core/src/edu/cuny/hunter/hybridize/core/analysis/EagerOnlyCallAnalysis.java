@@ -1,9 +1,11 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.types.PythonTypes;
@@ -11,6 +13,7 @@ import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
@@ -23,11 +26,16 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * function (or anything it reaches) invokes an API that is only valid in eager execution and therefore raises under {@code tf.function}
  * tracing.
  * <p>
- * Two name populations with different disciplines. The unconditional names ({@link #EAGER_ONLY_METHOD_NAMES}, e.g. {@code Tensor.numpy()})
- * block on the callee attribute name alone: the receiver's tensor typing is frequently unavailable, missing a real call would hybridize a
- * function that crashes on first call, and over-matching only declines an optimization. The Keras training-surface names
- * ({@link #EAGER_ONLY_MODEL_METHOD_NAMES}) cannot block bare, since they are generic ML verbs with demonstrated in-corpus collisions; they
- * require the dispatch evidence of {@link #invokesGuardedModelEndpoint(CGNode, PythonInvokeInstruction, PythonPropertyRead)}.
+ * Two callee-name populations with different disciplines. The unconditional names ({@link #EAGER_ONLY_METHOD_NAMES}, e.g.
+ * {@code Tensor.numpy()}) block on the callee attribute name alone: the receiver's tensor typing is frequently unavailable, missing a real
+ * call would hybridize a function that crashes on first call, and over-matching only declines an optimization. The Keras training-surface
+ * names ({@link #EAGER_ONLY_MODEL_METHOD_NAMES}) cannot block bare, since they are generic ML verbs with demonstrated in-corpus collisions;
+ * they require the dispatch evidence of {@link #invokesGuardedModelEndpoint(CGNode, PythonInvokeInstruction, PythonPropertyRead)}.
+ * <p>
+ * A third population is matched on a read rather than a call: {@link #EAGER_ONLY_TENSOR_MEMBER_NAMES} are members a symbolic tensor lacks,
+ * so reading one raises under tracing even when the value is never called
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Since such a name is also an ordinary attribute of
+ * non-tensors, a read blocks only on a tensor-typed receiver.
  */
 class EagerOnlyCallAnalysis {
 
@@ -37,9 +45,14 @@ class EagerOnlyCallAnalysis {
 	/** The pointer analysis, used to resolve callee attribute names and to type unresolved receivers. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
-	EagerOnlyCallAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	/** The tensor-typed pointer keys, used to scope a read of an {@link #EAGER_ONLY_TENSOR_MEMBER_NAMES} member to a tensor receiver. */
+	private final Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys;
+
+	EagerOnlyCallAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		this.callGraph = callGraph;
 		this.pointerAnalysis = pointerAnalysis;
+		this.tensorTypedKeys = tensorTypedKeys;
 	}
 
 	/**
@@ -57,6 +70,16 @@ class EagerOnlyCallAnalysis {
 	 * hybridization that is safe (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/962).
 	 */
 	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy", "get_weights");
+
+	/**
+	 * Tensor member names that only an eager tensor has, so that merely reading one off a symbolic tensor raises
+	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'} under tracing, whether or not the read value is called
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code t.numpy} is a bound method.
+	 * <p>
+	 * {@code get_weights} is deliberately ABSENT: it is not a tensor member, and reading {@code layer.get_weights} without calling it does
+	 * not reach {@code batch_get_value}, so only its call (matched through {@link #EAGER_ONLY_METHOD_NAMES}) raises.
+	 */
+	private static final Set<String> EAGER_ONLY_TENSOR_MEMBER_NAMES = Set.of("numpy");
 
 	/** The Keras {@code Model.fit} member. */
 	private static final String FIT_MEMBER_NAME = "fit";
@@ -122,7 +145,8 @@ class EagerOnlyCallAnalysis {
 				DefUse defUse = node.getDU();
 
 				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-					if (instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(node, invoke, defUse))
+					if (instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(node, invoke, defUse)
+							|| instruction instanceof PythonPropertyRead read && this.readsEagerOnlyTensorMember(node, read))
 						return true;
 			}
 		}
@@ -160,6 +184,26 @@ class EagerOnlyCallAnalysis {
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff {@code read} reads an eager-only tensor member ({@link #EAGER_ONLY_TENSOR_MEMBER_NAMES}) off a tensor-typed receiver. Unlike
+	 * the call form, the member name alone does not block: {@code numpy} is also an ordinary attribute of non-tensors (a user object's
+	 * field, the {@code tf.experimental.numpy} module), whose read traces fine, so the receiver must be typed as a tensor by the
+	 * tensor-type analysis.
+	 *
+	 * @param node The node containing {@code read}.
+	 * @param read The attribute read to test.
+	 * @return True iff {@code read} reads a member a symbolic tensor lacks off a tensor-typed receiver.
+	 */
+	private boolean readsEagerOnlyTensorMember(CGNode node, PythonPropertyRead read) {
+		String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+
+		if (member == null || !EAGER_ONLY_TENSOR_MEMBER_NAMES.contains(member))
+			return false;
+
+		PointerKey receiver = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+		return this.tensorTypedKeys.containsKey(receiver);
 	}
 
 	/**
