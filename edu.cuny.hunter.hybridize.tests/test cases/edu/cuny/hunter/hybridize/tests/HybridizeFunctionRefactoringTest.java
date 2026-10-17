@@ -14181,26 +14181,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code setup_window} rebuilds (TensorFlowTTS's {@code TFTacotronLocationSensitiveAttention}), {@code Decoder.step} both of these
 	 * through its callees ({@code TFTacotronDecoder.step}), and {@code AttentionalRNNDecoder._get_initial_state} the memory
 	 * {@code initialize} rebinds (OpenNMT-tf), {@code LoopFedDecoder._get_initial_state} the same, with the memory computed from a loop
-	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, and {@code Builder.read}
-	 * the batch that a {@code build} outside Keras rebinds on each call. {@code make_features} (OpenNMT-tf's
-	 * {@code SequenceRecordInputter}) fills in the dictionary its caller passes, which {@code tf.function} refuses with a
-	 * {@code ValueError}; the side-effect precondition refuses it. Five controls match the eager reader: {@code InitOnly.scaled} reads a
-	 * field set only in its class's {@code __init__}, {@code Derived.scaled} one set only in a base's {@code __init__},
-	 * {@code BuildOnly.call} one set only in a Keras layer's {@code build}, {@code StringField.labeled} a string field another method
-	 * rebinds, used only as an op's name, and {@code VariableField.read} a variable another method updates with {@code assign}.
-	 * {@code IntField.counted} reads an {@code int} field another method rebinds, which diverges under tracing too but holds no tensor, so
-	 * this precondition leaves it alone. Two more controls match: {@code sums_list} reads the elements of a list argument, which
-	 * {@code tf.function} passes in afresh, and {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call.
-	 * {@code Holder.get}, decorated on its own, matches in this program, whose holders are each read once, and diverges once one holder is
-	 * set between two reads; it is refused. {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not
-	 * yet detected, for the engine reason its TODO gives.
+	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, {@code Builder.read} the
+	 * batch that a {@code build} outside Keras rebinds on each call, and {@code Node.read} the field that a child's {@code __init__}
+	 * rebinds on its parent, an object it doesn't set up. {@code make_features} (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the
+	 * dictionary its caller passes, which {@code tf.function} refuses with a {@code ValueError}; the side-effect precondition refuses it.
+	 * Five controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
+	 * {@code Derived.scaled} one set only in a base's {@code __init__}, {@code BuildOnly.call} one set only in a Keras layer's
+	 * {@code build}, {@code StringField.labeled} a string field another method rebinds, used only as an op's name, and
+	 * {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads an {@code int} field
+	 * another method rebinds, which diverges under tracing too but holds no tensor, so this precondition leaves it alone. Two more controls
+	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
+	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused.
+	 * {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not yet detected, for the engine reason
+	 * its TODO gives. {@code Resetting.read}, whose field is set only in a helper that only {@code __init__} calls, matches but is refused,
+	 * for the precision reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("Sampler.next_inputs", "Attention.__call__", "Attention._compute_window_mask", "Decoder.step",
-				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read")) {
+				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read",
+				"Node.read")) {
 			Function function = findFunction(functions, identifier);
 			assertEquals("`" + identifier + "` reads rebound tensor state.", TRUE, function.getHasReboundStateReads());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
@@ -14230,6 +14233,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNull("`" + identifier + "` is not refused for rebound state.",
 					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 		}
+
+		// TODO: Convert this. A known false refusal, from a precision limit of this check rather than an engine gap: the field is set only
+		// in `_reset`, which only `__init__` calls, but a set-up method is credited only with its own writes, since a helper may also be
+		// called elsewhere. Crediting it would need the helper's callers to be the object's set-up methods alone.
+		Function resettingRead = findFunction(functions, "Resetting.read");
+		assertEquals("`Resetting.read` reads a field `Resetting._reset` writes.", TRUE, resettingRead.getHasReboundStateReads());
+		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
+				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 
 		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of its
 		// dictionary, as OpenNMT-tf's `Model` does, and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute

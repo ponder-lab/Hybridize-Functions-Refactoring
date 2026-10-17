@@ -217,6 +217,29 @@ class Derived(Base):
         return x * self.scale
 
 
+# A node's __init__ rebinds its parent's field on every construction of a child.
+class Node:
+    def __init__(self, parent=None, out=None):
+        self.child_out = tf.zeros([2])
+        if parent is not None:
+            parent.child_out = out
+
+    def read(self, x):
+        return x + self.child_out
+
+
+# The field is set only in a helper that only __init__ calls.
+class Resetting:
+    def __init__(self):
+        self._reset()
+
+    def _reset(self):
+        self.total = tf.fill([2], 5.0)
+
+    def read(self, x):
+        return x + self.total
+
+
 def memory(i):
     return tf.reshape(tf.range(8, dtype=tf.float32) * (i + 1.0), [1, 4, 2])
 
@@ -303,3 +326,12 @@ for i in range(2):
 derived = Derived()
 derived.scaled(tf.constant([1.0, 2.0]))
 derived.scaled(tf.constant([3.0, 4.0]))
+
+root = Node()
+for i in range(2):
+    Node(root, tf.fill([2], i + 1.0))
+    root.read(tf.constant([1.0, 2.0]))
+
+resetting = Resetting()
+resetting.read(tf.constant([1.0, 2.0]))
+resetting.read(tf.constant([1.0, 2.0]))

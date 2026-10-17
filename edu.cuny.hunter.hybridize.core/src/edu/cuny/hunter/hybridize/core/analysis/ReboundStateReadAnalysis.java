@@ -44,9 +44,11 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * are of the same state exactly when they are the same instance key and field. A write counts when it is made outside the reader's closure,
  * whose own writes are the side-effect precondition's, and outside the methods that set the written object up once: the {@code __init__} of
  * its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved through the engine's class
- * hierarchy from the class whose constructor allocated the object. A field set only there is read live. An {@code __init__} or
- * {@code build} of another class, or a {@code build} outside Keras, runs whenever it is called, so its writes count. A {@code tf.Variable}
- * updated with {@code assign} is not rebound, since {@code assign} writes the variable, not the field holding it.
+ * hierarchy from the class whose constructor allocated the object, and invoked on the object itself, per the points-to set of their
+ * {@code self} parameter. A field set only there is read live. An {@code __init__} or {@code build} of another class, a {@code build}
+ * outside Keras, or a set-up method writing a field of an object other than its receiver, runs whenever it is called, so its writes count.
+ * So do the writes of a helper that only a set-up method calls, a known over-refusal: the helper may be called elsewhere too. A
+ * {@code tf.Variable} updated with {@code assign} is not rebound, since {@code assign} writes the variable, not the field holding it.
  * <p>
  * The elements of a list, tuple, dictionary, or set are not read as state: {@code tf.function} passes a container argument's tensors in
  * afresh on each call, and the code building a container writes its elements as fields. A container held in a field is missed with them,
@@ -177,15 +179,35 @@ class ReboundStateReadAnalysis {
 
 	/**
 	 * True iff {@code node} sets up {@code instanceKey}: its method is the {@code __init__} of the object's class or of one of its bases,
-	 * or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}. Both run once per object, the first as the
-	 * object is constructed and the second before the first {@code call}, so a field set only there holds one value for the object's life.
+	 * or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}, and the object is its receiver. Both run
+	 * once per object, the first as the object is constructed and the second before the first {@code call}, so a field set only there holds
+	 * one value for the object's life.
 	 *
 	 * @param node A node writing a field of {@code instanceKey}.
 	 * @param instanceKey The object whose field {@code node} writes.
 	 * @return True iff {@code node}'s method is a set-up method of the object's class.
 	 */
 	private boolean setsUp(CGNode node, InstanceKey instanceKey) {
-		return this.getSetUpMethodTypes(instanceKey).contains(node.getMethod().getDeclaringClass().getReference());
+		return this.getSetUpMethodTypes(instanceKey).contains(node.getMethod().getDeclaringClass().getReference())
+				&& this.isReceiver(node, instanceKey);
+	}
+
+	/**
+	 * True iff {@code instanceKey} is in the points-to set of {@code node}'s {@code self} parameter, the first formal after the function
+	 * object. A set-up method sets up only the object it's invoked on: a write it makes to another object's field, such as a child's
+	 * {@code __init__} writing its parent's, rebinds that field each time the method runs.
+	 *
+	 * @param node A set-up method's node.
+	 * @param instanceKey The object whose field {@code node} writes.
+	 * @return True iff {@code node}'s receiver may be {@code instanceKey}.
+	 */
+	private boolean isReceiver(CGNode node, InstanceKey instanceKey) {
+		IR ir = node.getIR();
+
+		if (ir == null || ir.getNumberOfParameters() < 2)
+			return false;
+
+		return this.pointerAnalysis.getPointsToSet(this.heapModel.getPointerKeyForLocal(node, ir.getParameter(1))).contains(instanceKey);
 	}
 
 	/**
