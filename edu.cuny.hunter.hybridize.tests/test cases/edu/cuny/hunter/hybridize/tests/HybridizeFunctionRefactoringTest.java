@@ -7579,9 +7579,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.isRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
 
-		assertFalse(f.getStatus().hasError());
-		assertEquals(P1, f.getPassingPrecondition());
-		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
+		// The `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117). Measured on TensorFlow 2.9.3,
+		// with n = 0 the eager function returns `1` and the converted one `tf.Tensor(1)`, so a caller's dictionary lookup raises.
+		assertTrue(f.getReturnsPrimitive());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
+		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getTransformations().isEmpty());
 	}
 
 	@Test
@@ -14725,7 +14728,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
 	 * returns {@code abs(n - 1)} when {@code n > 0}. The comparison {@code n > 0} on the tensor parameter is tensor computation, so the
-	 * function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the comparison untyped, so this test pinned
+	 * function passes the benefit check, and like {@link #testRecursion2} it is refused because its {@code else} path returns a Python
+	 * {@code int} (issue 1117). Ariadne through 0.52.105 left the comparison untyped, so this test pinned
 	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
 	 * <p>
 	 * TODO: {@code abs(n - 1)} is tensor computation too, but Ariadne doesn't model the builtin {@code abs()} on a tensor, so it and
@@ -14738,9 +14742,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.isRecursive());
 		assertTrue("The comparison n > 0 on a tensor is tensor computation.", f.getHasTensorComputation());
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
-		assertFalse(f.getStatus().hasError());
-		assertEquals(P1, f.getPassingPrecondition());
-		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
+		// As in testRecursion2, the `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117).
+		assertTrue(f.getReturnsPrimitive());
+		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
+		assertNull(f.getPassingPrecondition());
+		assertTrue(f.getTransformations().isEmpty());
 	}
 
 	/**
