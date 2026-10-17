@@ -180,6 +180,43 @@ def uses_fresh_holder(x):
     return holder.get(x)
 
 
+# Another class's __init__ rebinds the memory's keys on every construction.
+class Memory:
+    def __init__(self):
+        self.keys = tf.zeros([2])
+
+    def read(self, x):
+        return x + self.keys
+
+
+class Frame:
+    def __init__(self, memory, keys):
+        memory.keys = keys
+
+
+# A build outside Keras is an ordinary method, called per batch here.
+class Builder:
+    def build(self, batch):
+        self.batch = batch
+
+    def read(self, x):
+        return x + self.batch
+
+
+# Control: the field is set only in a base's __init__, which the subclass's __init__ calls.
+class Base:
+    def __init__(self):
+        self.scale = tf.constant(3.0)
+
+
+class Derived(Base):
+    def __init__(self):
+        super().__init__()
+
+    def scaled(self, x):
+        return x * self.scale
+
+
 def memory(i):
     return tf.reshape(tf.range(8, dtype=tf.float32) * (i + 1.0), [1, 4, 2])
 
@@ -252,3 +289,17 @@ sums_list([tf.constant(3.0), tf.constant(4.0)], tf.constant(0.0))
 
 uses_fresh_holder(tf.constant([1.0, 2.0]))
 uses_fresh_holder(tf.constant([3.0, 4.0]))
+
+shared_memory = Memory()
+for i in range(2):
+    Frame(shared_memory, tf.fill([2], i + 1.0))
+    shared_memory.read(tf.constant([1.0, 2.0]))
+
+builder = Builder()
+for i in range(2):
+    builder.build(tf.fill([2], i + 1.0))
+    builder.read(tf.constant([1.0, 2.0]))
+
+derived = Derived()
+derived.scaled(tf.constant([1.0, 2.0]))
+derived.scaled(tf.constant([3.0, 4.0]))

@@ -316,14 +316,15 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, and another
-	 * function rebinds that field, as the same object and field per the pointer analysis, outside {@code __init__} and {@code build}, which
-	 * run once. Eagerly every call reads the field's current tensor; under {@code tf.function} the first trace captures the tensor the
-	 * field held then, and later calls reuse it after the field is rebound, so the converted function returns the first call's state. A
-	 * field set only in {@code __init__} or {@code build}, and a {@code tf.Variable} updated in place with {@code assign}, are read live
-	 * and left alone. Rebinding a field to a value that is not a tensor, such as a Python {@code int}, is stale under tracing too, but is
-	 * not covered here, and neither are the elements of a list, tuple, dictionary, or set, which {@code tf.function} passes in afresh when
-	 * the container is an argument. Objects are told apart by allocation site, so a getter of an object created afresh on each call is
-	 * refused although no instance it reads is rebound between two of its reads.
+	 * function rebinds that field, as the same object and field per the pointer analysis, outside the methods that set the object up once:
+	 * the {@code __init__} of its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved
+	 * through the engine's class hierarchy. Eagerly every call reads the field's current tensor; under {@code tf.function} the first trace
+	 * captures the tensor the field held then, and later calls reuse it after the field is rebound, so the converted function returns the
+	 * first call's state. A field set only there, and a {@code tf.Variable} updated in place with {@code assign}, are read live and left
+	 * alone. Rebinding a field to a value that is not a tensor, such as a Python {@code int}, is stale under tracing too, but is not
+	 * covered here, and neither are the elements of a list, tuple, dictionary, or set, which {@code tf.function} passes in afresh when the
+	 * container is an argument. Objects are told apart by allocation site, so a getter of an object created afresh on each call is refused
+	 * although no instance it reads is rebound between two of its reads.
 	 * <p>
 	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
 	 * among them, does not retrace, and the value read when the function was traced persists.

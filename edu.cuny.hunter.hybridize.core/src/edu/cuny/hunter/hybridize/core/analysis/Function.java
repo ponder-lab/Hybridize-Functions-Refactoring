@@ -1277,8 +1277,8 @@ public class Function {
 
 	/**
 	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
-	 * outside {@code __init__} and {@code build}, so a trace would capture the field's first value. {@code null} when it could not be
-	 * determined, in which case the precondition does not block. See
+	 * outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's first value.
+	 * {@code null} when it could not be determined, in which case the precondition does not block. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
 	 */
 	private Boolean hasReboundStateReads;
@@ -2478,7 +2478,7 @@ public class Function {
 	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
 	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
 	 */
-	private static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+	static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
 			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
 
 	/**
@@ -2505,24 +2505,35 @@ public class Function {
 		String functionTypeName = this.getDeclaringClass().getName().toString();
 		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
 
-		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
+		this.extendsKerasCallableClass = !Collections.disjoint(getClassAndBaseNames(callGraph.getClassHierarchy(), classTypeName),
+				KERAS_CALLABLE_TYPE_NAMES);
+	}
+
+	/**
+	 * The engine type names of a class and of every base it transitively declares, as the engine's class hierarchy models them: a base the
+	 * program defines is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified
+	 * name names, whose superclass the summary declares. A name the walk reaches is included whether or not it is a class of the hierarchy,
+	 * but only a class's bases are followed.
+	 *
+	 * @param classHierarchy The engine's class hierarchy.
+	 * @param classTypeName The type name of the class to start from.
+	 * @return The type names of the class and its transitive bases.
+	 */
+	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeName classTypeName) {
+		Set<TypeName> ret = new HashSet<>();
 		Set<TypeName> seen = new HashSet<>();
 		Deque<TypeName> worklist = new ArrayDeque<>();
 		worklist.add(classTypeName);
 
 		while (!worklist.isEmpty()) {
 			TypeName name = worklist.remove();
-
-			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
-				this.extendsKerasCallableClass = true;
-				return;
-			}
+			ret.add(name);
 
 			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
 
-			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
-			// leaving the PyDev walk to decide: the first name is derived from the declaring class's, and the bases are resolved at the
-			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is not followed:
+			// a caller's first name may be derived from another type's, and the bases are resolved at the loader
+			// (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
 			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
 			if (cls == null || !seen.add(name))
 				continue;
@@ -2534,6 +2545,8 @@ public class Function {
 			else if (cls.getSuperclass() != null)
 				worklist.add(cls.getSuperclass().getName());
 		}
+
+		return ret;
 	}
 
 	/**
@@ -3413,10 +3426,10 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed field that another function rebinds outside
-	 * {@code __init__} and {@code build} ({@link ReboundStateReadAnalysis}), storing the result for {@link #getHasReboundStateReads()}.
-	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed field that another function rebinds outside the
+	 * {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the result for
+	 * {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring the sibling
+	 * safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
 	 *
 	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
 	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
@@ -3445,7 +3458,7 @@ public class Function {
 	}
 
 	/**
-	 * True iff this {@link Function} reads a tensor-typed field that another function rebinds outside {@code __init__} and {@code build},
+	 * True iff this {@link Function} reads a tensor-typed field that another function rebinds outside the methods setting its object up,
 	 * {@code null} if undetermined (issue 1076).
 	 *
 	 * @return True iff this function reads rebound tensor state, null if undetermined.
