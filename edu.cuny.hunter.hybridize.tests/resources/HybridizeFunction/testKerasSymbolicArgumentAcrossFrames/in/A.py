@@ -1,19 +1,20 @@
 import tensorflow as tf
 
-# Reduces TensorFlow2.0-Examples' YOLOv3 (#1097): the `KerasTensor` reaches a call site
-# from another frame. `model_fn` takes the `Input` directly, as in #887. `upsample` takes
+# Reduces TensorFlow2.0-Examples' YOLOv3 (#1097): a `KerasTensor` reaching a call site
+# from another frame. Every function below except the controls is called with a
+# `KerasTensor`, so decorating it raises a `TypeError` on the first call. `model_fn`,
+# `yolo`, `model_fn_list`, and `model_fn_bn` take the `Input` directly, and `scale_op`
+# takes a built-in layer's output over it. `backbone` takes `yolo`'s parameter, as
+# YOLOv3's `darknet53` does, and `convolutional` takes `model_fn_bn`'s. `upsample` takes
 # a built-in layer's output over `model_fn`'s parameter, and `head` takes `model_fn`'s
-# return value; both receive a `KerasTensor` at run time, so decorating either raises a
-# `TypeError` on the first call. The `_eager` arms repeat the same shapes rooted at a real
-# tensor instead, which the Functional API leaves eager, so they stay convertible.
-# `scale_inside` is called from a layer's own `call`, which Keras gives a placeholder
-# rather than the `KerasTensor` the layer is applied to, so it stays convertible too.
-# The remaining arms receive a `KerasTensor` too, and decorating any of them raises:
-# `head_elem` and `decode` take elements of `model_fn_list`'s returned list, the
-# second the way YOLOv3's driver iterates `enumerate(conv_tensors)`; `scale_op` takes a
-# layer's output directly; `op_head` takes an operator's result over the `Input`; and
-# `upsample_bn` takes the result of a helper that may apply a user subclass of a
-# built-in layer, as YOLOv3's `convolutional` applies its `BatchNormalization`.
+# return value. `head_elem` and `decode` take elements of `model_fn_list`'s returned
+# list, the second the way YOLOv3's driver iterates `enumerate(conv_tensors)`. `op_head`
+# takes an operator's result over the `Input`. `upsample_bn` takes the result of a
+# helper that may apply a user subclass of a built-in layer, as YOLOv3's `convolutional`
+# applies its `BatchNormalization`. The controls stay convertible: the `_eager` arms
+# repeat the same shapes rooted at a real tensor, which the Functional API leaves eager,
+# and `scale_inside` is called from a layer's own `call`, which Keras gives a
+# placeholder rather than the `KerasTensor` the layer is applied to.
 
 
 def upsample(input_layer):
@@ -31,6 +32,14 @@ def model_fn(input_layer):
 
 def head(t):
     return t * 2.0
+
+
+def backbone(input_data):
+    return tf.abs(input_data)
+
+
+def yolo(input_layer):
+    return backbone(input_layer)
 
 
 def upsample_eager(input_layer):
@@ -109,6 +118,7 @@ def model_fn_bn(input_layer):
 inp = tf.keras.layers.Input([16, 16, 3])
 out = model_fn(inp)
 y = head(out)
+yolo(inp)
 scaled = Scale()(inp)
 
 outs = model_fn_list(inp)
