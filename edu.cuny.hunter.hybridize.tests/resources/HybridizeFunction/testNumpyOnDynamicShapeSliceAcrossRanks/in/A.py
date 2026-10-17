@@ -54,19 +54,28 @@ cube = tf.ones((2, 3, 4))
 tail_dyn = tf.keras.Input(shape=(None,))
 head_dyn = tf.keras.Input(shape=(2,))
 
-if tf.executing_eagerly():
-    tail_pick = cube
-    head_pick = cube
-    copy_pick = cube
-else:
-    tail_pick = tail_dyn
-    head_pick = head_dyn
-    copy_pick = tail_dyn
 
-tail_prod(tail_pick)
-head_prod(head_pick)
-copy_prod(copy_pick)
-pair_prod(copy_pick)
-nil_prod(copy_pick)
-stride_prod(copy_pick)
-rest_prod(copy_pick)
+# The feeds are picked inside a function body rather than in the module's own
+# body: the engine folds a module-level `tf.executing_eagerly()` branch to its
+# eager arm (wala/ML#1110), which would leave only `cube`, while a function keeps
+# both arms. The script itself runs eagerly and so takes the `cube` arm.
+def drive():
+    if tf.executing_eagerly():
+        tail_pick = cube
+        head_pick = cube
+        copy_pick = cube
+    else:
+        tail_pick = tail_dyn
+        head_pick = head_dyn
+        copy_pick = tail_dyn
+
+    tail_prod(tail_pick)
+    head_prod(head_pick)
+    copy_prod(copy_pick)
+    pair_prod(copy_pick)
+    nil_prod(copy_pick)
+    stride_prod(copy_pick)
+    rest_prod(copy_pick)
+
+
+drive()
