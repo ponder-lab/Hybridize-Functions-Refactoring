@@ -12754,10 +12754,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: `merged`'s argument is symbolic on only one path, and the program takes the other, so decorating it runs. The engine's
-		// origin is a may-fact, so the merge carries it and the function declines, the safe direction. The expectation flips back only if
-		// the engine distinguishes a value that is symbolic on every path; see https://github.com/wala/ML/issues/1101 and
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// TODO: `merged`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
+		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
+		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
+		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
+		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		Function merged = findFunction(functions, "merged");
 		assertTrue("`merged` carries the Keras symbolic origin from one path of its merge.", merged.getHasKerasSymbolicArguments());
 		assertNull("`merged` does not convert.", merged.getPassingPrecondition());
@@ -12783,9 +12784,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * a merge over the application of {@code Frozen}, a user subclass of {@code BatchNormalization}, as YOLOv3's
 	 * {@code common.convolutional} is. The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at
 	 * {@code tf.ones(...)}. {@code scale_inside}, called from a custom layer's own {@code call}, which Keras gives a placeholder, now
-	 * declines, though decorating it runs. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and decorated.
-	 * ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only its Keras
-	 * verdict is pinned.)
+	 * declines, though decorating it runs. Of two custom layers applied to the {@code Input}, {@code after_scaled} receives one whose
+	 * {@code call} ends in an operator and converts, though decorating it raises, while {@code after_relued} receives one whose
+	 * {@code call} ends in {@code tf.nn.relu} and declines. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and
+	 * decorated. ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only
+	 * its Keras verdict is pinned.)
 	 */
 	@Test
 	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
@@ -12801,10 +12804,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		// TODO: `upsample_bn` is called with a KerasTensor, and decorating it raises, but its parameter carries no Keras symbolic origin.
-		// In `convolutional`, the application `Frozen()(conv)` of a user subclass of a built-in layer has no tensor type or origin, the
-		// merge of it with the symbolic `Conv2D` application has none either, and so `tf.nn.leaky_relu` over the merge carries only its own
-		// TENSORFLOW origin. The expectation flips once the engine types and marks the subclass's application
-		// (https://github.com/wala/ML/issues/1098, https://github.com/wala/ML/issues/1101); see
+		// In `convolutional`, the application `Frozen()(conv)` of a user subclass of a built-in layer, which overrides `call` to return
+		// `super().call`, gives no tensor, so the merge of it with the symbolic `Conv2D` application has no origin either, and
+		// `tf.nn.leaky_relu` over the merge carries only its own TENSORFLOW origin. It should be declined; the expectation flips once the
+		// engine gives the subclass's application a tensor: https://github.com/wala/ML/issues/1108; see
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		Function upsampleBn = findFunction(functions, "upsample_bn");
 		assertEquals("`upsample_bn`'s parameter carries no Keras symbolic origin.", FALSE, upsampleBn.getHasKerasSymbolicArguments());
@@ -12820,14 +12823,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`model_fn_eager` is called only with a real tensor.", FALSE,
 				findFunction(functions, "model_fn_eager").getHasKerasSymbolicArguments());
 
-		// TODO: `scale_inside` is called from `Scale.call`, which Keras gives a placeholder rather than the KerasTensor the layer is
-		// applied
-		// to, so decorating it runs. The engine carries the Keras symbolic origin across the layer application into `call`'s parameter, so
-		// the function declines, the safe direction. The expectation flips back once the origin stops at a layer's own `call`; see
-		// https://github.com/wala/ML/issues/1101 and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// TODO: `scale_inside` is called from `Scale.call`, which Keras gives a graph tensor rather than the KerasTensor the layer
+		// is applied to, so decorating it runs: a lost conversion. At the layer application, the engine passes the Keras symbolic
+		// origin into the parameter of `call` instead of onto the result, so the function declines. The expectation returns to P1
+		// once the origin stays out of `call`: https://github.com/wala/ML/issues/1109; see
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		Function scaleInside = findFunction(functions, "scale_inside");
 		assertEquals("`scale_inside` carries the origin carried into the layer body.", TRUE, scaleInside.getHasKerasSymbolicArguments());
 		assertNull("`scale_inside` does not convert.", scaleInside.getPassingPrecondition());
+
+		// TODO: `after_scaled` receives `Scale()(inp)`, a KerasTensor, and decorating it raises, so it should be declined. Because the
+		// engine passes the Keras symbolic origin into `call`'s parameter instead of onto the application's result, the result carries it
+		// only when `call` carries it back out, through a TensorFlow call; `Scale.call` ends in an operator, so the result loses it, and
+		// the function converts. The expectation flips once the origin goes onto the result: https://github.com/wala/ML/issues/1109; see
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		Function afterScaled = findFunction(functions, "after_scaled");
+		assertEquals("`after_scaled`'s parameter carries no Keras symbolic origin.", FALSE, afterScaled.getHasKerasSymbolicArguments());
+		assertEquals("`after_scaled` converts (P1).", P1, afterScaled.getPassingPrecondition());
+
+		// The control: `Relued.call` ends in `tf.nn.relu`, which carries the origin back out to the result, so `after_relued` declines.
+		Function afterRelued = findFunction(functions, "after_relued");
+		assertEquals("`after_relued` is called with a Keras symbolic tensor.", TRUE, afterRelued.getHasKerasSymbolicArguments());
+		assertNull("`after_relued` does not convert.", afterRelued.getPassingPrecondition());
+		assertNotNull("`after_relued` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterRelued.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 	}
 
 	/**
@@ -13989,11 +14008,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function nil = getFunction("nil_prod");
 		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
-		// TODO: `nil_prod`'s argument is the `tf.keras.Input` only on the graph-mode path, and the program runs eagerly, so decorating it
-		// runs. The engine's Keras symbolic origin is a may-fact, so the merge carries it, and the function declines with
-		// HAS_KERAS_SYMBOLIC_ARGUMENTS, the safe direction. The expectation returns to P1 only if the engine distinguishes a value that is
-		// symbolic on every path; see https://github.com/wala/ML/issues/1101 and
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// TODO: `nil_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
+		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
+		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
+		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
+		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		assertNull("`nil_prod` does not convert.", nil.getPassingPrecondition());
 		assertNotNull("`nil_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
 				nil.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
@@ -14001,12 +14020,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function stride = getFunction("stride_prod");
 		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				stride.getHasNumpyCallsOnParameters());
-		// TODO: `stride_prod`'s argument is the `tf.keras.Input` only on the graph-mode path, and the program runs eagerly, so decorating
-		// it
-		// runs. The engine's Keras symbolic origin is a may-fact, so the merge carries it, and the function declines with
-		// HAS_KERAS_SYMBOLIC_ARGUMENTS, the safe direction. The expectation returns to P1 only if the engine distinguishes a value that is
-		// symbolic on every path; see https://github.com/wala/ML/issues/1101 and
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// TODO: `stride_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
+		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
+		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
+		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
+		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		assertNull("`stride_prod` does not convert.", stride.getPassingPrecondition());
 		assertNotNull("`stride_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
 				stride.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
@@ -14014,11 +14032,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function rest = getFunction("rest_prod");
 		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				rest.getHasNumpyCallsOnParameters());
-		// TODO: `rest_prod`'s argument is the `tf.keras.Input` only on the graph-mode path, and the program runs eagerly, so decorating it
-		// runs. The engine's Keras symbolic origin is a may-fact, so the merge carries it, and the function declines with
-		// HAS_KERAS_SYMBOLIC_ARGUMENTS, the safe direction. The expectation returns to P1 only if the engine distinguishes a value that is
-		// symbolic on every path; see https://github.com/wala/ML/issues/1101 and
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+		// TODO: `rest_prod`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program
+		// runs eagerly, so decorating it runs: a lost conversion. The engine has no summary for `tf.executing_eagerly()`, so it reads the
+		// branch as taking either path, the graph-mode value reaches the merge with its Keras symbolic origin, and the function declines
+		// with HAS_KERAS_SYMBOLIC_ARGUMENTS. The expectation returns to P1 once the engine resolves the branch:
+		// https://github.com/wala/ML/issues/1110; see https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 		assertNull("`rest_prod` does not convert.", rest.getPassingPrecondition());
 		assertNotNull("`rest_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
 				rest.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));

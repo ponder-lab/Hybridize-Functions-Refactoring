@@ -14,7 +14,9 @@ import tensorflow as tf
 # applies its `BatchNormalization`. The controls stay convertible: the `_eager` arms
 # repeat the same shapes rooted at a real tensor, which the Functional API leaves eager,
 # and `scale_inside` is called from a layer's own `call`, which Keras gives a
-# placeholder rather than the `KerasTensor` the layer is applied to.
+# placeholder rather than the `KerasTensor` the layer is applied to. `after_scaled` and
+# `after_relued` take a custom layer's application to the `Input`, whose `call` ends in
+# an operator and in `tf.nn.relu`, respectively; both receive a `KerasTensor`.
 
 
 def upsample(input_layer):
@@ -66,6 +68,19 @@ def scale_inside(x):
 class Scale(tf.keras.layers.Layer):
     def call(self, inputs):
         return scale_inside(inputs)
+
+
+def after_scaled(t):
+    return tf.abs(t)
+
+
+class Relued(tf.keras.layers.Layer):
+    def call(self, inputs):
+        return tf.nn.relu(inputs)
+
+
+def after_relued(t):
+    return tf.abs(t)
 
 
 def head_elem(t):
@@ -120,6 +135,8 @@ out = model_fn(inp)
 y = head(out)
 yolo(inp)
 scaled = Scale()(inp)
+after_scaled(scaled)
+after_relued(Relued()(inp))
 
 outs = model_fn_list(inp)
 head_elem(outs[0])
