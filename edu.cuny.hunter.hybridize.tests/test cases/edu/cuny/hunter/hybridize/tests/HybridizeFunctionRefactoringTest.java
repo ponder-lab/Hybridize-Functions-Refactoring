@@ -11619,6 +11619,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertSuppliedSignatureKeepsHybrid();
 	}
 
+	/**
+	 * {@link #testSuppliedSignatureKeepsHybrid()}'s original input, in which {@code sig_prim} and {@code prim} are each called only with 3.
+	 * A primitive with one value doesn't cause retracing (issue 1025), so neither function reaches P3: {@code prim} isn't de-hybridized,
+	 * and {@code sig_prim} has no P3 conversion for its supplied signature to replace, so it isn't reported as kept for it.
+	 */
+	@Test
+	public void testSuppliedSignatureKeepsHybridSingleValue() throws Exception {
+		for (String name : new String[] { "sig_prim", "prim" }) {
+			Function function = getFunction(name);
+			assertTrue("`" + name + "` is hybrid.", function.isHybrid());
+			assertTrue("`" + name + "` has a primitive parameter.", function.getHasPrimitiveParameter());
+			assertEquals("`" + name + "`'s primitive is one constant.", TRUE, function.getPrimitiveValuesBounded());
+			assertEquals("So it doesn't cause retracing.", FALSE, function.getHasRetracingPrimitiveParameter());
+			assertNotEquals("`" + name + "` doesn't pass P3.", P3, function.getPassingPrecondition());
+			assertFalse("`" + name + "` isn't de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		Function sigPrim = getFunction("sig_prim");
+		assertTrue("`sig_prim` carries a supplied input_signature.", sigPrim.getHybridizationParameters().hasInputSignatureParam());
+		assertNull("`sig_prim` has no P3 conversion for its signature to replace.",
+				sigPrim.getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE));
+	}
+
 	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
 		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec", "sig_prim" }) {
 			Function kept = getFunction(name);
@@ -11968,6 +11991,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getHasRetracingPrimitiveParameter());
 			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: the analysis gives a computed Python scalar, the result of a binary operation, no abstract value
+	 * (wala/ML#805, wala/ML#398), so a value set merged with one keeps only its constant operands. {@code f}'s {@code n} is incremented in
+	 * a loop from 0 and points to 0 alone; {@code g}'s tuple has a computed second element whose field points to nothing. Each primitive
+	 * takes six values, six traces under {@code tf.function}, so it still declines the function.
+	 */
+	@Test
+	public void testComputedPrimitiveValuesUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("f", "g")) {
+			Function function = findFunction(functions, name);
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertEquals(name + "'s computed values aren't in its points-to set, so it still causes retracing.", TRUE,
+					function.getHasRetracingPrimitiveParameter());
+			assertNotNull(name + " still fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
 	}
 
