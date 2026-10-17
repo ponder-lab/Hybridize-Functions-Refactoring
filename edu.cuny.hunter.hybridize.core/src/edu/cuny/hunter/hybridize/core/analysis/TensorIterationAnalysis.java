@@ -110,14 +110,11 @@ class TensorIterationAnalysis {
 	 * @return True iff a subscript store writes into a parameter-derived tensor.
 	 */
 	boolean assignsIntoTensorParameter(CGNode node, boolean method) {
-		// The container exemption keeps a store into a Python collection of tensors out, which tracing supports. Attribute stores share
-		// the IR form (https://github.com/wala/ML/issues/1100), but their member is always a string constant, the attribute's name, so
-		// a string-keyed write is treated as an attribute store (legal on a symbolic tensor) and does not fire. This under-refuses a
-		// string-keyed subscript store into a tensor, which fails eagerly on a NumPy array anyway. A multi-index store (`y[0, 1] = v`)
-		// is keyed by a tuple and fires.
-		return anyTaintedUse(node, method,
-				(use, value) -> use instanceof PythonPropertyWrite write && write.getObjectRef() == value && this.isTensorTyped(node, value)
-						&& !this.pointsToContainer(node, value) && !this.isStringConstant(node, write.getMemberRef()));
+		// The container exemption keeps a store into a Python collection of tensors out, which tracing supports. An attribute store
+		// lowers to the same instruction, but the engine records which syntax a write came from (wala/ML#1100), and an attribute store
+		// is legal on a symbolic tensor, so only a subscript store fires.
+		return anyTaintedUse(node, method, (use, value) -> use instanceof PythonPropertyWrite write && write.isSubscript()
+				&& write.getObjectRef() == value && this.isTensorTyped(node, value) && !this.pointsToContainer(node, value));
 	}
 
 	/**
@@ -229,15 +226,6 @@ class TensorIterationAnalysis {
 				return true;
 
 		return false;
-	}
-
-	/**
-	 * True iff {@code value} is a string constant in {@code node}, in its symbol table or by points-to. Used to tell an attribute store
-	 * from a subscript store, which Ariadne's IR does not distinguish (https://github.com/wala/ML/issues/1100).
-	 */
-	private boolean isStringConstant(CGNode node, int value) {
-		IR ir = node.getIR();
-		return ir.getSymbolTable().isStringConstant(value) || Util.resolveStringConstant(node, value, this.pointerAnalysis) != null;
 	}
 
 	/**

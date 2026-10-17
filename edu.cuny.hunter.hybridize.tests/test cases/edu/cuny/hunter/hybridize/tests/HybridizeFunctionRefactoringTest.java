@@ -13596,13 +13596,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
 
-		// TODO: Ariadne has no model of the `reversed` builtin, so the call has no callee whose iteration of its argument could be read,
-		// and `reversed_param` is converted although tracing raises a TypeError (len of a symbolic tensor). See
-		// https://github.com/wala/ML/issues/1099 and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+		// Ariadne models `reversed` as iterating its argument since https://github.com/wala/ML/issues/1099, so `reversed_param` is refused
+		// like the other wrappers; tracing raises a TypeError there (len of a symbolic tensor).
 		Function reversedParam = getFunction("reversed_param");
-		assertFalse("`reversed_param`'s `reversed` is unmodeled, so its iteration of the tensor is not seen.",
-				reversedParam.getHasTensorParameterIteration());
-		assertEquals("`reversed_param` is converted (P1), a known miss.", P1, reversedParam.getPassingPrecondition());
+		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
+		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
+		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
 		Function storeIntoDerived = getFunction("store_into_derived");
 		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
@@ -13620,12 +13620,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`store_multi_index` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeMultiIndex.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
 
-		// TODO: Ariadne's IR gives a string-keyed subscript store the form of an attribute store, so the store is taken for an attribute
-		// store and `store_string_key` is converted although tracing raises a TypeError. See https://github.com/wala/ML/issues/1100.
 		Function storeStringKey = getFunction("store_string_key");
-		assertFalse("`store_string_key`'s string-keyed store reads as an attribute store.",
+		assertTrue(
+				"`store_string_key` assigns by a string key into a tensor computed from its parameter, a subscript store (wala/ML#1100).",
 				storeStringKey.getHasTensorParameterItemAssignment());
-		assertEquals("`store_string_key` is converted (P1), a known miss.", P1, storeStringKey.getPassingPrecondition());
+		assertNull("`store_string_key` must not pass a precondition.", storeStringKey.getPassingPrecondition());
+		assertNotNull("`store_string_key` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeStringKey.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
 
 		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
 		for (String identifier : List.of("set_first", "add_to_first")) {
@@ -13649,8 +13650,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				storeIntoLocalList.getPassingPrecondition());
 
 		Function tagDerived = getFunction("tag_derived");
-		assertFalse(
-				"`tag_derived` sets an attribute on a tensor, which shares the IR form of a subscript store but is legal under tracing.",
+		assertFalse("`tag_derived` sets an attribute on a tensor, which is legal under tracing.",
 				tagDerived.getHasTensorParameterItemAssignment());
 		assertEquals("`tag_derived` remains convertible (P1).", P1, tagDerived.getPassingPrecondition());
 	}
