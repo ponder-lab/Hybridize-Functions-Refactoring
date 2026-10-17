@@ -12080,7 +12080,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. The
 	 * others are pinned as not yet refused, since the engine models no state that their calls read or change: {@code random}, {@code time},
 	 * {@code cv2}, and {@code tf.io.gfile} have no summary, so their reads point to nothing (https://github.com/wala/ML/issues/1080), and
-	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances.
+	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances
+	 * (https://github.com/wala/ML/issues/1118).
 	 * <p>
 	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
 	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
@@ -12113,10 +12114,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances (a wala/ML issue is to be
-		// filed). The summaries of `np.random.uniform` and its siblings allocate the result and write nothing else, and
-		// `np.random.choice` has no summary (https://github.com/wala/ML/issues/1008), so the side-effect analysis sees no write; each
-		// function hybridizes today, freezing its draw at trace time.
+		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
+		// (https://github.com/wala/ML/issues/1118). The summaries of `np.random.uniform` and its siblings allocate the result and write
+		// nothing else, and `np.random.choice` has no summary (https://github.com/wala/ML/issues/1008), so the side-effect analysis sees
+		// no write; each function hybridizes today, freezing its draw at trace time.
 		for (String name : List.of("draws_numpy_random", "draws_aliased_numpy_random", "TUDataset.load")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "`'s draw changes no modeled state.", FALSE, function.getHasPythonSideEffects());
@@ -13088,7 +13089,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		// TODO: Refuse `wild_random_size` with HAS_PYTHON_SIDE_EFFECTS once the `numpy.random` summaries model the generator state a draw
-		// advances (a wala/ML issue is to be filed; https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). Its
+		// advances (https://github.com/wala/ML/issues/1118; https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). Its
 		// `np.random.uniform` draw runs once at trace time, but the side-effect analysis sees no write.
 		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
 			Function function = findFunction(functions, identifier);
