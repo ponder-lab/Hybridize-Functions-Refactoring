@@ -1,5 +1,5 @@
 # Issues 1025 and 1109, control. The primitive `scale` takes five distinct constants, one per call site, so each value is a separate
-# trace, more than a small fixed set bounds. The hybrid `hybrid_scale` is still de-hybridized under P3, and the eager `eager_scale`
+# trace. The hybrid `hybrid_scale` is still de-hybridized under P3, and the eager `eager_scale`
 # is still declined under HAS_PRIMITIVE_PARAMETERS.
 import tensorflow as tf
 

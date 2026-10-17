@@ -1,7 +1,8 @@
 # Issue 1109, reduced from tf-eager-fasterrcnn's `bbox2delta` (`detection/core/bbox/transforms.py`). The eager function's tuple
 # arguments `target_means` and `target_stds` are instance state that each target generator sets once in its constructor from tuple
 # literals the detector fixes. A tuple of constants is keyed by its contents, so an unchanging tuple adds nothing to the trace key,
-# and P1 must not decline the function under HAS_PRIMITIVE_PARAMETERS. `scale_boxes` takes a nested tuple of constants.
+# but P1 still declines the function under HAS_PRIMITIVE_PARAMETERS: a known lost conversion (wala/ML#805). `scale_boxes` takes a
+# nested tuple of constants.
 import tensorflow as tf
 
 

@@ -1,6 +1,7 @@
 # Issue 1025, reduced from VaDER's `VaDER/vader.py`. The hybrid loss methods' primitive arguments `K` and `eps` come from instance
 # state set once in `__init__` and never reassigned, and every call passes those same attributes, so they can't vary the trace key,
-# and P3 must not de-hybridize the methods. `output_activation` is a function object chosen in `__init__`, not a primitive.
+# but P3 still de-hybridizes the methods: a known lost conversion (wala/ML#805). `output_activation` is a function object chosen in
+# `__init__`, not a primitive.
 import tensorflow as tf
 
 

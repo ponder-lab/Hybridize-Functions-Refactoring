@@ -1,7 +1,7 @@
 # Issue 1025, reduced from tf-image's `_random_augmentations` (`tf_image/application/tools.py`). The hybrid function's primitive
 # `prob_demanding_ops` is always 0.5: the eager wrapper declares that default and forwards it, and no caller passes it. Every call
-# supplies the parameter, so the defaulted-unsupplied exemption (#795) doesn't apply, but its value can't vary, so it can't make
-# `tf.function` retrace, and P3 must not de-hybridize the function.
+# supplies the parameter, so the defaulted-unsupplied exemption (#795) doesn't apply. Its value can't vary, so it can't make
+# `tf.function` retrace, but P3 still de-hybridizes the function: a known lost conversion (wala/ML#805).
 import tensorflow as tf
 
 

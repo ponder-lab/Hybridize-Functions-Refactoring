@@ -1,7 +1,8 @@
 # Issue 1025, reduced from tf-image's `random_aspect_ratio_deformation` (`tf_image/core/bboxes/resize.py`). The primitive arguments
 # aren't constant overall, but each of the three call sites passes literals (or the defaults), so the traces are bounded by the call
-# sites, at most three, and never grow per call. P3 must not de-hybridize the function. `jitter` is reached from a single call site
-# in `apply_jitter`, so its two values share one calling context, but they are still a small fixed set: two traces at most.
+# sites, at most three, and never grow per call. P3 still de-hybridizes the function: a known lost conversion (wala/ML#805). `jitter`
+# is reached from a single call site in `apply_jitter`, so its two values share one calling context: two traces at most, and it's
+# also still de-hybridized.
 import tensorflow as tf
 
 

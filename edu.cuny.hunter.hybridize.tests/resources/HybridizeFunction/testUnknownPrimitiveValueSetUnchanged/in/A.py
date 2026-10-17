@@ -1,5 +1,5 @@
 # Issues 1025 and 1109, control. Each primitive has one constant in its points-to set, but some call passes a value the analysis
-# has no abstract value for (a `range` loop index), so the set isn't the complete set of values, and today's behavior stays.
+# has no abstract value for (a `range` loop index), so the set isn't the complete set of values, and the primitive still counts.
 # - `scaled`: the call `scaled(x, i)` has its own calling context, in which the parameter points to nothing.
 # - `relayed`: reached from one call site in `relay`, whose two calling contexts pass 0.5 and `i`; the parameter points to 0.5 alone,
 #   and the argument at the call site points to nothing in the second context.

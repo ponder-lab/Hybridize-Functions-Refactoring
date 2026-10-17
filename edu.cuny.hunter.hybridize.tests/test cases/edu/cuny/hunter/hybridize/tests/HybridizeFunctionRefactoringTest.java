@@ -5882,11 +5882,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// consider this parameter as a primitive.
 		assertEquals(OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
 		assertNotNull(function.getPassingPrecondition());
-		// The tuple `(2, 2)` is the only value, so the primitive doesn't cause retracing (issue 1025), and the function is de-hybridized
-		// as performing no tensor computation (P6) rather than for its primitive (P3).
-		// FIXME: With the type hints followed, the tuple's integers are converted to tensors, so the body does compute on tensors.
-		assertEquals(FALSE, function.getHasRetracingPrimitiveParameter());
-		assertEquals(P6, function.getPassingPrecondition());
+		assertEquals(P3, function.getPassingPrecondition());
 		assertFalse(function.getTransformations().isEmpty());
 		assertEquals(singleton(CONVERT_TO_EAGER), function.getTransformations());
 		assertFalse(function.getStatus().hasError());
@@ -11619,29 +11615,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertSuppliedSignatureKeepsHybrid();
 	}
 
-	/**
-	 * {@link #testSuppliedSignatureKeepsHybrid()}'s original input, in which {@code sig_prim} and {@code prim} are each called only with 3.
-	 * A primitive with one value doesn't cause retracing (issue 1025), so neither function reaches P3: {@code prim} isn't de-hybridized,
-	 * and {@code sig_prim} has no P3 conversion for its supplied signature to replace, so it isn't reported as kept for it.
-	 */
-	@Test
-	public void testSuppliedSignatureKeepsHybridSingleValue() throws Exception {
-		for (String name : new String[] { "sig_prim", "prim" }) {
-			Function function = getFunction(name);
-			assertTrue("`" + name + "` is hybrid.", function.isHybrid());
-			assertTrue("`" + name + "` has a primitive parameter.", function.getHasPrimitiveParameter());
-			assertEquals("`" + name + "`'s primitive is one constant.", TRUE, function.getPrimitiveValuesBounded());
-			assertEquals("So it doesn't cause retracing.", FALSE, function.getHasRetracingPrimitiveParameter());
-			assertNotEquals("`" + name + "` doesn't pass P3.", P3, function.getPassingPrecondition());
-			assertFalse("`" + name + "` isn't de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
-		}
-
-		Function sigPrim = getFunction("sig_prim");
-		assertTrue("`sig_prim` carries a supplied input_signature.", sigPrim.getHybridizationParameters().hasInputSignatureParam());
-		assertNull("`sig_prim` has no P3 conversion for its signature to replace.",
-				sigPrim.getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE));
-	}
-
 	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
 		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec", "sig_prim" }) {
 			Function kept = getFunction(name);
@@ -11819,14 +11792,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
 	/**
-	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
-	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
-	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
-	 * declines). Directly exercises the exemption on the current release.
-	 */
-	/**
 	 * Issue 1025, reduced from tf-image's {@code _random_augmentations}: a hybrid function's primitive parameter that every call binds to
-	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, so P3 doesn't de-hybridize the function.
+	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, but P3 still de-hybridizes the function.
 	 */
 	@Test
 	public void testInvariantPrimitiveForwardedDefault() throws Exception {
@@ -11835,18 +11802,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.isHybrid());
 		assertEquals("The tensor `image` is a tensor parameter.", TRUE, function.getHasTensorParameter());
-		assertEquals("`prob_demanding_ops` is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-		assertEquals("`prob_demanding_ops` is always 0.5, so it can't cause retracing (#1025).", FALSE,
-				function.getHasRetracingPrimitiveParameter());
-		assertFalse("P3 doesn't de-hybridize a function whose primitive argument can't vary (#1025).",
-				function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertNotEquals(P3, function.getPassingPrecondition());
+		// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars unrepresented,
+		// it can't (https://github.com/wala/ML/issues/805).
+		assertEquals("`prob_demanding_ops` is always 0.5, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, function.getPassingPrecondition());
 	}
 
 	/**
 	 * Issue 1025, reduced from tf-image's {@code random_pad_to_square} under {@code @convert_type}. The primitive {@code max_extend} is
 	 * always its default, but the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
-	 * argument at or before the parameter's slot, and the parameter's value set can't be shown complete. Today's behavior stays.
+	 * argument at or before the parameter's slot, and P3 de-hybridizes the function.
 	 */
 	@Test
 	public void testInvariantPrimitiveConvertTypeForwarding() throws Exception {
@@ -11855,16 +11821,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.isHybrid());
 		// TODO: Keep the decorator once the alignment past an unpacked argument is determined (https://github.com/wala/ML/issues/751).
-		assertEquals("The unpacked forwarding leaves the value set undetermined, so the primitive still counts (wala/ML#751).", TRUE,
-				function.getHasRetracingPrimitiveParameter());
+		assertEquals("`max_extend` is always 0.1, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
 		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 		assertEquals(P3, function.getPassingPrecondition());
 	}
 
 	/**
 	 * Issue 1025, reduced from VaDER's {@code _reconstruction_loss} and {@code _latent_loss}: the primitive arguments {@code K} and
-	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, so P3 doesn't de-hybridize either
-	 * method. {@code output_activation} is a function object, not a primitive.
+	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, but P3 still de-hybridizes both
+	 * methods. {@code output_activation} is a function object, not a primitive.
 	 */
 	@Test
 	public void testInvariantPrimitiveInstanceAttributes() throws Exception {
@@ -11875,18 +11840,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-			assertEquals(name + "'s primitive arguments are each one constant, so they can't cause retracing (#1025).", FALSE,
-					function.getHasRetracingPrimitiveParameter());
-			assertFalse(name + " isn't de-hybridized (#1025).", function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-			assertNotEquals(name, P3, function.getPassingPrecondition());
+			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
+			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s primitive arguments are each one constant, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
 		}
 	}
 
 	/**
 	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta}: the eager function's tuple arguments are each a tuple of constants
-	 * set once in a constructor, keyed by their contents, so they can't vary the trace key, and P1 converts the function.
-	 * {@code scale_boxes} takes a nested tuple of constants.
+	 * set once in a constructor, keyed by their contents, but P1 still declines the function. {@code scale_boxes} takes a nested tuple of
+	 * constants.
 	 */
 	@Test
 	public void testInvariantPrimitiveTuples() throws Exception {
@@ -11897,89 +11863,82 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertFalse(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-			assertEquals(name + "'s tuples of constants are fixed values, so they can't cause retracing (#1109).", FALSE,
-					function.getHasRetracingPrimitiveParameter());
-			assertTrue(name + " is converted (#1109).", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-			assertEquals(name, P1, function.getPassingPrecondition());
+			// TODO: Convert once the points-to set can show the value set complete. With computed Python scalars unrepresented, it can't
+			// (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s tuples of constants are fixed, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertNotNull(name, function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
 	}
 
 	/**
 	 * Issue 1025, reduced from tf-image's {@code random_aspect_ratio_deformation}: the primitive arguments differ between the three call
-	 * sites but are constant at each, so the traces are bounded by the call sites, and P3 doesn't de-hybridize the function. The two
-	 * primitives take three and two values, six combinations, but only three of them occur, one per calling context. {@code jitter}'s two
-	 * values share one calling context, and two values are still a small fixed set.
+	 * sites but are constant at each, so the traces are bounded by the call sites, but P3 still de-hybridizes the function. So does
+	 * {@code jitter}, whose two values share one calling context.
 	 */
 	@Test
 	public void testBoundedPrimitivePerCallSite() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		Function function = findFunction(functions, "random_aspect_ratio_deformation");
 
-		assertTrue(function.isHybrid());
-		assertEquals(TRUE, function.getHasTensorParameter());
-		assertEquals(TRUE, function.getHasPrimitiveParameter());
-		assertEquals("Three call sites bind the primitives to constants, bounding the traces at three (#1025).", FALSE,
-				function.getHasRetracingPrimitiveParameter());
-		assertFalse(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertNotEquals(P3, function.getPassingPrecondition());
+		for (String name : List.of("random_aspect_ratio_deformation", "jitter")) {
+			Function function = findFunction(functions, name);
 
-		Function jitter = findFunction(functions, "jitter");
-
-		assertTrue(jitter.isHybrid());
-		assertEquals(TRUE, jitter.getHasTensorParameter());
-		assertEquals(TRUE, jitter.getHasPrimitiveParameter());
-		assertEquals("Two constants bound the traces at two (#1025).", FALSE, jitter.getHasRetracingPrimitiveParameter());
-		assertFalse(jitter.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertNotEquals(P3, jitter.getPassingPrecondition());
+			assertTrue(name, function.isHybrid());
+			assertEquals(name, TRUE, function.getHasTensorParameter());
+			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
+			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s literals bound its traces, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
 	}
 
 	/**
-	 * Control for issues 1025 and 1109: a primitive bound to five distinct constants, more than a small fixed set bounds, still makes P3
-	 * de-hybridize the hybrid function and P1 decline the eager one.
+	 * Control for issues 1025 and 1109: a primitive bound to five distinct constants makes P3 de-hybridize the hybrid function and P1
+	 * decline the eager one.
 	 */
 	@Test
 	public void testVaryingPrimitiveStillTriggers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		Function hybrid = findFunction(functions, "hybrid_scale");
-		assertEquals("Five distinct values exceed the bound, so `scale` is still a primitive parameter.", TRUE,
-				hybrid.getHasRetracingPrimitiveParameter());
+		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
 		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 		assertEquals(P3, hybrid.getPassingPrecondition());
 
 		Function eager = findFunction(functions, "eager_scale");
-		assertEquals("Five distinct values exceed the bound, so `scale` is still a primitive parameter.", TRUE,
-				eager.getHasRetracingPrimitiveParameter());
+		assertEquals(TRUE, eager.getHasPrimitiveParameter());
 		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
 	 * Control for issues 1025 and 1109: an object of a program class is keyed by its identity, and that it's allocated once isn't a
-	 * points-to fact, so it stays a primitive parameter.
+	 * points-to fact, so it's a primitive parameter.
 	 */
 	@Test
 	public void testProgramObjectPrimitiveUnchanged() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		Function hybrid = findFunction(functions, "hybrid_apply");
-		assertEquals(TRUE, hybrid.getHasRetracingPrimitiveParameter());
+		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
 		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 		assertEquals(P3, hybrid.getPassingPrecondition());
 
 		Function eager = findFunction(functions, "eager_apply");
-		assertEquals(TRUE, eager.getHasRetracingPrimitiveParameter());
+		assertEquals(TRUE, eager.getHasPrimitiveParameter());
 		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
 	 * Control for issues 1025 and 1109: each primitive points to one constant, but a call passes a value the analysis has no abstract value
-	 * for, so the set isn't complete and the primitive still counts. In {@code scaled}, that call has its own calling context, in which the
-	 * parameter points to nothing; {@code relayed} is reached from one call site whose argument points to nothing in one of its caller's
-	 * contexts. {@code defaulted}'s default has no abstract value, so the parameter points to nothing in the context of the call that omits
-	 * it. A list is mutable, so {@code listed}'s list of constants isn't a fixed value either.
+	 * for, so the set isn't complete. In {@code scaled}, that call has its own calling context, in which the parameter points to nothing;
+	 * {@code relayed} is reached from one call site whose argument points to nothing in one of its caller's contexts. {@code defaulted}'s
+	 * default has no abstract value, so the parameter points to nothing in the context of the call that omits it. A list is mutable, so
+	 * {@code listed}'s list of constants isn't a fixed value either.
 	 */
 	@Test
 	public void testUnknownPrimitiveValueSetUnchanged() throws Exception {
@@ -11987,8 +11946,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (String name : List.of("scaled", "relayed", "defaulted", "listed")) {
 			Function function = findFunction(functions, name);
-			assertEquals(name + "'s value set isn't known complete, so it keeps its primitive parameter.", TRUE,
-					function.getHasRetracingPrimitiveParameter());
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
 			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 			assertEquals(name, P3, function.getPassingPrecondition());
 		}
@@ -11998,7 +11956,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Control for issues 1025 and 1109: the analysis gives a computed Python scalar, the result of a binary operation, no abstract value
 	 * (wala/ML#805, wala/ML#398), so a value set merged with one keeps only its constant operands. {@code f}'s {@code n} is incremented in
 	 * a loop from 0 and points to 0 alone; {@code g}'s tuple has a computed second element whose field points to nothing. Each primitive
-	 * takes six values, six traces under {@code tf.function}, so it still declines the function.
+	 * takes six values, six traces under {@code tf.function}, so it declines the function.
 	 */
 	@Test
 	public void testComputedPrimitiveValuesUnchanged() throws Exception {
@@ -12009,13 +11967,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
 			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-			assertEquals(name + "'s computed values aren't in its points-to set, so it still causes retracing.", TRUE,
-					function.getHasRetracingPrimitiveParameter());
-			assertNotNull(name + " still fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
 	}
 
+	/**
+	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
+	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
+	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
+	 * declines). Directly exercises the exemption on the current release.
+	 */
 	@Test
 	public void testExemptDefaultedUnsuppliedPrimitive() throws Exception {
 		Set<Function> functions = this.getFunctions();
@@ -12033,10 +11995,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * #795 negative: a defaulted primitive parameter that a call site supplies is a retrace key, so the exemption must not apply. `g` is
-	 * called both with `flag` defaulted and with `flag=5`, so `flag` is still a primitive parameter. Its two values are a small fixed set,
-	 * though, so it causes at most two traces, and `g` isn't declined by `HAS_PRIMITIVE_PARAMETERS` (issue 1109). A primitive with more
-	 * values than the bound still declines, as `testVaryingPrimitiveStillTriggers` shows.
+	 * #795 negative: a defaulted primitive parameter that a call site supplies with a varying value is a retrace key, so the exemption must
+	 * not apply. `g` is called both with `flag` defaulted and with `flag=5`, so `g` stays declined by `HAS_PRIMITIVE_PARAMETERS`.
 	 */
 	@Test
 	public void testDefaultedSuppliedPrimitiveStillDeclines() throws Exception {
@@ -12047,11 +12007,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("flag", flag.getName());
 		assertEquals("A call site supplies `flag`, so it is not exempt.", TRUE, flag.isSuppliedAtCallSite());
 
-		assertEquals("A supplied defaulted primitive is still a primitive parameter.", TRUE, g.getHasPrimitiveParameter());
-		assertEquals("`flag`'s two values are a small fixed set (issue 1109).", TRUE, g.getPrimitiveValuesBounded());
-		assertEquals("So `flag` doesn't cause retracing.", FALSE, g.getHasRetracingPrimitiveParameter());
-		assertNull("`g` isn't declined for its primitive (issue 1109).", g.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
-		assertTrue("`g` is optimizable.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("A supplied defaulted primitive still declines the function.", TRUE, g.getHasPrimitiveParameter());
+		assertFalse("A primitive-declined function is not optimizable.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 	}
 
 	/**
@@ -13898,12 +13855,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				reduce.getHasNumpyCallsOnParameters());
 		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
 
-		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), but its only value is 1, so it doesn't cause retracing (issue
-		// 1109), and the numpy check runs: the numpy covers only the statically-known trailing dimension.
+		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), so the numpy check is gated off (it fails on the literal
+		// regardless) and never runs: its result is left undetermined.
 		Function einsum = getFunction("einsum_via_matmul");
-		assertTrue("`einsum_via_matmul` has a primitive parameter.", einsum.getHasPrimitiveParameter());
-		assertEquals("`num_inner_dims` is one constant.", FALSE, einsum.getHasRetracingPrimitiveParameter());
-		assertEquals("`einsum_via_matmul`'s numpy check runs and passes.", FALSE, einsum.getHasNumpyCallsOnParameters());
+		assertNull("`einsum_via_matmul`'s numpy check is gated off by its primitive parameter.", einsum.getHasNumpyCallsOnParameters());
 	}
 
 	/**
@@ -14310,9 +14265,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only inside a branch,
 	 * unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent. {@code mask_or_none}
 	 * tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without the argument, so it
-	 * is not refused. {@code primitive_branch} branches on a primitive parameter whose only value is 0, so it is refused for neither that
-	 * (code 12, issue 1109) nor this. {@code dataset_size} raises but is not yet detected, for the engine reason its TODO gives: it
-	 * branches on {@code dataset.cardinality()}.
+	 * is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
+	 * {@code dataset_size} raises but is not yet detected, for the engine reason its TODO gives: it branches on
+	 * {@code dataset.cardinality()}.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
@@ -14337,11 +14292,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`mask_or_none`'s `is None` branch is not refused.", mask.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
-		// `primitive_branch`'s primitive is always 0, so it doesn't cause retracing (issue 1109), and the branch on it is decided while
-		// tracing.
 		Function primitive = findFunction(functions, "primitive_branch");
-		assertTrue("`primitive_branch` has a primitive parameter.", primitive.getHasPrimitiveParameter());
-		assertNull("`primitive_branch`'s one value doesn't fail HAS_PRIMITIVE_PARAMETERS.",
+		assertNotNull("`primitive_branch` fails with HAS_PRIMITIVE_PARAMETERS.",
 				primitive.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PRIMITIVE_PARAMETERS.getCode()));
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
@@ -14683,14 +14635,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Control: a library summary whose element structure the analysis reads is an ordinary modeled container, and keeps its nested
 		// signature. The directory iterator's batch tuple in `testTensorTypedContainerParameter` is that case.
 
-		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension: its string parameter is
-		// always "iou", so it doesn't cause retracing (issue 1109), and the function is hybridized, but the string has no spec, so it gets
-		// no signature to get wrong.
+		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension: its string parameter makes
+		// it a primitive-parameter function, so it is not hybridized and has no signature to get wrong.
 		Function perAnchor = findFunction(functions, "per_anchor");
 		assertTrue("`per_anchor` has a primitive parameter.", perAnchor.getHasPrimitiveParameter());
-		assertEquals("`per_anchor`'s string is one constant.", FALSE, perAnchor.getHasRetracingPrimitiveParameter());
-		assertTrue("`per_anchor` is hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertFalse("`per_anchor` gets no signature.", perAnchor.getInferredInputSignature().isPresent());
+		assertFalse("`per_anchor` is not hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 
 		// Controls: a tensor argument, an element of an unstacked list, and gpt-2's shape, a split unpacked by the caller with one element
 		// passed on, keep their flat signatures.
