@@ -14180,9 +14180,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Attention.__call__} the keys and values {@code setup_memory} rebinds, {@code Attention._compute_window_mask} the window
 	 * {@code setup_window} rebuilds (TensorFlowTTS's {@code TFTacotronLocationSensitiveAttention}), {@code Decoder.step} both of these
 	 * through its callees ({@code TFTacotronDecoder.step}), and {@code AttentionalRNNDecoder._get_initial_state} the memory
-	 * {@code initialize} rebinds (OpenNMT-tf), {@code Memory.read} the keys that another class's {@code __init__} rebinds on each
-	 * construction, and {@code Builder.read} the batch that a {@code build} outside Keras rebinds on each call. {@code make_features}
-	 * (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the dictionary its caller passes, which {@code tf.function} refuses with a
+	 * {@code initialize} rebinds (OpenNMT-tf), {@code LoopFedDecoder._get_initial_state} the same, with the memory computed from a loop
+	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, and {@code Builder.read}
+	 * the batch that a {@code build} outside Keras rebinds on each call. {@code make_features} (OpenNMT-tf's
+	 * {@code SequenceRecordInputter}) fills in the dictionary its caller passes, which {@code tf.function} refuses with a
 	 * {@code ValueError}; the side-effect precondition refuses it. Five controls match the eager reader: {@code InitOnly.scaled} reads a
 	 * field set only in its class's {@code __init__}, {@code Derived.scaled} one set only in a base's {@code __init__},
 	 * {@code BuildOnly.call} one set only in a Keras layer's {@code build}, {@code StringField.labeled} a string field another method
@@ -14191,16 +14192,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * this precondition leaves it alone. Two more controls match: {@code sums_list} reads the elements of a list argument, which
 	 * {@code tf.function} passes in afresh, and {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call.
 	 * {@code Holder.get}, decorated on its own, matches in this program, whose holders are each read once, and diverges once one holder is
-	 * set between two reads; it is refused. Two cases diverge or raise but are not yet detected, for the engine reasons their TODOs give:
-	 * {@code LoopFedDecoder._get_initial_state}, whose memory is computed from a loop variable, and {@code make_features_of_copy}, whose
-	 * caller passes a copy of its dictionary.
+	 * set between two reads; it is refused. {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not
+	 * yet detected, for the engine reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("Sampler.next_inputs", "Attention.__call__", "Attention._compute_window_mask", "Decoder.step",
-				"AttentionalRNNDecoder._get_initial_state", "Memory.read", "Builder.read")) {
+				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read")) {
 			Function function = findFunction(functions, identifier);
 			assertEquals("`" + identifier + "` reads rebound tensor state.", TRUE, function.getHasReboundStateReads());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
@@ -14239,16 +14239,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`make_features_of_copy`'s write to the copied dictionary is not yet seen.", FALSE,
 				makeFeaturesOfCopy.getHasPythonSideEffects());
 		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
-
-		// TODO: Refuse this once Ariadne types a tensor multiplied by a Python number computed from a parameter:
-		// https://github.com/wala/ML/issues/1083. It reads the memory `initialize` rebinds, like
-		// `AttentionalRNNDecoder._get_initial_state`, but the memory is `memory(i)`, whose `tf.range(...) * (i + 1.0)` multiplies by a
-		// number computed from the parameter `i`, fed a `for` variable over `range(2)`. The product has no tensor type, so the field read
-		// is not seen to be a tensor.
-		Function loopFed = findFunction(functions, "LoopFedDecoder._get_initial_state");
-		assertEquals("`LoopFedDecoder._get_initial_state`'s field read is not yet seen as a tensor.", FALSE,
-				loopFed.getHasReboundStateReads());
-		assertEquals("`LoopFedDecoder._get_initial_state` still hybridizes (P1).", P1, loopFed.getPassingPrecondition());
 	}
 
 	/**
