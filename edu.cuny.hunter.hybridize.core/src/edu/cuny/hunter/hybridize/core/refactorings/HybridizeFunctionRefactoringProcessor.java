@@ -541,8 +541,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Which defaulted parameters no caller supplies, and so may be left out of an inferred input signature (#787). Cheap
 				// enough to run unconditionally: it exits immediately for a function with no defaulted parameter, and
 				// `computeInputSignature` reads only the cache it populates.
+				// Whether the function's class extends a Keras layer or model as the engine models it is the other half of that question:
+				// Keras itself supplies `training` and `mask` to such a class's `call` (issue 1099). Also cheap: a walk over the class's
+				// bases, with no points-to query.
 				try {
 					func.inferSuppliedParameters(callGraph, this.splitForFunction(subMonitor));
+					func.computeExtendsKerasCallableClass(callGraph);
 				} catch (CoreException e) {
 					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
 					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);

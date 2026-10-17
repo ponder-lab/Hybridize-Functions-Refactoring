@@ -115,6 +115,7 @@ import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -145,6 +146,7 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
@@ -152,6 +154,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
@@ -1176,6 +1179,13 @@ public class Function {
 	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
 	 */
 	private Boolean replicaInvoked;
+
+	/**
+	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
+	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
+	 * walk finds no such class, in which case the PyDev walk alone decides.
+	 */
+	private boolean extendsKerasCallableClass;
 
 	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
@@ -2447,6 +2457,69 @@ public class Function {
 				}
 
 		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * The engine type names of the Keras classes whose {@code call} overrides Keras dispatches to: the summary classes of {@code Layer} and
+	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
+	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
+	 */
+	private static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
+
+	/**
+	 * Computes whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine
+	 * models it, storing the result for {@link #isKerasCallOverride()}. The bases are the engine's: a base the program defines is followed
+	 * to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose superclass
+	 * the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
+	 * <p>
+	 * This sits beside the PyDev walk in {@link #isKerasCallOverride()} because that walk stops at a base PyDev can't resolve, and a base
+	 * written through {@code tf.keras} is one: it then sees only the base's own last segment, so {@code tf.keras.Sequential} answers
+	 * {@code Sequential}, not {@code Model} (issue 1099). The engine's walk reaches {@code Model} through the summary's superclass chain. A
+	 * base whose summary class declares no superclass resolves to nothing here, which today is every built-in layer
+	 * ({@code BatchNormalization}, {@code Dense}, ...): https://github.com/wala/ML/issues/1098. Once those summaries declare their
+	 * superclass, the walk reaches {@code Layer} and the built-in subclasses are recognized with no change here.
+	 *
+	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
+	 * @throws CoreException If this function's declaring class can't be determined.
+	 */
+	public void computeExtendsKerasCallableClass(CallGraph callGraph) throws CoreException {
+		if (!(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return;
+
+		// The function's own type is its class's type followed by its name.
+		String functionTypeName = this.getDeclaringClass().getName().toString();
+		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
+
+		IClassHierarchy classHierarchy = callGraph.getClassHierarchy();
+		Set<TypeName> seen = new HashSet<>();
+		Deque<TypeName> worklist = new ArrayDeque<>();
+		worklist.add(classTypeName);
+
+		while (!worklist.isEmpty()) {
+			TypeName name = worklist.remove();
+
+			if (KERAS_CALLABLE_TYPE_NAMES.contains(name)) {
+				this.extendsKerasCallableClass = true;
+				return;
+			}
+
+			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is skipped,
+			// leaving the PyDev walk to decide: the first name is derived from the declaring class's, and the bases are resolved at the
+			// loader (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
+			if (cls == null || !seen.add(name))
+				continue;
+
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
+			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
+			if (cls instanceof IPythonClass)
+				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
+			else if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getName());
+		}
 	}
 
 	/**
@@ -5954,9 +6027,10 @@ public class Function {
 	/**
 	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
 	 * class transitively extends a base whose last segment is {@code Model} or {@code Layer}, resolved through the PyDev class hierarchy
-	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition). Matching by last segment
-	 * over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable signature (#881), the conservative
-	 * default.
+	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition), or whose enclosing class
+	 * the engine resolves to a subclass of Keras's {@code Layer} or {@code Model} ({@link #computeExtendsKerasCallableClass(CallGraph)},
+	 * issue 1099). Matching by last segment over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable
+	 * signature (#881), the conservative default.
 	 *
 	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
 	 */
@@ -5964,7 +6038,8 @@ public class Function {
 		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
 			return false;
 
-		return this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
+		return this.extendsKerasCallableClass
+				|| this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
 	}
 
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
