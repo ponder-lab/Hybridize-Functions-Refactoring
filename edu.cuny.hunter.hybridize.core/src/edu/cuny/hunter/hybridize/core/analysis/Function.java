@@ -926,20 +926,10 @@ public class Function {
 		seen.add(instanceKey);
 
 		if (instanceKey instanceof ConstantKey<?>) {
-			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			Object constantValue = constantKey.getValue();
-
-			if (constantValue != null) {
-				LOG.info("Found constant value: " + constantValue + ".");
-
-				boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
-
-				// If it's not the case that we found a boolean value and we are ignoring booleans.
-				if ((!foundBooleanValue || !ignoreBooleans)) {
-					// We have found a primitive.
-					subMonitor.done();
-					return true;
-				}
+			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
+				// We have found a primitive.
+				subMonitor.done();
+				return true;
 			}
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
@@ -984,6 +974,31 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a primitive constant: a {@link ConstantKey} with a value other than {@code None}. A
+	 * Python value the engine represents without a constant is not one.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a constant whose value is a primitive.
+	 */
+	static boolean isPrimitiveConstant(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (!(instanceKey instanceof ConstantKey<?> constantKey))
+			return false;
+
+		Object constantValue = constantKey.getValue();
+
+		if (constantValue == null)
+			return false;
+
+		LOG.info("Found constant value: " + constantValue + ".");
+
+		boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
+
+		// It's a primitive unless it's a boolean value and we are ignoring booleans.
+		return !foundBooleanValue || !ignoreBooleans;
 	}
 
 	/**
@@ -1283,6 +1298,12 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
 	 */
 	private Boolean hasReboundStateReads;
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, which {@code tf.function} converts to a tensor (issue 1117); null if
+	 * undetermined.
+	 */
+	private Boolean returnsPrimitive;
 
 	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
@@ -1600,6 +1621,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
 										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
 												+ "would keep the tensor the field held when it was traced.");
+							else if (TRUE.equals(this.getReturnsPrimitive()))
+								// A returned Python primitive, at the top level or inside a returned container, is converted to a
+								// tensor at the tf.function boundary, so the caller no longer receives a Python value (issue 1117). A
+								// safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
+										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
+												+ "converts to a tensor.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -3466,6 +3494,45 @@ public class Function {
 	 */
 	public Boolean getHasReboundStateReads() {
 		return this.hasReboundStateReads;
+	}
+
+	/**
+	 * Computes whether this {@link Function} may return a Python primitive, directly or inside a returned container
+	 * ({@link UncrossableBoundaryValueAnalysis#returnsPrimitive(Set)}), storing the result for {@link #getReturnsPrimitive()}. When the
+	 * function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117.
+	 *
+	 * @param callGraph The call graph, whose nodes for this function are examined.
+	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the returned values and their elements.
+	 */
+	public void computeReturnsPrimitive(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " returns a Python primitive.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " returns a Python primitive without a call graph node.");
+			return;
+		}
+
+		this.returnsPrimitive = new UncrossableBoundaryValueAnalysis(builder).returnsPrimitive(nodes);
+		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + ".");
+	}
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, {@code null} if undetermined (issue 1117).
+	 *
+	 * @return True iff this function may return an {@code int}, {@code float}, {@code str}, or {@code bool} constant, null if undetermined.
+	 */
+	public Boolean getReturnsPrimitive() {
+		return this.returnsPrimitive;
 	}
 
 	/**

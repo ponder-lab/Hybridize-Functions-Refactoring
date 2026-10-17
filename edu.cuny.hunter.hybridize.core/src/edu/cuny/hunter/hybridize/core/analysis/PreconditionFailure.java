@@ -334,7 +334,20 @@ public enum PreconditionFailure {
 	 * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with
 	 *      tf.function: Changing Python global and free variables</a>
 	 */
-	HAS_REBOUND_STATE_READS(39);
+	HAS_REBOUND_STATE_READS(39),
+
+	/**
+	 * The function may return a Python primitive: an {@code int}, {@code float}, {@code str}, or {@code bool} constant, at the top level or
+	 * inside a returned list, tuple, or dictionary. {@code tf.function} converts every returned Python value other than {@code None} to a
+	 * tensor, so the caller receives a tensor where it received a Python value, whatever it then does with it. A caller that hashes the
+	 * value, tests its type, or passes it to an API that needs a Python value, such as a layer's constructor called while Keras builds a
+	 * model, fails. A returned {@code bool} is converted too, so it counts. A returned {@code None}, and a value a TensorFlow operation
+	 * computes, such as {@code tf.size(x)}, cross unchanged and are left alone. The check reads the constants in the returned values'
+	 * points-to sets, so a Python value the engine represents without a constant is not yet seen.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
+	 */
+	RETURNS_PYTHON_PRIMITIVE(40);
 
 	static {
 		// check that the codes are unique.
