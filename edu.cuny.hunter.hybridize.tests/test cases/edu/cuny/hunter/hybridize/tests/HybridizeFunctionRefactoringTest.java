@@ -12291,11 +12291,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code AttributeError} from the {@code numpy()} call in its lambda.
 	 * <p>
 	 * A call to the built-in {@code open}, which the side-effect analysis recognizes by the object its callee points to, writes the file
-	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. The
-	 * others are pinned as not yet refused, since the engine models no state that their calls read or change: {@code random}, {@code time},
-	 * {@code cv2}, and {@code tf.io.gfile} have no summary, so their reads point to nothing (https://github.com/wala/ML/issues/1080), and
-	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances
-	 * (https://github.com/wala/ML/issues/1118).
+	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. From
+	 * the {@code random} summary of https://github.com/wala/ML/issues/1080, a draw reads and writes the module's {@code state} field, so
+	 * {@code draws_python_random} is refused for that write. The same issue's summaries model {@code time.time} as a read of the
+	 * {@code time} module's {@code clock} field, {@code cv2.imread} as a read of the {@code cv2} module's {@code files} field, and a
+	 * {@code tf.io.gfile.GFile} read as a read of the {@code tf.io.gfile} module's {@code files} field. The side-effect analysis consults
+	 * only the functions' mod sets, not what they read, so {@code reads_clock}, {@code reads_image}, and both {@code get_dataset_size}
+	 * overrides are pinned as not yet refused. The {@code numpy.random} functions are pinned the same way, since their summaries model a
+	 * draw's result but not the generator state it advances (https://github.com/wala/ML/issues/1118).
 	 * <p>
 	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
 	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
@@ -12316,16 +12319,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
 		}
 
-		// TODO: Refuse these once reads of `random`, `time`, `cv2`, and `tf.io.gfile` point to modeled objects
-		// (https://github.com/wala/ML/issues/1080) whose summaries model the state their calls read or change. None of these modules has
-		// a summary, so a read of one has an empty points-to set and the side-effect analysis sees no write; each function hybridizes
-		// today, freezing its clock read, draw, image read, or line count at trace time. `process_image_label` and `predict_dataset`
-		// are refused above only for their `open` calls.
-		for (String name : List.of("reads_clock", "draws_python_random", "reads_image", "ExampleInputter.get_dataset_size",
-				"ParallelInputter.get_dataset_size")) {
+		// The `random` summary (https://github.com/wala/ML/issues/1080) writes the module's generator state on each draw.
+		Function drawsPythonRandom = findFunction(functions, "draws_python_random");
+		assertEquals("`draws_python_random` advances `random`'s modeled generator state.", TRUE,
+				drawsPythonRandom.getHasPythonSideEffects());
+		assertNull("`draws_python_random` must not pass a precondition.", drawsPythonRandom.getPassingPrecondition());
+		assertNotNull("`draws_python_random` fails with HAS_PYTHON_SIDE_EFFECTS: " + drawsPythonRandom.getStatus(),
+				drawsPythonRandom.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// TODO: Refuse these once the side-effect analysis counts a read of module state that a trace freezes
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). The summaries of
+		// https://github.com/wala/ML/issues/1080 model each call here as a read only: `time.time` reads the `time` module's `clock` field,
+		// `cv2.imread` the `cv2` module's `files` field, and a `tf.io.gfile.GFile` read the `tf.io.gfile` module's `files` field. The
+		// fields a `GFile` call writes belong to the file object the call allocates, so they are filtered out as created within the
+		// function. Since `Function.inferPythonSideEffects` consults only the mod set, each function hybridizes today, freezing its clock
+		// read, image read, or line count at trace time. `process_image_label` and `predict_dataset` are refused above for their `open`
+		// calls, and `process_image_label` also writes `random`'s state.
+		for (String name : List.of("reads_clock", "reads_image", "ExampleInputter.get_dataset_size", "ParallelInputter.get_dataset_size")) {
 			Function function = findFunction(functions, name);
-			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasPythonSideEffects());
-			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
+			assertEquals("`" + name + "`'s module call only reads modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until reads of module state are counted.", P1, function.getPassingPrecondition());
 		}
 
 		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
@@ -14364,8 +14377,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent. {@code mask_or_none}
 	 * tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without the argument, so it
 	 * is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
-	 * {@code dataset_size} raises but is not yet detected, for the engine reason its TODO gives: it branches on
-	 * {@code dataset.cardinality()}.
+	 * {@code dataset_size} branches on {@code dataset.cardinality() == tf.data.INFINITE_CARDINALITY} and returns {@code None} on one path,
+	 * which raises a {@code ValueError} under tracing; it is refused since Ariadne models {@code Dataset.cardinality()} and the cardinality
+	 * constants (https://github.com/wala/ML/issues/1072), so the condition is typed as a scalar {@code int64} tensor comparison.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
@@ -14396,15 +14410,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
-		// TODO: Refuse this once Ariadne models `Dataset.cardinality()` and the cardinality constants:
-		// https://github.com/wala/ML/issues/1072.
 		// Its branch condition, `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`,
-		// so
-		// the traced function raises a `ValueError`, but the condition has no tensor type.
+		// so the traced function raises a `ValueError`. Ariadne types `Dataset.cardinality()` and the cardinality constants as scalar
+		// `int64` tensors (https://github.com/wala/ML/issues/1072), so the condition has a tensor type and the check refuses it.
 		Function size = findFunction(functions, "dataset_size");
-		assertEquals("The check runs on `dataset_size` and decides it.", FALSE, size.getHasUntraceablePythonOnParameters());
-		assertNull("`dataset_size`'s tensor branch is not yet seen.", size.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
-				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		assertEquals("The check runs on `dataset_size` and refuses it.", TRUE, size.getHasUntraceablePythonOnParameters());
+		assertNull("`dataset_size` must not pass a precondition.", size.getPassingPrecondition());
+		assertNotNull("`dataset_size`'s tensor branch fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", size.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 	}
 
 	/**
