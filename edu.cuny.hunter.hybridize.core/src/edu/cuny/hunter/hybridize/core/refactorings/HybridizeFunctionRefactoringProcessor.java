@@ -668,8 +668,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckKerasSymbolicArguments() || barrenCouldDecide)
 					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis());
 
-				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075). Same
-				// reachable region and gate; a points-to query per return and per caller argument.
+				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075), and whether
+				// a returned value may be a Python primitive whose result a caller uses (issue 1117). Same reachable region and gate; a
+				// points-to query per return and per caller argument, and a use query per caller result.
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
@@ -677,11 +678,6 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
 				if (barrenCouldDecide)
 					func.computeReboundStateReads(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
-
-				// Check whether a returned value may be a Python primitive, which the tf.function boundary converts to a tensor (issue
-				// 1117). Same reachable region and gate; a points-to query per return.
-				if (barrenCouldDecide)
-					func.computeReturnsPrimitive(callGraph, builder);
 
 				// check the function preconditions.
 				func.check();

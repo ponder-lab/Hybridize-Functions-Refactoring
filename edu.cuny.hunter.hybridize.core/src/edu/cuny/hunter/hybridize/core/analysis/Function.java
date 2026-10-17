@@ -1306,6 +1306,11 @@ public class Function {
 	private Boolean returnsPrimitive;
 
 	/**
+	 * True iff some call site of this {@link Function} uses its result (issue 1117); false if none does; null if undetermined.
+	 */
+	private Boolean hasUsedResults;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1621,10 +1626,11 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
 										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
 												+ "would keep the tensor the field held when it was traced.");
-							else if (TRUE.equals(this.getReturnsPrimitive()))
+							else if (TRUE.equals(this.getReturnsPrimitive()) && !FALSE.equals(this.getHasUsedResults()))
 								// A returned Python primitive, at the top level or inside a returned container, is converted to a
 								// tensor at the tf.function boundary, so the caller no longer receives a Python value (issue 1117). A
-								// safety failure; it precedes the benefit signal.
+								// function whose every call discards its result has no caller the change can reach; ignorance of the
+								// callers still refuses. A safety failure; it precedes the benefit signal.
 								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
 										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
 												+ "converts to a tensor.");
@@ -3411,6 +3417,9 @@ public class Function {
 	 * {@code TRUE} from either side, the returns or the call sites, decides it; otherwise ignorance on either side leaves it undetermined.
 	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 * <p>
+	 * The same nodes also decide whether the function may return a Python primitive and whether a caller uses its result, stored for
+	 * {@link #getReturnsPrimitive()} and {@link #getHasUsedResults()} (issue 1117).
 	 *
 	 * @param callGraph The call graph, walked in the caller direction for the arguments.
 	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the values and their elements.
@@ -3442,6 +3451,11 @@ public class Function {
 			this.hasUncrossableBoundaryValues = Boolean.FALSE;
 
 		LOG.info(this + " has uncrossable boundary values: " + this.hasUncrossableBoundaryValues + ".");
+
+		this.returnsPrimitive = analysis.returnsPrimitive(nodes);
+		this.hasUsedResults = UncrossableBoundaryValueAnalysis.usesResult(nodes, callGraph);
+		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + "; a caller uses its result: " + this.hasUsedResults
+				+ ".");
 	}
 
 	/**
@@ -3497,42 +3511,22 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function} may return a Python primitive, directly or inside a returned container
-	 * ({@link UncrossableBoundaryValueAnalysis#returnsPrimitive(Set)}), storing the result for {@link #getReturnsPrimitive()}. When the
-	 * function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117.
-	 *
-	 * @param callGraph The call graph, whose nodes for this function are examined.
-	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the returned values and their elements.
-	 */
-	public void computeReturnsPrimitive(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
-		Set<CGNode> nodes;
-
-		try {
-			nodes = this.getNodes(callGraph);
-		} catch (CoreException e) {
-			// Undeterminable; leave null so the precondition does not block.
-			LOG.warn("Can't determine whether " + this + " returns a Python primitive.", e);
-			return;
-		}
-
-		if (nodes.isEmpty()) {
-			// Undeterminable without a call-graph node; leave null so the precondition does not block.
-			LOG.info("Can't determine whether " + this + " returns a Python primitive without a call graph node.");
-			return;
-		}
-
-		this.returnsPrimitive = new UncrossableBoundaryValueAnalysis(builder).returnsPrimitive(nodes);
-		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + ".");
-	}
-
-	/**
 	 * True iff this {@link Function} may return a Python primitive, {@code null} if undetermined (issue 1117).
 	 *
 	 * @return True iff this function may return an {@code int}, {@code float}, {@code str}, or {@code bool} constant, null if undetermined.
 	 */
 	public Boolean getReturnsPrimitive() {
 		return this.returnsPrimitive;
+	}
+
+	/**
+	 * True iff some call site of this {@link Function} uses its result, {@code null} if undetermined (issue 1117). A function whose every
+	 * call discards its result has no caller the return type can matter to.
+	 *
+	 * @return True iff some call site's result has a use, false if no call site's does, null if undetermined.
+	 */
+	public Boolean getHasUsedResults() {
+		return this.hasUsedResults;
 	}
 
 	/**
