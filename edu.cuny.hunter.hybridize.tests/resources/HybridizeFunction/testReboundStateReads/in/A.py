@@ -85,8 +85,61 @@ def make_features(element, features=None):
     return features
 
 
-# The same, called as OpenNMT-tf's Model calls it, with a copy of the caller's dictionary.
+# The same, called with a copy of a dictionary that lacks "tensor", so the body fills the copy in.
 def make_features_of_copy(element, features=None):
+    if features is None:
+        features = {}
+    if "tensor" in features:
+        return features
+    features["length"] = tf.shape(element)[0]
+    features["tensor"] = tf.cast(element, tf.float32)
+    return features
+
+
+# OpenNMT-tf's Model.serve_function calls make_features with a copy of a dictionary built from the input signature, which always holds
+# "tensor", so the body returns before any write.
+def make_features_of_full_copy(element, features=None):
+    if features is None:
+        features = {}
+    if "tensor" in features:
+        return features
+    features["length"] = tf.shape(element)[0]
+    features["tensor"] = tf.cast(element, tf.float32)
+    return features
+
+
+# OpenNMT-tf's SequenceRecordInputter, reached as OpenNMT-tf's ParallelInputter reaches it: the caller makes an empty dictionary for each
+# inputter and passes each inputter its own, which the body fills in.
+class RecordInputter:
+    def make_features(self, element=None, features=None):
+        if features is None:
+            features = {}
+        if "tensor" in features:
+            return features
+        features["length"] = tf.shape(element)[0]
+        features["tensor"] = tf.cast(element, tf.float32)
+        return features
+
+
+class ParallelInputter:
+    def __init__(self, inputters):
+        self.inputters = inputters
+
+    def make_features(self, element=None, features=None):
+        if features is None:
+            features = [{} for _ in self.inputters]
+        else:
+            features = list(features)
+        for i, inputter in enumerate(self.inputters):
+            features[i] = inputter.make_features(
+                element=element[i] if element is not None else None,
+                features=features[i],
+            )
+        return tuple(features)
+
+
+# Control: no dictionary is passed, so the body fills in one it creates.
+def make_features_fresh(element, features=None):
     if features is None:
         features = {}
     if "tensor" in features:
@@ -285,6 +338,14 @@ make_features(tf.constant([1, 2, 3]), caller)
 
 copied = {"other": tf.constant(0)}
 make_features_of_copy(tf.constant([1, 2, 3]), features=copied.copy())
+
+signature = {"tensor": tf.constant([1.0]), "length": tf.constant(1)}
+make_features_of_full_copy(tf.constant([1, 2, 3]), features=signature.copy())
+
+parallel = ParallelInputter([RecordInputter(), RecordInputter()])
+parallel.make_features(element=(tf.constant([1, 2, 3]), tf.constant([4, 5])))
+
+make_features_fresh(tf.constant([1, 2, 3]))
 
 InitOnly().scaled(tf.constant([1.0, 2.0]))
 
