@@ -108,8 +108,9 @@ def make_features_of_full_copy(element, features=None):
     return features
 
 
-# OpenNMT-tf's SequenceRecordInputter, reached as OpenNMT-tf's ParallelInputter reaches it: the caller makes an empty dictionary for each
-# inputter and passes each inputter its own, which the body fills in.
+# The shape of OpenNMT-tf's ParallelInputter calling SequenceRecordInputter: the caller makes an empty dictionary for each inputter and
+# passes each inputter its own, which the body fills in. This simpler shape doesn't reproduce what keeps OpenNMT-tf's own function
+# converted.
 class RecordInputter:
     def make_features(self, element=None, features=None):
         if features is None:

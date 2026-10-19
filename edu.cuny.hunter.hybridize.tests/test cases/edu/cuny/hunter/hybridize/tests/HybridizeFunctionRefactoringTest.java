@@ -14521,17 +14521,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				makeFeaturesOfCopy.getHasPythonSideEffects());
 		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
 
-		// TODO: Keep converting this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. The copy always holds
-		// "tensor", so the body returns before it writes, and the function runs under `tf.function`. Once the parameter is seen to hold
-		// the copy, which is created outside the function, the side-effect precondition, which doesn't ask whether a write can execute,
-		// is expected to refuse it, a lost conversion.
+		// TODO: Expected to become HAS_PYTHON_SIDE_EFFECTS once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. The
+		// copy always holds "tensor", so the body returns before it writes, and the function runs under `tf.function`. Once the parameter
+		// is seen to hold the copy, which is created outside the function, the side-effect precondition, which doesn't ask whether a
+		// write can execute, refuses it, a lost conversion.
 		Function makeFeaturesOfFullCopy = findFunction(functions, "make_features_of_full_copy");
 		assertEquals("`make_features_of_full_copy` writes nothing it is seen to be passed.", FALSE,
 				makeFeaturesOfFullCopy.getHasPythonSideEffects());
 		assertEquals("`make_features_of_full_copy` hybridizes (P1).", P1, makeFeaturesOfFullCopy.getPassingPrecondition());
 
 		// Each dictionary it fills in is one its caller creates, through a call the engine resolves over the list of inputters, so the
-		// side-effect precondition refuses it without a `dict.copy` model.
+		// side-effect precondition refuses it without a `dict.copy` model. OpenNMT-tf's `ParallelInputter` has this shape, but there
+		// `SequenceRecordInputter.make_features` is still converted, so this fixture doesn't reproduce whatever keeps the refusal from
+		// reaching it there.
 		Function recordMakeFeatures = findFunction(functions, "RecordInputter.make_features");
 		assertEquals("`RecordInputter.make_features` fills in a dictionary its caller creates.", TRUE,
 				recordMakeFeatures.getHasPythonSideEffects());
