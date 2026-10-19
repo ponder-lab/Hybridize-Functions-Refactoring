@@ -14457,10 +14457,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * another method rebinds, which diverges under tracing too but holds no tensor, so this precondition leaves it alone. Two more controls
 	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
 	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
-	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused.
-	 * {@code make_features_of_copy}, whose caller passes a copy of its dictionary, raises but is not yet detected, for the engine reason
-	 * its TODO gives. {@code Resetting.read}, whose field is set only in a helper that only {@code __init__} calls, matches but is refused,
-	 * for the precision reason its TODO gives.
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused. Four
+	 * more cases pin how the engine's missing {@code dict.copy} model reaches this precondition, each against the same body, which fills in
+	 * its {@code features} dictionary unless that already holds {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy},
+	 * passed a copy of a dictionary lacking that key, raises the {@code ValueError} and is not yet detected.
+	 * {@code make_features_of_full_copy}, passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns
+	 * before any write and runs. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter,
+	 * as OpenNMT-tf's {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its
+	 * own and runs. The two copy cases' TODOs say how a {@code dict.copy} model is expected to move them. {@code Resetting.read}, whose
+	 * field is set only in a helper that only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
@@ -14507,14 +14512,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
 				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 
-		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of its
-		// dictionary, as OpenNMT-tf's `Model` does, and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute
-		// read of `copy` and the call's result point to nothing, so the only dictionary the parameter is seen to hold is the one the body
+		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of a
+		// dictionary that lacks "tensor", and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute read of
+		// `copy` and the call's result point to nothing, so the only dictionary the parameter is seen to hold is the one the body
 		// creates, whose writes are not side effects.
 		Function makeFeaturesOfCopy = findFunction(functions, "make_features_of_copy");
 		assertEquals("`make_features_of_copy`'s write to the copied dictionary is not yet seen.", FALSE,
 				makeFeaturesOfCopy.getHasPythonSideEffects());
 		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
+
+		// TODO: Expected to become HAS_PYTHON_SIDE_EFFECTS once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. The
+		// copy always holds "tensor", so the body returns before it writes, and the function runs under `tf.function`. Once the parameter
+		// is seen to hold the copy, which is created outside the function, the side-effect precondition, which doesn't ask whether a
+		// write can execute, refuses it, a lost conversion.
+		Function makeFeaturesOfFullCopy = findFunction(functions, "make_features_of_full_copy");
+		assertEquals("`make_features_of_full_copy` writes nothing it is seen to be passed.", FALSE,
+				makeFeaturesOfFullCopy.getHasPythonSideEffects());
+		assertEquals("`make_features_of_full_copy` hybridizes (P1).", P1, makeFeaturesOfFullCopy.getPassingPrecondition());
+
+		// Each dictionary it fills in is one its caller creates, through a call the engine resolves over the list of inputters, so the
+		// side-effect precondition refuses it without a `dict.copy` model. OpenNMT-tf's `ParallelInputter` has this shape, but there
+		// `SequenceRecordInputter.make_features` is still converted, so this fixture doesn't reproduce whatever keeps the refusal from
+		// reaching it there.
+		Function recordMakeFeatures = findFunction(functions, "RecordInputter.make_features");
+		assertEquals("`RecordInputter.make_features` fills in a dictionary its caller creates.", TRUE,
+				recordMakeFeatures.getHasPythonSideEffects());
+		assertNull("`RecordInputter.make_features` must not pass a precondition.", recordMakeFeatures.getPassingPrecondition());
+		assertNotNull("`RecordInputter.make_features` fails with HAS_PYTHON_SIDE_EFFECTS.", recordMakeFeatures.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// The body creates the only dictionary it fills in, so its writes are not side effects, with or without a `dict.copy` model.
+		Function makeFeaturesFresh = findFunction(functions, "make_features_fresh");
+		assertEquals("`make_features_fresh` writes only a dictionary it creates.", FALSE, makeFeaturesFresh.getHasPythonSideEffects());
+		assertEquals("`make_features_fresh` hybridizes (P1).", P1, makeFeaturesFresh.getPassingPrecondition());
 	}
 
 	/**
