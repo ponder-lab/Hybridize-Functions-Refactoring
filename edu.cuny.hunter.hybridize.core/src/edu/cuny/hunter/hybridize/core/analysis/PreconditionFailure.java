@@ -66,7 +66,8 @@ public enum PreconditionFailure {
 	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
 	 * {@code tf.sqrt(x, tf.float32)}), or passes {@code None}, literally or through a parameter defaulting to it, where the API's own
 	 * default name is a string (e.g., {@code tf.boolean_mask(x, mask, name=None)}). Eager execution never validates the name, but
-	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. See
+	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. Since tracing a
+	 * function traces its callees, a function calling one of these, without passing the name such a callee forwards, fails too. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814 and
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087.
 	 */
@@ -215,10 +216,10 @@ public enum PreconditionFailure {
 
 	/**
 	 * A hybrid function that a hybrid-to-eager rule (no tensor parameter, a primitive parameter, or no tensor computation) would otherwise
-	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. The signature converts each argument to its declared
-	 * tensor type at the boundary, which overrides how the analysis types the parameters those rules read, and removing the decorator would
-	 * delete the boundary the signature enforces and the single concrete function it pins (which a SavedModel export relies on, even when
-	 * the signature is empty and converts nothing). The function selects no transformation.
+	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. Each rule has its own reason. Under no tensor
+	 * parameter (P2), the body receives tensors, and removing the decorator changes how the arguments are converted and validated. Under a
+	 * primitive parameter (P3), the signature means a primitive argument does not cause retracing. Under no tensor computation (P6),
+	 * removing the decorator deletes the validation and conversion of the arguments. The function selects no transformation.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997">Issue 997</a>
 	 */
@@ -311,7 +312,29 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
 	 */
-	HAS_UNCROSSABLE_BOUNDARY_VALUES(36);
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
+
+	/**
+	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, and another
+	 * function rebinds that field, as the same object and field per the pointer analysis, outside the methods that set the object up once:
+	 * the {@code __init__} of its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved
+	 * through the engine's class hierarchy, invoked on the object itself. Eagerly every call reads the field's current tensor; under
+	 * {@code tf.function} the first trace captures the tensor the field held then, and later calls reuse it after the field is rebound, so
+	 * the converted function returns the first call's state. A field set only there, and a {@code tf.Variable} updated in place with
+	 * {@code assign}, are read live and left alone. Rebinding a field to a value that is not a tensor, such as a Python {@code int}, is
+	 * stale under tracing too, but is not covered here, and neither are the elements of a list, tuple, dictionary, or set, which
+	 * {@code tf.function} passes in afresh when the container is an argument. Objects are told apart by allocation site, so a getter of an
+	 * object created afresh on each call is refused although no instance it reads is rebound between two of its reads.
+	 * <p>
+	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
+	 * among them, does not retrace, and the value read when the function was traced persists.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076">Issue 1076</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#rules_of_tracing">Better performance with tf.function: Rules of tracing</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with
+	 *      tf.function: Changing Python global and free variables</a>
+	 */
+	HAS_REBOUND_STATE_READS(39);
 
 	static {
 		// check that the codes are unique.
