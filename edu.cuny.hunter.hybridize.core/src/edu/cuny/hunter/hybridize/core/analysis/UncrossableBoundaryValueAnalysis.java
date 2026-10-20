@@ -40,8 +40,8 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * returned from {@code tf.function} at all. A named tuple is flattened like a tuple, but Ariadne types its instance as its class rather
  * than as a container, so a variable inside one is missed.
  * <p>
- * The return side asks what the function's own body returns, and the argument side what its callers pass, walking the call graph in the
- * caller direction like {@link KerasSymbolicArgumentAnalysis}. Across returns and call sites the quantifier is existential: one return of a
+ * The return side asks what the function's own body returns, and the argument side what its callers pass, examining the arguments at each
+ * call site of the function's call-graph predecessors. Across returns and call sites the quantifier is existential: one return of a
  * variable, or one call passing a spec, is enough to change what the decorated function does. Ignorance is {@code null} rather than
  * {@code FALSE}, the polarity of every sibling safety check: a node or a caller without an IR, or a non-Python invoke, leaves the verdict
  * undetermined.

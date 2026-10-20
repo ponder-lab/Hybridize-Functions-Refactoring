@@ -13044,15 +13044,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins the Keras symbolic-argument decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887, reducing
 	 * TensorFlow2.0-Examples' YOLOv3: a function factored out of Keras Functional model construction is called with the symbolic input, and
 	 * {@code tf.function} is one of the APIs a {@code KerasTensor} refuses, so the decorator raises a {@code TypeError} on the first call,
-	 * before anything is traced. The declining arms cover each way the provenance walk reaches an {@code Input}: {@code symbolic} takes its
-	 * result directly, {@code derived} takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, and
-	 * {@code by_keyword} takes it by keyword rather than positionally, and {@code both_paths} takes a merge whose every operand is
-	 * symbolic, through two different layers over the one {@code Input}, which the walk must decide once rather than skip on the second
-	 * branch. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, {@code merged} receives the
-	 * symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so leaves the
-	 * verdict allowing, and {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application
-	 * propagates symbolicness rather than producing it. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm
-	 * raises the {@code TypeError}, decorating any allowing arm runs.
+	 * before anything is traced. The declining arms cover each way the engine's Keras symbolic origin
+	 * (https://github.com/wala/ML/issues/1101) reaches a parameter: {@code symbolic} takes the {@code Input} directly, {@code derived}
+	 * takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, {@code by_keyword} takes it by keyword
+	 * rather than positionally, and {@code both_paths} takes a merge whose every operand is symbolic, through two different layers over the
+	 * one {@code Input}. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, and
+	 * {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application propagates
+	 * symbolicness rather than producing it. {@code merged} receives the symbolic input on one path and a real tensor on the other, and the
+	 * program takes the eager one. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm raises the
+	 * {@code TypeError}, decorating any allowing arm, and {@code merged}, runs.
 	 */
 	@Test
 	public void testKerasSymbolicArgument() throws Exception {
@@ -13066,12 +13066,115 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
 
-		for (String name : Set.of("eager", "merged", "layer_on_eager")) {
+		for (String name : Set.of("eager", "layer_on_eager")) {
 			Function function = findFunction(functions, name);
-			assertFalse("`" + name + "` is not called with a value that is symbolic on every path.",
+			assertFalse("`" + name + "` is not called with a Keras symbolic tensor.", function.getHasKerasSymbolicArguments());
+			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// `merged`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program runs
+		// eagerly, so decorating it runs. The engine folds the call in the module's own body to `True`, so only the eager arm reaches the
+		// merge (https://github.com/wala/ML/issues/1110).
+		Function merged = findFunction(functions, "merged");
+		assertFalse("`merged` receives only the eager arm of its merge.", merged.getHasKerasSymbolicArguments());
+		assertEquals("`merged` still converts (P1).", P1, merged.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the Keras symbolic-argument decline across frames of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097,
+	 * reducing TensorFlow2.0-Examples' YOLOv3, where the {@code KerasTensor} reaches the call site from another frame. The engine records
+	 * it as the {@code KERAS_SYMBOLIC} tensor origin (https://github.com/wala/ML/issues/1101), which crosses parameter barriers, type
+	 * feeds, and TensorFlow calls, so each of these parameters carries it, and each function declines:
+	 * <ul>
+	 * <li>{@code model_fn}, {@code yolo}, {@code model_fn_list}, and {@code model_fn_bn} take the {@code Input} directly, and
+	 * {@code scale_op} takes a built-in layer's output over it.
+	 * <li>{@code backbone} takes {@code yolo}'s parameter, as YOLOv3's {@code darknet53} takes {@code YOLOv3}'s, and {@code convolutional}
+	 * takes {@code model_fn_bn}'s.
+	 * <li>{@code upsample} takes a {@code Conv2D} application over {@code model_fn}'s parameter.
+	 * <li>{@code head} takes {@code model_fn}'s return value, a {@code tf.image.resize} result.
+	 * <li>{@code head_elem} and {@code decode} take elements of {@code model_fn_list}'s returned list, the second the way YOLOv3's driver
+	 * iterates {@code enumerate(conv_tensors)}.
+	 * <li>{@code op_head} takes {@code inp * 2.0}.
+	 * <li>{@code upsample_bn} takes {@code convolutional}'s result, a merge over the application of {@code Frozen}, a user subclass of
+	 * {@code BatchNormalization}, as YOLOv3's {@code common.convolutional} is.
+	 * </ul>
+	 * The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at {@code tf.ones(...)}, and {@code scale_inside},
+	 * called from a custom layer's own {@code call}, which Keras gives a placeholder, converts. Of two custom layers applied to the
+	 * {@code Input}, {@code after_scaled} receives one whose {@code call} ends in an operator, and {@code after_relued} one whose
+	 * {@code call} ends in {@code tf.nn.relu}; the engine puts the origin onto the application's result
+	 * (https://github.com/wala/ML/issues/1109), so both decline. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and
+	 * decorated. ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only
+	 * its Keras verdict is pinned.)
+	 */
+	@Test
+	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : Set.of("model_fn", "yolo", "model_fn_list", "model_fn_bn", "scale_op", "backbone", "convolutional", "upsample",
+				"head", "head_elem", "decode", "op_head", "upsample_bn")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		}
+
+		for (String name : Set.of("upsample_eager", "head_eager")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is called only with values rooted at a real tensor.", FALSE,
 					function.getHasKerasSymbolicArguments());
 			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
 		}
+
+		assertEquals("`model_fn_eager` is called only with a real tensor.", FALSE,
+				findFunction(functions, "model_fn_eager").getHasKerasSymbolicArguments());
+
+		// `scale_inside` is called from `Scale.call`, which Keras gives a graph tensor rather than the KerasTensor the layer is applied
+		// to, so decorating it runs. The engine keeps the Keras symbolic origin out of `call` (https://github.com/wala/ML/issues/1109).
+		Function scaleInside = findFunction(functions, "scale_inside");
+		assertEquals("`scale_inside` is called only with the graph tensor Keras gives the layer body.", FALSE,
+				scaleInside.getHasKerasSymbolicArguments());
+		assertEquals("`scale_inside` still converts (P1).", P1, scaleInside.getPassingPrecondition());
+
+		// `after_scaled` receives `Scale()(inp)`, a KerasTensor, and decorating it raises. The engine puts the Keras symbolic origin onto
+		// the application's result, though `Scale.call` ends in an operator (https://github.com/wala/ML/issues/1109).
+		Function afterScaled = findFunction(functions, "after_scaled");
+		assertEquals("`after_scaled` is called with a Keras symbolic tensor.", TRUE, afterScaled.getHasKerasSymbolicArguments());
+		assertNull("`after_scaled` does not convert.", afterScaled.getPassingPrecondition());
+		assertNotNull("`after_scaled` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterScaled.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+
+		// The control: `Relued.call` ends in `tf.nn.relu`, and its application's result carries the origin too, so `after_relued`
+		// declines.
+		Function afterRelued = findFunction(functions, "after_relued");
+		assertEquals("`after_relued` is called with a Keras symbolic tensor.", TRUE, afterRelued.getHasKerasSymbolicArguments());
+		assertNull("`after_relued` does not convert.", afterRelued.getPassingPrecondition());
+		assertNotNull("`after_relued` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterRelued.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+	}
+
+	/**
+	 * Pins the Keras symbolic-argument decline through an instance call of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1110, reducing transformer's {@code text_classification.py}:
+	 * {@code Encoder}, a plain class rather than a Keras layer, is applied to an in-frame {@code Input} as {@code Encoder(args)(inp)},
+	 * which dispatches to {@code __call__} through Ariadne's synthesized trampoline. The engine carries the {@code KERAS_SYMBOLIC} origin
+	 * (https://github.com/wala/ML/issues/1101) across that binding onto {@code __call__}'s parameter, so the method declines. The control,
+	 * {@code Scaler.__call__}, is applied the same way to a real tensor and converts. Both arms were runtime-verified on the pinned TF
+	 * 2.9.3: decorating {@code Encoder.__call__} raises the {@code TypeError}, and decorating {@code Scaler.__call__} runs.
+	 */
+	@Test
+	public void testKerasSymbolicArgumentInstanceCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function encoder = findFunction(functions, "Encoder.__call__");
+		assertEquals("`Encoder.__call__` is called with a Keras symbolic tensor.", TRUE, encoder.getHasKerasSymbolicArguments());
+		assertNull("`Encoder.__call__` does not convert.", encoder.getPassingPrecondition());
+		assertNotNull("`Encoder.__call__` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				encoder.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+
+		Function scaler = findFunction(functions, "Scaler.__call__");
+		assertEquals("`Scaler.__call__` is called only with a real tensor.", FALSE, scaler.getHasKerasSymbolicArguments());
+		assertEquals("`Scaler.__call__` still converts (P1).", P1, scaler.getPassingPrecondition());
 	}
 
 	/**
@@ -14384,17 +14487,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function nil = getFunction("nil_prod");
 		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
-		assertEquals("`nil_prod` still hybridizes (P1).", P1, nil.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`nil_prod` does not convert.", nil.getPassingPrecondition());
+		assertNotNull("`nil_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				nil.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function stride = getFunction("stride_prod");
 		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				stride.getHasNumpyCallsOnParameters());
-		assertEquals("`stride_prod` still hybridizes (P1).", P1, stride.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`stride_prod` does not convert.", stride.getPassingPrecondition());
+		assertNotNull("`stride_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				stride.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function rest = getFunction("rest_prod");
 		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				rest.getHasNumpyCallsOnParameters());
-		assertEquals("`rest_prod` still hybridizes (P1).", P1, rest.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`rest_prod` does not convert.", rest.getPassingPrecondition());
+		assertNotNull("`rest_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				rest.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 	}
 
 	/**

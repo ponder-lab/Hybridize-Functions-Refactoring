@@ -3378,12 +3378,16 @@ public class Function {
 	 * storing the result for {@link #getHasKerasSymbolicArguments()}. {@code tf.function} refuses a {@code KerasTensor} outright, so
 	 * decorating such a function raises a {@code TypeError} on the first call, before anything is traced, and the conversion must be
 	 * declined. When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 	 *
-	 * @param callGraph The call graph, walked in the caller direction.
-	 * @param pointerAnalysis The pointer analysis, used to resolve each argument's producing API.
+	 * @param callGraph The call graph, used to find this function's nodes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each parameter's pointer key.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their origins (see {@link Util#computeTensorTypedOrigins}), whose
+	 *        {@link TensorOrigin#KERAS_SYMBOLIC} origin marks a symbolic value.
 	 */
-	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -3400,7 +3404,8 @@ public class Function {
 			return;
 		}
 
-		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis).hasKerasSymbolicArgument(nodes, callGraph);
+		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis, tensorTypedKeys)
+				.hasKerasSymbolicArgument(nodes);
 
 		LOG.info(this + " passed a Keras symbolic tensor: " + this.hasKerasSymbolicArguments + ".");
 	}
@@ -4851,8 +4856,8 @@ public class Function {
 	 * raising a {@code TypeError}. The omission is therefore behavior-preserving only when no call site supplies it, which is a
 	 * whole-program question rather than a syntactic one.
 	 * <p>
-	 * This and the Keras symbolic-argument analysis ({@link KerasSymbolicArgumentAnalysis}, #887) are the only analyses in the plug-in that
-	 * walk the call graph in the caller direction; the others ask what a function's body reaches. Two wrinkles follow from that:
+	 * This analysis walks the call graph in the caller direction, where most others ask what a function's body reaches. Two wrinkles follow
+	 * from that:
 	 * <ul>
 	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
 	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
