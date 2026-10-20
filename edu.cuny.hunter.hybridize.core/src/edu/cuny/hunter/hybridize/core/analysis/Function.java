@@ -2493,9 +2493,10 @@ public class Function {
 	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
 	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
 	 * superclass chain, and {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...),
-	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). A base with no summary class, or whose
-	 * summary declares no superclass, resolves to nothing here, and the class is not recognized: today that is the bases of
-	 * https://github.com/wala/ML/issues/1127.
+	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). Since
+	 * https://github.com/wala/ML/issues/1127, it also reaches {@code Layer} through the standalone {@code keras} package's spelling and
+	 * from built-in layers with no other summary, such as {@code MaxPooling2D}. A base with no summary class, or whose summary declares no
+	 * superclass, resolves to nothing here, and the class is not recognized.
 	 *
 	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
 	 * @throws CoreException If this function's declaring class can't be determined.
