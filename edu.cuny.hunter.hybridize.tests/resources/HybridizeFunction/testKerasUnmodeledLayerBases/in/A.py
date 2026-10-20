@@ -2,9 +2,9 @@ import keras
 import tensorflow as tf
 
 
-# Keras layers whose bases the engine has no summary class for: `keras.layers.Layer`,
-# the same class as `tf.keras.layers.Layer` spelled through the standalone package, and
-# `MaxPooling2D`, a built-in layer. Keras supplies `training` from `Layer.__call__`, so
+# Keras layers whose bases had no engine summary class before wala/ML#1127:
+# `keras.layers.Layer`, the same class as `tf.keras.layers.Layer` spelled through the
+# standalone package, and `MaxPooling2D`, a built-in layer. Keras supplies `training` from `Layer.__call__`, so
 # an input signature covering only `x` raises.
 class Doubled(keras.layers.Layer):
     def call(self, x, training=False):

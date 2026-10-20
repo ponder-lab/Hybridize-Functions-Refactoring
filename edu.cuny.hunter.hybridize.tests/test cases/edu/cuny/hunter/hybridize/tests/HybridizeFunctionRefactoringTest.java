@@ -13663,12 +13663,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Keras layers whose bases the engine has no class for (https://github.com/wala/ML/issues/1127): {@code Doubled} extends
+	 * Keras layers whose bases the engine has had a class for since https://github.com/wala/ML/issues/1127: {@code Doubled} extends
 	 * {@code keras.layers.Layer}, the same class as {@code tf.keras.layers.Layer} spelled through the standalone package, and
-	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer with no summary. The walk reaches no Keras class from
-	 * either, so neither {@code call} is recognized as a Keras call override, and each gets an input signature covering only {@code x},
-	 * which raises a {@code TypeError} on TensorFlow 2.9.3 because Keras supplies {@code training}. Matching a base's last name segment
-	 * withheld {@code Doubled}'s signature; nothing withheld {@code Pooled}'s.
+	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer aliasing {@code MaxPool2D}. The walk reaches
+	 * {@code Layer} from either, so each {@code call} is recognized as a Keras call override, and inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3,
+	 * since Keras supplies {@code training}.
 	 */
 	@Test
 	public void testKerasUnmodeledLayerBases() throws Exception {
@@ -13676,17 +13676,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		// TODO: Withhold these signatures with DEFAULTED_PARAMETER_SUPPLIED once the engine has classes for these bases:
-		// https://github.com/wala/ML/issues/1127.
-		for (Entry<String, String> entry : Map.of("Doubled.call", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", "Pooled.call",
-				"[tf.TensorSpec(shape=(1, 4, 4, 3), dtype=tf.float32)]").entrySet()) {
-			String identifier = entry.getKey();
+		for (String identifier : List.of("Doubled.call", "Pooled.call")) {
 			Function call = findFunction(functions, identifier);
-			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
-			assertTrue("`" + identifier + "` is not yet recognized as a Keras call override, so a signature is inferred.",
-					call.getInferredInputSignature().isPresent());
-			assertEquals("`" + identifier + "`'s signature covers only `x`, omitting the `training` Keras supplies.", entry.getValue(),
-					call.getInferredInputSignature().get().toTensorSpecList("tf."));
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+			assertTrue("No input signature is emitted for `" + identifier + "`; Keras supplies `training`.",
+					call.getInferredInputSignature().isEmpty());
+			assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+					Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
 		}
 	}
 
