@@ -13,6 +13,7 @@ import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
@@ -25,13 +26,15 @@ import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.util.collections.Pair;
 
 /**
- * The tensor-iteration analysis behind the symbolic-iteration precondition
- * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830): whether a function's body iterates a parameter-derived,
- * tensor-typed value with a Python {@code for}. Eagerly such iteration works (the elements are tensors); under {@code tf.function} tracing,
- * the decorated function's inputs are symbolic, and iterating a symbolic tensor raises {@code OperatorNotAllowedInGraphError} even with
- * AutoGraph converting the loop (runtime-verified on the pinned framework). The scope is deliberately anchored on parameter-derived values:
- * an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is the decoration that makes a parameter symbolic at
- * entry.
+ * The analysis behind two preconditions on how a function's body uses a parameter-derived, tensor-typed value: whether it iterates the
+ * value (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830), and whether it assigns into the value by subscript
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098). Both share one scan, described below.
+ * <p>
+ * The iteration check fires on a Python {@code for} over such a value. Eagerly such iteration works (the elements are tensors); under
+ * {@code tf.function} tracing, the decorated function's inputs are symbolic, and iterating a symbolic tensor raises
+ * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop (runtime-verified on the pinned framework). The scope is
+ * deliberately anchored on parameter-derived values: an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is
+ * the decoration that makes a parameter symbolic at entry.
  * <p>
  * The scan is body-local: parameter value numbers seed a forward def-use taint, and a {@link EachElementGetInstruction} (the IR form of a
  * Python {@code for}-each) whose iterated object is tainted <em>and</em> tensor-typed by the tensor-type analysis fires. The tensor-typed
@@ -39,6 +42,11 @@ import com.ibm.wala.util.collections.Pair;
  * become a symbolic tensor at trace time. Passing such a value to a Python builtin that iterates it ({@code enumerate}, {@code zip},
  * {@code list}, and the others of {@link #builtinIterates}) fires too, whether or not a loop iterates the result
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098).
+ * <p>
+ * The same scan backs the item-assignment precondition (issue 1098): a subscript store ({@code y[i] = v}, augmented forms included) into a
+ * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
+ * a {@code TypeError}. A slice store ({@code y[1:3] = v}) is not seen: the engine lowers it to a call of the {@code slice} builtin, not to
+ * a subscript store (https://github.com/wala/ML/issues/1130).
  */
 class TensorIterationAnalysis {
 
@@ -94,6 +102,22 @@ class TensorIterationAnalysis {
 
 			return false;
 		});
+	}
+
+	/**
+	 * True iff {@code node}'s body stores into a parameter-derived, tensor-typed value by subscript ({@code y[i] = v}, augmented forms
+	 * included), which a symbolic tensor does not support (issue 1098).
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
+	 * @return True iff a subscript store writes into a parameter-derived tensor.
+	 */
+	boolean assignsIntoTensorParameter(CGNode node, boolean method) {
+		// The container exemption keeps a store into a Python collection of tensors out, which tracing supports. An attribute store
+		// lowers to the same instruction, but the engine records which syntax a write came from (wala/ML#1100), and an attribute store
+		// is legal on a symbolic tensor, so only a subscript store fires.
+		return anyTaintedUse(node, method, (use, value) -> use instanceof PythonPropertyWrite write && write.isSubscript()
+				&& write.getObjectRef() == value && this.isTensorTyped(node, value) && !this.pointsToContainer(node, value));
 	}
 
 	/**

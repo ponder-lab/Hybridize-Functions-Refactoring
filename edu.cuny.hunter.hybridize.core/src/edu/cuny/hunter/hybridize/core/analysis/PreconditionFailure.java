@@ -318,6 +318,15 @@ public enum PreconditionFailure {
 	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
 
 	/**
+	 * The function's body stores into a parameter-derived, tensor-typed value by subscript ({@code y[i] = v}, augmented forms included).
+	 * Eagerly the value can be a NumPy array, which supports the store; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * has no item assignment, so tracing raises a {@code TypeError}. A store into a Python collection, even one of tensors, does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098">Issue 1098</a>
+	 */
+	HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT(37),
+
+	/**
 	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, and another
 	 * function rebinds that field, as the same object and field per the pointer analysis, outside the methods that set the object up once:
 	 * the {@code __init__} of its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved

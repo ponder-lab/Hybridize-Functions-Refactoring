@@ -14090,19 +14090,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
-	 * {@code to_binary_class}): passing a tensor parameter to a builtin that iterates it works eagerly but raises under tracing once the
-	 * parameter is symbolic, so it fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Each builtin in
-	 * {@code TensorIterationAnalysis}'s table has a function here. {@code sorted}, which AutoGraph converts, and enumerating a Python list
-	 * of tensors (issue 832's exemption) remain P1.
+	 * {@code to_binary_class}): passing a tensor parameter to a builtin that iterates it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}, and storing into a parameter-derived tensor by subscript fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT}. Both work eagerly but raise under tracing once the parameter is
+	 * symbolic. Each builtin in {@code TensorIterationAnalysis}'s table has a function here. {@code sorted}, which AutoGraph converts,
+	 * enumerating a Python list of tensors (issue 832's exemption), storing into a list built in the body, and setting an attribute on a
+	 * tensor remain P1.
 	 */
 	@Test
-	public void testTensorParameterEnumerateBlocksHybridization() throws Exception {
-		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param", "list_param", "sum_param")) {
+	public void testTensorParameterEnumerateAndItemAssignmentBlockHybridization() throws Exception {
+		Function toBinaryClass = getFunction("to_binary_class");
+		assertTrue("`to_binary_class` iterates its tensor parameter through `enumerate`.", toBinaryClass.getHasTensorParameterIteration());
+		assertTrue("`to_binary_class` assigns into its tensor parameter by index.", toBinaryClass.getHasTensorParameterItemAssignment());
+		assertNull("`to_binary_class` must not pass a precondition; tracing cannot iterate or assign into a symbolic tensor.",
+				toBinaryClass.getPassingPrecondition());
+		assertNotNull("`to_binary_class` fails with HAS_TENSOR_PARAMETER_ITERATION, the first of the two in the chain.", toBinaryClass
+				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
-			assertNull("`" + identifier + "` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
-					function.getPassingPrecondition());
+			assertFalse("`" + identifier + "` assigns into nothing.", function.getHasTensorParameterItemAssignment());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_ITERATION.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
@@ -14130,10 +14140,61 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				sortedParam.getHasTensorParameterIteration());
 		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
 
+		Function storeIntoDerived = getFunction("store_into_derived");
+		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
+		assertTrue("`store_into_derived` assigns by index into a tensor computed from its parameter.",
+				storeIntoDerived.getHasTensorParameterItemAssignment());
+		assertNull("`store_into_derived` must not pass a precondition; a symbolic tensor does not support item assignment.",
+				storeIntoDerived.getPassingPrecondition());
+		assertNotNull("`store_into_derived` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeIntoDerived.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		Function storeMultiIndex = getFunction("store_multi_index");
+		assertTrue("`store_multi_index` assigns into a tensor computed from its parameter by a tuple index.",
+				storeMultiIndex.getHasTensorParameterItemAssignment());
+		assertNull("`store_multi_index` must not pass a precondition.", storeMultiIndex.getPassingPrecondition());
+		assertNotNull("`store_multi_index` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeMultiIndex.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		Function storeStringKey = getFunction("store_string_key");
+		assertTrue(
+				"`store_string_key` assigns by a string key into a tensor computed from its parameter, a subscript store (wala/ML#1100).",
+				storeStringKey.getHasTensorParameterItemAssignment());
+		assertNull("`store_string_key` must not pass a precondition.", storeStringKey.getPassingPrecondition());
+		assertNotNull("`store_string_key` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeStringKey.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT once the engine lowers a slice store to a subscript store:
+		// https://github.com/wala/ML/issues/1130.
+		for (String identifier : List.of("store_slice", "add_to_slice"))
+			assertFalse("`" + identifier + "`'s slice store lowers to a `slice` call, so it is not yet seen as an assignment.",
+					getFunction(identifier).getHasTensorParameterItemAssignment());
+
+		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
+		for (String identifier : List.of("set_first", "add_to_first")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` iterates nothing.", function.getHasTensorParameterIteration());
+			assertTrue("`" + identifier + "` assigns into its tensor parameter by index.", function.getHasTensorParameterItemAssignment());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+		}
+
 		Function enumerateList = getFunction("enumerate_list");
 		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
 				enumerateList.getHasTensorParameterIteration());
+		assertFalse("`enumerate_list` assigns into nothing.", enumerateList.getHasTensorParameterItemAssignment());
 		assertEquals("`enumerate_list` remains convertible (P1).", P1, enumerateList.getPassingPrecondition());
+
+		Function storeIntoLocalList = getFunction("store_into_local_list");
+		assertFalse("`store_into_local_list` iterates nothing.", storeIntoLocalList.getHasTensorParameterIteration());
+		assertFalse("`store_into_local_list` stores into a Python list, not a tensor.",
+				storeIntoLocalList.getHasTensorParameterItemAssignment());
+		assertEquals("`store_into_local_list` stores into a list built in its body and remains convertible (P1).", P1,
+				storeIntoLocalList.getPassingPrecondition());
+
+		Function tagDerived = getFunction("tag_derived");
+		assertFalse("`tag_derived` sets an attribute on a tensor, which is legal under tracing.",
+				tagDerived.getHasTensorParameterItemAssignment());
+		assertEquals("`tag_derived` remains convertible (P1).", P1, tagDerived.getPassingPrecondition());
 	}
 
 	/**
