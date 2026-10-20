@@ -926,20 +926,10 @@ public class Function {
 		seen.add(instanceKey);
 
 		if (instanceKey instanceof ConstantKey<?>) {
-			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			Object constantValue = constantKey.getValue();
-
-			if (constantValue != null) {
-				LOG.info("Found constant value: " + constantValue + ".");
-
-				boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
-
-				// If it's not the case that we found a boolean value and we are ignoring booleans.
-				if ((!foundBooleanValue || !ignoreBooleans)) {
-					// We have found a primitive.
-					subMonitor.done();
-					return true;
-				}
+			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
+				// We have found a primitive.
+				subMonitor.done();
+				return true;
 			}
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
@@ -984,6 +974,31 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a primitive constant: a {@link ConstantKey} with a value other than {@code None}. A
+	 * Python value the engine represents without a constant is not one.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a constant whose value is a primitive.
+	 */
+	static boolean isPrimitiveConstant(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (!(instanceKey instanceof ConstantKey<?> constantKey))
+			return false;
+
+		Object constantValue = constantKey.getValue();
+
+		if (constantValue == null)
+			return false;
+
+		LOG.info("Found constant value: " + constantValue + ".");
+
+		boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
+
+		// It's a primitive unless it's a boolean value and we are ignoring booleans.
+		return !foundBooleanValue || !ignoreBooleans;
 	}
 
 	/**
@@ -1282,6 +1297,17 @@ public class Function {
 	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
 	 */
 	private Boolean hasUncrossableBoundaryValues;
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, which {@code tf.function} converts to a tensor (issue 1117); null if
+	 * undetermined.
+	 */
+	private Boolean returnsPrimitive;
+
+	/**
+	 * True iff some call site of this {@link Function} uses its result (issue 1117); false if none does; null if undetermined.
+	 */
+	private Boolean hasUsedResults;
 
 	/**
 	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
@@ -1613,6 +1639,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
 										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
 												+ "would keep the tensor the field held when it was traced.");
+							else if (TRUE.equals(this.getReturnsPrimitive()) && !FALSE.equals(this.getHasUsedResults()))
+								// A returned Python primitive, at the top level or inside a returned container, is converted to a
+								// tensor at the tf.function boundary, so the caller no longer receives a Python value (issue 1117). A
+								// function whose every call discards its result has no caller the change can reach; ignorance of the
+								// callers still refuses. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
+										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
+												+ "converts to a tensor.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -2506,9 +2540,11 @@ public class Function {
 	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
 	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
 	 * superclass chain, and {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...),
-	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). A base with no summary class, or whose
-	 * summary declares no superclass, resolves to nothing here, and the class is not recognized: today that is the bases of
-	 * https://github.com/wala/ML/issues/1127.
+	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). Since
+	 * https://github.com/wala/ML/issues/1127, it also reaches {@code Layer} or {@code Model} through the other spellings of the Keras
+	 * bases, the standalone {@code keras} package, {@code tensorflow.python.keras}, and {@code tf.compat.v1} and {@code v2}, and from
+	 * built-in layers that alias a summarized one, such as {@code MaxPooling2D} for {@code MaxPool2D}. A base with no summary class, or
+	 * whose summary declares no superclass, resolves to nothing here, and the class is not recognized.
 	 *
 	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
 	 * @throws CoreException If this function's declaring class can't be determined.
@@ -3158,10 +3194,10 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
-	 * {@link #getHasTensorParameterIteration()}, and whether it stores into one by subscript, storing that for
-	 * {@link #getHasTensorParameterItemAssignment()}. Eagerly both work; under tracing the parameter is symbolic, and iterating it or
-	 * assigning into it raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at
+	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, directly or through a builtin that
+	 * iterates it, storing the result for {@link #getHasTensorParameterIteration()}, and whether it stores into one by subscript, storing
+	 * that for {@link #getHasTensorParameterItemAssignment()}. Eagerly both work; under tracing the parameter is symbolic, and iterating it
+	 * or assigning into it raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at
 	 * earlier Ariadne versions; issue 1098). When the function has no call-graph node, the results are left undetermined, mirroring the
 	 * sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830 and
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
@@ -3370,12 +3406,16 @@ public class Function {
 	 * storing the result for {@link #getHasKerasSymbolicArguments()}. {@code tf.function} refuses a {@code KerasTensor} outright, so
 	 * decorating such a function raises a {@code TypeError} on the first call, before anything is traced, and the conversion must be
 	 * declined. When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
 	 *
-	 * @param callGraph The call graph, walked in the caller direction.
-	 * @param pointerAnalysis The pointer analysis, used to resolve each argument's producing API.
+	 * @param callGraph The call graph, used to find this function's nodes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each parameter's pointer key.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their origins (see {@link Util#computeTensorTypedOrigins}), whose
+	 *        {@link TensorOrigin#KERAS_SYMBOLIC} origin marks a symbolic value.
 	 */
-	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -3392,7 +3432,8 @@ public class Function {
 			return;
 		}
 
-		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis).hasKerasSymbolicArgument(nodes, callGraph);
+		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis, tensorTypedKeys)
+				.hasKerasSymbolicArgument(nodes);
 
 		LOG.info(this + " passed a Keras symbolic tensor: " + this.hasKerasSymbolicArguments + ".");
 	}
@@ -3412,6 +3453,9 @@ public class Function {
 	 * {@code TRUE} from either side, the returns or the call sites, decides it; otherwise ignorance on either side leaves it undetermined.
 	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 * <p>
+	 * The same nodes also decide whether the function may return a Python primitive and whether a caller uses its result, stored for
+	 * {@link #getReturnsPrimitive()} and {@link #getHasUsedResults()} (issue 1117).
 	 *
 	 * @param callGraph The call graph, walked in the caller direction for the arguments.
 	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the values and their elements.
@@ -3443,6 +3487,11 @@ public class Function {
 			this.hasUncrossableBoundaryValues = Boolean.FALSE;
 
 		LOG.info(this + " has uncrossable boundary values: " + this.hasUncrossableBoundaryValues + ".");
+
+		this.returnsPrimitive = analysis.returnsPrimitive(nodes);
+		this.hasUsedResults = UncrossableBoundaryValueAnalysis.usesResult(nodes, callGraph);
+		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + "; a caller uses its result: " + this.hasUsedResults
+				+ ".");
 	}
 
 	/**
@@ -3453,6 +3502,25 @@ public class Function {
 	 */
 	public Boolean getHasUncrossableBoundaryValues() {
 		return this.hasUncrossableBoundaryValues;
+	}
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, {@code null} if undetermined (issue 1117).
+	 *
+	 * @return True iff this function may return an {@code int}, {@code float}, {@code str}, or {@code bool} constant, null if undetermined.
+	 */
+	public Boolean getReturnsPrimitive() {
+		return this.returnsPrimitive;
+	}
+
+	/**
+	 * True iff some call site of this {@link Function} uses its result, {@code null} if undetermined (issue 1117). A function whose every
+	 * call discards its result has no caller the return type can matter to.
+	 *
+	 * @return True iff some call site's result has a use, false if no call site's does, null if undetermined.
+	 */
+	public Boolean getHasUsedResults() {
+		return this.hasUsedResults;
 	}
 
 	/**
@@ -4816,8 +4884,8 @@ public class Function {
 	 * raising a {@code TypeError}. The omission is therefore behavior-preserving only when no call site supplies it, which is a
 	 * whole-program question rather than a syntactic one.
 	 * <p>
-	 * This and the Keras symbolic-argument analysis ({@link KerasSymbolicArgumentAnalysis}, #887) are the only analyses in the plug-in that
-	 * walk the call graph in the caller direction; the others ask what a function's body reaches. Two wrinkles follow from that:
+	 * This analysis walks the call graph in the caller direction, where most others ask what a function's body reaches. Two wrinkles follow
+	 * from that:
 	 * <ul>
 	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
 	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
