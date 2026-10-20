@@ -13981,13 +13981,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
-	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate}, {@code zip}, or {@code reversed}, which iterate
-	 * their arguments, works eagerly but raises under tracing once the parameter is symbolic, so it fails with
-	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Enumerating a Python list of tensors (issue 832's exemption) remains P1.
+	 * {@code to_binary_class}): passing a tensor parameter to a builtin that iterates it works eagerly but raises under tracing once the
+	 * parameter is symbolic, so it fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Each builtin in
+	 * {@code TensorIterationAnalysis}'s table has a function here. {@code sorted}, which AutoGraph converts, and enumerating a Python list
+	 * of tensors (issue 832's exemption) remain P1.
 	 */
 	@Test
 	public void testTensorParameterEnumerateBlocksHybridization() throws Exception {
-		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param")) {
+		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param", "list_param", "iter_param", "sum_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
@@ -13997,13 +13998,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
 
-		// Ariadne models `reversed` as iterating its argument since https://github.com/wala/ML/issues/1099, so `reversed_param` is refused
-		// like the other wrappers; tracing raises a TypeError there (len of a symbolic tensor).
+		// Tracing raises a TypeError here (len of a symbolic tensor) rather than an OperatorNotAllowedInGraphError.
 		Function reversedParam = getFunction("reversed_param");
 		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
 		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
 		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine summarizes these builtins, so that their calls have targets:
+		// https://github.com/wala/ML/issues/1129.
+		for (String identifier : List.of("tuple_param", "min_param", "max_param", "any_param", "all_param"))
+			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
+					getFunction(identifier).getHasTensorParameterIteration());
+
+		Function sortedParam = getFunction("sorted_param");
+		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
+				sortedParam.getHasTensorParameterIteration());
+		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
 
 		Function enumerateList = getFunction("enumerate_list");
 		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
