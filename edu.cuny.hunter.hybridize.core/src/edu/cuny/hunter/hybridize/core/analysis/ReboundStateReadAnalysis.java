@@ -151,7 +151,7 @@ class ReboundStateReadAnalysis {
 		if (tensorFieldsRead.isEmpty())
 			return Boolean.FALSE;
 
-		Map<PointerKey, Set<CGNode>> fieldWriters = fieldWritersCache.computeIfAbsent(this.callGraph, cg -> this.computeFieldWriters());
+		Map<PointerKey, Set<CGNode>> fieldWriters = fieldWritersCache.computeIfAbsent(this.callGraph, this::computeFieldWriters);
 
 		for (PointerKey read : tensorFieldsRead) {
 			InstanceFieldPointerKey field = (InstanceFieldPointerKey) read;
@@ -165,14 +165,15 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * The writers of each instance field in the call graph, from every node's direct mod set.
+	 * The writers of each instance field in {@code callGraph}, from every node's direct mod set.
 	 *
+	 * @param callGraph The call graph whose nodes are scanned, the key the result is cached under.
 	 * @return Each instance-field pointer key written in the call graph, mapped to the nodes that write it directly.
 	 */
-	private Map<PointerKey, Set<CGNode>> computeFieldWriters() {
+	private Map<PointerKey, Set<CGNode>> computeFieldWriters(CallGraph callGraph) {
 		Map<PointerKey, Set<CGNode>> ret = new HashMap<>();
 
-		for (CGNode node : this.callGraph)
+		for (CGNode node : callGraph)
 			for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
 				if (written instanceof InstanceFieldPointerKey)
 					ret.computeIfAbsent(written, k -> new HashSet<>()).add(node);
