@@ -14491,8 +14491,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns before any write and runs, but is
 	 * refused. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter, as OpenNMT-tf's
 	 * {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its own and runs.
-	 * The full copy's TODO says why its refusal is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that only
-	 * {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
+	 * The full copy's comment says why its refusal is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that
+	 * only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
@@ -14547,10 +14547,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`make_features_of_copy` fails with HAS_PYTHON_SIDE_EFFECTS.", makeFeaturesOfCopy.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
-		// TODO: Convert this. A lost conversion: the copy always holds "tensor", so the body returns before it writes, and the function
-		// runs under `tf.function`. The parameter is seen to hold the copy, which is created outside the function
-		// (https://github.com/wala/ML/issues/1082), and the side-effect precondition, which doesn't ask whether a write can execute,
-		// refuses it.
+		// A conservative refusal, and a lost conversion: the copy always holds "tensor", so the body returns before it writes, and the
+		// function runs under `tf.function`. The parameter is seen to hold the copy, which is created outside the function
+		// (https://github.com/wala/ML/issues/1082), and the side-effect precondition doesn't ask whether a write can execute. Converting it
+		// would need a path-sensitive analysis (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1130).
 		Function makeFeaturesOfFullCopy = findFunction(functions, "make_features_of_full_copy");
 		assertEquals("`make_features_of_full_copy`'s write to the copied dictionary is seen though it never executes.", TRUE,
 				makeFeaturesOfFullCopy.getHasPythonSideEffects());
