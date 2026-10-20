@@ -871,6 +871,7 @@ public class Function {
 	public static void clearCaches() {
 		creationsCache.clear();
 		directModCache.clear();
+		ReboundStateReadAnalysis.clearCaches();
 		Parameter.clearCaches();
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();

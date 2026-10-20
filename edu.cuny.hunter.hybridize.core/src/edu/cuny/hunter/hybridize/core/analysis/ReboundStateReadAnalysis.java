@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -58,12 +59,36 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * <p>
  * The verdict is the function's, whatever its callers are: the guide documents that a trace is keyed on the arguments, so a change to a
  * Python global or free variable, which a field read through {@code self} is, does not retrace, and the trace-time value persists.
+ * <p>
+ * Only the closure depends on the function. A node's tensor-typed reads, and the writers of each field, are the same for every function
+ * that asks, so both are computed once and shared: the reads per node, and the writers of every field in one pass over the call graph, the
+ * first time a function reads a tensor-typed field. Each function then looks up the writers of the fields it reads, rather than scanning
+ * the whole call graph again.
  *
  * @see <a href="https://www.tensorflow.org/guide/function#rules_of_tracing">Better performance with tf.function: Rules of tracing</a>
  * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with tf.function:
  *      Changing Python global and free variables</a>
  */
 class ReboundStateReadAnalysis {
+
+	/**
+	 * Per-node tensor-typed field reads (see {@link #tensorFieldsRead(CGNode)}), shared across functions since their closures revisit the
+	 * same nodes. A node belongs to one call graph, and its project's tensor-typed keys are fixed, so an entry never goes stale. Concurrent
+	 * because functions may be processed in parallel.
+	 */
+	private static final Map<CGNode, Set<PointerKey>> tensorFieldsReadCache = new ConcurrentHashMap<>();
+
+	/**
+	 * The writers of each instance field, per call graph: the nodes whose direct mod set (see {@link Function#getDirectMod}) has the field.
+	 * Built once per call graph, by identity, in one pass over its nodes. Concurrent because functions may be processed in parallel.
+	 */
+	private static final Map<CallGraph, Map<PointerKey, Set<CGNode>>> fieldWritersCache = new ConcurrentHashMap<>();
+
+	/** Clears the caches shared across functions. */
+	static void clearCaches() {
+		tensorFieldsReadCache.clear();
+		fieldWritersCache.clear();
+	}
 
 	private final CallGraph callGraph;
 
@@ -81,7 +106,7 @@ class ReboundStateReadAnalysis {
 	/**
 	 * Creates the analysis.
 	 *
-	 * @param callGraph The call graph, walked from the reader to its callees and over the whole program for the writers.
+	 * @param callGraph The call graph, walked from the reader to its callees, and once over all its nodes for the writers of each field.
 	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
 	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#computeTensorTypedOrigins}).
 	 */
@@ -126,23 +151,53 @@ class ReboundStateReadAnalysis {
 		if (tensorFieldsRead.isEmpty())
 			return Boolean.FALSE;
 
-		for (CGNode node : this.callGraph)
-			if (!closure.contains(node))
-				for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
-					if (written instanceof InstanceFieldPointerKey field && tensorFieldsRead.contains(field)
-							&& !this.setsUp(node, field.getInstanceKey()))
-						return Boolean.TRUE;
+		Map<PointerKey, Set<CGNode>> fieldWriters = fieldWritersCache.computeIfAbsent(this.callGraph, cg -> this.computeFieldWriters());
+
+		for (PointerKey read : tensorFieldsRead) {
+			InstanceFieldPointerKey field = (InstanceFieldPointerKey) read;
+
+			for (CGNode writer : fieldWriters.getOrDefault(field, Collections.emptySet()))
+				if (!closure.contains(writer) && !this.setsUp(writer, field.getInstanceKey()))
+					return Boolean.TRUE;
+		}
 
 		return Boolean.FALSE;
 	}
 
 	/**
-	 * The fields of objects that {@code node}'s own instructions read where the value read is typed as a tensor.
+	 * The writers of each instance field in the call graph, from every node's direct mod set.
+	 *
+	 * @return Each instance-field pointer key written in the call graph, mapped to the nodes that write it directly.
+	 */
+	private Map<PointerKey, Set<CGNode>> computeFieldWriters() {
+		Map<PointerKey, Set<CGNode>> ret = new HashMap<>();
+
+		for (CGNode node : this.callGraph)
+			for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
+				if (written instanceof InstanceFieldPointerKey)
+					ret.computeIfAbsent(written, k -> new HashSet<>()).add(node);
+
+		return Collections.unmodifiableMap(ret);
+	}
+
+	/**
+	 * The fields of objects that {@code node}'s own instructions read where the value read is typed as a tensor, memoized in
+	 * {@link #tensorFieldsReadCache}.
 	 *
 	 * @param node A node the function reaches.
 	 * @return The instance-field pointer keys read into a tensor-typed value.
 	 */
 	private Set<PointerKey> tensorFieldsRead(CGNode node) {
+		return tensorFieldsReadCache.computeIfAbsent(node, this::computeTensorFieldsRead);
+	}
+
+	/**
+	 * Computes the fields of objects that {@code node}'s own instructions read where the value read is typed as a tensor.
+	 *
+	 * @param node A node the function reaches.
+	 * @return The instance-field pointer keys read into a tensor-typed value.
+	 */
+	private Set<PointerKey> computeTensorFieldsRead(CGNode node) {
 		Set<PointerKey> ret = new HashSet<>();
 		IR ir = node.getIR();
 
@@ -159,7 +214,7 @@ class ReboundStateReadAnalysis {
 					ret.add(field);
 		}
 
-		return ret;
+		return Collections.unmodifiableSet(ret);
 	}
 
 	/**
