@@ -2493,7 +2493,7 @@ public class Function {
 	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
 	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
 	 * superclass chain. A base with no summary class, or whose summary declares no superclass, resolves to nothing here, and the class is
-	 * not recognized: today that is every built-in layer ({@code BatchNormalization}, {@code Dense}, ...,
+	 * not recognized: today that is every built-in layer but {@code Embedding} ({@code BatchNormalization}, {@code Dense}, ...,
 	 * https://github.com/wala/ML/issues/1098) and the bases of https://github.com/wala/ML/issues/1127.
 	 *
 	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
