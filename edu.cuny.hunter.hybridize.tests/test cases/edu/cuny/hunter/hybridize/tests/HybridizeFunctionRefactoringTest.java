@@ -13480,9 +13480,102 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The name side of the engine's Keras-class walk (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): the
+	 * program defines a class named {@code Layer}, and {@code Scaled} extends it, so the last segment of {@code Scaled}'s base is
+	 * {@code Layer}. Neither class is a Keras layer, and the engine's hierarchy reaches no Keras class from either, so neither {@code call}
+	 * is a Keras call override and {@code training} is not taken as supplied by Keras. No call site passes it, so it is left out of each
+	 * signature, which runs on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testNonKerasClassNamedLayer() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Layer.call", "Scaled.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
+			assertTrue("A signature is inferred for `" + identifier + "`; nothing supplies `training`.",
+					call.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s signature covers only `x`, `training` being omittable.",
+					"[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * A Keras layer whose base is a Keras layer defined in another module
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): {@code Tripled} extends {@code layers.Doubled}, which
+	 * extends {@code tf.keras.layers.Layer}. The engine resolves the base across modules, so the walk reaches {@code Layer} and inference
+	 * is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on
+	 * TensorFlow 2.9.3, since Keras supplies {@code training}. The engine's cross-module base resolution depends on translation order
+	 * (https://github.com/wala/ML/issues/944), which this fixture doesn't reach under any base-module name tried.
+	 */
+	@Test
+	public void testKerasLayerBaseInAnotherModule() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Tripled.call");
+		assertEquals("`Tripled.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Keras layers whose bases the engine has no class for (https://github.com/wala/ML/issues/1127): {@code Doubled} extends
+	 * {@code keras.layers.Layer}, the same class as {@code tf.keras.layers.Layer} spelled through the standalone package, and
+	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer with no summary. The walk reaches no Keras class from
+	 * either, so neither {@code call} is recognized as a Keras call override, and each gets an input signature covering only {@code x},
+	 * which raises a {@code TypeError} on TensorFlow 2.9.3 because Keras supplies {@code training}. Matching a base's last name segment
+	 * withheld {@code Doubled}'s signature; nothing withheld {@code Pooled}'s.
+	 */
+	@Test
+	public void testKerasUnmodeledLayerBases() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Withhold these signatures with DEFAULTED_PARAMETER_SUPPLIED once the engine has classes for these bases:
+		// https://github.com/wala/ML/issues/1127.
+		for (Entry<String, String> entry : Map.of("Doubled.call", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", "Pooled.call",
+				"[tf.TensorSpec(shape=(1, 4, 4, 3), dtype=tf.float32)]").entrySet()) {
+			String identifier = entry.getKey();
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
+			assertTrue("`" + identifier + "` is not yet recognized as a Keras call override, so a signature is inferred.",
+					call.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s signature covers only `x`, omitting the `training` Keras supplies.", entry.getValue(),
+					call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * Keras layers defined in a function and in a class (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107):
+	 * {@code make_layer.Local} and {@code Outer.Inner} each extend {@code tf.keras.layers.Layer}. The engine type name derived for each
+	 * nested class names a class of the engine's hierarchy, so the walk reaches {@code Layer} and inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testKerasNestedLayerClasses() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("make_layer.Local.call", "Outer.Inner.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+			assertTrue("No input signature is emitted for `" + identifier + "`; Keras supplies `training`.",
+					call.getInferredInputSignature().isEmpty());
+			assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+					Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
 	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
-	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881), through both PyDev's last segment
-	 * and the engine's class hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
+	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881) through the engine's class
+	 * hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
 	 */
 	@Test
 	public void testKerasLayerSubclassSuppliedParameters() throws Exception {
