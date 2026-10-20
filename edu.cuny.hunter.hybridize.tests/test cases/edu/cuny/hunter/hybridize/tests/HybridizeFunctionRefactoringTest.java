@@ -13980,6 +13980,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
+	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate}, {@code zip}, or {@code reversed}, which iterate
+	 * their arguments, works eagerly but raises under tracing once the parameter is symbolic, so it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Enumerating a Python list of tensors (issue 832's exemption) remains P1.
+	 */
+	@Test
+	public void testTensorParameterEnumerateBlocksHybridization() throws Exception {
+		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param")) {
+			Function function = getFunction(identifier);
+			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
+					function.getHasTensorParameterIteration());
+			assertNull("`" + identifier + "` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
+					function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_ITERATION.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+		}
+
+		// Ariadne models `reversed` as iterating its argument since https://github.com/wala/ML/issues/1099, so `reversed_param` is refused
+		// like the other wrappers; tracing raises a TypeError there (len of a symbolic tensor).
+		Function reversedParam = getFunction("reversed_param");
+		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
+		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
+		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		Function enumerateList = getFunction("enumerate_list");
+		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
+				enumerateList.getHasTensorParameterIteration());
+		assertEquals("`enumerate_list` remains convertible (P1).", P1, enumerateList.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the caller-coverage benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767), promoted
 	 * from the phase-1 advisory to blocking on corpus evidence (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826):
 	 * a function whose every known call path is dominated by a hybridized caller is already traced, so converting it adds only a redundant
