@@ -2490,10 +2490,10 @@ public class Function {
 	 * <p>
 	 * This sits beside the PyDev walk in {@link #isKerasCallOverride()} because that walk stops at a base PyDev can't resolve, and a base
 	 * written through {@code tf.keras} is one: it then sees only the base's own last segment, so {@code tf.keras.Sequential} answers
-	 * {@code Sequential}, not {@code Model} (issue 1099). The engine's walk reaches {@code Model} through the summary's superclass chain. A
-	 * base whose summary class declares no superclass resolves to nothing here, which today is every built-in layer
-	 * ({@code BatchNormalization}, {@code Dense}, ...): https://github.com/wala/ML/issues/1098. Once those summaries declare their
-	 * superclass, the walk reaches {@code Layer} and the built-in subclasses are recognized with no change here.
+	 * {@code Sequential}, not {@code Model} (issue 1099). The engine's walk reaches {@code Model} through the summary's superclass chain.
+	 * It reaches {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...), whose
+	 * summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). A base with no summary class, or whose summary
+	 * declares no superclass, resolves to nothing here: https://github.com/wala/ML/issues/1127.
 	 *
 	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
 	 * @throws CoreException If this function's declaring class can't be determined.
