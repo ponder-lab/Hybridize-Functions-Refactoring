@@ -29,11 +29,11 @@ import com.ibm.wala.ssa.IR;
  * hazard needs (one call passing a {@code KerasTensor} is enough to break the decorated function), already resolved through keyword,
  * positional, and trampoline binding.
  * <p>
- * Two consequences follow from reading a may-fact. A value that is symbolic on only one path of a merge carries the origin, so it now
- * declines, where the earlier walk left a path-dependent argument allowing; declining is the safe direction. And a layer's own {@code call}
- * receives a placeholder rather than a {@code KerasTensor}, but the engine carries the origin across the layer application into
- * {@code call}'s parameters, so a function a layer body calls declines too, though decorating it would run. Both are pinned in the tests as
- * the engine's current answer rather than corrected here.
+ * The origin is a may-fact: a value that is symbolic on only one path of a merge carries it, so it now declines, where the earlier walk
+ * left a path-dependent argument allowing. Declining is the safe direction, and it is pinned in the tests as the engine's current answer
+ * rather than corrected here. A layer's own {@code call} receives a placeholder rather than a {@code KerasTensor}, and the engine puts the
+ * origin on the layer application's result rather than into {@code call}'s parameters (https://github.com/wala/ML/issues/1109), so a
+ * function a layer body calls converts, and decorating it runs.
  * <p>
  * Ignorance is {@code null} rather than {@code FALSE}, the polarity of every sibling safety check: a node without IR leaves the verdict
  * undetermined, and only a determinate {@code TRUE} declines. A parameter the tensor-type analysis does not type carries no origin, which
