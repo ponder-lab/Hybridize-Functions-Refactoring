@@ -13988,7 +13988,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testTensorParameterEnumerateBlocksHybridization() throws Exception {
-		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param", "list_param", "iter_param", "sum_param")) {
+		for (String identifier : List.of("to_binary_class", "enumerate_param", "zip_param", "list_param", "sum_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
@@ -14010,6 +14010,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String identifier : List.of("tuple_param", "min_param", "max_param", "any_param", "all_param"))
 			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
 					getFunction(identifier).getHasTensorParameterIteration());
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine distinguishes a source call of `iter` from the call a `for` loop
+		// lowers to: https://github.com/wala/ML/issues/1131.
+		assertFalse("`iter_param`'s call of `iter` is not yet told apart from a lowered loop, so its iteration is not seen.",
+				getFunction("iter_param").getHasTensorParameterIteration());
 
 		Function sortedParam = getFunction("sorted_param");
 		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
