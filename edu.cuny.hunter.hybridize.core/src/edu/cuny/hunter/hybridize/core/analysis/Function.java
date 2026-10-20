@@ -1184,7 +1184,7 @@ public class Function {
 	/**
 	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
 	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
-	 * walk finds no such class, in which case the PyDev walk alone decides.
+	 * walk finds no such class.
 	 */
 	private boolean extendsKerasCallableClass;
 
@@ -2484,16 +2484,18 @@ public class Function {
 
 	/**
 	 * Computes whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine
-	 * models it, storing the result for {@link #isKerasCallOverride()}. The bases are the engine's: a base the program defines is followed
-	 * to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose superclass
-	 * the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
+	 * models it, storing the result for {@link #isKerasCallOverride()}, whose only source it is
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107). The bases are the engine's: a base the program defines
+	 * is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose
+	 * superclass the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
 	 * <p>
-	 * This sits beside the PyDev walk in {@link #isKerasCallOverride()} because that walk stops at a base PyDev can't resolve, and a base
-	 * written through {@code tf.keras} is one: it then sees only the base's own last segment, so {@code tf.keras.Sequential} answers
-	 * {@code Sequential}, not {@code Model} (issue 1099). The engine's walk reaches {@code Model} through the summary's superclass chain.
-	 * It reaches {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...), whose
-	 * summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). A base with no summary class, or whose summary
-	 * declares no superclass, resolves to nothing here: https://github.com/wala/ML/issues/1127.
+	 * PyDev's class hierarchy stops at a base it can't resolve, and a base written through {@code tf.keras} is one: it then sees only the
+	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
+	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
+	 * superclass chain, and {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...),
+	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). A base with no summary class, or whose
+	 * summary declares no superclass, resolves to nothing here, and the class is not recognized: today that is the bases of
+	 * https://github.com/wala/ML/issues/1127.
 	 *
 	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
 	 * @throws CoreException If this function's declaring class can't be determined.
@@ -6096,16 +6098,12 @@ public class Function {
 	 */
 	private static final Set<String> KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES = Set.of("training", "mask");
 
-	/** The last segments of the Keras base-class names whose {@code call} overrides Keras dispatches to. */
-	private static final Set<String> KERAS_CALLABLE_BASE_LAST_SEGMENTS = Set.of("Model", "Layer");
-
 	/**
 	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
-	 * class transitively extends a base whose last segment is {@code Model} or {@code Layer}, resolved through the PyDev class hierarchy
-	 * with an AST-base fallback (the same resolution {@link #hasTensorContext()} uses for candidate recognition), or whose enclosing class
-	 * the engine resolves to a subclass of Keras's {@code Layer} or {@code Model} ({@link #computeExtendsKerasCallableClass(CallGraph)},
-	 * issue 1099). Matching by last segment over-recognizes a non-Keras base of the same name; that direction only withholds an unwritable
-	 * signature (#881), the conservative default.
+	 * class the engine's class hierarchy resolves to a subclass of Keras's {@code Layer} or {@code Model}
+	 * ({@link #computeExtendsKerasCallableClass(CallGraph)}, issue 1099). The engine's hierarchy is the only source: a base is not matched
+	 * by its name, so a program-defined class named {@code Layer} or {@code Model} is not a Keras base
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107).
 	 *
 	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
 	 */
@@ -6113,8 +6111,7 @@ public class Function {
 		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
 			return false;
 
-		return this.extendsKerasCallableClass
-				|| this.getAllClassParentNames(true).stream().anyMatch(KERAS_CALLABLE_BASE_LAST_SEGMENTS::contains);
+		return this.extendsKerasCallableClass;
 	}
 
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
