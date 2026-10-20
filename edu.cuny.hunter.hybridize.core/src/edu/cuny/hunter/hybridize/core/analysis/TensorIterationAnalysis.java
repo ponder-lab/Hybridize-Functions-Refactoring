@@ -7,7 +7,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -88,12 +87,10 @@ class TensorIterationAnalysis {
 
 			// A builtin that iterates the argument (`enumerate(y)`, `zip(x, y)`): a loop iterates the builtin's result, a list the
 			// container exemption keeps out, but the builtin iterates the tensor itself, which raises under tracing (issue 1098). The
-			// container exemption still applies, so enumerating a Python list of tensors does not fire. The tf.range exemption applies
-			// only to `iter`, the call through which the engine lowers a `for` loop: AutoGraph stages a loop directly over the range,
-			// not one through another builtin.
+			// container exemption still applies, so enumerating a Python list of tensors does not fire. No tf.range exemption here:
+			// AutoGraph stages only a loop directly over the range, not one through a builtin.
 			if (use instanceof PythonInvokeInstruction invoke)
-				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value)
-						&& this.builtinIterates(node, invoke, value, () -> this.isRangeResult(node, value, defUse));
+				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value) && this.builtinIterates(node, invoke, value);
 
 			return false;
 		});
@@ -180,11 +177,14 @@ class TensorIterationAnalysis {
 
 	/**
 	 * The Python builtins that iterate their first positional argument only when it is their sole one: {@code min(x)} and {@code max(x)}
-	 * iterate {@code x}, while {@code min(x, y)} compares its arguments, and {@code iter(x)} iterates {@code x}, while
-	 * {@code iter(f, sentinel)} calls {@code f}. Each raises {@code OperatorNotAllowedInGraphError} under {@code tf.function} on TensorFlow
-	 * 2.9.3 when given only a tensor parameter.
+	 * iterate {@code x}, while {@code min(x, y)} compares its arguments. Each raises {@code OperatorNotAllowedInGraphError} under
+	 * {@code tf.function} on TensorFlow 2.9.3 when given only a tensor parameter.
+	 * <p>
+	 * TODO: {@code iter(x)} also iterates {@code x} and raises the same way, but the engine lowers a {@code for} loop to the same call of
+	 * {@code iter}, so the call can't be counted as a source call until the engine distinguishes the two:
+	 * https://github.com/wala/ML/issues/1131.
 	 */
-	private static final Set<String> SOLE_ARGUMENT_ITERATING_BUILTINS = Set.of("iter", "max", "min");
+	private static final Set<String> SOLE_ARGUMENT_ITERATING_BUILTINS = Set.of("max", "min");
 
 	/**
 	 * The Python builtins that iterate every positional argument. {@code zip} raises {@code OperatorNotAllowedInGraphError} under
@@ -192,16 +192,11 @@ class TensorIterationAnalysis {
 	 */
 	private static final Set<String> ALL_ARGUMENTS_ITERATING_BUILTINS = Set.of("zip");
 
-	/** The name of the builtin {@code iter}, through which the engine lowers a {@code for} loop. */
-	private static final String ITER_BUILTIN_NAME = "iter";
-
 	/**
 	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin that iterates it there, per
 	 * {@link #FIRST_ARGUMENT_ITERATING_BUILTINS}, {@link #SOLE_ARGUMENT_ITERATING_BUILTINS}, and {@link #ALL_ARGUMENTS_ITERATING_BUILTINS}.
 	 * The call graph decides which builtin is called: a callee is the builtin {@code name} when its declaring class is the engine's prelude
-	 * object for it. Slots at or after a starred argument are skipped, since their alignment to the builtin's parameters is unknown. A
-	 * {@code tf.range} result passed to {@code iter} does not fire, since the engine lowers a {@code for} loop over it to that call, and
-	 * AutoGraph stages such a loop.
+	 * object for it. Slots at or after a starred argument are skipped, since their alignment to the builtin's parameters is unknown.
 	 * <p>
 	 * TODO: The engine has no summary for {@code tuple}, {@code min}, {@code max}, {@code any} or {@code all}, so a call to one has no
 	 * target, and this doesn't fire for it: https://github.com/wala/ML/issues/1129. Once the engine summarizes them, it fires with no
@@ -210,10 +205,9 @@ class TensorIterationAnalysis {
 	 * @param node The call-graph node whose body holds {@code invoke}.
 	 * @param invoke The call.
 	 * @param value The parameter-derived value number.
-	 * @param rangeResult Whether {@code value} is a {@code tf.range} result.
 	 * @return True iff the called builtin iterates {@code value}.
 	 */
-	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value, BooleanSupplier rangeResult) {
+	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value) {
 		int starred = invoke.firstStarredPosition();
 		int positional = invoke.getNumberOfPositionalParameters();
 		int end = starred == -1 ? positional : starred;
@@ -229,9 +223,6 @@ class TensorIterationAnalysis {
 					continue;
 
 				String name = type.substring(Util.BUILTIN_PRELUDE_TYPE_NAME_PREFIX.length());
-
-				if (name.equals(ITER_BUILTIN_NAME) && rangeResult.getAsBoolean())
-					continue;
 
 				if (ALL_ARGUMENTS_ITERATING_BUILTINS.contains(name) || slot == 1 && FIRST_ARGUMENT_ITERATING_BUILTINS.contains(name)
 						|| slot == 1 && starred == -1 && positional == 2 && SOLE_ARGUMENT_ITERATING_BUILTINS.contains(name))
