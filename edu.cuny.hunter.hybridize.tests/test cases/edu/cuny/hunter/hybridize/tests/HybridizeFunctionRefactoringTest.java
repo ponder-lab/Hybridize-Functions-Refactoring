@@ -13552,9 +13552,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Keras layers whose bases the engine has had a class for since https://github.com/wala/ML/issues/1127: {@code Doubled} extends
 	 * {@code keras.layers.Layer}, the same class as {@code tf.keras.layers.Layer} spelled through the standalone package, and
-	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer. The walk reaches {@code Layer} from either, so each
-	 * {@code call} is recognized as a Keras call override, and inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}. An input
-	 * signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3, since Keras supplies {@code training}.
+	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer aliasing {@code MaxPool2D}. The walk reaches
+	 * {@code Layer} from either, so each {@code call} is recognized as a Keras call override, and inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3,
+	 * since Keras supplies {@code training}.
 	 */
 	@Test
 	public void testKerasUnmodeledLayerBases() throws Exception {
