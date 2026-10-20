@@ -97,10 +97,13 @@ public enum PreconditionFailure {
 	HAS_STALE_VARIABLE_READS(19),
 
 	/**
-	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}. Eagerly the elements are tensors and
-	 * the loop runs; under {@code tf.function} tracing the parameter is symbolic, and iterating a symbolic tensor raises
-	 * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop. In-body {@code tf.range} loops are
-	 * AutoGraph-supported and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}, or passes it to a Python builtin that
+	 * iterates it, such as {@code enumerate}, {@code zip} or {@code list} (the table is in {@code TensorIterationAnalysis}). Eagerly the
+	 * elements are tensors and the iteration runs; under {@code tf.function} tracing the parameter is symbolic, and iterating a symbolic
+	 * tensor raises {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop ({@code reversed} raises a
+	 * {@code TypeError}). In-body {@code tf.range} loops are AutoGraph-supported and do not fire. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
 	 */
 	HAS_TENSOR_PARAMETER_ITERATION(20),
 
