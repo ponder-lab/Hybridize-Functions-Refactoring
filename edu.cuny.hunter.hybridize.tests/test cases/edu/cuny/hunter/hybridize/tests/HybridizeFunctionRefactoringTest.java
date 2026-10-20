@@ -13951,11 +13951,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
-	 * {@code to_binary_class}): iterating a tensor parameter through {@code enumerate} or {@code zip}, which iterate their arguments, fails
-	 * with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}, and storing into a parameter-derived tensor by subscript fails with
-	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT}. Both work eagerly on a NumPy array but raise under tracing once the
-	 * parameter is symbolic. Enumerating a Python list of tensors (issue 832's exemption), storing into a list built in the body, and
-	 * setting an attribute on a tensor remain P1.
+	 * {@code to_binary_class}): passing a tensor parameter to a builtin that iterates it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}, and storing into a parameter-derived tensor by subscript fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT}. Both work eagerly but raise under tracing once the parameter is
+	 * symbolic. Each builtin in {@code TensorIterationAnalysis}'s table has a function here. {@code sorted}, which AutoGraph converts,
+	 * enumerating a Python list of tensors (issue 832's exemption), storing into a list built in the body, and setting an attribute on a
+	 * tensor remain P1.
 	 */
 	@Test
 	public void testTensorParameterEnumerateAndItemAssignmentBlockHybridization() throws Exception {
@@ -13967,7 +13968,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`to_binary_class` fails with HAS_TENSOR_PARAMETER_ITERATION, the first of the two in the chain.", toBinaryClass
 				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
-		for (String identifier : List.of("enumerate_param", "zip_param")) {
+		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "iter_param", "sum_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
@@ -13977,13 +13978,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
 
-		// Ariadne models `reversed` as iterating its argument since https://github.com/wala/ML/issues/1099, so `reversed_param` is refused
-		// like the other wrappers; tracing raises a TypeError there (len of a symbolic tensor).
+		// Tracing raises a TypeError here (len of a symbolic tensor) rather than an OperatorNotAllowedInGraphError.
 		Function reversedParam = getFunction("reversed_param");
 		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
 		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
 		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine summarizes these builtins, so that their calls have targets:
+		// https://github.com/wala/ML/issues/1129.
+		for (String identifier : List.of("tuple_param", "min_param", "max_param", "any_param", "all_param"))
+			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
+					getFunction(identifier).getHasTensorParameterIteration());
+
+		Function sortedParam = getFunction("sorted_param");
+		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
+				sortedParam.getHasTensorParameterIteration());
+		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
 
 		Function storeIntoDerived = getFunction("store_into_derived");
 		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
@@ -14008,6 +14019,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`store_string_key` must not pass a precondition.", storeStringKey.getPassingPrecondition());
 		assertNotNull("`store_string_key` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeStringKey.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT once the engine lowers a slice store to a subscript store:
+		// https://github.com/wala/ML/issues/1130.
+		for (String identifier : List.of("store_slice", "add_to_slice"))
+			assertFalse("`" + identifier + "`'s slice store lowers to a `slice` call, so it is not yet seen as an assignment.",
+					getFunction(identifier).getHasTensorParameterItemAssignment());
 
 		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
 		for (String identifier : List.of("set_first", "add_to_first")) {

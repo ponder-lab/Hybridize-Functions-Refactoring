@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
@@ -26,24 +27,27 @@ import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.util.collections.Pair;
 
 /**
- * The tensor-iteration analysis behind the symbolic-iteration precondition
- * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830): whether a function's body iterates a parameter-derived,
- * tensor-typed value with a Python {@code for}. Eagerly such iteration works (the elements are tensors); under {@code tf.function} tracing,
- * the decorated function's inputs are symbolic, and iterating a symbolic tensor raises {@code OperatorNotAllowedInGraphError} even with
- * AutoGraph converting the loop (runtime-verified on the pinned framework). The scope is deliberately anchored on parameter-derived values:
- * an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is the decoration that makes a parameter symbolic at
- * entry.
+ * The analysis behind two preconditions on how a function's body uses a parameter-derived, tensor-typed value: whether it iterates the
+ * value (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830), and whether it assigns into the value by subscript
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098). Both share one scan, described below.
+ * <p>
+ * The iteration check fires on a Python {@code for} over such a value. Eagerly such iteration works (the elements are tensors); under
+ * {@code tf.function} tracing, the decorated function's inputs are symbolic, and iterating a symbolic tensor raises
+ * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop (runtime-verified on the pinned framework). The scope is
+ * deliberately anchored on parameter-derived values: an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is
+ * the decoration that makes a parameter symbolic at entry.
  * <p>
  * The scan is body-local: parameter value numbers seed a forward def-use taint, and a {@link EachElementGetInstruction} (the IR form of a
  * Python {@code for}-each) whose iterated object is tainted <em>and</em> tensor-typed by the tensor-type analysis fires. The tensor-typed
  * gate keeps ordinary Python-collection parameters (lists, dicts, dataset objects) out: only a value the analysis types as a tensor can
- * become a symbolic tensor at trace time. Iteration through a builtin that iterates its argument ({@code enumerate}, {@code zip}) fires
- * too: the loop iterates the builtin's result, but the builtin's model iterates the tensor
+ * become a symbolic tensor at trace time. Passing such a value to a Python builtin that iterates it ({@code enumerate}, {@code zip},
+ * {@code list}, and the others of {@link #builtinIterates}) fires too, whether or not a loop iterates the result
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098).
  * <p>
  * The same scan backs the item-assignment precondition (issue 1098): a subscript store ({@code y[i] = v}, augmented forms included) into a
  * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
- * a {@code TypeError}.
+ * a {@code TypeError}. A slice store ({@code y[1:3] = v}) is not seen: the engine lowers it to a call of the {@code slice} builtin, not to
+ * a subscript store (https://github.com/wala/ML/issues/1130).
  */
 class TensorIterationAnalysis {
 
@@ -90,12 +94,14 @@ class TensorIterationAnalysis {
 			if (use instanceof EachElementGetInstruction each && each.getUse(0) == value)
 				return this.isTensorTyped(node, value) && !this.isRangeResult(node, value, defUse) && !this.pointsToContainer(node, value);
 
-			// A builtin whose model iterates the argument (`enumerate(y)`, `zip(x, y)`): the loop iterates the builtin's result, a
-			// list the container exemption keeps out, but the builtin iterates the tensor itself, which raises under tracing (issue
-			// 1098). No tf.range exemption here: AutoGraph stages only a loop directly over the range, not one through a builtin.
-			// The container exemption still applies, so enumerating a Python list of tensors does not fire.
+			// A builtin that iterates the argument (`enumerate(y)`, `zip(x, y)`): a loop iterates the builtin's result, a list the
+			// container exemption keeps out, but the builtin iterates the tensor itself, which raises under tracing (issue 1098). The
+			// container exemption still applies, so enumerating a Python list of tensors does not fire. The tf.range exemption applies
+			// only to `iter`, the call through which the engine lowers a `for` loop: AutoGraph stages a loop directly over the range,
+			// not one through another builtin.
 			if (use instanceof PythonInvokeInstruction invoke)
-				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value) && this.builtinIterates(node, invoke, value);
+				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value)
+						&& this.builtinIterates(node, invoke, value, () -> this.isRangeResult(node, value, defUse));
 
 			return false;
 		});
@@ -187,60 +193,75 @@ class TensorIterationAnalysis {
 	}
 
 	/**
-	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin whose model iterates the corresponding parameter. The
-	 * builtin's own model decides, so a builtin that only stores or returns its argument does not fire. Slots at or after a starred
-	 * argument are skipped, since their alignment to the builtin's parameters is unknown.
-	 * <p>
-	 * This reads the shape of the engine's builtin summary IR, not a fact the engine states: a summary iterates a parameter when its IR
-	 * holds an {@link EachElementGetInstruction} over it (see {@link #iteratesParameter}), the summary-IR contract recorded at
-	 * https://github.com/wala/ML/issues/916#issuecomment-5657465620. Today that holds for Ariadne's {@code enumerate}, {@code zip} (each of
-	 * its first four arguments), and {@code reversed} summaries, and each has a firing pin in the tests. If a summary is re-expressed so
-	 * that the iteration no longer shows up as that instruction over the parameter, for instance through the {@code iter} and {@code next}
-	 * protocol, the check silently stops firing for that builtin, in the unsafe direction (a conversion that raises at trace time). Out of
-	 * scope: {@code next} iterates a field read off its argument rather than the argument, and {@code sum}, {@code iter}, and {@code range}
-	 * have summaries that don't iterate their argument at all, although at run time most of them do. Those calls on a tensor are not
-	 * refused here.
-	 * <p>
-	 * TODO: {@code list} and {@code sorted} are out of scope because of an engine gap: both summaries return an empty list without
-	 * iterating their argument (https://github.com/wala/ML/issues/1102). Once their summaries iterate the argument, this check fires for
-	 * them with no change here.
+	 * The Python builtins that iterate their first positional argument whatever else they are given: {@code enumerate(x, start)},
+	 * {@code sum(x, start)}, and so on. Whether a builtin iterates an argument is Python's behavior, not the engine's, so it is stated here
+	 * rather than read off the engine's builtin summaries. On TensorFlow 2.9.3, each of these called on a tensor parameter runs eagerly and
+	 * raises under {@code tf.function}: {@code reversed} with a {@code TypeError}, the rest with {@code OperatorNotAllowedInGraphError}.
+	 * {@code sorted} is left out, since AutoGraph converts it, and it runs under {@code tf.function}.
 	 */
-	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value) {
+	private static final Set<String> FIRST_ARGUMENT_ITERATING_BUILTINS = Set.of("all", "any", "enumerate", "list", "reversed", "sum",
+			"tuple");
+
+	/**
+	 * The Python builtins that iterate their first positional argument only when it is their sole one: {@code min(x)} and {@code max(x)}
+	 * iterate {@code x}, while {@code min(x, y)} compares its arguments, and {@code iter(x)} iterates {@code x}, while
+	 * {@code iter(f, sentinel)} calls {@code f}. Each raises {@code OperatorNotAllowedInGraphError} under {@code tf.function} on TensorFlow
+	 * 2.9.3 when given only a tensor parameter.
+	 */
+	private static final Set<String> SOLE_ARGUMENT_ITERATING_BUILTINS = Set.of("iter", "max", "min");
+
+	/**
+	 * The Python builtins that iterate every positional argument. {@code zip} raises {@code OperatorNotAllowedInGraphError} under
+	 * {@code tf.function} on TensorFlow 2.9.3 when given a tensor parameter.
+	 */
+	private static final Set<String> ALL_ARGUMENTS_ITERATING_BUILTINS = Set.of("zip");
+
+	/** The name of the builtin {@code iter}, through which the engine lowers a {@code for} loop. */
+	private static final String ITER_BUILTIN_NAME = "iter";
+
+	/**
+	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin that iterates it there, per
+	 * {@link #FIRST_ARGUMENT_ITERATING_BUILTINS}, {@link #SOLE_ARGUMENT_ITERATING_BUILTINS}, and {@link #ALL_ARGUMENTS_ITERATING_BUILTINS}.
+	 * The call graph decides which builtin is called: a callee is the builtin {@code name} when its declaring class is the engine's prelude
+	 * object for it. Slots at or after a starred argument are skipped, since their alignment to the builtin's parameters is unknown. A
+	 * {@code tf.range} result passed to {@code iter} does not fire, since the engine lowers a {@code for} loop over it to that call, and
+	 * AutoGraph stages such a loop.
+	 * <p>
+	 * TODO: The engine has no summary for {@code tuple}, {@code min}, {@code max}, {@code any} or {@code all}, so a call to one has no
+	 * target, and this doesn't fire for it: https://github.com/wala/ML/issues/1129. Once the engine summarizes them, it fires with no
+	 * change here.
+	 *
+	 * @param node The call-graph node whose body holds {@code invoke}.
+	 * @param invoke The call.
+	 * @param value The parameter-derived value number.
+	 * @param rangeResult Whether {@code value} is a {@code tf.range} result.
+	 * @return True iff the called builtin iterates {@code value}.
+	 */
+	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value, BooleanSupplier rangeResult) {
 		int starred = invoke.firstStarredPosition();
-		int end = starred == -1 ? invoke.getNumberOfPositionalParameters() : starred;
+		int positional = invoke.getNumberOfPositionalParameters();
+		int end = starred == -1 ? positional : starred;
 
 		for (int slot = 1; slot < end; slot++) {
 			if (invoke.getUse(slot) != value)
 				continue;
 
-			for (CGNode callee : this.callGraph.getPossibleTargets(node, invoke.getCallSite()))
-				if (callee.getMethod().getDeclaringClass().getName().toString().startsWith(Util.BUILTIN_PRELUDE_TYPE_NAME_PREFIX)
-						&& iteratesParameter(callee, slot))
+			for (CGNode callee : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+				String type = callee.getMethod().getDeclaringClass().getName().toString();
+
+				if (!type.startsWith(Util.BUILTIN_PRELUDE_TYPE_NAME_PREFIX))
+					continue;
+
+				String name = type.substring(Util.BUILTIN_PRELUDE_TYPE_NAME_PREFIX.length());
+
+				if (name.equals(ITER_BUILTIN_NAME) && rangeResult.getAsBoolean())
+					continue;
+
+				if (ALL_ARGUMENTS_ITERATING_BUILTINS.contains(name) || slot == 1 && FIRST_ARGUMENT_ITERATING_BUILTINS.contains(name)
+						|| slot == 1 && starred == -1 && positional == 2 && SOLE_ARGUMENT_ITERATING_BUILTINS.contains(name))
 					return true;
+			}
 		}
-
-		return false;
-	}
-
-	/**
-	 * True iff {@code callee}'s IR iterates its parameter at {@code index} with an {@link EachElementGetInstruction} whose iterated value
-	 * is that parameter itself. This is the summary-IR shape {@link #builtinIterates} relies on; an iteration expressed any other way is
-	 * not seen.
-	 */
-	private static boolean iteratesParameter(CGNode callee, int index) {
-		IR ir = callee.getIR();
-
-		if (ir == null)
-			return false;
-
-		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
-
-		if (index >= parameters.length)
-			return false;
-
-		for (SSAInstruction instruction : ir.getInstructions())
-			if (instruction instanceof EachElementGetInstruction each && each.getUse(0) == parameters[index])
-				return true;
 
 		return false;
 	}

@@ -1,11 +1,12 @@
 # Fixture for #1098 (distilling TensorFlow-Examples' gradient_boosted_trees.py
-# `to_binary_class`): iterating a tensor parameter through a wrapper that iterates
-# its argument (`enumerate`, `zip`), and storing into a tensor parameter by
-# subscript, both work eagerly on a NumPy array but raise under tracing
+# `to_binary_class`): passing a tensor parameter to a builtin that iterates it
+# (`enumerate`, `zip`, `list`, ...), and storing into a tensor parameter by
+# subscript, both work eagerly but raise under tracing
 # (OperatorNotAllowedInGraphError; TypeError: 'Tensor' object does not support
-# item assignment), so the conversion must be declined. Enumerating a Python list
-# of tensors, storing into a list built in the body, and setting an attribute on a
-# tensor, which tracing supports, remain convertible.
+# item assignment), so the conversion must be declined. `sorted`, which AutoGraph
+# converts, enumerating a Python list of tensors, storing into a list built in the
+# body, and setting an attribute on a tensor, which tracing supports, remain
+# convertible.
 import copy
 
 import numpy as np
@@ -61,6 +62,42 @@ def store_into_derived(y):
     return tf.reduce_sum(z)
 
 
+def list_param(x):
+    return tf.stack(list(x))
+
+
+def tuple_param(x):
+    return tf.stack(tuple(x))
+
+
+def iter_param(x):
+    return next(iter(x)) * 2.0
+
+
+def sum_param(x):
+    return sum(x) * 2.0
+
+
+def min_param(x):
+    return min(x) * 2.0
+
+
+def max_param(x):
+    return max(x) * 2.0
+
+
+def any_param(x):
+    return tf.constant(any(x))
+
+
+def all_param(x):
+    return tf.constant(all(x))
+
+
+def sorted_param(x):
+    return tf.stack(sorted(x))
+
+
 def enumerate_list(a, b):
     total = tf.zeros(())
     for i, t in enumerate([a, b]):
@@ -86,6 +123,18 @@ def store_string_key(y):
     return z
 
 
+def store_slice(y):
+    z = y * 2.0
+    z[1:3] = 0.0
+    return tf.reduce_sum(z)
+
+
+def add_to_slice(y):
+    z = y * 2.0
+    z[1:3] += 1.0
+    return tf.reduce_sum(z)
+
+
 def store_multi_index(y):
     z = y * 2.0
     z[0, 1] = 0.0
@@ -106,6 +155,17 @@ assert float(enumerate_list(t, t)) == 12.0
 assert float(tf.reduce_sum(store_into_local_list(t))) == 18.0
 assert float(tf.reduce_sum(tag_derived(t))) == 12.0
 assert float(store_multi_index(np.array([[1.0, 2.0], [3.0, 4.0]]))) == 16.0
+assert float(store_slice(np.array([1.0, 2.0, 3.0, 4.0]))) == 10.0
+assert float(add_to_slice(np.array([1.0, 2.0, 3.0, 4.0]))) == 22.0
+assert list(list_param(t).numpy()) == [1.0, 2.0, 3.0]
+assert list(tuple_param(t).numpy()) == [1.0, 2.0, 3.0]
+assert float(iter_param(t)) == 2.0
+assert float(sum_param(t)) == 12.0
+assert float(min_param(t)) == 2.0
+assert float(max_param(t)) == 6.0
+assert bool(any_param(t))
+assert bool(all_param(t))
+assert list(sorted_param(tf.constant([3.0, 1.0, 2.0])).numpy()) == [1.0, 2.0, 3.0]
 
 try:
     store_string_key(np.array([10.0, 30.0]))
