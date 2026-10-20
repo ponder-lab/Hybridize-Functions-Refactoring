@@ -6,7 +6,6 @@ import tensorflow as tf
 # `training=False` on every invocation. An input signature covering only `x` raises on
 # the first call ("got keyword argument `training` that was not included in
 # input_signature"), so the signature must be withheld; the bare decorator runs.
-# The test pins the signature inferred today, pending wala/ML#1098.
 class BatchNormalization(tf.keras.layers.BatchNormalization):
     def call(self, x, training=False):
         if not training:

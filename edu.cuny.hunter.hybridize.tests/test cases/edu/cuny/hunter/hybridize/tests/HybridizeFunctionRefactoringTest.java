@@ -7539,6 +7539,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code Layer.add_loss} appends to the layer's losses (https://github.com/wala/ML/issues/1095), so a {@code call} that registers a
+	 * loss writes the layer, an object that outlives the call. {@code Var.call} adds a loss to its own layer, {@code Outer.call} reaches
+	 * that write by calling its inner {@code Var}, and {@code Vae.call} adds one to a subclassed {@code tf.keras.Model}. Each has a Python
+	 * side-effect and fails P1. {@code Plain.call} adds no loss and hybridizes.
+	 */
+	@Test
+	public void testLayerAddLossIsSideEffect() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Var.call", "Outer.call", "Vae.call")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse(function.isHybrid());
+			assertTrue("`" + identifier + "` registers a loss on a layer, which is a Python side-effect.",
+					function.getHasPythonSideEffects());
+
+			RefactoringStatus status = function.getStatus();
+			assertTrue(status.hasError());
+			assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+			assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+			assertNull(function.getPassingPrecondition());
+			assertEquals(Collections.emptySet(), function.getTransformations());
+		}
+
+		Function plain = findFunction(functions, "Plain.call");
+		assertFalse(plain.isHybrid());
+		assertFalse("`Plain.call` registers no loss.", plain.getHasPythonSideEffects());
+		assertFalse(plain.getStatus().hasError());
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, plain.getRefactoring());
+		assertEquals(P1, plain.getPassingPrecondition());
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), plain.getTransformations());
+	}
+
+	/**
 	 * The {@link Function}s whose changes are built come in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in
 	 * the file. The processor receives them in a hash-ordered {@link Set}, whose order changes from run to run, and some analysis state is
 	 * first-come, so iterating that set directly made the output depend on the run.
@@ -12258,11 +12291,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code AttributeError} from the {@code numpy()} call in its lambda.
 	 * <p>
 	 * A call to the built-in {@code open}, which the side-effect analysis recognizes by the object its callee points to, writes the file
-	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. The
-	 * others are pinned as not yet refused, since the engine models no state that their calls read or change: {@code random}, {@code time},
-	 * {@code cv2}, and {@code tf.io.gfile} have no summary, so their reads point to nothing (https://github.com/wala/ML/issues/1080), and
-	 * the {@code numpy.random} summaries model a draw's result but not the generator state it advances
-	 * (https://github.com/wala/ML/issues/1118).
+	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. From
+	 * the {@code random} summary of https://github.com/wala/ML/issues/1080, a draw reads and writes the module's {@code state} field, so
+	 * {@code draws_python_random} is refused for that write. The same issue's summaries model {@code time.time} as a read of the
+	 * {@code time} module's {@code clock} field, {@code cv2.imread} as a read of the {@code cv2} module's {@code files} field, and a
+	 * {@code tf.io.gfile.GFile} read as a read of the {@code tf.io.gfile} module's {@code files} field. The side-effect analysis consults
+	 * only the functions' mod sets, not what they read, so {@code reads_clock}, {@code reads_image}, and both {@code get_dataset_size}
+	 * overrides are pinned as not yet refused. The {@code numpy.random} functions are pinned the same way, since their summaries model a
+	 * draw's result but not the generator state it advances (https://github.com/wala/ML/issues/1118).
 	 * <p>
 	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
 	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
@@ -12283,16 +12319,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
 		}
 
-		// TODO: Refuse these once reads of `random`, `time`, `cv2`, and `tf.io.gfile` point to modeled objects
-		// (https://github.com/wala/ML/issues/1080) whose summaries model the state their calls read or change. None of these modules has
-		// a summary, so a read of one has an empty points-to set and the side-effect analysis sees no write; each function hybridizes
-		// today, freezing its clock read, draw, image read, or line count at trace time. `process_image_label` and `predict_dataset`
-		// are refused above only for their `open` calls.
-		for (String name : List.of("reads_clock", "draws_python_random", "reads_image", "ExampleInputter.get_dataset_size",
-				"ParallelInputter.get_dataset_size")) {
+		// The `random` summary (https://github.com/wala/ML/issues/1080) writes the module's generator state on each draw.
+		Function drawsPythonRandom = findFunction(functions, "draws_python_random");
+		assertEquals("`draws_python_random` advances `random`'s modeled generator state.", TRUE,
+				drawsPythonRandom.getHasPythonSideEffects());
+		assertNull("`draws_python_random` must not pass a precondition.", drawsPythonRandom.getPassingPrecondition());
+		assertNotNull("`draws_python_random` fails with HAS_PYTHON_SIDE_EFFECTS: " + drawsPythonRandom.getStatus(),
+				drawsPythonRandom.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// TODO: Refuse these once the side-effect analysis counts a read of module state that a trace freezes
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). The summaries of
+		// https://github.com/wala/ML/issues/1080 model each call here as a read only: `time.time` reads the `time` module's `clock` field,
+		// `cv2.imread` the `cv2` module's `files` field, and a `tf.io.gfile.GFile` read the `tf.io.gfile` module's `files` field. The
+		// fields a `GFile` call writes belong to the file object the call allocates, so they are filtered out as created within the
+		// function. Since `Function.inferPythonSideEffects` consults only the mod set, each function hybridizes today, freezing its clock
+		// read, image read, or line count at trace time. `process_image_label` and `predict_dataset` are refused above for their `open`
+		// calls, and `process_image_label` also writes `random`'s state.
+		for (String name : List.of("reads_clock", "reads_image", "ExampleInputter.get_dataset_size", "ParallelInputter.get_dataset_size")) {
 			Function function = findFunction(functions, name);
-			assertEquals("`" + name + "`'s module call is unseen (wala/ML#1080).", FALSE, function.getHasPythonSideEffects());
-			assertEquals("`" + name + "` hybridizes (P1) until wala/ML#1080 is fixed.", P1, function.getPassingPrecondition());
+			assertEquals("`" + name + "`'s module call only reads modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until reads of module state are counted.", P1, function.getPassingPrecondition());
 		}
 
 		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
@@ -12439,12 +12485,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * calls, so a caller of a function whose name argument raises under tracing raises too. Measured under {@code tf.function} on
 	 * TensorFlow 2.9.3: {@code evaluates} calls {@code evaluate}, which passes {@code tf.float32} as {@code tf.sqrt}'s name; {@code trims}
 	 * calls {@code trim_zeros}, distilling tf-eager-fasterrcnn's, without its {@code name}, which then reaches {@code tf.boolean_mask} as
-	 * {@code None}; and {@code calls_trims} calls {@code trims}. Each raises. {@code trims_named} and {@code trims_positional} pass
-	 * {@code trim_zeros} a name, by keyword and by position, and trace.
+	 * {@code None}; {@code calls_trims} calls {@code trims}; and {@code maps_caller} runs {@code row_sum}, which calls {@code trim_zeros}
+	 * without a name, through {@code tf.map_fn}. Each raises. {@code trims_named} and {@code trims_positional} pass {@code trim_zeros} a
+	 * name, by keyword and by position, and trace.
 	 */
 	@Test
 	public void testInvalidNameArgumentCallers() throws Exception {
-		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted")) {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted", "maps_caller")) {
 			Function function = getFunction(identifier);
 			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
 			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
@@ -12465,12 +12512,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			// then a classmethod called through its class reaches no method body, so the call to `Masker.trim` without a name is not seen.
 			Function classmethodOmitted = getFunction("classmethod_omitted");
 			assertFalse("`classmethod_omitted`'s classmethod is not yet reached.", classmethodOmitted.getCallsInvalidNameArguments());
-
-			// TODO: Refuse this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Tracing it
-			// traces
-			// `row_sum`, which calls `trim_zeros` without a name and raises, but `row_sum` gets no call-graph node.
-			Function mapsCaller = getFunction("maps_caller");
-			assertFalse("`maps_caller`'s callback is not yet reached.", mapsCaller.getCallsInvalidNameArguments());
 
 			// TODO: Refuse this once a forwarder is followed through user callees:
 			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `forwards` without a name, which forwards
@@ -13223,9 +13264,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
 	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
 	 * a nested {@code def}, a lambda a helper calls or {@code tf.map_fn} runs, or a comprehension and passes it to a shape op, and each
-	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld, except that the {@code tf.map_fn} case is
-	 * not detected yet, for the engine reason its TODO cites. The control {@code ranked_nested_def}, called at one extent, has the axis
-	 * resolved and keeps its signature.
+	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld. The control {@code ranked_nested_def},
+	 * called at one extent, has the axis resolved and keeps its signature.
 	 */
 	@Test
 	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
@@ -13233,7 +13273,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_comprehension")) {
+		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_map_fn", "wild_comprehension")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
 					function.getHasUnresolvedStaticallyReadAxes());
@@ -13241,12 +13281,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
 					function.getInferredInputSignatureAbsenceReason());
 		}
-
-		// TODO: Withhold this signature once Ariadne's `tf.map_fn` summary invokes its callback:
-		// https://github.com/wala/ML/issues/942. Until then the lambda has no call-graph node, and the signature is kept.
-		Function mapFn = findFunction(functions, "wild_map_fn");
-		assertFalse("`wild_map_fn`'s read in a `tf.map_fn` callback is not yet seen.", mapFn.getHasUnresolvedStaticallyReadAxes());
-		assertTrue("`wild_map_fn` keeps its signature.", mapFn.getInferredInputSignature().isPresent());
 
 		Function ranked = findFunction(functions, "ranked_nested_def");
 		assertFalse("`ranked_nested_def`'s statically-read axes are all resolved.", ranked.getHasUnresolvedStaticallyReadAxes());
@@ -13399,11 +13433,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins the framework-supplied parameter rule (#881) on a subclass of a built-in Keras layer
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099), reducing TensorFlow2.0-Examples' YOLOV3
 	 * {@code core/common.py}. The class extends {@code tf.keras.layers.BatchNormalization}, whose own {@code Layer} ancestor is declared in
-	 * TensorFlow's sources. PyDev's hierarchy stops at the unresolved base and sees only its last segment, {@code BatchNormalization}, and
-	 * the engine drops the base altogether, because the layer's summary declares no superclass and so has no class shell
-	 * (https://github.com/wala/ML/issues/1098). Neither walk reaches {@code Layer}, so {@code training} is not recognized as supplied by
-	 * Keras and a signature covering only {@code x} is inferred. That signature is wrong: {@code Layer.__call__} passes {@code training} on
-	 * every invocation, and the first call raises ("got keyword argument `training` that was not included in input_signature", TF 2.9.3).
+	 * TensorFlow's sources. PyDev's hierarchy stops at the unresolved base and sees only its last segment, {@code BatchNormalization},
+	 * while the engine's layer summaries declare {@code Layer} as their superclass (https://github.com/wala/ML/issues/1098), so the
+	 * engine's walk reaches it and {@code training} is recognized as supplied by Keras. A signature covering only {@code x} would be wrong:
+	 * {@code Layer.__call__} passes {@code training} on every invocation, and the first call raises ("got keyword argument `training` that
+	 * was not included in input_signature", TF 2.9.3). Inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function
+	 * still hybridizes bare (P1).
 	 */
 	@Test
 	public void testKerasBuiltinLayerSubclassSuppliedParameters() throws Exception {
@@ -13412,19 +13447,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
 		assertEquals("`BatchNormalization.call` hybridizes (P1).", P1, call.getPassingPrecondition());
 
-		// TODO: https://github.com/wala/ML/issues/1098 (and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099).
-		// Once
-		// the built-in layer summaries declare their superclass, the engine's walk reaches `Layer`, and this flips to no signature with
-		// `DEFAULTED_PARAMETER_SUPPLIED`, as in `testKerasLayerSubclassSuppliedParameters`.
-		assertTrue("A signature is inferred today, omitting `training`.", call.getInferredInputSignature().isPresent());
-		assertEquals("The inferred signature covers only `x`.", "[tf.TensorSpec(shape=(1, 4, 4, 3), dtype=tf.float32)]",
-				call.getInferredInputSignature().get().toTensorSpecList("tf."));
-		assertEquals("No absence reason is reported.", Optional.empty(), call.getInferredInputSignatureAbsenceReason());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
 	 * The {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} pin (#1099) over a second built-in base,
-	 * {@code tf.keras.layers.Dense}, so the gap is not specific to one layer class.
+	 * {@code tf.keras.layers.Dense}, so the rule is not specific to one layer class.
 	 */
 	@Test
 	public void testKerasBuiltinDenseSubclassSuppliedParameters() throws Exception {
@@ -13433,14 +13464,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function call = findFunction(this.getFunctions(), "Affine.call");
 		assertEquals("`Affine.call` hybridizes (P1).", P1, call.getPassingPrecondition());
 
-		// TODO: https://github.com/wala/ML/issues/1098 (and https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099).
-		// Once
-		// the built-in layer summaries declare their superclass, the engine's walk reaches `Layer`, and this flips to no signature with
-		// `DEFAULTED_PARAMETER_SUPPLIED`, as in `testKerasLayerSubclassSuppliedParameters`.
-		assertTrue("A signature is inferred today, omitting `training`.", call.getInferredInputSignature().isPresent());
-		assertEquals("The inferred signature covers only `x`.", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]",
-				call.getInferredInputSignature().get().toTensorSpecList("tf."));
-		assertEquals("No absence reason is reported.", Optional.empty(), call.getInferredInputSignatureAbsenceReason());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
@@ -14443,8 +14470,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent. {@code mask_or_none}
 	 * tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without the argument, so it
 	 * is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
-	 * {@code dataset_size} raises but is not yet detected, for the engine reason its TODO gives: it branches on
-	 * {@code dataset.cardinality()}.
+	 * {@code dataset_size} branches on {@code dataset.cardinality() == tf.data.INFINITE_CARDINALITY} and returns {@code None} on one path,
+	 * which raises a {@code ValueError} under tracing; it is refused since Ariadne models {@code Dataset.cardinality()} and the cardinality
+	 * constants (https://github.com/wala/ML/issues/1072), so the condition is typed as a scalar {@code int64} tensor comparison.
 	 */
 	@Test
 	public void testUntraceablePythonOverTensors() throws Exception {
@@ -14475,15 +14503,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 
-		// TODO: Refuse this once Ariadne models `Dataset.cardinality()` and the cardinality constants:
-		// https://github.com/wala/ML/issues/1072.
 		// Its branch condition, `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`,
-		// so
-		// the traced function raises a `ValueError`, but the condition has no tensor type.
+		// so the traced function raises a `ValueError`. Ariadne types `Dataset.cardinality()` and the cardinality constants as scalar
+		// `int64` tensors (https://github.com/wala/ML/issues/1072), so the condition has a tensor type and the check refuses it.
 		Function size = findFunction(functions, "dataset_size");
-		assertEquals("The check runs on `dataset_size` and decides it.", FALSE, size.getHasUntraceablePythonOnParameters());
-		assertNull("`dataset_size`'s tensor branch is not yet seen.", size.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
-				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		assertEquals("The check runs on `dataset_size` and refuses it.", TRUE, size.getHasUntraceablePythonOnParameters());
+		assertNull("`dataset_size` must not pass a precondition.", size.getPassingPrecondition());
+		assertNotNull("`dataset_size`'s tensor branch fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", size.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
 	}
 
 	/**
@@ -14551,14 +14578,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
 	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
 	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused. Four
-	 * more cases pin how the engine's missing {@code dict.copy} model reaches this precondition, each against the same body, which fills in
-	 * its {@code features} dictionary unless that already holds {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy},
-	 * passed a copy of a dictionary lacking that key, raises the {@code ValueError} and is not yet detected.
-	 * {@code make_features_of_full_copy}, passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns
-	 * before any write and runs. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter,
-	 * as OpenNMT-tf's {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its
-	 * own and runs. The two copy cases' TODOs say how a {@code dict.copy} model is expected to move them. {@code Resetting.read}, whose
-	 * field is set only in a helper that only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
+	 * more cases pin how the engine's {@code dict.copy} model reaches this precondition, each against the same body, which fills in its
+	 * {@code features} dictionary unless that already holds {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy},
+	 * passed a copy of a dictionary lacking that key, raises the {@code ValueError} and is refused. {@code make_features_of_full_copy},
+	 * passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns before any write and runs, but is
+	 * refused. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter, as OpenNMT-tf's
+	 * {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its own and runs.
+	 * The full copy's comment says why its refusal is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that
+	 * only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
@@ -14605,23 +14632,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
 				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 
-		// TODO: Refuse this once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. Its caller passes a copy of a
-		// dictionary that lacks "tensor", and filling the copy in makes `tf.function` raise a `ValueError`, but the attribute read of
-		// `copy` and the call's result point to nothing, so the only dictionary the parameter is seen to hold is the one the body
-		// creates, whose writes are not side effects.
+		// Its caller passes a copy of a dictionary that lacks "tensor", and filling the copy in makes `tf.function` raise a `ValueError`.
+		// The copy is created outside the function (https://github.com/wala/ML/issues/1082), so the side-effect precondition refuses it.
 		Function makeFeaturesOfCopy = findFunction(functions, "make_features_of_copy");
-		assertEquals("`make_features_of_copy`'s write to the copied dictionary is not yet seen.", FALSE,
-				makeFeaturesOfCopy.getHasPythonSideEffects());
-		assertEquals("`make_features_of_copy` still hybridizes (P1).", P1, makeFeaturesOfCopy.getPassingPrecondition());
+		assertEquals("`make_features_of_copy` fills in the copied dictionary.", TRUE, makeFeaturesOfCopy.getHasPythonSideEffects());
+		assertNull("`make_features_of_copy` must not pass a precondition.", makeFeaturesOfCopy.getPassingPrecondition());
+		assertNotNull("`make_features_of_copy` fails with HAS_PYTHON_SIDE_EFFECTS.", makeFeaturesOfCopy.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
-		// TODO: Expected to become HAS_PYTHON_SIDE_EFFECTS once Ariadne models `dict.copy`: https://github.com/wala/ML/issues/1082. The
-		// copy always holds "tensor", so the body returns before it writes, and the function runs under `tf.function`. Once the parameter
-		// is seen to hold the copy, which is created outside the function, the side-effect precondition, which doesn't ask whether a
-		// write can execute, refuses it, a lost conversion.
+		// A conservative refusal, and a lost conversion: the copy always holds "tensor", so the body returns before it writes, and the
+		// function runs under `tf.function`. The parameter is seen to hold the copy, which is created outside the function
+		// (https://github.com/wala/ML/issues/1082), and the side-effect precondition doesn't ask whether a write can execute. Converting it
+		// would need a path-sensitive analysis (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1130).
 		Function makeFeaturesOfFullCopy = findFunction(functions, "make_features_of_full_copy");
-		assertEquals("`make_features_of_full_copy` writes nothing it is seen to be passed.", FALSE,
+		assertEquals("`make_features_of_full_copy`'s write to the copied dictionary is seen though it never executes.", TRUE,
 				makeFeaturesOfFullCopy.getHasPythonSideEffects());
-		assertEquals("`make_features_of_full_copy` hybridizes (P1).", P1, makeFeaturesOfFullCopy.getPassingPrecondition());
+		assertNull("`make_features_of_full_copy` does not yet pass a precondition.", makeFeaturesOfFullCopy.getPassingPrecondition());
+		assertNotNull("`make_features_of_full_copy` fails with HAS_PYTHON_SIDE_EFFECTS.", makeFeaturesOfFullCopy.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
 		// Each dictionary it fills in is one its caller creates, through a call the engine resolves over the list of inputters, so the
 		// side-effect precondition refuses it without a `dict.copy` model. OpenNMT-tf's `ParallelInputter` has this shape, but there
@@ -14678,28 +14706,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * ({@code via_map_fn}), so the body itself never calls it, and a nested {@code def} passed elements of the parameters from inside a
 	 * comprehension ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies
 	 * numpy to a parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under
-	 * {@code tf.function} tracing on TensorFlow 2.9.3. The {@code tf.map_fn} case is not detected yet, for the engine reason its TODO
-	 * cites. Two controls trace and still hybridize: {@code clean_closure}'s nested function applies only a TensorFlow op, and
-	 * {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 * {@code tf.function} tracing on TensorFlow 2.9.3. Two controls trace and still hybridize: {@code clean_closure}'s nested function
+	 * applies only a TensorFlow op, and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
 	 */
 	@Test
 	public void testNumpyCallsThroughClosure() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("via_comprehension", "via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call",
-				"via_nested_def_arguments", "via_own_exposed_read")) {
+				"via_map_fn", "via_nested_def_arguments", "via_own_exposed_read")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
 			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 		}
-
-		// TODO: Flag this once Ariadne's `tf.map_fn` summary invokes its callback: https://github.com/wala/ML/issues/942. Until then the
-		// lambda has no call-graph node, and the function still hybridizes.
-		Function mapFn = findFunction(functions, "via_map_fn");
-		assertFalse("`via_map_fn`'s numpy in a `tf.map_fn` callback is not yet seen.", mapFn.getHasNumpyCallsOnParameters());
-		assertEquals("`via_map_fn` still hybridizes (P1).", P1, mapFn.getPassingPrecondition());
 
 		for (String identifier : List.of("clean_closure", "closure_over_local")) {
 			Function function = findFunction(functions, identifier);
