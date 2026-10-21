@@ -54,7 +54,7 @@ class FailureOfTest(unittest.TestCase):
 
     def test_an_unexplained_stop(self):
         self.assertEqual(
-            run.failure_of("nothing useful\n", 7), "did-not-complete (launcher exit 7)"
+            run.failure_of("nothing useful\n", 9), "did-not-complete (launcher exit 9)"
         )
 
 
