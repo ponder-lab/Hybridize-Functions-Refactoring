@@ -18,7 +18,6 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
 import edu.cuny.hunter.hybridize.core.utils.RefactoringAvailabilityTester;
@@ -55,11 +54,7 @@ public class HybridizeFunctionHandler extends AbstractHandler {
 
 				Shell shell = getActiveShellChecked(event);
 
-				try {
-					HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell);
-				} catch (TooManyMatchesException e) {
-					throw new ExecutionException("Unable to start refactoring.", e);
-				}
+				HybridizeFunctionRefactoringWizard.startRefactoring(availableFunctions, shell);
 			} else
 				throw new ExecutionException("Unable to extract function definitions.");
 		} else
