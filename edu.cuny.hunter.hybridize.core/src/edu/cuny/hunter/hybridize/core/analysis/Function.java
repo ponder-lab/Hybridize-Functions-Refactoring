@@ -78,6 +78,7 @@ import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
+import org.python.pydev.ast.codecompletion.shell.AbstractShell;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring2;
@@ -6301,7 +6302,13 @@ public class Function {
 				HierarchyNodeModel hierarchyNode;
 
 				synchronized (Util.PYDEV_LOCK) {
+					// As in `Util.getDeclaringModuleName()`: the count is per thread, and the lookup runs on this one (issue 1121).
+					long lostAnswers = AbstractShell.getLostAnswerCount();
 					hierarchyNode = refactoring.findClassHierarchy(request, true);
+
+					if (AbstractShell.getLostAnswerCount() != lostAnswers)
+						throw new LostPyDevAnswerError("class hierarchy", NodeUtils.getRepresentationString(def),
+								this.getContainingModuleName(), this.getContainingFile(), this.getProject());
 				}
 
 				if (hierarchyNode != null)

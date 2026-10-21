@@ -19,6 +19,7 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
+import org.python.pydev.ast.codecompletion.shell.AbstractShell;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
@@ -92,6 +93,7 @@ public class Util {
 	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
 	 * @throws BadLocationException On a parsing error.
 	 * @throws NoDeclaringModuleException When a declaring module can't be found.
+	 * @throws LostPyDevAnswerError If the lookup lost its answer to a dead PyDev completion server (issue 1121).
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
@@ -116,7 +118,13 @@ public class Util {
 
 		ItemPointer[] pointers;
 		synchronized (PYDEV_LOCK) {
+			// The count is per thread, and the lookup runs on this one, so a change is a request of this lookup that got no answer.
+			long lostAnswers = AbstractShell.getLostAnswerCount();
 			pointers = pyRefactoring.findDefinition(request);
+
+			if (AbstractShell.getLostAnswerCount() != lostAnswers)
+				throw new LostPyDevAnswerError("definition", selection.getSelectedText(), containingModName, containingFile,
+						nature.getProject());
 		}
 
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");

@@ -39,6 +39,7 @@ import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
@@ -81,6 +82,7 @@ import edu.cuny.hunter.hybridize.core.analysis.ExceptionHandlerAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.ExportAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -352,6 +354,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	}
 
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * A PyDev lookup that lost its answer to a dead PyDev completion server stops the check: the returned status then has a fatal error
+	 * naming the lookup, whose data is the {@link LostPyDevAnswerError} (issue 1121).
+	 */
 	@Override
 	public RefactoringStatus checkFinalConditions(IProgressMonitor pm, CheckConditionsContext context)
 			throws CoreException, OperationCanceledException {
@@ -359,7 +367,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100);
 		// TODO: Adjust amount of work later.
 
-		status.merge(this.checkFunctions(progress.split(1)));
+		try {
+			status.merge(this.checkFunctions(progress.split(1)));
+		} catch (LostPyDevAnswerError e) {
+			LOG.error(e.getMessage(), e);
+			status.addEntry(RefactoringStatus.FATAL, e.getMessage(), null, Function.PLUGIN_ID, RefactoringStatusEntry.NO_CODE, e);
+		}
 
 		return status;
 	}
