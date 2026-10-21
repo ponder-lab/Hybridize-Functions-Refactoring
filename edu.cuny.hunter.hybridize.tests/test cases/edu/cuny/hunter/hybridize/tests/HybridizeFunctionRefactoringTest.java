@@ -15022,6 +15022,86 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The fields of a {@code NamedTuple} argument are not rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). {@code tf.function} flattens a {@code NamedTuple}
+	 * argument into its tensors on every call, and a {@code NamedTuple}'s fields can't be rebound: the only writes to them are those of the
+	 * engine's constructor for a {@code NamedTuple} without an {@code __init__} (https://github.com/wala/ML/issues/579), which allocates
+	 * the object. Measured on TensorFlow 2.9.3, {@code AutoEncoder.call} converted returns what it returns eagerly for two inputs.
+	 */
+	@Test
+	public void testReboundStateReadsNamedTupleArgument() throws Exception {
+		Function function = findFunction(this.getFunctions(), "AutoEncoder.call");
+		assertEquals("`AutoEncoder.call` reads only a NamedTuple argument's fields.", FALSE, function.getHasReboundStateReads());
+		assertNull("`AutoEncoder.call` is not refused for rebound state.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+	}
+
+	/**
+	 * A function whose argument one caller may rebind to a tensor that a helper returns reads no rebound state through it
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} passes a tensor argument in afresh
+	 * on every call. Unless it concatenates, {@code SelfLoopConvolution.call} rebinds the adjacency lists to the tensor {@code tf.concat}
+	 * returns in {@code add_self_loops}, and its {@code _calculate_messages} reaches {@code MessagePassing._count_incoming_edges} and
+	 * {@code calculate_messages}, which iterate them. The engine's summary of {@code tf.concat} populates the tensor it allocates, and
+	 * those writes were taken for rebinding. {@code PlainConvolution._calculate_messages}, whose caller doesn't rebind the lists, is the
+	 * control.
+	 */
+	@Test
+	public void testReboundStateReadsArgumentReboundToTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("MessagePassing._count_incoming_edges", "calculate_messages",
+				"SelfLoopConvolution._calculate_messages", "PlainConvolution._calculate_messages")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
+	 * A read through {@code self} of a field another method rebinds stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). Measured on TensorFlow 2.9.3, {@code Streaming.call}
+	 * converted returns {@code [0]} twice after {@code index} rebinds the candidates and identifiers, where the eager call returns
+	 * {@code [0]} then {@code [3]}. The status message names the field and the write.
+	 */
+	@Test
+	public void testReboundStateReadsSelfFieldRebound() throws Exception {
+		Function function = findFunction(this.getFunctions(), "Streaming.call");
+		assertEquals("`Streaming.call` reads fields `Streaming.index` rebinds.", TRUE, function.getHasReboundStateReads());
+		assertNull("`Streaming.call` must not pass a precondition.", function.getPassingPrecondition());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+		assertNotNull("`Streaming.call` fails with HAS_REBOUND_STATE_READS.", entry);
+		assertTrue("The message names the field and the write: " + entry.getMessage(), entry.getMessage()
+				.matches("(?s).*field `_(candidates|identifiers)` of `.*Streaming`, rebound by `.*Streaming/index` at A\\.py:1[56]\\..*"));
+	}
+
+	/**
+	 * An opaque object passed as an argument, whose field another function rebinds, stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} keys such an argument by identity,
+	 * so a trace keeps the tensor the field held. So does a class attribute the module rebinds: the module's code allocates the class
+	 * object, but it is program source, which may write the object again after a read, so its writes aren't the object's set-up. Measured
+	 * on TensorFlow 2.9.3, {@code apply} and {@code scaled}, each converted, return {@code [2. 4.]} twice, where the eager calls return
+	 * {@code [2. 4.]} then {@code [3. 6.]}. The status message names the field and the write.
+	 */
+	@Test
+	public void testReboundStateReadsOpaqueArgument() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("apply", "field `w` of `.*Weights`, rebound by `.*Weights/set_weights` at A\\.py:14\\.",
+				"scaled", "field `factor` of `.*`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rebound tensor field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1078: a function reaching a replica context's
 	 * {@code merge_call}, nested in a function a {@code tf.distribute.MirroredStrategy} runs per replica. Measured on TensorFlow 2.9.3 with
 	 * two logical CPU devices, with {@code strategy.run} called eagerly and from a {@code tf.function}: with {@code apply_step}, which

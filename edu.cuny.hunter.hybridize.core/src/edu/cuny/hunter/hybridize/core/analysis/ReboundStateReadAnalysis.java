@@ -9,14 +9,18 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
+import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.types.PythonTypes;
+import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
+import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
@@ -45,16 +49,19 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * whose own writes are the side-effect precondition's, and outside the methods that set the written object up once: the {@code __init__} of
  * its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved through the engine's class
  * hierarchy from the class whose constructor allocated the object, and invoked on the object itself, per the points-to set of their
- * {@code self} parameter. A field set only there is read live. An {@code __init__} or {@code build} of another class, a {@code build}
- * outside Keras, or a set-up method writing a field of an object other than its receiver, runs whenever it is called, so its writes count.
- * So do the writes of a helper that only a set-up method calls, a known over-refusal: the helper may be called elsewhere too. A
- * {@code tf.Variable} updated with {@code assign} is not rebound, since {@code assign} writes the variable, not the field holding it.
+ * {@code self} parameter. A field set only there is read live. So is a field set only by the engine summary that allocates the object, such
+ * as the engine's constructor of a {@code NamedTuple} without an {@code __init__}, or the summary of a TensorFlow operation populating the
+ * tensor it returns: these are the objects {@code tf.function} flattens into its inputs on every call, and a read through an argument
+ * holding one is live. An {@code __init__} or {@code build} of another class, a {@code build} outside Keras, or a set-up method writing a
+ * field of an object other than its receiver, runs whenever it is called, so its writes count. So do the writes of a helper that only a
+ * set-up method calls, a known over-refusal: the helper may be called elsewhere too. A {@code tf.Variable} updated with {@code assign} is
+ * not rebound, since {@code assign} writes the variable, not the field holding it.
  * <p>
  * The elements of a list, tuple, dictionary, or set are not read as state: {@code tf.function} passes a container argument's tensors in
  * afresh on each call, and the code building a container writes its elements as fields. A container held in a field is missed with them,
- * though its element reads are stale too once another function rebuilds it. Objects are told apart by allocation site, so instances
- * allocated at one site are one object here: a getter of an object created afresh on each call is refused, though no instance it reads is
- * ever rebound between two of its reads.
+ * though its element reads are stale too once another function rebuilds it, and so is a {@code NamedTuple} held in a field. Objects are
+ * told apart by allocation site, so instances allocated at one site are one object here: a getter of an object created afresh on each call
+ * is refused, though no instance it reads is ever rebound between two of its reads.
  * <p>
  * The verdict is the function's, whatever its callers are: the guide documents that a trace is keyed on the arguments, so a change to a
  * Python global or free variable, which a field read through {@code self} is, does not retrace, and the trace-time value persists.
@@ -96,13 +103,66 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
+	 * A write that rebinds a tensor-typed field the function reads: the field, the node writing it, and the write's source position.
+	 *
+	 * @param field The field read and rebound.
+	 * @param writer The node making the write, outside the reader's closure and outside the methods setting the object up.
+	 * @param position The write's source position, {@code null} when the writer has no source.
+	 */
+	record ReboundWrite(InstanceFieldPointerKey field, CGNode writer, Position position) {
+
+		/**
+		 * Describes the write for a status message: the field, the class of the object holding it, the writing function, and the write's
+		 * file and line when known.
+		 *
+		 * @return A description naming the field and the write's location.
+		 */
+		String describe() {
+			StringBuilder ret = new StringBuilder();
+			Object name = this.field instanceof InstanceFieldKey named ? named.getField().getName() : this.field;
+			ret.append("field `").append(name).append("` of `").append(getClassName(this.field.getInstanceKey())).append("`, rebound by `")
+					.append(this.writer.getMethod().getDeclaringClass().getName()).append('`');
+
+			if (this.position != null && this.position.getURL() != null) {
+				String file = this.position.getURL().getPath();
+				ret.append(" at ").append(file.substring(file.lastIndexOf('/') + 1)).append(':').append(this.position.getFirstLine());
+			}
+
+			return ret.toString();
+		}
+	}
+
+	/**
+	 * The engine constructor that allocated {@code instanceKey}, if one did: the engine allocates an instance of a class the program
+	 * defines in a {@link PythonConstructorFunction} declared by that class.
+	 *
+	 * @param instanceKey An object.
+	 * @return The node of the constructor allocating {@code instanceKey}, or {@code null} if no engine constructor allocated it.
+	 */
+	private static CGNode getConstructorNode(InstanceKey instanceKey) {
+		AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+		return site != null && site.getNode().getMethod() instanceof PythonConstructorFunction ? site.getNode() : null;
+	}
+
+	/**
+	 * The name of {@code instanceKey}'s class: the class whose constructor allocated it, else its concrete type.
+	 *
+	 * @param instanceKey An object.
+	 * @return The name of the object's class.
+	 */
+	private static TypeName getClassName(InstanceKey instanceKey) {
+		CGNode constructor = getConstructorNode(instanceKey);
+		return constructor == null ? instanceKey.concreteType().getName() : constructor.getMethod().getDeclaringClass().getName();
+	}
+
+	/**
 	 * Whether the function of {@code nodes} reads a tensor-typed field that another function rebinds.
 	 *
 	 * @param nodes The call-graph nodes of the function in question.
-	 * @return {@code TRUE} if a tensor-typed field the function reads is written by another function that doesn't set its object up,
-	 *         {@code FALSE} otherwise.
+	 * @return A write rebinding a tensor-typed field the function reads, made by another function that doesn't set its object up, or empty
+	 *         if there is none.
 	 */
-	Boolean readsReboundState(Set<CGNode> nodes) {
+	Optional<ReboundWrite> readsReboundState(Set<CGNode> nodes) {
 		Set<CGNode> closure = new HashSet<>();
 		Deque<CGNode> worklist = new ArrayDeque<>(nodes);
 		closure.addAll(nodes);
@@ -124,16 +184,36 @@ class ReboundStateReadAnalysis {
 			tensorFieldsRead.addAll(this.tensorFieldsRead(node));
 
 		if (tensorFieldsRead.isEmpty())
-			return Boolean.FALSE;
+			return Optional.empty();
 
 		for (CGNode node : this.callGraph)
 			if (!closure.contains(node))
 				for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
 					if (written instanceof InstanceFieldPointerKey field && tensorFieldsRead.contains(field)
 							&& !this.setsUp(node, field.getInstanceKey()))
-						return Boolean.TRUE;
+						return Optional.of(new ReboundWrite(field, node, this.getWritePosition(node, field)));
 
-		return Boolean.FALSE;
+		return Optional.empty();
+	}
+
+	/**
+	 * The source position of an instruction of {@code node} writing {@code field}.
+	 *
+	 * @param node A node writing {@code field}.
+	 * @param field The field written.
+	 * @return The position of the first instruction of {@code node} writing {@code field}, or {@code null} if {@code node} has no source.
+	 */
+	private Position getWritePosition(CGNode node, PointerKey field) {
+		IR ir = node.getIR();
+
+		if (ir == null || !(node.getMethod() instanceof AstMethod method) || method.debugInfo() == null)
+			return null;
+
+		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+			if (this.modRef.getMod(node, this.heapModel, this.pointerAnalysis, instruction, null).contains(field))
+				return method.debugInfo().getInstructionPosition(instruction.iIndex());
+
+		return null;
 	}
 
 	/**
@@ -178,18 +258,43 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * True iff {@code node} sets up {@code instanceKey}: its method is the {@code __init__} of the object's class or of one of its bases,
-	 * or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}, and the object is its receiver. Both run
-	 * once per object, the first as the object is constructed and the second before the first {@code call}, so a field set only there holds
-	 * one value for the object's life.
+	 * True iff {@code node} sets up {@code instanceKey}: it is the engine summary that allocated the object (see
+	 * {@link #isAllocatingSummary(CGNode, InstanceKey)}), or its method is the {@code __init__} of the object's class or of one of its
+	 * bases, or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}, and the object is its receiver. Each
+	 * runs once per object, the summary and {@code __init__} as the object is created and {@code build} before the first {@code call}, so a
+	 * field set only there holds one value for the object's life.
 	 *
 	 * @param node A node writing a field of {@code instanceKey}.
 	 * @param instanceKey The object whose field {@code node} writes.
-	 * @return True iff {@code node}'s method is a set-up method of the object's class.
+	 * @return True iff {@code node} is the summary allocating the object or a set-up method of its class.
 	 */
 	private boolean setsUp(CGNode node, InstanceKey instanceKey) {
-		return this.getSetUpMethodTypes(instanceKey).contains(node.getMethod().getDeclaringClass().getReference())
-				&& this.isReceiver(node, instanceKey);
+		return isAllocatingSummary(node, instanceKey)
+				|| (this.getSetUpMethodTypes(instanceKey).contains(node.getMethod().getDeclaringClass().getReference())
+						&& this.isReceiver(node, instanceKey));
+	}
+
+	/**
+	 * True iff {@code node} is a function the engine synthesizes, not program source, and allocated {@code instanceKey}. A summary is
+	 * straight-line code that allocates the object afresh on each invocation, so its writes to that object populate a new object, which no
+	 * other code has seen yet, rather than rebind an existing one's field. Two kinds of summary write such fields. The engine's constructor
+	 * for a {@code NamedTuple} with no {@code __init__} stores each positional argument into its declared field
+	 * (https://github.com/wala/ML/issues/579), and these are the only writes a {@code NamedTuple}'s fields get, since it is immutable. The
+	 * summary of a TensorFlow operation such as {@code tf.concat} populates the tensor it returns, whose contents a body reads when it
+	 * iterates or indexes the tensor. {@code tf.function} flattens a {@code NamedTuple} or a tensor argument into its inputs on every call,
+	 * so a read of either's fields is live; an opaque argument it keys by identity, whose fields another function rebinds outside its
+	 * summary, is still refused.
+	 *
+	 * @param node A node writing a field of {@code instanceKey}.
+	 * @param instanceKey The object whose field {@code node} writes.
+	 * @return True iff {@code node} is a summary that allocated {@code instanceKey}.
+	 */
+	private static boolean isAllocatingSummary(CGNode node, InstanceKey instanceKey) {
+		if (node.getMethod() instanceof AstMethod)
+			return false;
+
+		AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+		return site != null && node.equals(site.getNode());
 	}
 
 	/**
@@ -221,12 +326,12 @@ class ReboundStateReadAnalysis {
 	 * @return The type references of the functions that set the object up.
 	 */
 	private Set<TypeReference> getSetUpMethodTypes(InstanceKey instanceKey) {
-		AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+		CGNode constructor = getConstructorNode(instanceKey);
 
-		if (site == null || !(site.getNode().getMethod() instanceof PythonConstructorFunction constructor))
+		if (constructor == null)
 			return Collections.emptySet();
 
-		return this.setUpMethodTypes.computeIfAbsent(constructor.getDeclaringClass().getName(), className -> {
+		return this.setUpMethodTypes.computeIfAbsent(constructor.getMethod().getDeclaringClass().getName(), className -> {
 			Set<TypeName> classAndBaseNames = Function.getClassAndBaseNames(this.callGraph.getClassHierarchy(), className);
 			// Keras invokes `build` once, before the first `call`, on a layer or a model; elsewhere `build` is an ordinary method.
 			boolean keras = !Collections.disjoint(classAndBaseNames, Function.KERAS_CALLABLE_TYPE_NAMES);
