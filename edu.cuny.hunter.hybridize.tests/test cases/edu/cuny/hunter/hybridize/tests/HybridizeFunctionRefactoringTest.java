@@ -11271,6 +11271,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("The entry names why the lookup failed: " + message, message.contains("NoDeclaringModuleException"));
 	}
 
+	/**
+	 * The {@code tf.custom_gradient} lookups skip a decorator whose name can't be resolved (#1121). Beneath {@code @tf.function}, the
+	 * unresolved decorator counts as intervening, since nothing shows it passes its arguments through. On a method, it isn't taken for
+	 * {@code tf.custom_gradient}. Either way, the decorator is recorded once.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testUnresolvedDecoratorInCustomGradientLookups() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertTrue("`f` is hybrid.", f.isHybrid());
+		assertTrue("An unresolved decorator beneath `@tf.function` counts as intervening.", f.hasInterveningDecorator());
+		assertEquals("`f`'s unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(f).size());
+
+		Function m = findFunction(functions, "C.m");
+		assertFalse("An unresolved decorator isn't taken for `tf.custom_gradient`.", m.isBoundCustomGradientMethod());
+		assertEquals("`C.m`'s unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(m).size());
+	}
+
 	private static List<RefactoringStatusEntry> getUnresolvedDecoratorEntries(Function function) {
 		return Arrays.stream(function.getStatus().getEntries())
 				.filter(e -> e.getCode() == Information.UNRESOLVED_DECORATOR.getCode() && e.getSeverity() == RefactoringStatus.WARNING)

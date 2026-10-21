@@ -1367,9 +1367,17 @@ public class Function {
 	private decoratorsType hybridDecorator;
 
 	/**
+	 * Why a decorator's name can't be resolved, for the {@link Information#UNRESOLVED_DECORATOR} entry, keyed by the exception the lookup
+	 * throws.
+	 */
+	private static final Map<Class<? extends Exception>, String> UNRESOLVED_DECORATOR_CAUSES = Map.of(
+			AmbiguousDeclaringModuleException.class, "its definition is found in more than one module", NoDeclaringModuleException.class,
+			"no definition of it is found", NoTextSelectionException.class, "no text selection covers it", BadLocationException.class,
+			"its location in the source is invalid");
+
+	/**
 	 * The decorators of this {@link Function} whose unresolvable names have already been recorded as
-	 * {@link Information#UNRESOLVED_DECORATOR} entries, so that a decorator both {@link #computeHybridization(IProgressMonitor)} and
-	 * {@link #getDecoratorNames(IProgressMonitor)} fail to resolve is recorded once (#1121).
+	 * {@link Information#UNRESOLVED_DECORATOR} entries, so that a decorator more than one lookup fails to resolve is recorded once (#1121).
 	 */
 	private final Set<decoratorsType> unresolvedDecorators = Collections
 			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
@@ -4439,26 +4447,10 @@ public class Function {
 		if (!this.unresolvedDecorators.add(decorator))
 			return; // Already recorded.
 
-		this.addWarning(UNRESOLVED_DECORATOR, "Can't resolve the name of decorator `" + getFullRepresentationString(decorator.func) + "` ("
-				+ cause.getClass().getSimpleName() + "): " + describeUnresolvedDecoratorCause(cause) + ".");
-	}
-
-	/**
-	 * Describes why a decorator's name can't be resolved, for the {@link Information#UNRESOLVED_DECORATOR} entry.
-	 *
-	 * @param cause The exception thrown while resolving the decorator's name.
-	 * @return A short description of why the decorator's name can't be resolved.
-	 */
-	private static String describeUnresolvedDecoratorCause(Exception cause) {
-		if (cause instanceof AmbiguousDeclaringModuleException)
-			return "its definition is found in more than one module";
-		if (cause instanceof NoDeclaringModuleException)
-			return "no definition of it is found";
-		if (cause instanceof NoTextSelectionException)
-			return "no text selection covers it";
-		if (cause instanceof BadLocationException)
-			return "its location in the source is invalid";
-		return "its lookup failed";
+		this.addWarning(UNRESOLVED_DECORATOR,
+				"Can't resolve the name of decorator `" + getFullRepresentationString(decorator.func) + "` ("
+						+ cause.getClass().getSimpleName() + "): "
+						+ UNRESOLVED_DECORATOR_CAUSES.getOrDefault(cause.getClass(), "its lookup failed") + ".");
 	}
 
 	/**
