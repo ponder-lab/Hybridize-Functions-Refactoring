@@ -245,11 +245,26 @@ class ReboundStateReadAnalysis {
 
 			for (PointerKey pointerKey : this.modRef.getRef(node, this.heapModel, this.pointerAnalysis, instruction, null))
 				if (pointerKey instanceof InstanceFieldPointerKey field
-						&& !Util.isContainerType(field.getInstanceKey().concreteType().getReference()))
+						&& !Util.isContainerType(field.getInstanceKey().concreteType().getReference())
+						&& !isSuperProxy(field.getInstanceKey()))
 					ret.add(field);
 		}
 
 		return ret;
+	}
+
+	/**
+	 * True iff {@code instanceKey} is the proxy the front end lowers a {@code super()} call to. Every method calling {@code super()}
+	 * allocates a fresh {@code superfun} object in its prologue and sets its {@code $class} and {@code $self} fields there, and the
+	 * engine's {@code super} model reads them back. The proxy is a lowering artifact, initialized on each invocation before any use, so its
+	 * fields are no program state, though the writes are program source's: another invocation of a method calling {@code super()}, outside
+	 * the reader's closure, writes the same abstract proxy.
+	 *
+	 * @param instanceKey The object whose field is read.
+	 * @return True iff {@code instanceKey} is a {@code super()} proxy.
+	 */
+	private static boolean isSuperProxy(InstanceKey instanceKey) {
+		return PythonTypes.superfun.equals(instanceKey.concreteType().getReference());
 	}
 
 	/**

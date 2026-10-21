@@ -15102,6 +15102,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The proxy the front end allocates for a {@code super()} call is not rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). Each method calling {@code super()} allocates a fresh
+	 * {@code superfun} object and sets its {@code $class} and {@code $self} fields in its prologue, and the engine's {@code super} model
+	 * reads them back. {@code Encoder.encoder} calls layers whose {@code build} calls {@code super()}, and whose {@code __init__}, outside
+	 * its closure, does too, so the {@code $self} that {@code __init__} writes matched the read.
+	 */
+	@Test
+	public void testReboundStateReadsSuperProxy() throws Exception {
+		Function function = findFunction(this.getFunctions(), "Encoder.encoder");
+		assertEquals("`Encoder.encoder` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+		assertNull("`Encoder.encoder` is not refused for rebound state.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+	}
+
+	/**
 	 * An opaque object passed as an argument, whose field another function rebinds, stays refused
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} keys such an argument by identity,
 	 * so a trace keeps the tensor the field held. So does a class attribute the module rebinds: the module's code allocates the class
