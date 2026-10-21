@@ -15077,6 +15077,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A {@code NamedTuple} or a {@code tf.concat} result held in a field that another method rebinds stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). The summary that allocates each writes its contents, and
+	 * those writes are initialization, but the field holding it is rebound outside {@code __init__}, so a trace keeps the object it held.
+	 * Measured on TensorFlow 2.9.3, {@code Holder.read} converted returns {@code [2.]} twice after {@code reset}, where the eager call
+	 * returns {@code [2.]} then {@code [3.]}, and {@code Box.read} returns {@code [5. 5.]} twice where the eager call returns
+	 * {@code [5. 5.]} then {@code [7. 7.]}.
+	 */
+	@Test
+	public void testReboundStateReadsHeldInRebound() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("Holder.read", "field `g` of `.*Holder`, rebound by `.*Holder/reset` at A\\.py:19\\.",
+				"Box.read", "field `t` of `.*Box`, rebound by `.*Box/reset` at A\\.py:30\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads through a rebound field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
 	 * An opaque object passed as an argument, whose field another function rebinds, stays refused
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} keys such an argument by identity,
 	 * so a trace keeps the tensor the field held. So does a class attribute the module rebinds: the module's code allocates the class

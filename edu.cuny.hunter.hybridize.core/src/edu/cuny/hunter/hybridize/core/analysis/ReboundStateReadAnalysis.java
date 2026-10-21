@@ -12,6 +12,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import com.ibm.wala.cast.ir.ssa.AstPropertyRead;
+import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -28,8 +30,12 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
+import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAGetInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSANewInstruction;
+import com.ibm.wala.ssa.SSAPutInstruction;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
@@ -59,9 +65,10 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * <p>
  * The elements of a list, tuple, dictionary, or set are not read as state: {@code tf.function} passes a container argument's tensors in
  * afresh on each call, and the code building a container writes its elements as fields. A container held in a field is missed with them,
- * though its element reads are stale too once another function rebuilds it, and so is a {@code NamedTuple} held in a field. Objects are
- * told apart by allocation site, so instances allocated at one site are one object here: a getter of an object created afresh on each call
- * is refused, though no instance it reads is ever rebound between two of its reads.
+ * though its element reads are stale too once another function rebuilds it. A field holding an object a summary allocated is read as state
+ * whatever its type, so a {@code NamedTuple} or a tensor held in a field that another function rebinds is refused. Objects are told apart
+ * by allocation site, so instances allocated at one site are one object here: a getter of an object created afresh on each call is refused,
+ * though no instance it reads is ever rebound between two of its reads.
  * <p>
  * The verdict is the function's, whatever its callers are: the guide documents that a trace is keyed on the arguments, so a change to a
  * Python global or free variable, which a field read through {@code self} is, does not retrace, and the trace-time value persists.
@@ -178,19 +185,18 @@ class ReboundStateReadAnalysis {
 			}
 		}
 
-		Set<PointerKey> tensorFieldsRead = new HashSet<>();
+		Set<PointerKey> stateFieldsRead = new HashSet<>();
 
 		for (CGNode node : closure)
-			tensorFieldsRead.addAll(this.tensorFieldsRead(node));
+			stateFieldsRead.addAll(this.stateFieldsRead(node));
 
-		if (tensorFieldsRead.isEmpty())
+		if (stateFieldsRead.isEmpty())
 			return Optional.empty();
 
 		for (CGNode node : this.callGraph)
 			if (!closure.contains(node))
 				for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
-					if (written instanceof InstanceFieldPointerKey field && tensorFieldsRead.contains(field)
-							&& !this.setsUp(node, field.getInstanceKey()))
+					if (written instanceof InstanceFieldPointerKey field && stateFieldsRead.contains(field) && !this.setsUp(node, field))
 						return Optional.of(new ReboundWrite(field, node, this.getWritePosition(node, field)));
 
 		return Optional.empty();
@@ -217,12 +223,16 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * The fields of objects that {@code node}'s own instructions read where the value read is typed as a tensor.
+	 * The fields of objects that {@code node}'s own instructions read as state: those read into a value typed as a tensor, and those read
+	 * into a value that may be an object a summary allocated (see {@link #isAllocatingSummary(CGNode, InstanceFieldPointerKey)}). A
+	 * summary's writes to such an object are excused as its initialization, so a rebinding of the field holding it, say
+	 * {@code self.g = G(v)} for a {@code NamedTuple} {@code G}, is what changes what a read through the field sees, tensor-typed or not. An
+	 * object passed in as an argument is read through no field, so its own fields stay excused.
 	 *
 	 * @param node A node the function reaches.
-	 * @return The instance-field pointer keys read into a tensor-typed value.
+	 * @return The instance-field pointer keys read as state.
 	 */
-	private Set<PointerKey> tensorFieldsRead(CGNode node) {
+	private Set<PointerKey> stateFieldsRead(CGNode node) {
 		Set<PointerKey> ret = new HashSet<>();
 		IR ir = node.getIR();
 
@@ -230,7 +240,7 @@ class ReboundStateReadAnalysis {
 			return ret;
 
 		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
-			if (!this.definesTensor(node, instruction))
+			if (!this.definesTensor(node, instruction) && !this.readsSummaryAllocation(node, instruction))
 				continue;
 
 			for (PointerKey pointerKey : this.modRef.getRef(node, this.heapModel, this.pointerAnalysis, instruction, null))
@@ -240,6 +250,29 @@ class ReboundStateReadAnalysis {
 		}
 
 		return ret;
+	}
+
+	/**
+	 * True iff {@code instruction} reads a field into a value that may be an object a summary, rather than program source, allocated.
+	 *
+	 * @param node The node of {@code instruction}.
+	 * @param instruction An instruction of {@code node}.
+	 * @return True iff {@code instruction} is a field read whose value's points-to set holds an object a summary allocated.
+	 */
+	private boolean readsSummaryAllocation(CGNode node, SSAInstruction instruction) {
+		if (!(instruction instanceof SSAGetInstruction) && !(instruction instanceof AstPropertyRead))
+			return false;
+
+		for (int i = 0; i < instruction.getNumberOfDefs(); i++)
+			for (InstanceKey instanceKey : this.pointerAnalysis
+					.getPointsToSet(this.heapModel.getPointerKeyForLocal(node, instruction.getDef(i)))) {
+				AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+
+				if (site != null && !(site.getNode().getMethod() instanceof AstMethod))
+					return true;
+			}
+
+		return false;
 	}
 
 	/**
@@ -258,43 +291,65 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * True iff {@code node} sets up {@code instanceKey}: it is the engine summary that allocated the object (see
-	 * {@link #isAllocatingSummary(CGNode, InstanceKey)}), or its method is the {@code __init__} of the object's class or of one of its
-	 * bases, or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}, and the object is its receiver. Each
-	 * runs once per object, the summary and {@code __init__} as the object is created and {@code build} before the first {@code call}, so a
-	 * field set only there holds one value for the object's life.
+	 * True iff {@code node} sets up the object whose field {@code field} is: it is the summary that allocated the object and the write is
+	 * to that allocation (see {@link #isAllocatingSummary(CGNode, InstanceFieldPointerKey)}), or its method is the {@code __init__} of the
+	 * object's class or of one of its bases, or, when the class is a Keras {@code Layer} or {@code Model} subclass, its {@code build}, and
+	 * the object is its receiver. Each sets the field before the object's first use, the summary and {@code __init__} as the object is
+	 * created and {@code build} before the first {@code call}, so a field set only there holds one value for the object's life.
 	 *
-	 * @param node A node writing a field of {@code instanceKey}.
-	 * @param instanceKey The object whose field {@code node} writes.
-	 * @return True iff {@code node} is the summary allocating the object or a set-up method of its class.
+	 * @param node A node writing {@code field}.
+	 * @param field The field {@code node} writes.
+	 * @return True iff {@code node} initializes the object in the summary allocating it or is a set-up method of its class.
 	 */
-	private boolean setsUp(CGNode node, InstanceKey instanceKey) {
-		return isAllocatingSummary(node, instanceKey)
+	private boolean setsUp(CGNode node, InstanceFieldPointerKey field) {
+		InstanceKey instanceKey = field.getInstanceKey();
+		return this.isAllocatingSummary(node, field)
 				|| (this.getSetUpMethodTypes(instanceKey).contains(node.getMethod().getDeclaringClass().getReference())
 						&& this.isReceiver(node, instanceKey));
 	}
 
 	/**
-	 * True iff {@code node} is a function the engine synthesizes, not program source, and allocated {@code instanceKey}. A summary is
-	 * straight-line code that allocates the object afresh on each invocation, so its writes to that object populate a new object, which no
-	 * other code has seen yet, rather than rebind an existing one's field. Two kinds of summary write such fields. The engine's constructor
-	 * for a {@code NamedTuple} with no {@code __init__} stores each positional argument into its declared field
-	 * (https://github.com/wala/ML/issues/579), and these are the only writes a {@code NamedTuple}'s fields get, since it is immutable. The
-	 * summary of a TensorFlow operation such as {@code tf.concat} populates the tensor it returns, whose contents a body reads when it
-	 * iterates or indexes the tensor. {@code tf.function} flattens a {@code NamedTuple} or a tensor argument into its inputs on every call,
-	 * so a read of either's fields is live; an opaque argument it keys by identity, whose fields another function rebinds outside its
-	 * summary, is still refused.
+	 * True iff {@code node} is a function the engine synthesizes, not program source, that allocated the object whose field {@code field}
+	 * is, and each of its writes to {@code field} is to the object its own allocation of that site defines. Such writes are initialization:
+	 * each concrete object's field is set by the invocation that creates it, before any other code sees the object, and a later write by
+	 * any other node still counts. The anchoring on the allocation's own value excludes a write the summary makes to an argument that
+	 * points to an object the same node allocated on an earlier call. Two kinds of summary write such fields. The engine's constructor for
+	 * a {@code NamedTuple} with no {@code __init__} stores each positional argument into its declared field
+	 * (https://github.com/wala/ML/issues/579), and the summary of a TensorFlow operation such as {@code tf.concat} populates the tensor it
+	 * returns, whose contents a body reads when it iterates or indexes the tensor. A read of these fields through an argument is live
+	 * because {@code tf.function} flattens a {@code NamedTuple} or a tensor argument into its inputs on every call; held in a field, the
+	 * object is read through that field, which {@link #stateFieldsRead(CGNode)} counts.
 	 *
-	 * @param node A node writing a field of {@code instanceKey}.
-	 * @param instanceKey The object whose field {@code node} writes.
-	 * @return True iff {@code node} is a summary that allocated {@code instanceKey}.
+	 * @param node A node writing {@code field}.
+	 * @param field The field {@code node} writes.
+	 * @return True iff {@code node} is a summary that allocated the object and writes {@code field} only on the object it allocates.
 	 */
-	private static boolean isAllocatingSummary(CGNode node, InstanceKey instanceKey) {
+	private boolean isAllocatingSummary(CGNode node, InstanceFieldPointerKey field) {
 		if (node.getMethod() instanceof AstMethod)
 			return false;
 
-		AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
-		return site != null && node.equals(site.getNode());
+		AllocationSiteInNode site = findAllocationSiteInNode(field.getInstanceKey());
+		IR ir = node.getIR();
+
+		if (site == null || !node.equals(site.getNode()) || ir == null)
+			return false;
+
+		DefUse du = node.getDU();
+		boolean wrote = false;
+
+		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+			if (this.modRef.getMod(node, this.heapModel, this.pointerAnalysis, instruction, null).contains(field)) {
+				int ref = instruction instanceof SSAPutInstruction put ? put.getRef()
+						: instruction instanceof AstPropertyWrite write ? write.getObjectRef() : -1;
+
+				if (ref == -1 || !(du.getDef(ref) instanceof SSANewInstruction allocation)
+						|| !allocation.getNewSite().equals(site.getSite()))
+					return false;
+
+				wrote = true;
+			}
+
+		return wrote;
 	}
 
 	/**
