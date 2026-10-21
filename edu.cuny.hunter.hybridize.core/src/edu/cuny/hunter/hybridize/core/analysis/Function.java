@@ -1318,6 +1318,12 @@ public class Function {
 	private Boolean hasReboundStateReads;
 
 	/**
+	 * A description of the write that rebinds a field this {@link Function} reads, naming the field and the write's location, when
+	 * {@link #hasReboundStateReads} is true; {@code null} otherwise.
+	 */
+	private String reboundStateWrite;
+
+	/**
 	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
 	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
 	 * could not be determined (no call-graph node), in which case the precondition does not block.
@@ -1638,7 +1644,8 @@ public class Function {
 								// field held when it was traced (issue 1076). A safety failure; it precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
 										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
-												+ "would keep the tensor the field held when it was traced.");
+												+ "would keep the tensor the field held when it was traced. It reads the "
+												+ this.reboundStateWrite + ".");
 							else if (TRUE.equals(this.getReturnsPrimitive()) && !FALSE.equals(this.getHasUsedResults()))
 								// A returned Python primitive, at the top level or inside a returned container, is converted to a
 								// tensor at the tf.function boundary, so the caller no longer receives a Python value (issue 1117). A
@@ -3551,8 +3558,11 @@ public class Function {
 			return;
 		}
 
-		this.hasReboundStateReads = new ReboundStateReadAnalysis(callGraph, pointerAnalysis, tensorTypedKeys).readsReboundState(nodes);
-		LOG.info(this + " reads rebound state: " + this.hasReboundStateReads + ".");
+		Optional<String> write = new ReboundStateReadAnalysis(callGraph, pointerAnalysis, tensorTypedKeys).readsReboundState(nodes)
+				.map(ReboundStateReadAnalysis.ReboundWrite::describe);
+		this.hasReboundStateReads = write.isPresent();
+		this.reboundStateWrite = write.orElse(null);
+		LOG.info(this + " reads rebound state: " + this.hasReboundStateReads + write.map(w -> " (" + w + ")").orElse("") + ".");
 	}
 
 	/**
