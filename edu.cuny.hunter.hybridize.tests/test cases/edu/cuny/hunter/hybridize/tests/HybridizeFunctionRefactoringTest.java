@@ -14050,9 +14050,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins the symbolic-iteration safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830, distilling
-	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but raises
-	 * {@code OperatorNotAllowedInGraphError} under tracing once the parameter is symbolic, even with AutoGraph converting the loop (it
-	 * fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). {@code range_loop}'s in-body {@code tf.range} iteration is
+	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but under tracing AutoGraph
+	 * converts the loop to a {@code tf.while_loop}, which may not stage a body that mutates Python state faithfully (it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). TODO: {@code iterate_param}'s body only reassigns a tensor local, so its
+	 * conversion is faithful, and the refusal is conservative here:
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137. {@code range_loop}'s in-body {@code tf.range} iteration is
 	 * AutoGraph-supported, is not parameter-derived, and remains P1.
 	 */
 	@Test
