@@ -15117,6 +15117,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A summary's write to a field holding an object it allocates is not a rebinding
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). The engine's {@code tf.GradientTape} summary binds a
+	 * {@code gradient} method object on each tape it creates, and the tapes of {@code gradient_of_sum} and {@code gradient_of_square} share
+	 * an abstraction, so each function's {@code tape.gradient} read matched the other's tape creation. Measured on TensorFlow 2.9.3, each
+	 * converted returns what it returns eagerly.
+	 */
+	@Test
+	public void testReboundStateReadsSummaryMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("gradient_of_sum", "gradient_of_square")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
 	 * An opaque object passed as an argument, whose field another function rebinds, stays refused
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} keys such an argument by identity,
 	 * so a trace keeps the tensor the field held. So does a class attribute the module rebinds: the module's code allocates the class

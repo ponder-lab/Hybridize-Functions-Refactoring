@@ -185,18 +185,22 @@ class ReboundStateReadAnalysis {
 			}
 		}
 
-		Set<PointerKey> stateFieldsRead = new HashSet<>();
+		Set<PointerKey> tensorFieldsRead = new HashSet<>();
+		Set<PointerKey> holderFieldsRead = new HashSet<>();
 
 		for (CGNode node : closure)
-			stateFieldsRead.addAll(this.stateFieldsRead(node));
+			this.addStateFieldsRead(node, tensorFieldsRead, holderFieldsRead);
 
-		if (stateFieldsRead.isEmpty())
+		if (tensorFieldsRead.isEmpty() && holderFieldsRead.isEmpty())
 			return Optional.empty();
 
 		for (CGNode node : this.callGraph)
 			if (!closure.contains(node))
 				for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
-					if (written instanceof InstanceFieldPointerKey field && stateFieldsRead.contains(field) && !this.setsUp(node, field))
+					if (written instanceof InstanceFieldPointerKey field
+							&& (tensorFieldsRead.contains(field)
+									|| (holderFieldsRead.contains(field) && node.getMethod() instanceof AstMethod))
+							&& !this.setsUp(node, field))
 						return Optional.of(new ReboundWrite(field, node, this.getWritePosition(node, field)));
 
 		return Optional.empty();
@@ -223,34 +227,42 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * The fields of objects that {@code node}'s own instructions read as state: those read into a value typed as a tensor, and those read
-	 * into a value that may be an object a summary allocated (see {@link #isAllocatingSummary(CGNode, InstanceFieldPointerKey)}). A
-	 * summary's writes to such an object are excused as its initialization, so a rebinding of the field holding it, say
-	 * {@code self.g = G(v)} for a {@code NamedTuple} {@code G}, is what changes what a read through the field sees, tensor-typed or not. An
-	 * object passed in as an argument is read through no field, so its own fields stay excused.
+	 * Adds the fields of objects that {@code node}'s own instructions read as state. A field read into a value typed as a tensor is a
+	 * tensor field, rebound by any write that doesn't set its object up. A field read into a value that may be an object a summary
+	 * allocated is a holder field (see {@link #isAllocatingSummary(CGNode, InstanceFieldPointerKey)}): a summary's writes to such an object
+	 * are excused as its initialization, so a rebinding of the field holding it, say {@code self.g = G(v)} for a {@code NamedTuple}
+	 * {@code G}, is what changes what a read through the field sees, tensor-typed or not. A holder field is rebound only by program source.
+	 * A summary writing one either binds a method object, as the summary of {@code tf.GradientTape} binds {@code gradient} on the tape, or
+	 * models module state such as a file system or a generator, which reads of module state own
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). An object passed in as an argument is read through no
+	 * field, so its own fields stay excused.
 	 *
 	 * @param node A node the function reaches.
-	 * @return The instance-field pointer keys read as state.
+	 * @param tensorFields The tensor fields read, added to.
+	 * @param holderFields The holder fields read, added to.
 	 */
-	private Set<PointerKey> stateFieldsRead(CGNode node) {
-		Set<PointerKey> ret = new HashSet<>();
+	private void addStateFieldsRead(CGNode node, Set<PointerKey> tensorFields, Set<PointerKey> holderFields) {
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return ret;
+			return;
 
 		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
-			if (!this.definesTensor(node, instruction) && !this.readsSummaryAllocation(node, instruction))
+			Set<PointerKey> fields;
+
+			if (this.definesTensor(node, instruction))
+				fields = tensorFields;
+			else if (this.readsSummaryAllocation(node, instruction))
+				fields = holderFields;
+			else
 				continue;
 
 			for (PointerKey pointerKey : this.modRef.getRef(node, this.heapModel, this.pointerAnalysis, instruction, null))
 				if (pointerKey instanceof InstanceFieldPointerKey field
 						&& !Util.isContainerType(field.getInstanceKey().concreteType().getReference())
 						&& !isSuperProxy(field.getInstanceKey()))
-					ret.add(field);
+					fields.add(field);
 		}
-
-		return ret;
 	}
 
 	/**
@@ -333,7 +345,7 @@ class ReboundStateReadAnalysis {
 	 * (https://github.com/wala/ML/issues/579), and the summary of a TensorFlow operation such as {@code tf.concat} populates the tensor it
 	 * returns, whose contents a body reads when it iterates or indexes the tensor. A read of these fields through an argument is live
 	 * because {@code tf.function} flattens a {@code NamedTuple} or a tensor argument into its inputs on every call; held in a field, the
-	 * object is read through that field, which {@link #stateFieldsRead(CGNode)} counts.
+	 * object is read through that field, which {@link #addStateFieldsRead(CGNode, Set, Set)} counts.
 	 *
 	 * @param node A node writing {@code field}.
 	 * @param field The field {@code node} writes.
