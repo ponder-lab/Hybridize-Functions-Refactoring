@@ -38,6 +38,7 @@ import org.python.pydev.core.MisconfigurationException;
 import org.python.pydev.core.PythonNatureWithoutProjectException;
 import org.python.pydev.plugin.nature.PythonNature;
 
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.eval.config.EvaluationOption;
 import edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler;
 
@@ -84,6 +85,12 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 	/** Exit code returned when the interpreter named by {@link EvaluationOption#PYTHON_INTERPRETER} cannot be configured. */
 	private static final int EXIT_INTERPRETER_FAILED = 5;
+
+	/**
+	 * Exit code returned when the evaluation is aborted as one of the analysis's PyDev lookups lost its answer to a dead PyDev completion
+	 * server, so what was emitted is incomplete (see {@link LostPyDevAnswerError}).
+	 */
+	private static final int EXIT_LOST_PYDEV_ANSWER = 7;
 
 	/** Name of the file holding an Eclipse project's description. */
 	private static final String PROJECT_DESCRIPTION_FILE = ".project";
@@ -136,6 +143,9 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 		// Logged whatever its severity: a completed run's status carries the completion line that drivers read.
 		LOG.log(status);
+
+		if (status.getException() instanceof LostPyDevAnswerError)
+			return EXIT_LOST_PYDEV_ANSWER;
 
 		switch (status.getSeverity()) {
 		case IStatus.OK:

@@ -541,7 +541,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				monitor.worked(1);
 			}
 		} catch (LostPyDevAnswerError e) {
-			LOG.error(e.getMessage(), e);
+			// Logged by the processor where the check stopped, or, if it escaped later, wherever the returned status is logged.
 			return Status.error("Evaluation aborted, and its results are incomplete: " + e.getMessage(), e);
 		} catch (Exception e) {
 			return Status.error("Encountered error with evaluation.", e);
