@@ -24,7 +24,6 @@ import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -116,12 +115,8 @@ public class Util {
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 
 		ItemPointer[] pointers;
-		try {
-			synchronized (PYDEV_LOCK) {
-				pointers = pyRefactoring.findDefinition(request);
-			}
-		} catch (TooManyMatchesException e) {
-			throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature, e);
+		synchronized (PYDEV_LOCK) {
+			pointers = pyRefactoring.findDefinition(request);
 		}
 
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
@@ -185,10 +180,9 @@ public class Util {
 		exprType decoratorFunction = decorator.func;
 
 		// A run-time generated decorator like `@prop.setter` names an attribute of a property object
-		// defined in this very module, not a module-level definition anywhere. Asking the indexer to
-		// resolve the bare attribute matches every `setter` in the workspace, so the lookup reports an
-		// ambiguity and the decorator is dropped from the output entirely. Its declaring module is the
-		// containing one by construction, so name it directly.
+		// defined in this very module, not a module-level definition anywhere. PyDev can't follow the
+		// bare attribute to a definition, so the lookup would leave the decorator unresolved. Its
+		// declaring module is the containing one by construction, so name it directly.
 		if (isGenerated(decorator)) {
 			String generatedFQN = containingModName + "." + NodeUtils.getFullRepresentationString(decoratorFunction);
 			LOG.info(String.format("Generated decorator FQN is: %s.", generatedFQN));
