@@ -200,15 +200,11 @@ class TensorIterationAnalysis {
 			"tuple");
 
 	/**
-	 * The Python builtins that iterate their first positional argument only when it is their sole one: {@code min(x)} and {@code max(x)}
-	 * iterate {@code x}, while {@code min(x, y)} compares its arguments. Each raises {@code OperatorNotAllowedInGraphError} under
-	 * {@code tf.function} on TensorFlow 2.9.3 when given only a tensor parameter.
-	 * <p>
-	 * TODO: {@code iter(x)} also iterates {@code x} and raises the same way, but the engine lowers a {@code for} loop to the same call of
-	 * {@code iter}, so the call can't be counted as a source call until the engine distinguishes the two:
-	 * https://github.com/wala/ML/issues/1131.
+	 * The Python builtins that iterate their first positional argument only when it is their sole one: {@code min(x)}, {@code max(x)} and
+	 * {@code iter(x)} iterate {@code x}, while {@code min(x, y)} compares its arguments and {@code iter(f, sentinel)} calls {@code f}. Each
+	 * raises {@code OperatorNotAllowedInGraphError} under {@code tf.function} on TensorFlow 2.9.3 when given only a tensor parameter.
 	 */
-	private static final Set<String> SOLE_ARGUMENT_ITERATING_BUILTINS = Set.of("max", "min");
+	private static final Set<String> SOLE_ARGUMENT_ITERATING_BUILTINS = Set.of("iter", "max", "min");
 
 	/**
 	 * The Python builtins that iterate every positional argument. {@code zip} raises {@code OperatorNotAllowedInGraphError} under
@@ -220,7 +216,9 @@ class TensorIterationAnalysis {
 	 * True iff {@code invoke} passes {@code value} positionally to a Python builtin that iterates it there, per
 	 * {@link #FIRST_ARGUMENT_ITERATING_BUILTINS}, {@link #SOLE_ARGUMENT_ITERATING_BUILTINS}, and {@link #ALL_ARGUMENTS_ITERATING_BUILTINS}.
 	 * The call graph decides which builtin is called: a callee is the builtin {@code name} when its declaring class is the engine's prelude
-	 * object for it. Slots at or after a starred argument are skipped, since their alignment to the builtin's parameters is unknown.
+	 * object for it. Slots at or after a starred argument are skipped, since their alignment to the builtin's parameters is unknown. A call
+	 * the engine made while lowering a {@code for} loop or a comprehension to the iteration protocol is skipped too, since it is not a call
+	 * of the builtin in the source.
 	 * <p>
 	 * TODO: The engine has no summary for {@code tuple}, {@code min}, {@code max}, {@code any} or {@code all}, so a call to one has no
 	 * target, and this doesn't fire for it: https://github.com/wala/ML/issues/1129. Once the engine summarizes them, it fires with no
@@ -232,6 +230,9 @@ class TensorIterationAnalysis {
 	 * @return True iff the called builtin iterates {@code value}.
 	 */
 	private boolean builtinIterates(CGNode node, PythonInvokeInstruction invoke, int value) {
+		if (invoke.isIterationProtocol())
+			return false;
+
 		int starred = invoke.firstStarredPosition();
 		int positional = invoke.getNumberOfPositionalParameters();
 		int end = starred == -1 ? positional : starred;

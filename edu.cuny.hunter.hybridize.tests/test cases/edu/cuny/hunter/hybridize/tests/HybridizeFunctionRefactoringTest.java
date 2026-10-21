@@ -14099,7 +14099,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`to_binary_class` fails with HAS_TENSOR_PARAMETER_ITERATION, the first of the two in the chain.", toBinaryClass
 				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
-		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param")) {
+		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param", "iter_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
@@ -14122,15 +14122,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
 					getFunction(identifier).getHasTensorParameterIteration());
 
-		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine distinguishes a source call of `iter` from the call a `for` loop
-		// lowers to: https://github.com/wala/ML/issues/1131.
-		assertFalse("`iter_param`'s call of `iter` is not yet told apart from a lowered loop, so its iteration is not seen.",
-				getFunction("iter_param").getHasTensorParameterIteration());
-
 		Function sortedParam = getFunction("sorted_param");
 		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
 				sortedParam.getHasTensorParameterIteration());
 		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
+
+		// The loop lowers to a call of `iter` on the range, which is not a call of the builtin in the source.
+		Function rangeLoopParam = getFunction("range_loop_param");
+		assertFalse("`range_loop_param` loops over a `tf.range` bounded by its parameter's shape, which AutoGraph converts.",
+				rangeLoopParam.getHasTensorParameterIteration());
 
 		Function storeIntoDerived = getFunction("store_into_derived");
 		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());

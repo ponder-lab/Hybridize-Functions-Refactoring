@@ -4,9 +4,9 @@
 # subscript, both work eagerly but raise under tracing
 # (OperatorNotAllowedInGraphError; TypeError: 'Tensor' object does not support
 # item assignment), so the conversion must be declined. `sorted`, which AutoGraph
-# converts, enumerating a Python list of tensors, storing into a list built in the
-# body, and setting an attribute on a tensor, which tracing supports, remain
-# convertible.
+# converts, a `tf.range` loop bounded by a tensor parameter's shape, enumerating a
+# Python list of tensors, storing into a list built in the body, and setting an
+# attribute on a tensor, which tracing supports, remain convertible.
 import copy
 
 import numpy as np
@@ -98,6 +98,13 @@ def sorted_param(x):
     return tf.stack(sorted(x))
 
 
+def range_loop_param(x):
+    total = tf.zeros(())
+    for i in tf.range(tf.shape(x)[0]):
+        total = total + x[i]
+    return total
+
+
 def enumerate_list(a, b):
     total = tf.zeros(())
     for i, t in enumerate([a, b]):
@@ -166,6 +173,7 @@ assert float(max_param(t)) == 6.0
 assert bool(any_param(t))
 assert bool(all_param(t))
 assert list(sorted_param(tf.constant([3.0, 1.0, 2.0])).numpy()) == [1.0, 2.0, 3.0]
+assert float(range_loop_param(t)) == 6.0
 
 try:
     store_string_key(np.array([10.0, 30.0]))
