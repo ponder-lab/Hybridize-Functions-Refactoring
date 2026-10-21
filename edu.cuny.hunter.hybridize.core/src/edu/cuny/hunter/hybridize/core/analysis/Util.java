@@ -108,6 +108,11 @@ public class Util {
 		request.moduleName = containingModName;
 		request.pushMonitor(monitor);
 
+		// When the definition can't be followed, PyDev otherwise falls back to matching the bare name against its global token index,
+		// which guesses a definition by name alone. Leave such names unresolved
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1121).
+		request.setAdditionalInfo(RefactoringRequest.FIND_DEFINITION_IN_ADDITIONAL_INFO, false);
+
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 
 		ItemPointer[] pointers;
