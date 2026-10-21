@@ -11258,17 +11258,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getFunction("f");
 
 		assertFalse(function.isHybrid());
+		assertEquals("The analysis records the unresolved decorator before anything names the decorators.", 1,
+				getUnresolvedDecoratorEntries(function).size());
+
 		assertEquals("The unresolved decorator has no name to report.", Set.of(), function.getDecoratorNames(null));
 
-		List<RefactoringStatusEntry> entries = Arrays.stream(function.getStatus().getEntries())
-				.filter(e -> e.getCode() == Information.UNRESOLVED_DECORATOR.getCode() && e.getSeverity() == RefactoringStatus.WARNING)
-				.toList();
-
+		List<RefactoringStatusEntry> entries = getUnresolvedDecoratorEntries(function);
 		assertEquals("The unresolved decorator is recorded once, though both lookups fail on it.", 1, entries.size());
 
 		String message = entries.get(0).getMessage();
 		assertTrue("The entry names the decorator: " + message, message.contains("`unregistered_decorator`"));
 		assertTrue("The entry names why the lookup failed: " + message, message.contains("NoDeclaringModuleException"));
+	}
+
+	private static List<RefactoringStatusEntry> getUnresolvedDecoratorEntries(Function function) {
+		return Arrays.stream(function.getStatus().getEntries())
+				.filter(e -> e.getCode() == Information.UNRESOLVED_DECORATOR.getCode() && e.getSeverity() == RefactoringStatus.WARNING)
+				.toList();
 	}
 
 	/**

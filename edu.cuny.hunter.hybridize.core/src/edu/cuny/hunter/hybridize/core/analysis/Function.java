@@ -4377,7 +4377,27 @@ public class Function {
 		return Optional.empty(); // Not found.
 	}
 
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators. A decorator whose name can't be resolved is left out and
+	 * recorded as an {@link Information#UNRESOLVED_DECORATOR} entry (#1121).
+	 *
+	 * @param monitor For progress monitoring.
+	 * @return The names of the decorators that resolve.
+	 */
 	public Set<String> getDecoratorNames(IProgressMonitor monitor) {
+		return this.getDecoratorNames(monitor, true);
+	}
+
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators.
+	 *
+	 * @param monitor For progress monitoring.
+	 * @param recordFailures True iff a decorator whose name can't be resolved is to be recorded as an
+	 *        {@link Information#UNRESOLVED_DECORATOR} entry. False for lookups inside assertions, so that enabling assertions doesn't
+	 *        change the entries.
+	 * @return The names of the decorators that resolve.
+	 */
+	private Set<String> getDecoratorNames(IProgressMonitor monitor, boolean recordFailures) {
 		SubMonitor progress = SubMonitor.convert(monitor);
 		Set<String> ret = new HashSet<>();
 
@@ -4396,7 +4416,9 @@ public class Function {
 						| NoTextSelectionException e) {
 					// Best effort.
 					LOG.warn("Can't get name of decorator: " + decorator, e);
-					this.addUnresolvedDecorator(decorator, e);
+
+					if (recordFailures)
+						this.addUnresolvedDecorator(decorator, e);
 				}
 		}
 
@@ -6364,7 +6386,7 @@ public class Function {
 
 	private List<TextEdit> convertToEager()
 			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already eager.";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already eager.";
 
 		// there can be more than one.
 		List<TextEdit> ret = new ArrayList<>();
@@ -6440,8 +6462,11 @@ public class Function {
 						return Optional.of(decorator);
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
-					// Best effort, as in `getDecoratorNames()`.
-					LOG.info("Can't get name of decorator: " + decorator, e);
+					// Best effort, as in `getDecoratorNames()`. The processor runs `computeHybridization()` first, which resolves the
+					// same decorator, but a lookup can fail here alone (e.g., when this is reached without it, or the lookup isn't
+					// repeatable), so record it too; the decorator is recorded once either way (#1121).
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+					this.addUnresolvedDecorator(decorator, e);
 				}
 
 		return Optional.empty();
@@ -6472,7 +6497,8 @@ public class Function {
 				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
 					return true;
 			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
-				LOG.info("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				LOG.warn("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				this.addUnresolvedDecorator(decs[i], e); // As in `getCustomGradientDecorator()`.
 				return true;
 			}
 
@@ -6609,7 +6635,7 @@ public class Function {
 	}
 
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
-		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
+		assert !this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -6667,7 +6693,7 @@ public class Function {
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Not hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 
