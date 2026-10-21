@@ -64,9 +64,11 @@
 # it completes but skips a project that failed (the completion line names it); 1
 # when the evaluation is aborted, or when this script is missing ECLIPSE,
 # WORKSPACE, or OUTDIR or refuses OUTDIR; 2 when the workspace has no open
-# Python project; 3 on an unrecognized argument; 4 and 5 as above. The
-# platform's own codes, such as 13 for an error that ends the application, pass
-# through unchanged.
+# Python project; 3 on an unrecognized argument; 4 and 5 as above; 7 when the
+# evaluation is aborted as a PyDev lookup lost its answer to a dead PyDev
+# completion server, so what was emitted is incomplete. The platform's own
+# codes, such as 13 for an error that ends the application, pass through
+# unchanged.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather

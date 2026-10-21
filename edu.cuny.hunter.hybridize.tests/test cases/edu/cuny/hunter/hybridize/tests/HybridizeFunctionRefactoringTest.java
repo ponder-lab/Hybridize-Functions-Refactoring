@@ -161,6 +161,7 @@ import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
 import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -805,16 +806,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the {@link Function}s in the test file.
+	 * Returns the processor of the refactoring over the refactoring available {@link FunctionDef}s found in the test file X.py, where X is
+	 * fileNameWithoutExtension, configured as this test is.
 	 *
 	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
-	 * @return The set of {@link Function}s analyzed.
+	 * @param documentToAvailableFunctionDefs The refactoring available {@link FunctionDef}s in X.py, keyed by the module's AST root and the
+	 *        {@link IDocument}, as {@link #getDocumentToAvailableFunctionDefinitions(String)} returns them.
+	 * @return The processor of the refactoring over the given {@link FunctionDef}s.
 	 */
-	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
+	private HybridizeFunctionRefactoringProcessor createProcessor(String fileNameWithoutExtension,
+			Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs) {
 		File inputTestFile = this.getInputTestFile(fileNameWithoutExtension);
-
-		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
-				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
 
 		SimpleNode moduleRoot = documentToAvailableFunctionDefs.getKey().getKey();
 		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
@@ -859,7 +861,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
 		processor.setSkipScriptsOutsidePythonPath(this.skipScriptsOutsidePythonPath);
 		this.lastProcessor = processor;
+		return processor;
+	}
 
+	/**
+	 * Returns the {@link Function}s in the test file.
+	 *
+	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
+	 * @return The set of {@link Function}s analyzed.
+	 */
+	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
+
+		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
+		HybridizeFunctionRefactoringProcessor processor = this.createProcessor(fileNameWithoutExtension, documentToAvailableFunctionDefs);
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
 		RefactoringStatus status = refactoring.checkAllConditions(new NullProgressMonitor());
@@ -11260,6 +11276,76 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Set.of(), function.getDecoratorNames(null));
 		assertFalse(function.isHybrid());
 		assertEquals("The unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(function).size());
+	}
+
+	/**
+	 * Checks the conditions of the refactoring over the test file A.py while the given module of the test's source folder is a forced
+	 * builtin, which PyDev answers lookups into by importing the module in its completion server (#1121).
+	 *
+	 * @param module The module of the test's source folder to make a forced builtin.
+	 * @return The status of the condition checking.
+	 * @throws Exception On error.
+	 */
+	private RefactoringStatus checkConditionsWithForcedBuiltin(String module) throws Exception {
+		String sourceFolder = getAbsolutePath(this.getInputTestFileName("A")).getParent().toString();
+		InterpreterInfo info = getDefaultInterpreterInfo();
+
+		// The server imports a forced builtin from the interpreter's PYTHONPATH rather than the project's.
+		info.addForcedLib(module);
+		info.libs.add(sourceFolder);
+
+		try {
+			HybridizeFunctionRefactoringProcessor processor = this.createProcessor("A",
+					this.getDocumentToAvailableFunctionDefinitions("A"));
+			return new ProcessorBasedRefactoring(processor).checkAllConditions(new NullProgressMonitor());
+		} finally {
+			info.libs.remove(sourceFolder);
+			info.removeForcedLib(module);
+		}
+	}
+
+	/**
+	 * Asserts that the given status has a fatal error carrying a {@link LostPyDevAnswerError} whose message names the given lookup and
+	 * selection in module {@code A} (#1121).
+	 *
+	 * @param status The status of the condition checking.
+	 * @param lookup The kind of lookup that lost its answer.
+	 * @param selection The text the lookup was made for.
+	 */
+	private static void assertLostPyDevAnswer(RefactoringStatus status, String lookup, String selection) {
+		assertTrue("The analysis stops with a fatal error: " + status, status.hasFatalError());
+
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertTrue("The fatal error carries the lost answer: " + entry.getData(), entry.getData() instanceof LostPyDevAnswerError);
+
+		String message = entry.getMessage();
+		assertTrue("The error names the lookup: " + message, message.contains(lookup + " lookup"));
+		assertTrue("The error names the selection: " + message, message.contains("selection: " + selection + ","));
+		assertTrue("The error names the module: " + message, message.contains("module: A,"));
+	}
+
+	/**
+	 * A PyDev lookup that loses its answer to a dead PyDev completion server stops the analysis with a fatal error naming the lookup,
+	 * rather than leaving the decorator it was made for unresolved (#1121). The module here kills the server when imported there, so the
+	 * lookup of the decorator from it loses its answer.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testLostPyDevAnswer() throws Exception {
+		assertLostPyDevAnswer(this.checkConditionsWithForcedBuiltin("lost_answer_aborts"), "definition", "decorate");
+	}
+
+	/**
+	 * As {@link #testLostPyDevAnswer()}, but the lookup that loses its answer is the one for the parent classes of a method's class, made
+	 * as the method's name suggests a tensor context (#1121). The fixture has no decorators, so no definition lookup reaches the module
+	 * first: the class-hierarchy lookup's request for the base class kills the server.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testLostPyDevAnswerInClassHierarchy() throws Exception {
+		assertLostPyDevAnswer(this.checkConditionsWithForcedBuiltin("lost_base_answer_aborts"), "class hierarchy", "M");
 	}
 
 	/**

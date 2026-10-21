@@ -79,6 +79,7 @@ import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
@@ -367,6 +368,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						status = refactoring.checkAllConditions(new NullProgressMonitor());
 						resultsTimeCollector.stop();
 
+						// A lookup that lost its answer stops the run, rather than only this project (#1121).
+						rethrowLostPyDevAnswer(status);
+
 						LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
 					} else
 						status = new RefactoringStatus();
@@ -521,6 +525,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					if (e instanceof VirtualMachineError vmError)
 						throw vmError;
 
+					// A PyDev lookup that lost its answer to a dead completion server is rethrown, too: the server serves every
+					// project, so the run's results can't be trusted to be complete (#1121).
+					if (e instanceof LostPyDevAnswerError lostAnswer)
+						throw lostAnswer;
+
 					LOG.error("Evaluation failed for project " + project.getName() + "; recording and skipping it.", e);
 					failedProjects.add(project.getName() + " (" + e.getClass().getSimpleName()
 							+ (e.getMessage() != null ? ": " + e.getMessage() : "") + ")");
@@ -531,6 +540,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				monitor.worked(1);
 			}
+		} catch (LostPyDevAnswerError e) {
+			// Logged by the processor where the check stopped, or, if it escaped later, wherever the returned status is logged.
+			return Status.error("Evaluation aborted, and its results are incomplete: " + e.getMessage(), e);
 		} catch (Exception e) {
 			return Status.error("Encountered error with evaluation.", e);
 		} finally {
@@ -549,6 +561,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					+ failedCount + " failed and were skipped: " + String.join(", ", failedProjects));
 
 		return Status.info("Evaluation completed: all " + pythonProjects.length + " project(s) succeeded.");
+	}
+
+	/**
+	 * Rethrows the {@link LostPyDevAnswerError} with which the given status's condition checking stopped, if any (#1121).
+	 *
+	 * @param status The status of the condition checking.
+	 * @throws LostPyDevAnswerError If the condition checking stopped as a PyDev lookup lost its answer.
+	 */
+	private static void rethrowLostPyDevAnswer(RefactoringStatus status) {
+		for (RefactoringStatusEntry entry : status.getEntries())
+			if (entry.isFatalError() && entry.getData() instanceof LostPyDevAnswerError lostAnswer)
+				throw lostAnswer;
 	}
 
 	private static boolean shouldPerformChange() {
