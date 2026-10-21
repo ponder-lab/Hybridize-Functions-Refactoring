@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
@@ -39,6 +40,7 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1370,6 +1372,22 @@ public class Function {
 	 */
 	private decoratorsType hybridDecorator;
 
+	/**
+	 * Why a decorator's name can't be resolved, for the {@link Information#UNRESOLVED_DECORATOR} entry, keyed by the exception the lookup
+	 * throws.
+	 */
+	private static final Map<Class<? extends Exception>, String> UNRESOLVED_DECORATOR_CAUSES = Map.of(
+			AmbiguousDeclaringModuleException.class, "its definition is found in more than one module", NoDeclaringModuleException.class,
+			"no definition of it is found", NoTextSelectionException.class, "no text selection covers it", BadLocationException.class,
+			"its location in the source is invalid");
+
+	/**
+	 * The decorators of this {@link Function} whose unresolvable names have already been recorded as
+	 * {@link Information#UNRESOLVED_DECORATOR} entries, so that a decorator more than one lookup fails to resolve is recorded once (#1121).
+	 */
+	private final Set<decoratorsType> unresolvedDecorators = Collections
+			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+
 	private boolean ignoreBooleans;
 
 	/**
@@ -1546,6 +1564,10 @@ public class Function {
 
 	public void addWarning(String message) {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
+	}
+
+	private void addWarning(Information information, String message) {
+		this.addStatus(RefactoringStatus.WARNING, message, information.getCode());
 	}
 
 	/**
@@ -2026,6 +2048,8 @@ public class Function {
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
+
+					this.addUnresolvedDecorator(decorator, e);
 				}
 
 				if (hybrid)
@@ -4371,7 +4395,27 @@ public class Function {
 		return Optional.empty(); // Not found.
 	}
 
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators. A decorator whose name can't be resolved is left out and
+	 * recorded as an {@link Information#UNRESOLVED_DECORATOR} entry (#1121).
+	 *
+	 * @param monitor For progress monitoring.
+	 * @return The names of the decorators that resolve.
+	 */
 	public Set<String> getDecoratorNames(IProgressMonitor monitor) {
+		return this.getDecoratorNames(monitor, true);
+	}
+
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators.
+	 *
+	 * @param monitor For progress monitoring.
+	 * @param recordFailures True iff a decorator whose name can't be resolved is to be recorded as an
+	 *        {@link Information#UNRESOLVED_DECORATOR} entry. False for lookups inside assertions, so that enabling assertions doesn't
+	 *        change the entries.
+	 * @return The names of the decorators that resolve.
+	 */
+	private Set<String> getDecoratorNames(IProgressMonitor monitor, boolean recordFailures) {
 		SubMonitor progress = SubMonitor.convert(monitor);
 		Set<String> ret = new HashSet<>();
 
@@ -4389,11 +4433,34 @@ public class Function {
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
 					// Best effort.
-					LOG.info("Can't get name of decorator: " + decorator, e);
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+
+					if (recordFailures)
+						this.addUnresolvedDecorator(decorator, e);
 				}
 		}
 
 		return ret;
+	}
+
+	/**
+	 * Records that the name of the given decorator of this {@link Function} can't be resolved, as an
+	 * {@link Information#UNRESOLVED_DECORATOR} warning naming the decorator and the reason, unless that decorator has already been recorded
+	 * (#1121). The entry is a warning rather than an error: it doesn't fail the refactoring by itself, since some such lookups fail
+	 * legitimately and repeatably, but the decorator is then missing from the reported names and can't be ruled out as the hybridization
+	 * decorator.
+	 *
+	 * @param decorator The decorator whose name can't be resolved.
+	 * @param cause Why the name can't be resolved.
+	 */
+	private void addUnresolvedDecorator(decoratorsType decorator, Exception cause) {
+		if (!this.unresolvedDecorators.add(decorator))
+			return; // Already recorded.
+
+		this.addWarning(UNRESOLVED_DECORATOR,
+				"Can't resolve the name of decorator `" + getFullRepresentationString(decorator.func) + "` ("
+						+ cause.getClass().getSimpleName() + "): "
+						+ UNRESOLVED_DECORATOR_CAUSES.getOrDefault(cause.getClass(), "its lookup failed") + ".");
 	}
 
 	/**
@@ -6321,7 +6388,7 @@ public class Function {
 
 	private List<TextEdit> convertToEager()
 			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already eager.";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already eager.";
 
 		// there can be more than one.
 		List<TextEdit> ret = new ArrayList<>();
@@ -6397,8 +6464,11 @@ public class Function {
 						return Optional.of(decorator);
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
-					// Best effort, as in `getDecoratorNames()`.
-					LOG.info("Can't get name of decorator: " + decorator, e);
+					// Best effort, as in `getDecoratorNames()`. The processor runs `computeHybridization()` first, which resolves the
+					// same decorator, but a lookup can fail here alone (e.g., when this is reached without it, or the lookup isn't
+					// repeatable), so record it too; the decorator is recorded once either way (#1121).
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+					this.addUnresolvedDecorator(decorator, e);
 				}
 
 		return Optional.empty();
@@ -6429,7 +6499,8 @@ public class Function {
 				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
 					return true;
 			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
-				LOG.info("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				LOG.warn("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				this.addUnresolvedDecorator(decs[i], e); // As in `getCustomGradientDecorator()`.
 				return true;
 			}
 
@@ -6566,7 +6637,7 @@ public class Function {
 	}
 
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
-		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
+		assert !this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -6624,7 +6695,7 @@ public class Function {
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Not hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 

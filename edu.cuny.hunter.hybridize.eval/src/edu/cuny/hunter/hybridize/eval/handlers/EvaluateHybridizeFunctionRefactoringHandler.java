@@ -375,6 +375,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					Set<Function> functions = processor.getFunctions();
 					resultsRecord.add(functions.size());
 
+					// decorators. Printed before any other per-function output, since a decorator whose name can't be resolved here is
+					// recorded as a status entry on its function (#1121), and every CSV that reports statuses must see it.
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
+
 					for (Function func : functions) {
 						printFunction(functionsPrinter, func);
 						printBlockedParameters(blockedParametersPrinter, func);
@@ -424,9 +428,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// general refactoring statuses.
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
 					printStatuses(statusPrinter, generalEntries);
-
-					// decorators.
-					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
