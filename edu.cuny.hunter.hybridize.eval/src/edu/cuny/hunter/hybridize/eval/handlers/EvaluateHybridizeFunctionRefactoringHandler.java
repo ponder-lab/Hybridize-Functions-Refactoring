@@ -421,12 +421,13 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					printStatuses(errorPrinter, errorEntries);
 
+					// decorators. Printed before the general statuses, since a decorator whose name can't be resolved here is recorded
+					// as a status entry on its function (#1121).
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
+
 					// general refactoring statuses.
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
 					printStatuses(statusPrinter, generalEntries);
-
-					// decorators.
-					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())

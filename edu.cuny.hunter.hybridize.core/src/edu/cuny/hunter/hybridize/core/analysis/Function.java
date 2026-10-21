@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
@@ -39,6 +40,7 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1364,6 +1366,14 @@ public class Function {
 	 */
 	private decoratorsType hybridDecorator;
 
+	/**
+	 * The decorators of this {@link Function} whose unresolvable names have already been recorded as
+	 * {@link Information#UNRESOLVED_DECORATOR} entries, so that a decorator both {@link #computeHybridization(IProgressMonitor)} and
+	 * {@link #getDecoratorNames(IProgressMonitor)} fail to resolve is recorded once (#1121).
+	 */
+	private final Set<decoratorsType> unresolvedDecorators = Collections
+			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+
 	private boolean ignoreBooleans;
 
 	/**
@@ -1540,6 +1550,10 @@ public class Function {
 
 	public void addWarning(String message) {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
+	}
+
+	private void addWarning(Information information, String message) {
+		this.addStatus(RefactoringStatus.WARNING, message, information.getCode());
 	}
 
 	/**
@@ -2019,6 +2033,8 @@ public class Function {
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
+
+					this.addUnresolvedDecorator(decorator, e);
 				}
 
 				if (hybrid)
@@ -4379,11 +4395,48 @@ public class Function {
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
 					// Best effort.
-					LOG.info("Can't get name of decorator: " + decorator, e);
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+					this.addUnresolvedDecorator(decorator, e);
 				}
 		}
 
 		return ret;
+	}
+
+	/**
+	 * Records that the name of the given decorator of this {@link Function} can't be resolved, as an
+	 * {@link Information#UNRESOLVED_DECORATOR} warning naming the decorator and the reason, unless that decorator has already been recorded
+	 * (#1121). The entry is a warning rather than an error: it doesn't fail the refactoring by itself, since some such lookups fail
+	 * legitimately and repeatably, but the decorator is then missing from the reported names and can't be ruled out as the hybridization
+	 * decorator.
+	 *
+	 * @param decorator The decorator whose name can't be resolved.
+	 * @param cause Why the name can't be resolved.
+	 */
+	private void addUnresolvedDecorator(decoratorsType decorator, Exception cause) {
+		if (!this.unresolvedDecorators.add(decorator))
+			return; // Already recorded.
+
+		this.addWarning(UNRESOLVED_DECORATOR, "Can't resolve the name of decorator `" + getFullRepresentationString(decorator.func) + "` ("
+				+ cause.getClass().getSimpleName() + "): " + describeUnresolvedDecoratorCause(cause) + ".");
+	}
+
+	/**
+	 * Describes why a decorator's name can't be resolved, for the {@link Information#UNRESOLVED_DECORATOR} entry.
+	 *
+	 * @param cause The exception thrown while resolving the decorator's name.
+	 * @return A short description of why the decorator's name can't be resolved.
+	 */
+	private static String describeUnresolvedDecoratorCause(Exception cause) {
+		if (cause instanceof AmbiguousDeclaringModuleException)
+			return "its definition is found in more than one module";
+		if (cause instanceof NoDeclaringModuleException)
+			return "no definition of it is found";
+		if (cause instanceof NoTextSelectionException)
+			return "no text selection covers it";
+		if (cause instanceof BadLocationException)
+			return "its location in the source is invalid";
+		return "its lookup failed";
 	}
 
 	/**

@@ -11247,6 +11247,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator whose name can't be resolved is recorded on its function rather than dropped silently (#1121). The decorator here is
+	 * bound only at run time, so no definition of it is found. Both the hybridization check and the decorator naming fail on it, and the
+	 * entry is recorded once.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testUnresolvedDecorator() throws Exception {
+		Function function = getFunction("f");
+
+		assertFalse(function.isHybrid());
+		assertEquals("The unresolved decorator has no name to report.", Set.of(), function.getDecoratorNames(null));
+
+		List<RefactoringStatusEntry> entries = Arrays.stream(function.getStatus().getEntries())
+				.filter(e -> e.getCode() == Information.UNRESOLVED_DECORATOR.getCode() && e.getSeverity() == RefactoringStatus.WARNING)
+				.toList();
+
+		assertEquals("The unresolved decorator is recorded once, though both lookups fail on it.", 1, entries.size());
+
+		String message = entries.get(0).getMessage();
+		assertTrue("The entry names the decorator: " + message, message.contains("`unregistered_decorator`"));
+		assertTrue("The entry names why the lookup failed: " + message, message.contains("NoDeclaringModuleException"));
+	}
+
+	/**
 	 * Regression guard against a destructuring assignment whose left-hand side rebinds the name being destructured losing every field but
 	 * the first (fixed by <a href="https://github.com/wala/ML/issues/819">wala/ML#819</a>, released in Ariadne 0.52.79). Through 0.52.78
 	 * the read that followed the rebinding was carried to field 0's definition, so field 1 was read out of field 0's result rather than out
