@@ -14,7 +14,6 @@ import org.eclipse.ltk.core.refactoring.participants.RefactoringProcessor;
 import org.eclipse.ltk.ui.refactoring.RefactoringWizard;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Shell;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 
 import edu.cuny.citytech.refactoring.common.ui.InputPage;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
@@ -79,7 +78,7 @@ public class HybridizeFunctionRefactoringWizard extends RefactoringWizard {
 		}
 	}
 
-	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell) throws TooManyMatchesException {
+	public static void startRefactoring(Set<FunctionDefinition> functionDefinitions, Shell shell) {
 		Refactoring refactoring = createRefactoring(functionDefinitions);
 		RefactoringWizard wizard = new HybridizeFunctionRefactoringWizard(refactoring);
 

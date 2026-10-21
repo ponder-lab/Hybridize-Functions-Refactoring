@@ -11247,6 +11247,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator bound at run time has no definition PyDev can follow from the module that uses it, although another module of the project
+	 * defines a function with the same name. The lookup leaves it unresolved rather than guess the other module's definition by name from
+	 * PyDev's global token index (#1121).
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testRuntimeBoundDecoratorUnresolved() throws Exception {
+		Function function = getFunction("f");
+		assertEquals("A decorator bound at run time stays unresolved, rather than resolving to `B.runtime_bound_decorator` by name.",
+				Set.of(), function.getDecoratorNames(null));
+		assertFalse(function.isHybrid());
+		assertEquals("The unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(function).size());
+	}
+
+	/**
 	 * A decorator whose name can't be resolved is recorded on its function rather than dropped silently (#1121). The decorator here is
 	 * bound only at run time, so no definition of it is found. Both the hybridization check and the decorator naming fail on it, and the
 	 * entry is recorded once.

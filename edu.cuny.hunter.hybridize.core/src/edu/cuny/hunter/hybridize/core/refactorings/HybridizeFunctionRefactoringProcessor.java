@@ -46,7 +46,6 @@ import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.TextEdit;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
 import org.python.pydev.parser.jython.SimpleNode;
 
@@ -272,8 +271,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.inferInputSignatures = inferInputSignatures;
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) {
 		this();
 
 		// Convert the FunctionDefs to Functions.
@@ -290,49 +288,45 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects) {
 		this(functionDefinitionSet);
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects);
 		this.processFunctionsInParallel = processFunctionsInParallel;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel);
 		this.alwaysCheckRecursion = alwaysCheckRecursion;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion);
 		this.useTestEntryPoints = useTestEntryPoints;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints);
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
-			boolean useSpeculativeAnalysis) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean useSpeculativeAnalysis) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints,
 				alwaysFollowTypeHints, useSpeculativeAnalysis, false);
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
-			boolean useSpeculativeAnalysis, boolean inferInputSignatures) throws TooManyMatchesException /* FIXME: low-level. */ {
+			boolean useSpeculativeAnalysis, boolean inferInputSignatures) {
 		this();
 
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
