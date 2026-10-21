@@ -31,10 +31,14 @@ import com.ibm.wala.util.collections.Pair;
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098). Both share one scan, described below.
  * <p>
  * The iteration check fires on a Python {@code for} over such a value. Eagerly such iteration works (the elements are tensors); under
- * {@code tf.function} tracing, the decorated function's inputs are symbolic, and iterating a symbolic tensor raises
- * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop (runtime-verified on the pinned framework). The scope is
- * deliberately anchored on parameter-derived values: an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is
- * the decoration that makes a parameter symbolic at entry.
+ * {@code tf.function} tracing, the decorated function's inputs are symbolic. AutoGraph converts a {@code for} over a symbolic tensor to a
+ * {@code tf.while_loop}, which raises or traces to a different result when the body can't be staged: it mutates Python state (appending
+ * each element to a local list traces, but the list has one element), changes a loop-carried value's dtype or shape, returns inside the
+ * loop, or converts an element to a Python value. A body that only adds each element to a fixed-shape tensor accumulator traces to the
+ * eager result. The check doesn't decide stageability, so it refuses every such loop
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137). The scope is deliberately anchored on parameter-derived
+ * values: an in-body {@code tf.range} loop is AutoGraph-supported and must not fire, and it is the decoration that makes a parameter
+ * symbolic at entry.
  * <p>
  * The scan is body-local: parameter value numbers seed a forward def-use taint, and a {@link EachElementGetInstruction} (the IR form of a
  * Python {@code for}-each) whose iterated object is tainted <em>and</em> tensor-typed by the tensor-type analysis fires. The tensor-typed
