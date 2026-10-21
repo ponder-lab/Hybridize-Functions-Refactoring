@@ -13712,9 +13712,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Keras models that build a functional model in their constructors and don't override {@code call}
 	 * (https://github.com/wala/ML/issues/1128): {@code FunctionalKeyword} passes {@code inputs} and {@code outputs} to
 	 * {@code super().__init__} by keyword, and {@code FunctionalPositional} by position. Applying an instance runs {@code Model.call} over
-	 * the graph, so on TensorFlow 2.9.3 each consumer receives a (2, 4) {@code float32} tensor. The engine gives no tensor for either
-	 * application, so neither consumer is seen to have a tensor parameter. The same model built directly with {@code tf.keras.Model} is the
-	 * control.
+	 * the graph, so on TensorFlow 2.9.3 each consumer receives a (2, 4) {@code float32} tensor, which its signature specifies. The same
+	 * model built directly with {@code tf.keras.Model} is the control.
 	 */
 	@Test
 	public void testKerasFunctionalModelSubclass() throws Exception {
@@ -13722,20 +13721,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		// TODO: Expect a (2, 4) float32 tensor parameter, as for `consume_direct`, once the engine types these applications:
-		// https://github.com/wala/ML/issues/1128.
-		for (String identifier : List.of("consume_keyword", "consume_positional")) {
+		for (String identifier : List.of("consume_keyword", "consume_positional", "consume_direct")) {
 			Function consumer = findFunction(functions, identifier);
-			assertFalse("`" + identifier + "` is not yet seen to have a tensor parameter.", consumer.getHasTensorParameter());
-			assertTrue("`" + identifier + "` is refused for having no tensor parameters.",
-					consumer.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS).isError());
+			assertTrue("`" + identifier + "` has a tensor parameter.", consumer.getHasTensorParameter());
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, consumer.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is the applied model's output.",
+					"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]", consumer.getInferredInputSignature().get().toTensorSpecList("tf."));
 		}
-
-		Function direct = findFunction(functions, "consume_direct");
-		assertTrue("`consume_direct` has a tensor parameter.", direct.getHasTensorParameter());
-		assertEquals("`consume_direct` hybridizes (P1).", P1, direct.getPassingPrecondition());
-		assertEquals("`consume_direct`'s signature is the applied model's output.", "[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]",
-				direct.getInferredInputSignature().get().toTensorSpecList("tf."));
 	}
 
 	/**
@@ -14107,7 +14099,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`to_binary_class` fails with HAS_TENSOR_PARAMETER_ITERATION, the first of the two in the chain.", toBinaryClass
 				.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
-		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param")) {
+		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param", "iter_param")) {
 			Function function = getFunction(identifier);
 			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
 					function.getHasTensorParameterIteration());
@@ -14130,15 +14122,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
 					getFunction(identifier).getHasTensorParameterIteration());
 
-		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine distinguishes a source call of `iter` from the call a `for` loop
-		// lowers to: https://github.com/wala/ML/issues/1131.
-		assertFalse("`iter_param`'s call of `iter` is not yet told apart from a lowered loop, so its iteration is not seen.",
-				getFunction("iter_param").getHasTensorParameterIteration());
-
 		Function sortedParam = getFunction("sorted_param");
 		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
 				sortedParam.getHasTensorParameterIteration());
 		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
+
+		// The loop lowers to a call of `iter` on the range, which is not a call of the builtin in the source.
+		Function rangeLoopParam = getFunction("range_loop_param");
+		assertFalse("`range_loop_param` loops over a `tf.range` bounded by its parameter's shape, which AutoGraph converts.",
+				rangeLoopParam.getHasTensorParameterIteration());
 
 		Function storeIntoDerived = getFunction("store_into_derived");
 		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
