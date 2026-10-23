@@ -12658,7 +12658,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * model's outputs to a numpy/scipy helper with a nested function and a comprehension ({@code C.cluster}). The value crosses a plain
 	 * Python callee, a TensorFlow op, a Keras model call returning one tensor or a tuple, and the unpacking of a returned tuple, and it is
 	 * followed through a store into a tuple, list, or dict literal, a dict or list subscript store, and an attribute store, each a property
-	 * write defining nothing that the def-use walk would otherwise stop at. A container holding nothing from a parameter stays clean.
+	 * write defining nothing that the def-use walk would otherwise stop at. A store taints the whole object, so an attribute store into
+	 * {@code self} taints its other attributes too. A container holding nothing from a parameter stays clean.
 	 */
 	@Test
 	public void testNumpyCallsOnParametersThroughKerasModel() throws Exception {
@@ -12683,29 +12684,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 		}
 
-		// An attribute store taints that attribute of that object, not the object: numpy over another attribute of `self` is clean. Storing
-		// into `self` is a Python side effect, which refuses each of these on its own, so only the numpy precondition is asserted.
+		// A store taints the whole object. Storing into `self` is a Python side effect, which refuses each of these on its own, so only the
+		// numpy precondition is asserted.
 		Function sameField = findFunction(functions, "C.attribute_same_field");
 		assertTrue("`C.attribute_same_field` applies numpy to the attribute it stored its parameter in.",
 				sameField.getHasNumpyCallsOnParameters());
 
+		// TODO: Taint only the stored attribute once the engine marks a tuple, list, or dict literal's element writes as it marks subscript
+		// writes (wala/ML#1100), so that an attribute store can be told from both. Until then, storing into `self` taints `self`, so numpy
+		// over its other attributes is refused too.
 		Function otherField = findFunction(functions, "C.attribute_other_field");
-		assertFalse("`C.attribute_other_field` applies numpy only to an attribute it didn't store its parameter in.",
+		assertTrue("`C.attribute_other_field` applies numpy to another attribute of the object it stored its parameter in.",
 				otherField.getHasNumpyCallsOnParameters());
-		assertNull("`C.attribute_other_field` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", otherField.getStatus()
-				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 
-		// TODO: An attribute written in one method and read in another isn't followed: the attribute's taint stays in the method writing
-		// it, and the receiver isn't tainted. Converting `C.attribute_across_methods` applies numpy to a symbolic tensor in `C.read_a`.
+		// TODO: An attribute written in one method and read in another isn't followed. The store taints `self` in the writing method, but
+		// `self.read_a()` passes no argument besides the method the read of `self.read_a` yields, so `C.read_a` is never scanned with a
+		// tainted receiver. Converting `C.attribute_across_methods` applies numpy to a symbolic tensor in `C.read_a`.
 		Function acrossMethods = findFunction(functions, "C.attribute_across_methods");
 		assertFalse("`C.attribute_across_methods` reads the stored attribute only in another method.",
 				acrossMethods.getHasNumpyCallsOnParameters());
 		assertNull("`C.attribute_across_methods` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", acrossMethods.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 
-		// A string-keyed store into an object of unknown type, here the result of an unmodeled call whose points-to set is empty, taints
-		// the
-		// whole object, as a container store does.
+		// Passing the object as an argument, rather than calling a method on it, carries the taint into the callee.
+		Function passedOn = findFunction(functions, "C.attribute_passed_on");
+		assertTrue("`C.attribute_passed_on` passes the object it stored its parameter in to a callee applying numpy to the attribute.",
+				passedOn.getHasNumpyCallsOnParameters());
+
+		// A string-keyed store into the result of an unmodeled call taints the whole object.
 		Function unknown = findFunction(functions, "C.via_unknown_store");
 		assertTrue("`C.via_unknown_store` applies numpy to an object of unknown type it stored its parameter in.",
 				unknown.getHasNumpyCallsOnParameters());
