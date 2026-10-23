@@ -11855,9 +11855,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// int64 cannot be the default coming back. Contrast `np.float`, which is float64 either way and therefore cannot distinguish
 		// resolution from a restored default on its own; it is pinned here for coverage, not as evidence.
 		//
-		// Two spellings still reach nothing, and both are deliberate rather than unexplained. `np.int16` has no dtype enum value to
-		// map to at all, so no field reference can be written for it. The builtin `bool` is not in the modeled family, where `np.bool`
-		// and `np.bool_` are. Those are known absences: a change that made either resolve would be news, not noise.
+		// One spelling still reaches nothing, deliberately rather than unexplained: `np.int16` has no dtype enum value to map to at all,
+		// so no field reference can be written for it. That is a known absence: a change that made it resolve would be news, not noise.
+		// The builtin `bool` was the other one, and it now resolves (see below).
 
 		assertEquals("`np.int32` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int32)]", render(getFunction("via_int32")));
 
@@ -11891,7 +11891,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("`np.int16` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_int16")));
 
-		assertEquals("The builtin `bool` does not resolve, and no longer falls back to float64.", "ABSENT",
+		// The builtin `bool` was the other known absence. The engine now resolves it as a dtype, to bool, which is what
+		// `np.zeros(..., dtype=bool)` allocates at run time.
+		assertEquals("The builtin `bool` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.bool)]",
 				render(getFunction("via_builtin_bool")));
 	}
 
