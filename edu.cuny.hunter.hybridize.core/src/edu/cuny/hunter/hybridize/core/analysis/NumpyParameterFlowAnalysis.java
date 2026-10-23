@@ -1001,7 +1001,7 @@ class NumpyParameterFlowAnalysis {
 		boolean known = false;
 
 		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey)) {
-			if (Util.isContainerType(instanceKey.getConcreteType().getReference()))
+			if (Util.isContainerType(instanceKey.concreteType().getReference()))
 				return false;
 
 			known = true;
