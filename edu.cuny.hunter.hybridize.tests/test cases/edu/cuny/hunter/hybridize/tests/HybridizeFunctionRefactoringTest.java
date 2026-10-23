@@ -16283,4 +16283,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Today's reason: `sequence`'s dtype is unknown.", Optional.of(InferenceResult.AbsenceReason.UNKNOWN_DTYPE),
 				average.getInferredInputSignatureAbsenceReason());
 	}
+
+	/**
+	 * NumPy's array-building functions carry their NumPy dtypes. A concatenation of outer products, a stack, and the rows {@code a[idx,]}
+	 * selects are float64 arrays of the run-time shapes, and {@code np.random.choice} draws int64 indices. {@code total} is a control: a
+	 * concatenation of {@code np.random.normal} arrays is already typed.
+	 */
+	@Test
+	public void testInferInputSignatureNumpyConstructors() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function total = findFunction(functions, "total");
+		assertEquals("The control's concatenation is typed.", "[tf.TensorSpec(shape=(8, 3), dtype=tf.float64)]",
+				total.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// TODO: `np.outer` has no summary, so the concatenation over its results has an unknown dtype. With
+		// https://github.com/ponder-lab/ML/pull/1075, the signature is `[tf.TensorSpec(shape=(7, 3), dtype=tf.float64)]`.
+		Function outerTotal = findFunction(functions, "outer_total");
+		assertTrue("`outer_total` is still hybridized.", outerTotal.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today's reason: the concatenation's dtype is unknown.", Optional.of(InferenceResult.AbsenceReason.UNKNOWN_DTYPE),
+				outerTotal.getInferredInputSignatureAbsenceReason());
+
+		// TODO: `np.stack` has no summary, so `stacked_total` has no tensor parameter. With https://github.com/ponder-lab/ML/pull/1075,
+		// it is hybridized with `[tf.TensorSpec(shape=(4, 3, 2), dtype=tf.float64)]`.
+		Function stackedTotal = findFunction(functions, "stacked_total");
+		assertEquals("Today, `stacked_total` has no tensor parameter.", FALSE, stackedTotal.getHasTensorParameter());
+		assertFalse("Today, `stacked_total` is not hybridized.", stackedTotal.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// FIXME: `a[idx,]` peels the leading axis instead of selecting rows, so this signature's rank is wrong. With
+		// https://github.com/ponder-lab/ML/pull/1075, the signature is `[tf.TensorSpec(shape=(2, 3), dtype=tf.float64)]`.
+		Function selectedTotal = findFunction(functions, "selected_total");
+		assertEquals("Today's signature, with the leading axis peeled.", "[tf.TensorSpec(shape=(3,), dtype=tf.float64)]",
+				selectedTotal.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// TODO: `np.random.choice` has no summary, so `indices` is not a tensor parameter. With
+		// https://github.com/ponder-lab/ML/pull/1075, the signature is
+		// `[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int64)]`.
+		Function gather = findFunction(functions, "gather");
+		assertTrue("`gather` is still hybridized.", gather.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today's reason: `indices` carries no tensor type.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
+				gather.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only `indices` blocks.", List.of("indices"),
+				gather.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+	}
 }
