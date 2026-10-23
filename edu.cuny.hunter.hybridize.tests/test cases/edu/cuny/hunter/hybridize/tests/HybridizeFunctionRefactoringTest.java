@@ -5703,9 +5703,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test lists. {@code add(list, list)} where {@code list = [tf.ones([1, 2]), tf.ones([2, 2])]}—both parameters bind to a Python list
 	 * literal containing tensors. Phase-3 container detection classifies each parameter as tensor-bearing (so
 	 * {@link Function#getHasTensorParameter()} is {@code true}), while the parameter binds to the list itself, not to a tensor;
-	 * per-parameter {@link Parameter#getTensorTypes()} is empty. Since #781, the two-element sequence reduces per position, so the inferred
-	 * signature carries a two-element {@code InputSignature.Sequence} per parameter, the arity-2 form of the reduction, rather than
-	 * dropping as it did before the elements' types were surfaced.
+	 * per-parameter {@link Parameter#getTensorTypes()} is empty. Since #781, a two-element sequence reduces per position, but this one does
+	 * not: the body's {@code a + b} leaves the engine unable to vouch for the list's length (see the TODO below).
 	 */
 	@Test
 	public void testHasLikelyTensorParameter146() throws Exception {
@@ -5718,19 +5717,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 		assertEquals(2, params.size());
 
+		// TODO: https://github.com/ponder-lab/ML/pull/1079. `a + b` makes the list the left operand of a `+`, which the front end also
+		// lowers `l += m` to, so the engine gives the list no length although this `+` builds a new list and leaves the two-element
+		// display as it was. The nested specification this pinned, [[tf.TensorSpec(shape=(1, 2), dtype=tf.float32),
+		// tf.TensorSpec(shape=(2, 2), dtype=tf.float32)], [the same]], is lost. Flip back to it once the engine tells the two apart.
 		for (Parameter p : params) {
 			assertTrue("The parameter binds to the list itself, not a tensor.", p.getTensorTypes().isEmpty());
 			assertEquals("Phase 3 classifies each parameter as a container.", TRUE, p.isTensorContainer());
-			assertNotNull("The two-element sequence's element types are surfaced (#781).", p.getContainerElementTypes());
-			assertEquals("Both element positions carry evidence.", 2, p.getContainerElementTypes().size());
+			assertNull("The engine gives the list no length, so no element structure.", p.getContainerElementTypes());
 		}
 
 		InferenceResult result = function.inferInputSignature();
-		assertTrue("A two-element list of concrete tensors reduces per position (#781).", result.signature().isPresent());
-		assertEquals("Each parameter renders as a two-element nested spec, positions in order.",
-				"[[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)], "
-						+ "[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]]",
-				result.signature().get().toTensorSpecList("tf."));
+		assertFalse("No specification is written for a list of unknown length.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
 	}
 
 	/**
@@ -9785,10 +9785,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * The comprehension-built variant of the sequence reduction (#807): the container's catalog at Ariadne 0.52.58+ carries the
-	 * analysis-internal append-contents key (wala/ML#773 stores comprehension elements under the same channel {@code append} uses)
-	 * alongside its numeric indices. With the synthetic key filtered before the contiguity check, the contiguous singleton reduces exactly
-	 * like the literal-list fixture; without the filter, it declined as non-contiguous.
+	 * The comprehension-built variant of the sequence reduction (#807). The analysis does not position a comprehension's elements, so the
+	 * engine gives the list no length ({@code ContainerElements.arity()} is empty), and the parameter declines with
+	 * {@code TENSOR_CONTAINER_UNSUPPORTED}. This fixture's comprehension happens to run once, but its length is the iteration count, which
+	 * the analysis does not know: the same list read as length 1 for {@code range(3)} too (see
+	 * {@link #testInputSignatureContainerComprehensionLength()}). Before the engine answered the length, Hybridize read it off the object
+	 * catalog's constant indices, filtering the comprehension's element channel out, and reduced this list to a nested entry of length 1.
 	 */
 	@Test
 	public void testInputSignatureContainerComprehension() throws Exception {
@@ -9799,12 +9801,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter xs = function.getParameters().get(0);
 		assertEquals("xs", xs.getName());
 		assertEquals("Phase 3 must classify the comprehension-built container.", TRUE, xs.isTensorContainer());
-		assertNotNull("The container's element types must survive the synthetic catalog key (#807).", xs.getContainerElementTypes());
-		assertEquals("A singleton comprehension has one element position.", 1, xs.getContainerElementTypes().size());
+		// Was a singleton nested entry while the length came from the object catalog; the engine gives a comprehension no length.
+		assertNull("A comprehension-built list has no known length, so no element structure.", xs.getContainerElementTypes());
 
 		InferenceResult result = function.inferInputSignature();
-		assertTrue("The comprehension-built singleton reduces to a nested entry.", result.signature().isPresent());
-		assertEquals("The nested rendering matches the literal-list fixture's.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+		assertFalse("A comprehension-built list blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+	}
+
+	/**
+	 * A comprehension that builds a list of three tensors. The analysis does not position its elements, so the engine gives it no length
+	 * and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the object catalog gave 1 here, and a
+	 * nested specification of length 1 rejects the three-element list the call passes.
+	 */
+	@Test
+	public void testInputSignatureContainerComprehensionLength() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * A list a single {@code append} grows after its one-element display, so the call passes two elements. The engine gives a list an
+	 * {@code append} reads off no length, and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the
+	 * object catalog gave 1, and a nested specification of length 1 rejects the call.
+	 */
+	@Test
+	public void testInputSignatureContainerAppend() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * A list {@code extend} grows after its one-element display, so the call passes three elements. The engine gives a list an
+	 * {@code extend} reads off no length, and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the
+	 * object catalog gave 1, and a nested specification of length 1 rejects the call.
+	 */
+	@Test
+	public void testInputSignatureContainerExtend() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * Asserts that the one function's one parameter, {@code xs}, receives a container of tensors whose length the engine does not know, so
+	 * that it has no element structure and the signature declines with {@code TENSOR_CONTAINER_UNSUPPORTED}.
+	 *
+	 * @throws Exception On a failure to analyze the fixture.
+	 */
+	private void assertUnknownContainerLength() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNull("A list of unknown length has no element structure.", xs.getContainerElementTypes());
+		assertEquals("The only reason the form is not reduced is that it is unsupported.",
+				List.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), xs.getContainerFormReasons());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A list of unknown length blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+	}
+
+	/**
+	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
+	 * one specification per position.
+	 */
+	@Test
+	public void testInputSignatureContainerTupleLiteral() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("A tuple display has an element structure.", xs.getContainerElementTypes());
+		assertEquals("The tuple has two positions.", 2, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A tuple of concrete tensors reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("Each position gets its own specification.",
+				"[[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
 				result.signature().get().toTensorSpecList("tf."));
 	}
 
@@ -14070,7 +14149,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * pair.
 	 * <p>
 	 * The flat specification is not merely imprecise. Bound to it, the parameter arrives as a single tensor and the body's unpacking
-	 * raises, which is why the emitted nested form is executed here rather than compared.
+	 * raises, which is why the emitted nested form is executed here rather than compared. No specification is written at all for now, as
+	 * the TODO below explains, which is a lost optimization rather than that hazard.
 	 */
 	@Test
 	public void testTensorTypedContainerParameter() throws Exception {
@@ -14081,12 +14161,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("The parameter is tensor-typed by the union of its elements' types.", TRUE, pair.isTensor());
 		assertEquals("The container question is now put to it, and answered.", TRUE, pair.isTensorContainer());
-		assertEquals("Both element positions are surfaced.", 2, pair.getContainerElementTypes().size());
 		assertEquals("The parameter's own typing is the elements flattened, so it is the union of both.", 2, pair.getTensorTypes().size());
-		assertEquals("The emitted structure is nested, one specification per element, rather than one flat specification.",
-				"[[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None), dtype=tf.float32)]]",
-				batched.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`batched` hybridizes (P1).", P1, batched.getPassingPrecondition());
+
+		// TODO: https://github.com/ponder-lab/ML/pull/1079. The engine now gives a tuple a library summary allocates no length, since a
+		// summary's slots are in general not its run-time elements. This summary's are, as the batch is a pair at run time, so the nested
+		// specification this pinned, [[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None),
+		// dtype=tf.float32)]], is lost. Flip back to it once the engine vouches for this summary's length.
+		assertNull("The engine gives the summary's tuple no length, so no element structure.", pair.getContainerElementTypes());
+		assertEquals("No specification is written for a container of unknown length.", Optional.empty(),
+				batched.getInferredInputSignature());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				batched.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
