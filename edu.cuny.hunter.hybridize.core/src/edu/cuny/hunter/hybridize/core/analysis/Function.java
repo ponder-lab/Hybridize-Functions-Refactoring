@@ -5544,23 +5544,35 @@ public class Function {
 						continue;
 					}
 
-					if (param.getContainerAritiesDisagree() != null && param.getContainerAritiesDisagree()) {
-						// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
-						// exists, so no single signature admits call sites passing lists of disagreeing lengths.
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` receives lists of tensors whose lengths disagree "
-										+ "across call sites; an input signature fixes the length, so no single signature admits them "
-										+ "all and input-signature inference is dropped.");
-						reason = AbsenceReason.HETEROGENEOUS_ARITY;
-					} else {
-						// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
-						// enumerate, a nested container, a position without tensor evidence, or container and non-container values
-						// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
-										+ "form not currently reduced to an input signature; the signature is dropped.");
-						reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+					// An arity disagreement and an unmodeled form are separate findings, and both are reported when both hold, in the
+					// order the extraction found them. With neither found specifically, the form is still not one the reduction models.
+					List<AbsenceReason> formReasons = param.getContainerFormReasons().isEmpty()
+							? List.of(AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED)
+							: param.getContainerFormReasons();
+
+					for (AbsenceReason formReason : formReasons) {
+						if (formReason == AbsenceReason.HETEROGENEOUS_ARITY)
+							// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
+							// exists, so no single signature admits call sites passing lists of disagreeing lengths.
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this
+											+ "` receives lists of tensors whose lengths disagree "
+											+ "across call sites; an input signature fixes the length, so no single signature admits them "
+											+ "all and input-signature inference is dropped.");
+						else
+							// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
+							// enumerate, a nested container, a position without tensor evidence, or container and non-container values
+							// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
+											+ "form not currently reduced to an input signature; the signature is dropped.");
+
+						addBlockingReason(blocking, param, formReason);
 					}
+
+					// Not reached: the dtype reduction below has only the unmodeled container's elements flattened to read, which no
+					// single spec admits.
+					continue;
 				} else if (expectedFailureEvidenceOnly) {
 					// Tensor-typed, but only by calls the tests declare must fail, and the conforming callers passed no container either.
 					// Nothing a specification may be derived from is left, so the function is hybridized with a bare decorator.
@@ -5582,9 +5594,9 @@ public class Function {
 				}
 
 				addBlockingReason(blocking, param, reason);
-				// One reason: the dispositions above are an if-else over one question, so exactly one is defined. The dtype reduction
-				// below is not reached, since there is either no conforming evidence to reduce or only an unmodeled container's elements
-				// flattened, which no single spec admits.
+				// One reason: the two dispositions left are the two answers to whether every tensor type observed came from a declared
+				// failure, so exactly one holds. The dtype reduction below is not reached, since there is either no conforming evidence to
+				// reduce or only an unmodeled container's elements flattened, which no single spec admits.
 				continue;
 			}
 

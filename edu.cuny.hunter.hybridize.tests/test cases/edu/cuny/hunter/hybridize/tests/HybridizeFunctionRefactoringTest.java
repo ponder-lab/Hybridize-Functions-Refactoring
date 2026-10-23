@@ -10191,6 +10191,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A container whose lengths disagree and whose form the reduction does not model reports both reasons, each with its own INFO, with the
+	 * function-level reason the one reported before both could be. {@code nested} receives lists of different lengths, one nesting a list;
+	 * {@code scalar} receives lists of different lengths, one holding a Python number; {@code ragged} receives lists of tensors that only
+	 * differ in length.
+	 */
+	@Test
+	public void testInputSignatureContainerArityAndUnmodeledForm() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		String arityMessage = "receives lists of tensors whose lengths disagree";
+		String formMessage = "is classified as a container of tensors of a form not currently reduced";
+
+		for (String name : List.of("nested", "scalar")) {
+			Function function = findFunction(functions, name);
+			Parameter xs = function.getParameters().get(0);
+
+			assertEquals("`" + name + "` reports the arity disagreement first, as it did alone.",
+					Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY), function.inferInputSignature().absenceReason());
+			assertEquals("`" + name + "` reports both reasons, in the order they were found.",
+					List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+					List.copyOf(function.getBlockingParameterReasons().get(xs)));
+
+			List<String> messages = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+					.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage)
+					.filter(m -> m.contains("`xs`")).toList();
+
+			assertEquals("`" + name + "` has one INFO for each reason.", 2, messages.size());
+			assertTrue("`" + name + "` reports the arity disagreement.", messages.stream().anyMatch(m -> m.contains(arityMessage)));
+			assertTrue("`" + name + "` reports the unmodeled form.", messages.stream().anyMatch(m -> m.contains(formMessage)));
+		}
+
+		Function ragged = findFunction(functions, "ragged");
+		assertEquals("Lists that differ only in length report the arity disagreement alone.",
+				Map.of(ragged.getParameters().get(0), Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY)),
+				ragged.getBlockingParameterReasons());
+	}
+
+	/**
 	 * Every element position of a container parameter is reduced, and each one that bottoms reports every reason that holds for it, not
 	 * only the first position's first reason. {@code xs}'s element 0 is dense at one call and sparse at the other, element 1 disagrees
 	 * about the dtype, and element 2 does both.

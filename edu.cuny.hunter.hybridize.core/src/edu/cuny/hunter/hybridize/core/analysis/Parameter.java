@@ -219,6 +219,14 @@ public final class Parameter {
 	private Boolean containerAritiesDisagree;
 
 	/**
+	 * Every reason found that this parameter's container form is not reduced, in the order the extraction finds them:
+	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} for containers disagreeing on element count, and
+	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED} for any form the reduction does not model. Both are recorded when
+	 * both hold. Empty when extraction did not run, the form is modeled, or nothing specific was found.
+	 */
+	private List<InferenceResult.AbsenceReason> containerFormReasons = List.of();
+
+	/**
 	 * Cached answer to whether any call site supplies an argument for this parameter, positionally or by keyword. Populated by
 	 * {@link Function#inferSuppliedParameters}. {@code null} until that runs, and deliberately left {@code null} when the answer cannot be
 	 * established (no call-graph node for the owning function, an unresolvable predecessor, or a non-Python invoke), so that
@@ -460,6 +468,19 @@ public final class Parameter {
 	 */
 	public Boolean getContainerAritiesDisagree() {
 		return this.containerAritiesDisagree;
+	}
+
+	/**
+	 * Returns every reason found that this parameter's container form is not reduced, in the order the extraction finds them. The first is
+	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} exactly when {@link #getContainerAritiesDisagree()} is {@code TRUE}, so a
+	 * consumer reporting only the first reports what it did before both could be found.
+	 *
+	 * @return An unmodifiable list of {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} and
+	 *         {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, each at most once; empty when the form is modeled or no
+	 *         specific reason was found.
+	 */
+	public List<InferenceResult.AbsenceReason> getContainerFormReasons() {
+		return this.containerFormReasons;
 	}
 
 	/**
@@ -1023,8 +1044,20 @@ public final class Parameter {
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		Map<InstanceKey, Map<String, Set<TensorType>>> containers = getTensorContainerElements(tensorAnalysis, monitor);
 
+		/*
+		 * Every check below runs whatever an earlier one found, so that each reason that holds is recorded (an arity disagreement and an
+		 * unmodeled form can hold together). The checks run in the order they used to stop at, so the first reason found is the one that
+		 * used to be the only one. What decides the reduction is unchanged: the element types are kept only when nothing was found.
+		 */
+		List<InferenceResult.AbsenceReason> reasons = new ArrayList<>();
+
 		// The container values reaching this parameter, matched by key identity exactly as the boolean Phase 3 matches them.
 		Set<InstanceKey> reaching = new LinkedHashSet<>();
+
+		// Every sequence reaching the parameter, with element evidence or not, since its length comes from its object catalog alone.
+		Set<InstanceKey> sequences = new LinkedHashSet<>();
+
+		boolean mixed = false;
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -1037,20 +1070,30 @@ public final class Parameter {
 
 			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
 				TypeReference reference = getTypeReference(instanceKey);
+				boolean sequence = reference != null && Util.isSequenceType(reference);
 
-				if (reference == null || !Util.isSequenceType(reference) || !containers.containsKey(instanceKey)) {
+				if (sequence)
+					sequences.add(instanceKey);
+
+				if (!sequence || !containers.containsKey(instanceKey)) {
 					// A non-sequence value, or a sequence the analysis has no element evidence for, reaches the parameter alongside the
 					// containers. TensorFlow enforces the declared nesting, so a nested spec would reject that value; the form is
 					// unsupported.
-					LOG.info("Parameter " + this + " mixes containers with unmodeled values; not reducing: " + instanceKey + ".");
-					return;
+					if (!mixed)
+						LOG.info("Parameter " + this + " mixes containers with unmodeled values; not reducing: " + instanceKey + ".");
+
+					mixed = true;
+					continue;
 				}
 
 				reaching.add(instanceKey);
 			}
 		}
 
-		if (reaching.isEmpty())
+		if (mixed)
+			addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+
+		if (reaching.isEmpty() && !mixed)
 			return;
 
 		/*
@@ -1061,99 +1104,152 @@ public final class Parameter {
 		 * why the element's own type evidence never reveals it and the key's points-to set has to be asked separately (wala/ML#867). This
 		 * is the local form of the engine-side `anyNullConstant` predicate. That predicate answers the None question ONLY; it does not
 		 * judge other unrepresentable members such as strings or numbers, so adopting it would replace this test and not the surrounding
-		 * decision.
+		 * decision. Not asked of a parameter whose values are mixed. That parameter was never asked, and asking now could make this check,
+		 * which the reduction asks first, displace the reason it has always reported.
 		 */
-		detection: for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
-			// Swept over the analysis's own evaluations rather than every pointer key in the program: the containers of interest are
-			// exactly those the element sweep already visits, and a global scan would repeat that cost for every container parameter of
-			// every candidate.
-			if (!(pair.fst instanceof InstanceFieldKey fieldKey) || !reaching.contains(fieldKey.getInstanceKey()))
-				continue;
-
-			// Skipped for the same reason the arity computation skips it: the synthetic append channel names no element position, so a
-			// null there is not an element of the sequence being specified.
-			if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldKey.getField().getName().toString()))
-				continue;
-
-			for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(fieldKey))
-				if (elementValue instanceof ConstantKey<?> constant && constant.getValue() == null) {
-					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
-							+ "; withholding the signature.");
-					this.containerHoldsUnrepresentableElement = true;
-					// Only the scan ends here, not the method. The flag decides whether a specification is withheld, while the element
-					// types extracted below are evidence of what the analysis saw; returning would blank that evidence for exactly the
-					// containers the flag describes, which is a loss the withholding decision does not require.
-					break detection;
-				}
-		}
-
-		// Arity per container, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported.
-		int arity = -1;
-
-		for (InstanceKey container : reaching) {
-			Set<String> fieldNames = new HashSet<>();
-			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory()).getPointerKeyForObjectCatalog(container);
-
-			for (InstanceKey catalogInstanceKey : builder.getPointerAnalysis().getPointsToSet(catalogPointerKey)) {
-				if (!(catalogInstanceKey instanceof ConstantKey<?> constantKey) || constantKey.getValue() == null) {
-					// E.g. a list grown by an append loop the analysis cannot enumerate.
-					LOG.info("Parameter " + this + " has a container with a non-constant element structure; not reducing: " + container
-							+ ".");
-					return;
-				}
-
-				String fieldName = constantKey.getValue().toString();
-
-				// wala/ML#773 (Ariadne 0.52.58) stores comprehension elements under the same synthetic channel `append` uses, so a
-				// comprehension-built container's catalog also carries the analysis-internal key alongside its numeric indices. It
-				// is not a program field; filtering it keeps the reduction for containers whose numeric indices are contiguous.
-				// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/807.
-				if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldName))
+		if (!mixed)
+			detection: for (Pair<PointerKey, TensorVariable> pair : tensorAnalysis) {
+				// Swept over the analysis's own evaluations rather than every pointer key in the program: the containers of interest are
+				// exactly those the element sweep already visits, and a global scan would repeat that cost for every container parameter
+				// of every candidate.
+				if (!(pair.fst instanceof InstanceFieldKey fieldKey) || !reaching.contains(fieldKey.getInstanceKey()))
 					continue;
 
-				fieldNames.add(fieldName);
+				// Skipped for the same reason the arity computation skips it: the synthetic append channel names no element position, so
+				// a null there is not an element of the sequence being specified.
+				if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldKey.getField().getName().toString()))
+					continue;
+
+				for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(fieldKey))
+					if (elementValue instanceof ConstantKey<?> constant && constant.getValue() == null) {
+						LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + fieldKey
+								+ "; withholding the signature.");
+						this.containerHoldsUnrepresentableElement = true;
+						// Only the scan ends here, not the method. The flag decides whether a specification is withheld, while the
+						// element types extracted below are evidence of what the analysis saw; returning would blank that evidence for
+						// exactly the containers the flag describes, which is a loss the withholding decision does not require.
+						break detection;
+					}
 			}
 
-			for (int j = 0; j < fieldNames.size(); j++)
-				if (!fieldNames.contains(String.valueOf(j))) {
-					LOG.info("Parameter " + this + " has a container with non-contiguous indices; not reducing: " + container + ".");
-					return;
-				}
+		// Arity per sequence, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported. A sequence
+		// whose catalog is not such a run has no arity to compare, but the others still do.
+		int arity = -1;
+		Map<InstanceKey, Integer> arities = new HashMap<>();
+
+		for (InstanceKey container : mixed ? sequences : reaching) {
+			Integer containerArity = catalogArity(container, builder);
+
+			if (containerArity == null) {
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				continue;
+			}
+
+			arities.put(container, containerArity);
 
 			if (arity == -1)
-				arity = fieldNames.size();
-			else if (arity != fieldNames.size()) {
-				LOG.info("Parameter " + this + " receives sequences of disagreeing arities (" + arity + " vs " + fieldNames.size() + ").");
-				this.containerAritiesDisagree = TRUE;
-				return;
+				arity = containerArity;
+			else if (arity != containerArity) {
+				LOG.info("Parameter " + this + " receives sequences of disagreeing arities (" + arity + " vs " + containerArity + ").");
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY);
 			}
+		}
+
+		// Every position of every container with a known arity must carry tensor evidence, whether or not the arities agree.
+		for (InstanceKey container : reaching) {
+			Integer containerArity = arities.get(container);
+
+			if (containerArity == null)
+				continue;
+
+			for (int j = 0; j < containerArity; j++) {
+				Set<TensorType> types = containers.get(container).get(String.valueOf(j));
+
+				if (types == null || types.isEmpty()) {
+					LOG.info("Parameter " + this + " has no tensor evidence for element " + j + " of: " + container + "; not reducing.");
+					addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				}
+			}
+		}
+
+		this.containerFormReasons = List.copyOf(reasons);
+
+		if (!reasons.isEmpty()) {
+			// What the arity flag always meant: the disagreement is what was found first.
+			if (reasons.get(0) == InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY)
+				this.containerAritiesDisagree = TRUE;
+
+			return;
 		}
 
 		if (arity <= 0)
 			return;
 
-		// Union the element types per position across the reaching containers; a position with no evidence leaves the form unsupported.
+		// Union the element types per position across the reaching containers, which now all agree on the arity and carry evidence at
+		// every position.
 		List<Set<TensorType>> elements = new ArrayList<>(arity);
 
 		for (int j = 0; j < arity; j++) {
 			Set<TensorType> union = new HashSet<>();
 
-			for (InstanceKey container : reaching) {
-				Set<TensorType> types = containers.get(container).get(String.valueOf(j));
-
-				if (types == null || types.isEmpty()) {
-					LOG.info("Parameter " + this + " has no tensor evidence for element " + j + " of: " + container + "; not reducing.");
-					return;
-				}
-
-				union.addAll(types);
-			}
+			for (InstanceKey container : reaching)
+				union.addAll(containers.get(container).get(String.valueOf(j)));
 
 			elements.add(unmodifiableSet(union));
 		}
 
 		this.containerAritiesDisagree = FALSE;
 		this.containerElementTypes = elements;
+	}
+
+	/**
+	 * Adds {@code reason} to {@code reasons} unless it is already there, keeping the order reasons are first found in.
+	 *
+	 * @param reasons The reasons found so far.
+	 * @param reason A reason found.
+	 */
+	private static void addContainerFormReason(List<InferenceResult.AbsenceReason> reasons, InferenceResult.AbsenceReason reason) {
+		if (!reasons.contains(reason))
+			reasons.add(reason);
+	}
+
+	/**
+	 * The element count of a sequence, from its object catalog, when the catalog is a contiguous run of constant indices {@code 0..n-1}.
+	 *
+	 * @param container The sequence.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @return The element count, or {@code null} when the catalog is not such a run.
+	 */
+	private Integer catalogArity(InstanceKey container, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<String> fieldNames = new HashSet<>();
+		PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory()).getPointerKeyForObjectCatalog(container);
+
+		for (InstanceKey catalogInstanceKey : builder.getPointerAnalysis().getPointsToSet(catalogPointerKey)) {
+			if (!(catalogInstanceKey instanceof ConstantKey<?> constantKey) || constantKey.getValue() == null) {
+				// E.g. a list grown by an append loop the analysis cannot enumerate.
+				LOG.info("Parameter " + this + " has a container with a non-constant element structure; not reducing: " + container + ".");
+				return null;
+			}
+
+			String fieldName = constantKey.getValue().toString();
+
+			// wala/ML#773 (Ariadne 0.52.58) stores comprehension elements under the same synthetic channel `append` uses, so a
+			// comprehension-built container's catalog also carries the analysis-internal key alongside its numeric indices. It is not a
+			// program field; filtering it keeps the reduction for containers whose numeric indices are contiguous. See
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/807.
+			if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldName))
+				continue;
+
+			fieldNames.add(fieldName);
+		}
+
+		for (int j = 0; j < fieldNames.size(); j++)
+			if (!fieldNames.contains(String.valueOf(j))) {
+				LOG.info("Parameter " + this + " has a container with non-contiguous indices; not reducing: " + container + ".");
+				return null;
+			}
+
+		return fieldNames.size();
 	}
 
 	/**
