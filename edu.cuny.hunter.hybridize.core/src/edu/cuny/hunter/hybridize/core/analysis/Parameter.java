@@ -810,7 +810,9 @@ public final class Parameter {
 
 	/**
 	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
-	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}). Each answer is cached per analysis.
+	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}), and the containers that may hold
+	 * elements the analysis does not list ({@link ContainerElements#isComplete()}), any of which may be a tensor. Each answer is cached per
+	 * analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
@@ -820,8 +822,15 @@ public final class Parameter {
 			PythonSSAPropagationCallGraphBuilder builder) {
 		Map<InstanceKey, Boolean> answers = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> Maps.newConcurrentMap());
 
-		return instanceKey -> answers.computeIfAbsent(instanceKey, k -> Util.isContainerType(k.concreteType().getReference())
-				&& !ContainerElements.of(builder, k).elementTypes(tensorAnalysis).isEmpty());
+		return instanceKey -> answers.computeIfAbsent(instanceKey, k -> {
+			if (!Util.isContainerType(k.concreteType().getReference()))
+				return false;
+
+			ContainerElements elements = ContainerElements.of(builder, k);
+
+			// A container whose element keys are not all of them may hold a tensor under a key the analysis does not list.
+			return !elements.elementTypes(tensorAnalysis).isEmpty() || !elements.isComplete();
+		});
 	}
 
 	/**
@@ -1043,7 +1052,10 @@ public final class Parameter {
 		 */
 		if (!mixed)
 			for (InstanceKey container : reaching)
-				if (elements.apply(container).mayHoldNone()) {
+				// Asked only of a container whose element keys are all of them. Of any other, the engine answers yes because an unlisted
+				// element may be anything, which says the elements are unknown, not that one is None. The arity check below declines
+				// that container as an unsupported form.
+				if (elements.apply(container).isComplete() && elements.apply(container).mayHoldNone()) {
 					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + container
 							+ "; withholding the signature.");
 					this.containerHoldsUnrepresentableElement = true;
@@ -1055,12 +1067,21 @@ public final class Parameter {
 
 		// Arity per sequence, as the engine knows it, or the form is unsupported. The engine gives none when the run-time length may
 		// differ from the elements it positions, as for a list built by appending, a comprehension or `extend`. A sequence with no known
-		// arity has none to compare, but the others still do.
+		// arity has none to compare, but the others still do. Nor does a container that may hold elements the analysis does not list: the
+		// types at its positions would describe only the elements it lists, so no position of it is read.
 		int arity = -1;
 		Map<InstanceKey, List<Set<TensorType>>> positionTypes = new HashMap<>();
 
 		for (InstanceKey container : mixed ? sequences : reaching) {
 			ContainerElements containerElements = elements.apply(container);
+
+			if (!containerElements.isComplete()) {
+				LOG.info("Parameter " + this + " has a container that may hold elements the analysis does not list; not reducing: "
+						+ container + ".");
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				continue;
+			}
+
 			OptionalInt known = containerElements.arity();
 
 			if (known.isEmpty()) {
