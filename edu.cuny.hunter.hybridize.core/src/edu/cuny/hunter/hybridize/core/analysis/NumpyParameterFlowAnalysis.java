@@ -18,6 +18,7 @@ import java.util.WeakHashMap;
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
+import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -116,9 +117,12 @@ class NumpyParameterFlowAnalysis {
 	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (the
 	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747), with the shape's
 	 * provenance propagated across call boundaries so staticness resolves interprocedurally
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). Known narrowings, each documented on the issue:
-	 * positional arguments only cross call sites, field-mediated and subscript-store flows are not tracked, and a method's receiver is
-	 * never a source. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). A value stored into a container or an object (a tuple,
+	 * list, or dict element, a subscript store, or an attribute store) taints the whole container, so its reads and the calls it is passed
+	 * to are followed. Known narrowings, each documented on the issue: positional arguments only cross call sites, a store taints only the
+	 * container as this function refers to it, not the container's other references (a field written in one method and read in another is
+	 * not followed), and a method's receiver is never a source. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
@@ -881,6 +885,23 @@ class NumpyParameterFlowAnalysis {
 						else if (!returnDescriptor.equals(descriptor))
 							returnDescriptor = AMBIGUOUS_DESCRIPTOR;
 					}
+					continue;
+				}
+
+				// A value stored into a container or an object: a tuple, list, or dict literal's element, a subscript store
+				// (`d[k] = x`, `l[i] = x`), or an attribute store (`obj.attr = x`), each of which the Python front end lowers to a
+				// property write. The write defines nothing, so without this the def-use walk would never reach a read of the value
+				// back out of the container, nor the container passed to a callee, such as a model called on `(x, w)`. A value-tainted
+				// stored value taints the whole container, whose every read is then value-tainted, and escapes this node. Only the
+				// value taint is carried: a container colored with the shape taint would carry no provenance, and numpy over a shape
+				// without provenance is permitted at every sink (issue 751), so it would add no decline, while a returned untracked
+				// shape drops the descriptor the node's other returns carry (issue 756), which could lose one.
+				if (use instanceof AstPropertyWrite write && write.getValue() == valueNumber) {
+					if (valueColored) {
+						valueEscapes = true;
+						colorValue(write.getObjectRef(), valueTainted, shapeTainted, worklist);
+					}
+
 					continue;
 				}
 
