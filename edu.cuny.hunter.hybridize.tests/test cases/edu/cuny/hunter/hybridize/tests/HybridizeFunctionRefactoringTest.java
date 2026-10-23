@@ -12683,6 +12683,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 		}
 
+		// An attribute store taints that attribute of that object, not the object: numpy over another attribute of `self` is clean. Storing
+		// into `self` is a Python side effect, which refuses each of these on its own, so only the numpy precondition is asserted.
+		Function sameField = findFunction(functions, "C.attribute_same_field");
+		assertTrue("`C.attribute_same_field` applies numpy to the attribute it stored its parameter in.",
+				sameField.getHasNumpyCallsOnParameters());
+
+		Function otherField = findFunction(functions, "C.attribute_other_field");
+		assertFalse("`C.attribute_other_field` applies numpy only to an attribute it didn't store its parameter in.",
+				otherField.getHasNumpyCallsOnParameters());
+		assertNull("`C.attribute_other_field` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", otherField.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		// TODO: An attribute written in one method and read in another isn't followed: the attribute's taint stays in the method writing
+		// it, and the receiver isn't tainted. Converting `C.attribute_across_methods` applies numpy to a symbolic tensor in `C.read_a`.
+		Function acrossMethods = findFunction(functions, "C.attribute_across_methods");
+		assertFalse("`C.attribute_across_methods` reads the stored attribute only in another method.",
+				acrossMethods.getHasNumpyCallsOnParameters());
+		assertNull("`C.attribute_across_methods` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", acrossMethods.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
 		Function untainted = findFunction(functions, "C.via_untainted_container");
 		assertFalse("`C.via_untainted_container` applies numpy only to a container holding nothing from its parameter.",
 				untainted.getHasNumpyCallsOnParameters());

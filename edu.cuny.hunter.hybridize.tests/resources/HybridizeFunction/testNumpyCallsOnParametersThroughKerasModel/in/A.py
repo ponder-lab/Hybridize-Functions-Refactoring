@@ -74,6 +74,7 @@ class Holder:
 class C:
     def __init__(self):
         self.eps = 1e-10
+        self.b = np.ones([2], np.float32)
         self.single = Single()
         self.pair_out = PairOut()
         self.pair_in = PairIn()
@@ -139,6 +140,23 @@ class C:
         h.v = x
         return self.sink(h.v)
 
+    # An attribute store taints that attribute of that object, read in the same method.
+    def attribute_other_field(self, x):
+        self.a = x
+        return np.asarray(self.b)
+
+    def attribute_same_field(self, x):
+        self.a = x
+        return np.asarray(self.a)
+
+    # An attribute written in one method and read in another isn't followed.
+    def attribute_across_methods(self, x):
+        self.a = x
+        return self.read_a()
+
+    def read_a(self):
+        return np.asarray(self.a)
+
     # A container holding nothing from a parameter: no refusal.
     def via_untainted_container(self, x):
         p = (np.ones([2], np.float32), 1.0)
@@ -183,6 +201,9 @@ c.via_dict_store(t)
 c.via_list_store(t)
 c.via_attribute_store(t)
 c.via_untainted_container(t)
+c.attribute_other_field(t)
+c.attribute_same_field(t)
+c.attribute_across_methods(t)
 c.via_model(t)
 c.via_model_tuple_out(t)
 c.via_model_tuple_in(t)
