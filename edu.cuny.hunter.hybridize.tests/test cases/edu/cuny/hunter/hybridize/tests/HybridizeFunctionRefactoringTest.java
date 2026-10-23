@@ -9865,6 +9865,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A dict of tensors reaching a parameter is a container of tensors by its elements' types, which the engine gives over the dict's
+	 * element keys ({@code ContainerElements.elementTypes}). A dict keyed by a string is one, and the function hybridizes (P1).
+	 */
+	@Test
+	public void testTensorContainerDictNonStringKey() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function byString = getFunction("by_string");
+		Parameter stringKeyed = byString.getParameters().get(0);
+		assertEquals("A string-keyed dict of tensors is a container of tensors.", TRUE, stringKeyed.isTensorContainer());
+		assertEquals("`by_string` has a tensor parameter.", TRUE, byString.getHasTensorParameter());
+		assertEquals("`by_string` hybridizes (P1).", P1, byString.getPassingPrecondition());
+
+		// TODO: https://github.com/ponder-lab/ML/pull/1079. The engine's element keys of a dict include a key that is a string or an
+		// index, but not one that is another constant, such as `1.5`, so this dict's tensor has no element key and the dict reads as no
+		// container of tensors. It is one at run time, as for `by_string`, and before the engine answered the question the analysis's own
+		// field keys said so, making `by_float` hybridize (P1). Flip these to match `by_string` once the engine keys every constant.
+		Function byFloat = getFunction("by_float");
+		Parameter floatKeyed = byFloat.getParameters().get(0);
+		assertEquals("The engine gives the float-keyed dict no element with tensor types.", FALSE, floatKeyed.isTensorContainer());
+		assertEquals("`by_float` reads as having no tensor parameter.", FALSE, byFloat.getHasTensorParameter());
+		assertNull("`by_float` reaches no passing precondition.", byFloat.getPassingPrecondition());
+	}
+
+	/**
 	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
 	 * one specification per position.
 	 */

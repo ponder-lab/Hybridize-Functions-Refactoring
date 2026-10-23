@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.CoreException;
@@ -66,7 +67,6 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
-import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
@@ -239,12 +239,11 @@ public final class Parameter {
 
 	/**
 	 * Cache of the containers of tensors for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
-	 * discarded when the analysis is re-run and a new object is returned. Each value is the set of container instance keys (lists, tuples,
-	 * dicts) holding an element the analysis associates with tensors. It answers the boolean container question (Phase 3 of
-	 * {@link #classifyAsTensor}). The element structure the nested-spec reduction consumes comes from {@link ContainerElements} instead
-	 * (#781).
+	 * discarded when the analysis is re-run and a new object is returned. Each value maps an instance key asked about to whether it is a
+	 * container (a list, tuple or dict) holding an element the analysis gives a tensor type. It answers the boolean container question
+	 * (Phase 3 of {@link #classifyAsTensor}).
 	 */
-	private static Map<TensorTypeAnalysis, Set<InstanceKey>> tensorContainersCache = Maps.newConcurrentMap();
+	private static Map<TensorTypeAnalysis, Map<InstanceKey, Boolean>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -768,24 +767,23 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns true if the given {@link InstanceKey} is contained in the given {@link Set} of tensor container {@link InstanceKey}s. Also
-	 * returns true if the given {@link InstanceKey} represents a container whose constituent elements are contained in the given
-	 * {@link Set}.
+	 * Returns true if the given {@link InstanceKey} is a container of tensors by the given test. Also returns true if the given
+	 * {@link InstanceKey} represents a container whose constituent elements are containers of tensors by it.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
-	 * @param tensorContainers A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param tensorContainers A test of whether an {@link InstanceKey} represents a container of tensors.
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder}.
-	 * @return True iff either the given {@link InstanceKey} is a member of the given {@link Set} or the given {@link InstanceKey} is itself
-	 *         a container whose elements are (ultimately) contained in the given {@link Set}.
+	 * @return True iff either the given {@link InstanceKey} passes the given test or the given {@link InstanceKey} is itself a container
+	 *         whose elements (ultimately) pass it.
 	 */
-	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+	private static boolean isTensorContainer(InstanceKey instanceKey, Predicate<InstanceKey> tensorContainers,
 			PythonSSAPropagationCallGraphBuilder builder) {
 		return isTensorContainer(instanceKey, tensorContainers, builder, new HashSet<>());
 	}
 
-	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+	private static boolean isTensorContainer(InstanceKey instanceKey, Predicate<InstanceKey> tensorContainers,
 			PythonSSAPropagationCallGraphBuilder builder, Set<InstanceKey> seen) {
-		if (tensorContainers.contains(instanceKey))
+		if (tensorContainers.test(instanceKey))
 			return true;
 
 		seen.add(instanceKey);
@@ -811,41 +809,19 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors: the containers holding an element to which the
-	 * given analysis gives a tensor type. Only which container holds such an element is read, not which element it is; the element
-	 * structure comes from {@link ContainerElements}.
+	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
+	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}). Each answer is cached per analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
-	 * @param monitor Progress.
-	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
+	 * @return A test of whether an {@link InstanceKey} represents a container of tensors.
 	 */
-	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
-		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
+	private static Predicate<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		Map<InstanceKey, Boolean> answers = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> Maps.newConcurrentMap());
 
-		Set<InstanceKey> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
-			Set<InstanceKey> tensorContainers = new HashSet<>();
-
-			for (Pair<PointerKey, TensorVariable> pair : k) {
-				if (pair.fst instanceof InstanceFieldPointerKey ifpk) {
-					InstanceKey instanceKey = ifpk.getInstanceKey();
-					TypeReference reference = getTypeReference(instanceKey);
-
-					if (reference != null && Util.isContainerType(reference)) {
-						// We have a match.
-						// check the existence of the tensor variable.
-						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-						tensorContainers.add(instanceKey);
-					}
-				}
-
-				progress.worked(1);
-			}
-
-			return unmodifiableSet(tensorContainers);
-		});
-
-		progress.done();
-		return result;
+		return instanceKey -> answers.computeIfAbsent(instanceKey, k -> Util.isContainerType(k.concreteType().getReference())
+				&& !ContainerElements.of(builder, k).elementTypes(tensorAnalysis).isEmpty());
 	}
 
 	/**
@@ -888,9 +864,9 @@ public final class Parameter {
 	protected static boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
-		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
+		Predicate<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, builder);
 
-		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
+		SubMonitor loopProgress = progress.split(100).setWorkRemaining(nodes.size());
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -994,7 +970,8 @@ public final class Parameter {
 	 */
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
-		Set<InstanceKey> containers = getTensorContainers(tensorAnalysis, monitor);
+		Predicate<InstanceKey> containers = getTensorContainers(tensorAnalysis, builder);
+		SubMonitor.done(monitor);
 
 		// What the engine says of each container's elements, asked once per container.
 		Map<InstanceKey, ContainerElements> elementsOf = new HashMap<>();
@@ -1032,7 +1009,7 @@ public final class Parameter {
 				if (sequence)
 					sequences.add(instanceKey);
 
-				if (!sequence || !containers.contains(instanceKey)) {
+				if (!sequence || !containers.test(instanceKey)) {
 					// A non-sequence value, or a sequence the analysis has no element evidence for, reaches the parameter alongside the
 					// containers. TensorFlow enforces the declared nesting, so a nested spec would reject that value; the form is
 					// unsupported.
