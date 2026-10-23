@@ -12703,6 +12703,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`C.attribute_across_methods` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", acrossMethods.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 
+		// A string-keyed store into an object of unknown type, here the result of an unmodeled call whose points-to set is empty, taints
+		// the
+		// whole object, as a container store does.
+		Function unknown = findFunction(functions, "C.via_unknown_store");
+		assertTrue("`C.via_unknown_store` applies numpy to an object of unknown type it stored its parameter in.",
+				unknown.getHasNumpyCallsOnParameters());
+		assertNotNull("`C.via_unknown_store` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				unknown.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
 		Function untainted = findFunction(functions, "C.via_untainted_container");
 		assertFalse("`C.via_untainted_container` applies numpy only to a container holding nothing from its parameter.",
 				untainted.getHasNumpyCallsOnParameters());

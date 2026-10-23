@@ -122,10 +122,11 @@ class NumpyParameterFlowAnalysis {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). A value stored as a container's element (a tuple, list,
 	 * or dict element, or a subscript store) taints the whole container, so its reads and the calls it is passed to are followed. A value
 	 * stored as an attribute ({@code obj.attr = x}) taints only that attribute, and only as read in the same function from the same value:
-	 * the object itself is not tainted. Known narrowings, each documented on the issue: positional arguments only cross call sites, a store
-	 * taints only the container as this function refers to it, not the container's other references, an attribute written in one method and
-	 * read in another is not followed, since the attribute's taint is confined to the function that writes it and the object it is written
-	 * to, often the receiver, is not tainted, and a method's receiver is never a source. See
+	 * the object itself is not tainted. A string-keyed store into an object whose type is unknown (an empty points-to set) taints the whole
+	 * object, as a container store does. Known narrowings, each documented on the issue: positional arguments only cross call sites, a
+	 * store taints only the container as this function refers to it, not the container's other references, an attribute written in one
+	 * method and read in another is not followed, since the attribute's taint is confined to the function that writes it and the object it
+	 * is written to, often the receiver, is not tainted, and a method's receiver is never a source. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
@@ -900,7 +901,8 @@ class NumpyParameterFlowAnalysis {
 				// back out of the container, nor the container passed to a callee, such as a model called on `(x, w)`. A value-tainted
 				// stored value escapes this node. An element store taints the whole container, which is the value that flows onward,
 				// and whose subscripts often have no constant key. An attribute store taints only that attribute of that object, so
-				// storing into `self` taints neither `self` nor its other attributes (see isAttributeStore). Only the value taint is
+				// storing into `self` taints neither `self` nor its other attributes. A store into an object of unknown type is taken
+				// for an element store (see isAttributeStore). Only the value taint is
 				// carried: a container colored with the shape taint would carry no provenance, and numpy over a shape without
 				// provenance is permitted at every sink (issue 751), so it would add no decline, while a returned untracked shape
 				// drops the descriptor the node's other returns carry (issue 756), which could lose one.
@@ -973,9 +975,11 @@ class NumpyParameterFlowAnalysis {
 	 * True iff {@code write} stores an attribute ({@code obj.attr = x}) rather than a container element. The Python front end lowers both
 	 * to the same property write, and a subscript with a string key ({@code d["k"] = x}) has a string constant member just as an attribute
 	 * does, so the member alone cannot tell them apart. A write is an attribute store iff its member is a string constant and its object is
-	 * not a container: neither allocated in this node as one nor pointing to one. Any other write, including one whose member is not a
-	 * constant, is an element store. An object whose points-to set is empty and that this node does not allocate is taken for an object, so
-	 * a string-keyed store into such a dictionary is followed only to its reads in this node.
+	 * known not to be a container: either this node allocates it as a non-container, or its points-to set is non-empty and holds no
+	 * container. Any other write is an element store, which taints the whole object: one whose member is not a string constant, one into a
+	 * container, and one into an object whose type is unknown, since this node does not allocate it and its points-to set is empty. An
+	 * unknown object is taken for a container because a wrong refusal costs one conversion, while a missed one converts a function that
+	 * then fails.
 	 *
 	 * @param node The node containing {@code write}.
 	 * @param write The property write.
@@ -990,16 +994,20 @@ class NumpyParameterFlowAnalysis {
 
 		int object = write.getObjectRef();
 
-		if (defUse.getDef(object) instanceof SSANewInstruction allocation && Util.isContainerType(allocation.getConcreteType()))
-			return false;
+		if (defUse.getDef(object) instanceof SSANewInstruction allocation)
+			return !Util.isContainerType(allocation.getConcreteType());
 
 		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, object);
+		boolean known = false;
 
-		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey))
+		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey)) {
 			if (Util.isContainerType(instanceKey.getConcreteType().getReference()))
 				return false;
 
-		return true;
+			known = true;
+		}
+
+		return known;
 	}
 
 	/**

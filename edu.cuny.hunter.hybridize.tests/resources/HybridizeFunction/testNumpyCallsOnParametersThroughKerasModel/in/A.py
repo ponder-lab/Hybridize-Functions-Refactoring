@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import tensorflow as tf
 from scipy.stats import multivariate_normal
@@ -157,6 +159,12 @@ class C:
     def read_a(self):
         return np.asarray(self.a)
 
+    # A string-keyed store into an object of unknown type taints the whole object.
+    def via_unknown_store(self, x):
+        d = json.loads("{}")
+        d["k"] = x
+        return np.asarray(d)
+
     # A container holding nothing from a parameter: no refusal.
     def via_untainted_container(self, x):
         p = (np.ones([2], np.float32), 1.0)
@@ -201,6 +209,7 @@ c.via_dict_store(t)
 c.via_list_store(t)
 c.via_attribute_store(t)
 c.via_untainted_container(t)
+c.via_unknown_store(t)
 c.attribute_other_field(t)
 c.attribute_same_field(t)
 c.attribute_across_methods(t)
