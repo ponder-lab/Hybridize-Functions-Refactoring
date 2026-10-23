@@ -1131,13 +1131,14 @@ public class Function {
 	private Integer definitionOrdinal;
 
 	/**
-	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
-	 * inference produced a signature, was never run, or was blocked at the function level by
-	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
+	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order, each parameter's
+	 * reasons in the order the dispatch found them. Empty when inference produced a signature, was never run, or was blocked at the
+	 * function level by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
 	 * {@link #getInferredInputSignatureAbsenceReason()} reports only the first blocking reason for the whole function, this retains every
-	 * blocking parameter's reason for read-only per-parameter reporting (e.g. the evaluator); see {@link #getBlockingParameterReasons()}.
+	 * reason of every blocking parameter for read-only per-parameter reporting (e.g. the evaluator); see
+	 * {@link #getBlockingParameterReasons()}.
 	 */
-	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
+	private Map<Parameter, Set<AbsenceReason>> blockingParameterReasons = new LinkedHashMap<>();
 
 	/**
 	 * The per-parameter reduced spec entries from the last successful {@link #computeInputSignature()} run, in declaration order over the
@@ -3750,26 +3751,31 @@ public class Function {
 	 *
 	 * @param param The container parameter whose elements to reduce. Its element types must be non-null.
 	 * @param specByParameter Receives the nested entry when every position reduces.
-	 * @param blocking Receives the first position's drop reason otherwise.
+	 * @param blocking Receives every drop reason of every position that does not reduce otherwise, in position order, the first position's
+	 *        first reason first.
 	 */
 	private void reduceContainerElements(Parameter param, Map<Parameter, InputSignature.SpecEntry> specByParameter,
-			Map<Parameter, AbsenceReason> blocking) {
+			Map<Parameter, Set<AbsenceReason>> blocking) {
 		List<Set<TensorType>> elements = param.getContainerElementTypes();
 		List<TensorType> reduced = new ArrayList<>(elements.size());
-		AbsenceReason elementReason = null;
+		boolean dropped = false;
 
-		for (int j = 0; j < elements.size() && elementReason == null; j++) {
+		// Each position reduces independently of the others, so one that bottoms does not deny the premise of the next, and every
+		// position is reduced so that each one's reasons are reported.
+		for (int j = 0; j < elements.size(); j++) {
 			Optional<TensorType> elementSpec = inferSpec(elements.get(j));
 
 			if (elementSpec.isPresent())
 				reduced.add(elementSpec.get());
-			else
-				elementReason = this.reportElementDrop(param, j, elements.get(j));
+			else {
+				dropped = true;
+
+				for (AbsenceReason reason : this.reportElementDrop(param, j, elements.get(j)))
+					addBlockingReason(blocking, param, reason);
+			}
 		}
 
-		if (elementReason != null)
-			blocking.put(param, elementReason);
-		else
+		if (!dropped)
 			specByParameter.put(param, new InputSignature.Sequence(reduced));
 	}
 
@@ -5292,23 +5298,41 @@ public class Function {
 	}
 
 	/**
-	 * Returns the blocking {@link InferenceResult.AbsenceReason} for each parameter that prevented input-signature inference, in parameter
+	 * Returns every blocking {@link InferenceResult.AbsenceReason} of each parameter that prevented input-signature inference, in parameter
 	 * declaration order, from the memoized result without triggering inference. Where {@link #getInferredInputSignatureAbsenceReason()}
 	 * collapses the function to its first blocking reason, this surfaces every blocking parameter so a consumer can report per-parameter
-	 * attribution (#654). Empty when inference was never run, when it produced a signature, and when it was blocked at the function level
-	 * by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, since no parameter is the blocker in that case.
+	 * attribution (#654), and every reason that holds for each, as every failed precondition of a function is reported rather than only the
+	 * first. A parameter's reasons are in the order the dispatch found them, which is not the declaration order of
+	 * {@link InferenceResult.AbsenceReason}; the first is the one reported before a parameter could carry several, so the first reason of
+	 * the first parameter is the function's {@link InferenceResult.Absent} reason. Empty when inference was never run, when it produced a
+	 * signature, and when it was blocked at the function level by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, since
+	 * no parameter is the blocker in that case.
 	 *
-	 * @return An unmodifiable map from each blocking {@link Parameter} to its {@link InferenceResult.AbsenceReason}, in declaration order.
+	 * @return An unmodifiable map from each blocking {@link Parameter} to its non-empty, unmodifiable, ordered set of
+	 *         {@link InferenceResult.AbsenceReason}s, in declaration order.
 	 */
-	public Map<Parameter, AbsenceReason> getBlockingParameterReasons() {
+	public Map<Parameter, Set<AbsenceReason>> getBlockingParameterReasons() {
 		return Collections.unmodifiableMap(this.blockingParameterReasons);
 	}
 
 	/**
+	 * Records {@code reason} as one of {@code param}'s blocking reasons, after any already recorded for it. A set in insertion order rather
+	 * than an {@link EnumSet}: the dispatch does not meet the reasons in {@link AbsenceReason}'s declaration order, and the first one met
+	 * is the parameter's primary reason.
+	 *
+	 * @param blocking The per-parameter blocking reasons being collected.
+	 * @param param The blocking parameter.
+	 * @param reason One reason it blocks.
+	 */
+	private static void addBlockingReason(Map<Parameter, Set<AbsenceReason>> blocking, Parameter param, AbsenceReason reason) {
+		blocking.computeIfAbsent(param, p -> new LinkedHashSet<>()).add(reason);
+	}
+
+	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the recovery
-	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per blocking parameter. The
-	 * {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason} encountered, but the
-	 * loop still runs to completion so every blocking parameter surfaces its INFO in one pass.
+	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per reason of each blocking
+	 * parameter. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason}
+	 * encountered, but the loop still runs to completion so every blocking parameter surfaces its INFOs in one pass.
 	 *
 	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-non-self-parameter throw.
 	 */
@@ -5358,12 +5382,19 @@ public class Function {
 
 		// Keyed by parameter rather than a bare list: the suffix rule below needs each spec's declaration position.
 		Map<Parameter, InputSignature.SpecEntry> specByParameter = new LinkedHashMap<>();
-		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
+		Map<Parameter, Set<AbsenceReason>> blocking = new LinkedHashMap<>();
 
 		// Defaulted, non-tensor, and supplied by no call site, so omittable from the signature entirely. Provisional until the suffix rule
 		// runs: a parameter is only genuinely omittable if nothing after it needs a spec.
 		Set<Parameter> omittable = new LinkedHashSet<>();
 
+		/*
+		 * Every reason that holds for a parameter is recorded, as every failed precondition of a function is, but a check runs only while
+		 * its premise stands. Each `continue` after a block below says why the later checks are or are not reached. The two checks after
+		 * the loop (a declared failure the signature would reject, and the suffix rule) apply only to a parameter that did not block here,
+		 * one needing its spec and the other an omittable parameter, so neither adds a second reason. The first reason recorded for each
+		 * parameter is the one recorded before a parameter could carry several, so the function-level reason is unchanged.
+		 */
 		for (Parameter param : nonSelfParameters) {
 			/*
 			 * A container reaching this parameter holds an element no `TensorSpec` admits, Python `None` being the case this covers. A
@@ -5377,7 +5408,9 @@ public class Function {
 						"A container reaching parameter `" + param.getName() + "` of `" + this + "` holds an element that is not a "
 								+ "tensor, so no specification can describe what arrives; input-signature inference is dropped and the "
 								+ "function is hybridized with a bare decorator.");
-				blocking.put(param, AbsenceReason.WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT);
+				addBlockingReason(blocking, param, AbsenceReason.WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT);
+				// Not reached: every later check reduces the tensors that arrive to a spec, and what arrives is not only tensors, so a
+				// reason or spec they derived would describe a value that never arrives alone.
 				continue;
 			}
 
@@ -5399,7 +5432,8 @@ public class Function {
 								"Parameter `" + param.getName() + "` of `" + this + "` is supplied by Keras itself on every "
 										+ "invocation, so it cannot be left out of an input signature, and being non-tensor it has "
 										+ "no spec; input-signature inference is dropped.");
-						blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+						addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+						// Not reached: every later check reads tensor evidence, which a non-tensor parameter does not have.
 						continue;
 					}
 
@@ -5420,7 +5454,8 @@ public class Function {
 									+ "least one caller, so it cannot be left out of an input signature, and being non-tensor it has no "
 									+ "spec; input-signature inference is dropped. Removing the argument from those call sites, so the "
 									+ "default always applies, would let the parameter be omitted.");
-					blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+					addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+					// Not reached, as for the Keras-supplied case above.
 					continue;
 				}
 
@@ -5435,7 +5470,8 @@ public class Function {
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
-				blocking.put(param, AbsenceReason.NON_TENSOR_PARAMETER);
+				addBlockingReason(blocking, param, AbsenceReason.NON_TENSOR_PARAMETER);
+				// Not reached: every later check reads tensor evidence, which a non-tensor parameter does not have.
 				continue;
 			}
 
@@ -5465,13 +5501,17 @@ public class Function {
 				this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
 						+ "` receives a list a TensorFlow operation returns, such as "
 						+ "`tf.unstack` or `tf.split`, whose length and elements the analysis does not model; the signature is dropped.");
-				blocking.put(param, AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				addBlockingReason(blocking, param, AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				// Not reached: the container reduction needs an element structure this container lacks, and the flat typing the dtype
+				// reduction would read describes one piece rather than the value received.
 				continue;
 			}
 
 			if (param.isTensorContainer() != null && param.isTensorContainer() && param.getContainerElementTypes() != null
 					&& !contexts.isEmpty()) {
 				this.reduceContainerElements(param, specByParameter, blocking);
+				// The flat reduction is not reached: the flat typing is the elements flattened, which the element reduction outranks. Every
+				// position is reduced there, and each one that bottoms contributes all of its reasons.
 				continue;
 			}
 
@@ -5500,26 +5540,39 @@ public class Function {
 					// position independently through `inferSpec`, and the parameter contributes a nested entry rather than blocking.
 					if (param.getContainerElementTypes() != null) {
 						this.reduceContainerElements(param, specByParameter, blocking);
+						// Not reached, as for the container route above.
 						continue;
 					}
 
-					if (param.getContainerAritiesDisagree() != null && param.getContainerAritiesDisagree()) {
-						// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
-						// exists, so no single signature admits call sites passing lists of disagreeing lengths.
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` receives lists of tensors whose lengths disagree "
-										+ "across call sites; an input signature fixes the length, so no single signature admits them "
-										+ "all and input-signature inference is dropped.");
-						reason = AbsenceReason.HETEROGENEOUS_ARITY;
-					} else {
-						// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
-						// enumerate, a nested container, a position without tensor evidence, or container and non-container values
-						// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
-										+ "form not currently reduced to an input signature; the signature is dropped.");
-						reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+					// An arity disagreement and an unmodeled form are separate findings, and both are reported when both hold, in the
+					// order the extraction found them. With neither found specifically, the form is still not one the reduction models.
+					List<AbsenceReason> formReasons = param.getContainerFormReasons().isEmpty()
+							? List.of(AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED)
+							: param.getContainerFormReasons();
+
+					for (AbsenceReason formReason : formReasons) {
+						if (formReason == AbsenceReason.HETEROGENEOUS_ARITY)
+							// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
+							// exists, so no single signature admits call sites passing lists of disagreeing lengths.
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this
+											+ "` receives lists of tensors whose lengths disagree "
+											+ "across call sites; an input signature fixes the length, so no single signature admits them "
+											+ "all and input-signature inference is dropped.");
+						else
+							// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
+							// enumerate, a nested container, a position without tensor evidence, or container and non-container values
+							// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
+											+ "form not currently reduced to an input signature; the signature is dropped.");
+
+						addBlockingReason(blocking, param, formReason);
 					}
+
+					// Not reached: the dtype reduction below has only the unmodeled container's elements flattened to read, which no
+					// single spec admits.
+					continue;
 				} else if (expectedFailureEvidenceOnly) {
 					// Tensor-typed, but only by calls the tests declare must fail, and the conforming callers passed no container either.
 					// Nothing a specification may be derived from is left, so the function is hybridized with a bare decorator.
@@ -5540,7 +5593,10 @@ public class Function {
 					reason = AbsenceReason.TYPE_HINT_WITHOUT_DTYPE;
 				}
 
-				blocking.put(param, reason);
+				addBlockingReason(blocking, param, reason);
+				// One reason: the two dispositions left are the two answers to whether every tensor type observed came from a declared
+				// failure, so exactly one holds. The dtype reduction below is not reached, since there is either no conforming evidence to
+				// reduce or only an unmodeled container's elements flattened, which no single spec admits.
 				continue;
 			}
 
@@ -5575,15 +5631,16 @@ public class Function {
 				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642), plus a `None` member, which a call passing
 				 * `None` contributes (wala/ML#1040). Shape-⊤ and symbolic-dim no longer drop here—it emits a coarse `TensorType(dtype,
 				 * null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own precedence order (dtype before sparseness) so
-				 * the reason is exact, and emit a per-parameter INFO naming it; see
+				 * the first reason is exact, and emit a per-parameter INFO naming each reason that holds; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				AbsenceReason reason = classifyDtypeBottom(contexts);
 				String prefix = "Parameter `" + param.getName() + "` of `" + this + "` ";
 
-				this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
+				for (AbsenceReason reason : classifyDtypeBottoms(contexts)) {
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
+					addBlockingReason(blocking, param, reason);
+				}
 
-				blocking.put(param, reason);
 				continue;
 			}
 
@@ -5602,7 +5659,7 @@ public class Function {
 								+ "argument a call declared to fail passes it, raising " + rejection.get() + " before the body runs, "
 								+ "which the call's guard does not admit; emitting the signature would make that test fail, so "
 								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
-				blocking.put(entry.getKey(), AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION);
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION);
 			}
 		}
 
@@ -5625,23 +5682,23 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` has a default value and no caller passes it, but a later "
 								+ "parameter needs a spec, and an input signature covers parameters by position; leaving it out would "
 								+ "apply the later parameter's spec to it. Input-signature inference is dropped.");
-				blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
+				addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
 			}
 		}
 
 		// Report per-parameter reasons in declaration order. The suffix rule can block a parameter that precedes one already blocked in
 		// the first pass, so insertion order is not declaration order.
-		Map<Parameter, AbsenceReason> orderedBlocking = new LinkedHashMap<>();
+		Map<Parameter, Set<AbsenceReason>> orderedBlocking = new LinkedHashMap<>();
 		for (Parameter param : nonSelfParameters)
 			if (blocking.containsKey(param))
-				orderedBlocking.put(param, blocking.get(param));
+				orderedBlocking.put(param, Collections.unmodifiableSet(blocking.get(param)));
 
 		this.blockingParameterReasons = orderedBlocking;
 
 		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
-		// reduced. The reason carried is the first in declaration order.
+		// reduced. The reason carried is the first parameter's first, in declaration order.
 		if (!orderedBlocking.isEmpty())
-			return new InferenceResult.Absent(orderedBlocking.values().iterator().next());
+			return new InferenceResult.Absent(orderedBlocking.values().iterator().next().iterator().next());
 
 		// Degenerate case: nothing blocked, yet no parameter contributed a spec, so there is nothing to describe. Either the function has
 		// no non-`self` parameter at all, or every one of them was omittable, which means none is a tensor. Both are unreachable from the
@@ -6051,15 +6108,16 @@ public class Function {
 	 * @param param The sequence-container parameter.
 	 * @param element The zero-based element position that did not reduce.
 	 * @param contexts The element position's {@link TensorType}s across call contexts.
-	 * @return The blocking {@link AbsenceReason} for the parameter.
+	 * @return Every blocking {@link AbsenceReason} of the position, from {@link #classifyDtypeBottoms(Set)}, each reported in its own INFO.
 	 */
-	private AbsenceReason reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
-		AbsenceReason reason = classifyDtypeBottom(contexts);
+	private Set<AbsenceReason> reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
+		Set<AbsenceReason> reasons = classifyDtypeBottoms(contexts);
 		String prefix = "Element " + element + " of parameter `" + param.getName() + "` of `" + this + "` ";
 
-		this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
+		for (AbsenceReason reason : reasons)
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
 
-		return reason;
+		return reasons;
 	}
 
 	/**
@@ -6070,7 +6128,7 @@ public class Function {
 	 * own copy of the same four-way choice, which is the shape that let one defect live at both of them
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969).
 	 *
-	 * @param reason The classified reason, from {@link #classifyDtypeBottom(Set)}.
+	 * @param reason A classified reason, from {@link #classifyDtypeBottoms(Set)}.
 	 * @return The sentence for that reason, without the identifying prefix.
 	 */
 	public static String dropMessage(AbsenceReason reason) {
@@ -6084,42 +6142,69 @@ public class Function {
 	}
 
 	/**
-	 * Classifies why {@link #inferSpec} reduced to bottom for one parameter or container element position, in {@code inferSpec}'s own
-	 * precedence order: the dtype axis before the sparseness axis.
+	 * Classifies why {@link #inferSpec} reduced to bottom for one parameter or container element position: the first of
+	 * {@link #classifyDtypeBottoms(Set)}, the reason reported when only one is.
+	 *
+	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
+	 * @return The first reason {@link #classifyDtypeBottoms(Set)} reports.
+	 */
+	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		return classifyDtypeBottoms(contexts).iterator().next();
+	}
+
+	/**
+	 * Classifies every reason {@link #inferSpec} reduced to bottom for one parameter or container element position. The axes are
+	 * independent of one another, so a parameter can bottom on several at once, such as a call passing {@code None} beside two that
+	 * disagree about the dtype, and each is reported, as every failed precondition of a function is. The order is the precedence the
+	 * reasons had when only one was reported, so the first is that reason: {@code None}, then the dtype axis, then the sparseness axis.
 	 * <p>
-	 * {@code UNKNOWN} is excluded from the concrete dtype set before the set is sized, which is the whole content of this method. Counting
-	 * it as a member made {@code {INT32, UNKNOWN}} report a conflict among the callers, when in fact the callers agree and one context did
-	 * not resolve. The two call for different work: a genuine conflict is a fact about the program that no engine improvement removes,
-	 * while an unresolved context is a precision gap whose repair collapses the set to one dtype and makes the parameter specifiable. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969.
+	 * {@code None}'s dtype and layout are meaningless (wala/ML#1040), so a {@code None} member is left out of both of the other axes: read
+	 * as {@code UNKNOWN} it would report an unresolved context, and read as dense it would report a mixed layout beside a sparse tensor.
+	 * <p>
+	 * {@code UNKNOWN} is excluded from the concrete dtype set before the set is sized. Counting it as a member made
+	 * {@code {INT32, UNKNOWN}} report a conflict among the callers, when in fact the callers agree and one context did not resolve. The two
+	 * call for different work: a genuine conflict is a fact about the program that no engine improvement removes, while an unresolved
+	 * context is a precision gap whose repair collapses the set to one dtype and makes the parameter specifiable. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969. The three dtype reasons are mutually exclusive, so at most
+	 * one of them is reported.
 	 * <p>
 	 * Shared by the flat-parameter and container-element paths. They previously carried the predicate separately and so carried the same
 	 * defect twice, which is the reason it lives here rather than at either call site.
 	 *
 	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
-	 * @return {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}, whose dtype is meaningless (wala/ML#1040);
+	 * @return A non-empty, ordered set holding {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}; one of
 	 *         {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
-	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, {@link AbsenceReason#UNKNOWN_DTYPE} when no context resolved,
-	 *         and otherwise {@link AbsenceReason#HETEROGENEOUS_SPARSITY}, the remaining reason {@code inferSpec} bottoms for.
+	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, and {@link AbsenceReason#UNKNOWN_DTYPE} when contexts are
+	 *         present and none resolved; and {@link AbsenceReason#HETEROGENEOUS_SPARSITY} when sparse and dense tensors are mixed. When
+	 *         none of these holds, the set is {@link AbsenceReason#HETEROGENEOUS_SPARSITY} alone, the remaining reason {@code inferSpec}
+	 *         bottoms for.
 	 */
-	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
-		if (contexts.stream().anyMatch(TensorType::isNone))
-			return AbsenceReason.RECEIVES_NONE;
+	public static Set<AbsenceReason> classifyDtypeBottoms(Set<TensorType> contexts) {
+		Set<AbsenceReason> reasons = new LinkedHashSet<>();
 
-		Set<DType> dtypes = contexts.stream().map(TensorType::getDType).collect(Collectors.toSet());
+		if (contexts.stream().anyMatch(TensorType::isNone))
+			reasons.add(AbsenceReason.RECEIVES_NONE);
+
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+
+		Set<DType> dtypes = tensors.stream().map(TensorType::getDType).collect(Collectors.toSet());
 		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
 		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();
 
 		if (concrete > 1)
-			return AbsenceReason.HETEROGENEOUS_DTYPE;
+			reasons.add(AbsenceReason.HETEROGENEOUS_DTYPE);
+		else if (concrete == 1 && anyUnknown)
+			reasons.add(AbsenceReason.PARTIAL_DTYPE);
+		else if (concrete == 0 && anyUnknown)
+			reasons.add(AbsenceReason.UNKNOWN_DTYPE);
 
-		if (concrete == 1 && anyUnknown)
-			return AbsenceReason.PARTIAL_DTYPE;
+		boolean anySparse = tensors.stream().anyMatch(TensorType::isSparse);
+		boolean allSparse = tensors.stream().allMatch(TensorType::isSparse);
 
-		if (concrete == 0 && anyUnknown)
-			return AbsenceReason.UNKNOWN_DTYPE;
+		if ((anySparse && !allSparse) || reasons.isEmpty())
+			reasons.add(AbsenceReason.HETEROGENEOUS_SPARSITY);
 
-		return AbsenceReason.HETEROGENEOUS_SPARSITY;
+		return Collections.unmodifiableSet(reasons);
 	}
 
 	/**

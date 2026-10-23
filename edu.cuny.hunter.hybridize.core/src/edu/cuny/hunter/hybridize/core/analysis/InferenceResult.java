@@ -18,8 +18,10 @@ public sealed interface InferenceResult {
 
 	/**
 	 * The reason an input signature could not be inferred. {@link #SPECULATIVE_TENSOR_PARAMETER} blocks the whole function up front; the
-	 * remaining constants each correspond to one blocking branch of the per-parameter dispatch in {@link Function#inferInputSignature}, in
-	 * the order that dispatch encounters them.
+	 * remaining constants each correspond to one blocking branch of the per-parameter dispatch in {@link Function#inferInputSignature}.
+	 * Declaration order is not the order that dispatch encounters them: {@link #WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT} is asked first,
+	 * and {@link #RECEIVES_NONE} precedes the dtype reasons. A parameter may carry several, in dispatch order, in
+	 * {@link Function#getBlockingParameterReasons()}.
 	 */
 	enum AbsenceReason {
 
@@ -228,7 +230,7 @@ public sealed interface InferenceResult {
 	/**
 	 * Inference was blocked, either at the function level ({@link AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, which emits a single
 	 * function-level diagnostic INFO) or by one or more parameters, in which case this carries the first {@link AbsenceReason} encountered
-	 * while dispatching over them in declaration order and every blocking parameter emits its own diagnostic INFO.
+	 * while dispatching over them in declaration order and every blocking parameter emits a diagnostic INFO for each of its reasons.
 	 *
 	 * @param reason The first blocking reason; never {@code null}.
 	 */
