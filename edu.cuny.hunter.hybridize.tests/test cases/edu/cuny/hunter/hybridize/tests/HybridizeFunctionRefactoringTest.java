@@ -12653,6 +12653,72 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins that the parameter-flow numpy precondition ({@link PreconditionFailure#HAS_NUMPY_CALLS_ON_PARAMETERS}) follows a parameter's
+	 * value into and back out of a container or an object. The shape is a method passing {@code (X_c, W_c)} to a Keras model and the
+	 * model's outputs to a numpy/scipy helper with a nested function and a comprehension ({@code C.cluster}). The value crosses a plain
+	 * Python callee, a TensorFlow op, a Keras model call returning one tensor or a tuple, and the unpacking of a returned tuple, and it is
+	 * followed through a store into a tuple, list, or dict literal, a dict or list subscript store, and an attribute store, each a property
+	 * write defining nothing that the def-use walk would otherwise stop at. A container holding nothing from a parameter stays clean.
+	 */
+	@Test
+	public void testNumpyCallsOnParametersThroughKerasModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("C.direct", "C.via_plain", "C.via_tf", "C.via_plain_tuple_out", "C.via_model", "C.via_model_tuple_out",
+				"C.cluster_direct", "C._cluster", "C._cluster.f", "C.sink")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` applies numpy to a value flowing from its parameters.", function.getHasNumpyCallsOnParameters());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// Each stores its parameter into a container or an object before the value reaches numpy.
+		for (String name : List.of("C.via_plain_tuple_in", "C.via_plain_list_in", "C.via_local_tuple", "C.via_model_tuple_in", "C.cluster",
+				"C.via_dict_literal", "C.via_dict_store", "C.via_list_store", "C.via_attribute_store")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` applies numpy to a parameter's value read back out of a container.",
+					function.getHasNumpyCallsOnParameters());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// An attribute store taints that attribute of that object, not the object: numpy over another attribute of `self` is clean. Storing
+		// into `self` is a Python side effect, which refuses each of these on its own, so only the numpy precondition is asserted.
+		Function sameField = findFunction(functions, "C.attribute_same_field");
+		assertTrue("`C.attribute_same_field` applies numpy to the attribute it stored its parameter in.",
+				sameField.getHasNumpyCallsOnParameters());
+
+		Function otherField = findFunction(functions, "C.attribute_other_field");
+		assertFalse("`C.attribute_other_field` applies numpy only to an attribute it didn't store its parameter in.",
+				otherField.getHasNumpyCallsOnParameters());
+		assertNull("`C.attribute_other_field` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", otherField.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		// TODO: An attribute written in one method and read in another isn't followed: the attribute's taint stays in the method writing
+		// it, and the receiver isn't tainted. Converting `C.attribute_across_methods` applies numpy to a symbolic tensor in `C.read_a`.
+		Function acrossMethods = findFunction(functions, "C.attribute_across_methods");
+		assertFalse("`C.attribute_across_methods` reads the stored attribute only in another method.",
+				acrossMethods.getHasNumpyCallsOnParameters());
+		assertNull("`C.attribute_across_methods` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", acrossMethods.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		// A string-keyed store into an object of unknown type, here the result of an unmodeled call whose points-to set is empty, taints
+		// the
+		// whole object, as a container store does.
+		Function unknown = findFunction(functions, "C.via_unknown_store");
+		assertTrue("`C.via_unknown_store` applies numpy to an object of unknown type it stored its parameter in.",
+				unknown.getHasNumpyCallsOnParameters());
+		assertNotNull("`C.via_unknown_store` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				unknown.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function untainted = findFunction(functions, "C.via_untainted_container");
+		assertFalse("`C.via_untainted_container` applies numpy only to a container holding nothing from its parameter.",
+				untainted.getHasNumpyCallsOnParameters());
+		assertEquals("`C.via_untainted_container` still hybridizes (P1).", P1, untainted.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the invalid-name-argument safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814): a
 	 * function that passes a non-string constant where a TensorFlow API declares its {@code name} parameter must not hybridize, since eager
 	 * execution never validates the name but tracing opens a name scope with it and raises (it fails with
