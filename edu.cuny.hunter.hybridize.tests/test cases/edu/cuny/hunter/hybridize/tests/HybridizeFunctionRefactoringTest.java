@@ -10191,6 +10191,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Every element position of a container parameter is reduced, and each one that bottoms reports every reason that holds for it, not
+	 * only the first position's first reason. {@code xs}'s element 0 is dense at one call and sparse at the other, element 1 disagrees
+	 * about the dtype, and element 2 does both.
+	 */
+	@Test
+	public void testInputSignatureContainerEveryElementReason() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertNotNull("The form is modeled, so element types surface.", xs.getContainerElementTypes());
+		assertEquals("Three element positions.", 3, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertEquals("The function-level reason is the first position's first.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY), result.absenceReason());
+		assertEquals("Every position's reasons are reported, in position order.",
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY, InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				List.copyOf(function.getBlockingParameterReasons().get(xs)));
+
+		List<String> messages = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage).toList();
+
+		Map<Integer, List<InferenceResult.AbsenceReason>> expected = Map.of(0,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY), 1,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), 2,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE, InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY));
+
+		for (Map.Entry<Integer, List<InferenceResult.AbsenceReason>> position : expected.entrySet()) {
+			String prefix = "Element " + position.getKey() + " of parameter `xs`";
+			List<String> positionMessages = messages.stream().filter(m -> m.startsWith(prefix)).toList();
+
+			assertEquals("One INFO per reason of element " + position.getKey() + ".", position.getValue().size(), positionMessages.size());
+
+			for (InferenceResult.AbsenceReason reason : position.getValue())
+				assertTrue("Element " + position.getKey() + " reports " + reason + ".",
+						positionMessages.stream().anyMatch(m -> m.endsWith(Function.dropMessage(reason))));
+		}
+	}
+
+	/**
 	 * The sequence reduction (#781) over a tuple: `xs` receives a singleton tuple of one concrete tensor. Tuples are positionally-indexed
 	 * sequences like lists, and TF 2.9.3 does not distinguish list from tuple in {@code input_signature} structure matching (probed: a
 	 * list-shaped spec accepts a tuple argument and vice versa), so the tuple reduces to the same nested rendering a list would.
