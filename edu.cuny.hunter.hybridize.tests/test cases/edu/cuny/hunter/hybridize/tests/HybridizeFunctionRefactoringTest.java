@@ -9833,7 +9833,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("No single nested spec admits lists of disagreeing lengths.", result.signature().isPresent());
 		assertEquals("The reason must name the arity disagreement, not an unsupported form.",
 				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY,
+		assertEquals("The blocking parameter must carry the same reason.", Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY),
 				function.getBlockingParameterReasons().get(xs));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -9929,7 +9929,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The reason is the unsupported container form.",
 				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
 		assertEquals("Only the container blocks; the sibling reduces.",
-				Map.of(adjacencyLists, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), function.getBlockingParameterReasons());
+				Map.of(adjacencyLists, Set.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED)),
+				function.getBlockingParameterReasons());
 	}
 
 	/**
@@ -9954,7 +9955,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// different reason: it would convert the rejected call's list of differently shaped tensors and raise `InvalidArgumentError`, which
 		// the call's `TypeError` guard does not admit (#1005).
 		assertEquals("The flat reduction stands, and only the declared failure withholds it.",
-				Map.of(x, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), function.getBlockingParameterReasons());
+				Map.of(x, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				function.getBlockingParameterReasons());
 	}
 
 	/**
@@ -10242,7 +10244,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// `signature_absences.csv` must separate the two so the container gap can be sized.
 		assertEquals("A type-hint-only parameter must report the type-hint-specific absence reason.",
 				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE,
+		assertEquals("The blocking parameter must carry the same reason.", Set.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE),
 				function.getBlockingParameterReasons().get(x));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -10347,8 +10349,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("A supplied defaulted parameter blocks the signature.", result.signature().isPresent());
 		assertEquals("The reason must name the supply, not the non-tensor classification.",
 				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED,
-				function.getBlockingParameterReasons().get(training));
+		assertEquals("The blocking parameter must carry the same reason.",
+				Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), function.getBlockingParameterReasons().get(training));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
@@ -10385,7 +10387,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("A parameter preceding a spec cannot be omitted, so the signature drops.", result.signature().isPresent());
 		assertEquals("The reason must name the positional conflict, not the supply.",
 				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC,
+		assertEquals("The blocking parameter must carry the same reason.",
+				Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC),
 				function.getBlockingParameterReasons().get(training));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -10463,12 +10466,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Per-parameter attribution (#654): both blocking parameters are recorded with their reason, in declaration order, where the
 		// function-level `absenceReason()` collapses to only the first.
-		Map<Parameter, InferenceResult.AbsenceReason> blocking = function.getBlockingParameterReasons();
+		Map<Parameter, Set<InferenceResult.AbsenceReason>> blocking = function.getBlockingParameterReasons();
 		assertEquals("Both non-tensor parameters must be recorded as blocking.", 2, blocking.size());
-		assertEquals("Parameter `m` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
-				blocking.get(m));
-		assertEquals("Parameter `n` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
-				blocking.get(n));
+		assertEquals("Parameter `m` blocks for the non-tensor-parameter reason.",
+				Set.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), blocking.get(m));
+		assertEquals("Parameter `n` blocks for the non-tensor-parameter reason.",
+				Set.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), blocking.get(n));
 		assertEquals("Blocking parameters must be in declaration order.", List.of(m, n), new ArrayList<>(blocking.keySet()));
 	}
 
@@ -13098,7 +13101,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The withholding is reached only from a reduced spec, so it still witnesses that the guard region set the failure aside.
 		afterGuard.inferInputSignature();
 		assertEquals("The reduced spec would change the declared failure's exception.",
-				Map.of(x, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), afterGuard.getBlockingParameterReasons());
+				Map.of(x, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				afterGuard.getBlockingParameterReasons());
 
 		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
 		// first arm to pin that guard form at all.
@@ -13111,7 +13115,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
 		pytestGuard.inferInputSignature();
 		assertEquals("The reduced spec would change that declared failure's exception too.",
-				Map.of(pytestParameter, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+				Map.of(pytestParameter, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
 				pytestGuard.getBlockingParameterReasons());
 	}
 
@@ -13172,7 +13176,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// `TypeError` too (#1005). The withholding is reached only from the reduced nested spec, so it still witnesses the recovery.
 		cin.inferInputSignature();
 		assertEquals("The recovered nested spec would change the declared failure's exception.",
-				Map.of(inputs, InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION), cin.getBlockingParameterReasons());
+				Map.of(inputs, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				cin.getBlockingParameterReasons());
 
 		Function usePair = findFunction(functions, "use_pair");
 		Parameter pair = usePair.getParameters().get(0);
@@ -15744,6 +15749,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function guarded = findFunction(functions, "guarded");
 		assertEquals("A declared failure's `None` leaves the signature from the tensor call.", signature,
 				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Every absence reason that holds for a parameter is reported, as every failed precondition of a function is, not only the first.
+	 * {@code none_and_mixed}'s {@code x} receives tensors of two dtypes and {@code None}, so both {@code RECEIVES_NONE} and
+	 * {@code HETEROGENEOUS_DTYPE} hold, each with its own INFO, while the function-level reason stays the first. {@code mixed} receives the
+	 * same tensors without {@code None}, so only the dtype conflict holds.
+	 */
+	@Test
+	public void testInferInputSignatureEveryAbsenceReason() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function noneAndMixed = findFunction(functions, "none_and_mixed");
+		assertTrue("`none_and_mixed` is still hybridized.", noneAndMixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("The function-level reason is the first that holds.", Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE),
+				noneAndMixed.getInferredInputSignatureAbsenceReason());
+
+		Parameter x = noneAndMixed.getParameters().get(0);
+		assertEquals("Both reasons are reported, in the order the dispatch found them.",
+				List.of(InferenceResult.AbsenceReason.RECEIVES_NONE, InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				List.copyOf(noneAndMixed.getBlockingParameterReasons().get(x)));
+
+		List<String> messages = Arrays.stream(noneAndMixed.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage).toList();
+
+		for (InferenceResult.AbsenceReason reason : List.of(InferenceResult.AbsenceReason.RECEIVES_NONE,
+				InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE))
+			assertTrue("Each reason has its own INFO: " + reason + ".",
+					messages.stream().anyMatch(m -> m.contains("`x`") && m.endsWith(Function.dropMessage(reason))));
+
+		Function mixed = findFunction(functions, "mixed");
+		assertEquals("Without `None`, only the dtype conflict holds.",
+				Map.of(mixed.getParameters().get(0), Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE)),
+				mixed.getBlockingParameterReasons());
 	}
 
 	/**

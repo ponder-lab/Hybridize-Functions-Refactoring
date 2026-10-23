@@ -734,14 +734,16 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				| `statuses.csv` | refactoring status entry of a considered function. |
 				| `decorators.csv` | (function, decorator name). |
 				| `calls.csv` | resolved call expression (emitted only when `outputCalls` is set). |
-				| `blocked_parameters.csv` | parameter that blocked input-signature inference, with its absence reason. |
+				| `blocked_parameters.csv` | (parameter that blocked input-signature inference, absence reason): a parameter \
+				for which several reasons hold has a row for each. |
 				| `tensor_specs.csv` | `TensorSpec` of a modeled input signature, keyed by (function, source, param index). A signature \
 				spans one row per non-`self` parameter, so per-signature facts (content, relation to a supplied signature, and absence \
 				reason) are in `functions.csv`, not here. Modeled, not written into source: every considered function is included, \
 				with no optimizability gate, so a function that failed a precondition still contributes rows. Join on the primary key \
 				columns against `optimizable.csv` to restrict to functions that pass the preconditions. |
-				| `signature_absences.csv` | recorded input-signature absence: a blocking parameter, a function-level reason, inference \
-				that never ran (`NOT_ATTEMPTED`), or a supplied signature that could not be modeled (`UNMODELED`). Together with \
+				| `signature_absences.csv` | recorded input-signature absence: a (blocking parameter, reason), one row for each \
+				reason of a parameter for which several hold; a function-level reason; inference that never ran \
+				(`NOT_ATTEMPTED`); or a supplied signature that could not be modeled (`UNMODELED`). Together with \
 				`tensor_specs.csv`, every considered function contributes at least one row. |
 				| `parameters.csv` | non-`self` declared parameter. |
 				| `parameter_dimensions.csv` | (non-`self` parameter, inferred tensor type, dimension). |
@@ -751,10 +753,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	}
 
 	/**
-	 * Emits one row per parameter that blocked input-signature inference for the given function, naming the parameter and its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Where the {@code functions.csv} {@code input_signature
-	 * absence reason} column reports only the function's first blocking reason, this surfaces the per-parameter attribution (#654). Reads
-	 * the memoized inference result without triggering inference, so it leaves the function's status untouched.
+	 * Emits one row per (parameter, reason) that blocked input-signature inference for the given function, naming the parameter and the
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}, as {@code failed_preconditions.csv} has one row per
+	 * failure. A parameter for which several reasons hold contributes a row for each, in the order the dispatch found them. Where the
+	 * {@code functions.csv} {@code input_signature absence reason} column reports only the function's first blocking reason, this surfaces
+	 * the per-parameter attribution (#654). Reads the memoized inference result without triggering inference, so it leaves the function's
+	 * status untouched.
 	 *
 	 * @param printer The {@code blocked_parameters.csv} printer.
 	 * @param function The function whose blocking parameters to emit.
@@ -762,8 +766,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	private static void printBlockedParameters(CSVPrinter printer, Function function) throws IOException {
 		for (var entry : function.getBlockingParameterReasons().entrySet())
-			printer.printRecord(
-					buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), entry.getValue()));
+			for (var reason : entry.getValue())
+				printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), reason));
 	}
 
 	/**
@@ -796,15 +800,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	/**
 	 * Emits one {@code signature_absences.csv} row per recorded input-signature absence for the given function: when inference was blocked,
-	 * one row per blocking parameter (source {@code "absent"}) carrying its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}; a function-level absence (no blocking parameter) and
-	 * inference that never ran each as a single {@code "absent"} row (the latter with reason {@code NOT_ATTEMPTED}); and a supplied
-	 * signature that could not be fully modeled (e.g., a name reference rather than a {@code TensorSpec} list) as a single
-	 * {@code "supplied"} row with reason {@code UNMODELED}. These are exactly the non-spec rows of the pre-#854
-	 * {@code input_signatures.csv}, split out so {@code tensor_specs.csv} carries specs only; across the two files, every considered
-	 * function still contributes at least one row, preserving #816's invariant (added by #818) that a function's absence from the
-	 * transformed set is always explained by something present in the output. Reads the memoized inference result without recomputing, so
-	 * it leaves the function's status untouched.
+	 * one row per (blocking parameter, reason) (source {@code "absent"}) carrying the
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}, so a parameter for which several reasons hold
+	 * contributes a row for each; a function-level absence (no blocking parameter) and inference that never ran each as a single
+	 * {@code "absent"} row (the latter with reason {@code NOT_ATTEMPTED}); and a supplied signature that could not be fully modeled (e.g.,
+	 * a name reference rather than a {@code TensorSpec} list) as a single {@code "supplied"} row with reason {@code UNMODELED}. These are
+	 * exactly the non-spec rows of the pre-#854 {@code input_signatures.csv}, split out so {@code tensor_specs.csv} carries specs only;
+	 * across the two files, every considered function still contributes at least one row, preserving #816's invariant (added by #818) that
+	 * a function's absence from the transformed set is always explained by something present in the output. Reads the memoized inference
+	 * result without recomputing, so it leaves the function's status untouched.
 	 *
 	 * @param printer The {@code signature_absences.csv} printer.
 	 * @param function The function whose absence rows to emit.
@@ -816,7 +820,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		if (function.getInferredInputSignature().isEmpty()) {
 			if (!function.getBlockingParameterReasons().isEmpty())
 				for (var entry : function.getBlockingParameterReasons().entrySet())
-					printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue()));
+					for (var reason : entry.getValue())
+						printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", reason));
 			else if (function.getInferredInputSignatureAbsenceReason().isPresent())
 				// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the
 				// per-parameter loop above emits nothing for it.
