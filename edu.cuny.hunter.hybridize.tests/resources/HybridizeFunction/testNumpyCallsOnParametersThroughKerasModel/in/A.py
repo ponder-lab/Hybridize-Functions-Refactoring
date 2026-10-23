@@ -73,6 +73,10 @@ class Holder:
     pass
 
 
+def read_a_of(o):
+    return np.asarray(o.a)
+
+
 class C:
     def __init__(self):
         self.eps = 1e-10
@@ -142,7 +146,7 @@ class C:
         h.v = x
         return self.sink(h.v)
 
-    # An attribute store taints that attribute of that object, read in the same method.
+    # An attribute store, then numpy over another attribute of the same object and over the stored one.
     def attribute_other_field(self, x):
         self.a = x
         return np.asarray(self.b)
@@ -159,7 +163,12 @@ class C:
     def read_a(self):
         return np.asarray(self.a)
 
-    # A string-keyed store into an object of unknown type taints the whole object.
+    # The object passed as an argument carries the store's taint into the callee.
+    def attribute_passed_on(self, x):
+        self.a = x
+        return read_a_of(self)
+
+    # A string-keyed store into the result of an unmodeled call.
     def via_unknown_store(self, x):
         d = json.loads("{}")
         d["k"] = x
@@ -213,6 +222,7 @@ c.via_unknown_store(t)
 c.attribute_other_field(t)
 c.attribute_same_field(t)
 c.attribute_across_methods(t)
+c.attribute_passed_on(t)
 c.via_model(t)
 c.via_model_tuple_out(t)
 c.via_model_tuple_in(t)
