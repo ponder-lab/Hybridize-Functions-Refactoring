@@ -15305,6 +15305,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Static methods called through an instance, {@code o.s(x)}, which bind no receiver, so the call's arguments align with the method's
+	 * parameters as passed. {@code trailing} returns a dynamic shape through one and is refused; {@code flattened} passes its parameter as
+	 * the data operand of a reshape by a constant shape, so no parameter's value reaches a shape operand, and it converts. Aligned as
+	 * though a receiver were bound, its parameter would land on the shape operand and it would be refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryStaticViaInstance() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertPassesShapeValueAcrossBoundary(functions, "trailing");
+
+		Function flattened = findFunction(functions, "flattened");
+		assertFalse("`flattened` passes no shape value across its boundary.", flattened.getPassesShapeValueAcrossBoundary());
+		assertEquals("`flattened` still hybridizes (P1).", P1, flattened.getPassingPrecondition());
+	}
+
+	/**
 	 * The controls: {@code constant_reshape} reshapes by a constant; {@code flatten_batch} reshapes by a dynamic shape it computes, which
 	 * stays inside its graph, and returns only the reshaped tensor; {@code scale} is an ordinary tensor function. Each converts.
 	 */
