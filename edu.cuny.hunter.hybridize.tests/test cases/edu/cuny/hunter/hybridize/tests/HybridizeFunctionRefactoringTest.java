@@ -16474,4 +16474,55 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse("Today, `" + name + "` is not hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 		}
 	}
+
+	/**
+	 * {@code tf.tensor_scatter_nd_update} returns a tensor of its input's shape and dtype, so {@code total} and {@code int_total} each
+	 * receive one dtype.
+	 */
+	@Test
+	public void testInferInputSignatureTensorScatterNdUpdate() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: The result carries an unknown member beside the input's type, so each dtype is partial. With
+		// https://github.com/ponder-lab/ML/pull/1082, the unknown member is gone, and the signatures are
+		// `[tf.TensorSpec(shape=(4,), dtype=tf.float32)]` for `total` and `[tf.TensorSpec(shape=(6,), dtype=tf.int32)]` for
+		// `int_total`.
+		for (String name : List.of("total", "int_total")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("Today's reason for `" + name + "`: a partial dtype.", Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
+	 * A grid {@code tf.meshgrid} returns is a float32 tensor, whether it is unpacked or subscripted. {@code grids} receives the whole list
+	 * of grids.
+	 */
+	@Test
+	public void testInferInputSignatureMeshgridElement() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: A grid carries an unknown member beside its float32 type, so its dtype is partial. With
+		// https://github.com/ponder-lab/ML/pull/1082, the unknown member is gone, and the signature is
+		// `[tf.TensorSpec(shape=None, dtype=tf.float32)]`, whose shape stays unknown because the grid's shape isn't composed.
+		for (String name : List.of("unpacked", "subscripted")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("Today's reason for `" + name + "`: a partial dtype.", Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// TODO: The list's first element has an unknown dtype. With https://github.com/ponder-lab/ML/pull/1082, the grid sits at no
+		// numbered position in the list, so the list is a library container of unknown length, and the reason is
+		// `TENSOR_CONTAINER_UNSUPPORTED`.
+		Function grids = findFunction(functions, "grids");
+		assertTrue("`grids` is still hybridized.", grids.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today's reason: the first grid's dtype is unknown.", Optional.of(InferenceResult.AbsenceReason.UNKNOWN_DTYPE),
+				grids.getInferredInputSignatureAbsenceReason());
+	}
 }
