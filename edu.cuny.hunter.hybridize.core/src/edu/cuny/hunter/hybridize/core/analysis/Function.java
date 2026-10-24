@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
@@ -909,7 +910,9 @@ public class Function {
 	/**
 	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
 	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047).
+	 * (#1047). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts at the value itself and as a
+	 * container's element, and nowhere else: a scalar in a tensor's fields, such as one {@code tf.constant(len(xs))} is built from, doesn't
+	 * make the tensor a primitive (wala/ML#451).
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -919,16 +922,33 @@ public class Function {
 	 */
 	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
 			IProgressMonitor monitor) {
-		return containsPrimitive(instanceKey, ignoreBooleans, pointerAnalysis, new HashSet<>(), monitor);
+		return containsPrimitive(instanceKey, ignoreBooleans, true, pointerAnalysis, new HashSet<>(), monitor);
 	}
 
-	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Set<InstanceKey> seen, IProgressMonitor monitor) {
+	/**
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values, as
+	 * {@link #containsPrimitive(InstanceKey, boolean, PointerAnalysis, IProgressMonitor)} decides.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @param countScalarKeys True iff the given {@link InstanceKey} is the value itself or a container's element, where a Python scalar of
+	 *        unknown value counts as a primitive.
+	 * @param pointerAnalysis The {@link PointerAnalysis} corresponding to the given {@link InstanceKey}.
+	 * @param seen The {@link InstanceKey}s already examined.
+	 * @param monitor To monitor progress.
+	 * @return True iff the given {@link InstanceKey} takes on primitive values according to the given {@link PointerAnalysis}.
+	 */
+	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, boolean countScalarKeys,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Set<InstanceKey> seen, IProgressMonitor monitor) {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
 
 		seen.add(instanceKey);
 
-		if (instanceKey instanceof ConstantKey<?>) {
+		if (isPythonScalarKey(instanceKey)) {
+			// A scalar has no fields to examine.
+			subMonitor.done();
+			return countScalarKeys && isPrimitiveValue(instanceKey, ignoreBooleans);
+		} else if (instanceKey instanceof ConstantKey<?>) {
 			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
 				// We have found a primitive.
 				subMonitor.done();
@@ -955,6 +975,9 @@ public class Function {
 
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
+			// A field's scalar counts only when the field is a container's element.
+			boolean container = Util.isContainerType(concreteType.getReference());
+
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
 
 			for (IField field : allInstanceFields) {
@@ -965,7 +988,8 @@ public class Function {
 				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
 
 				for (InstanceKey key : instanceFieldPointsToSet)
-					if (!seen.contains(key) && containsPrimitive(key, ignoreBooleans, pointerAnalysis, seen, subMonitor.split(1))) {
+					if (!seen.contains(key)
+							&& containsPrimitive(key, ignoreBooleans, container, pointerAnalysis, seen, subMonitor.split(1))) {
 						subMonitor.done();
 						return true;
 					}
@@ -1002,6 +1026,22 @@ public class Function {
 
 		// It's a primitive unless it's a boolean value and we are ignoring booleans.
 		return !foundBooleanValue || !ignoreBooleans;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a Python primitive: a primitive constant per
+	 * {@link #isPrimitiveConstant(InstanceKey, boolean)}, or a Python {@code int}, {@code float} or {@code bool} of unknown value, which
+	 * the engine represents by one key per type (wala/ML#1148).
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a primitive constant or a Python scalar.
+	 */
+	static boolean isPrimitiveValue(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (isPythonScalarKey(instanceKey))
+			return !ignoreBooleans || !instanceKey.concreteType().getReference().equals(PythonTypes.PYTHON_BOOL);
+
+		return isPrimitiveConstant(instanceKey, ignoreBooleans);
 	}
 
 	/**
