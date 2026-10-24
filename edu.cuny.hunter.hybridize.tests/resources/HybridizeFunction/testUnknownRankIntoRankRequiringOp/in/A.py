@@ -20,6 +20,11 @@ def cast_only(image):
     return tf.cast(image, tf.float32)
 
 
+def resize_spread(image):
+    leading = []
+    return tf.image.resize(*leading, image, (4, 4))
+
+
 def resize_ranked(image):
     return tf.image.resize(image, size=(4, 4))
 
@@ -30,4 +35,5 @@ transformed_img = np.asarray(np.zeros((8, 8, 3))).astype(np.uint8)
 resize_image(transformed_img)
 crop_image(transformed_img)
 cast_only(transformed_img)
+resize_spread(transformed_img)
 resize_ranked(img)

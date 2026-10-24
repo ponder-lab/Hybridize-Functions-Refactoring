@@ -878,7 +878,8 @@ class StaticShapeReadAnalysis {
 
 	/**
 	 * True iff {@code invoke} may invoke a TensorFlow op of {@link #RANK_REQUIRING_OPS}, as the engine names the APIs it invokes, and
-	 * passes {@code value} as that op's rank-requiring argument, by position or by keyword.
+	 * passes {@code value} as that op's rank-requiring argument, by position or by keyword. Behind a starred argument the positions are not
+	 * aligned, so a value passed there may be the argument and is taken to be.
 	 *
 	 * @param node The call-graph node whose IR contains the call.
 	 * @param invoke The call.
@@ -892,9 +893,18 @@ class StaticShapeReadAnalysis {
 			if (arguments == null)
 				continue;
 
-			// The callee is the invoke's first use, so the argument at index i is use i + 1.
+			// The callee is the invoke's first use, so the argument at index i is use i + 1. A starred argument at or before that use
+			// spreads an unknown number of values, so the use there need not be the argument the op receives in that position. The slot is
+			// not compared then: the value is taken to reach it if it is passed at or after the first starred argument, the direction
+			// that withholds rather than emits.
+			int starred = invoke.firstStarredPosition();
+
 			for (int position : arguments.positions())
-				if (position + 1 < invoke.getNumberOfPositionalParameters() && invoke.getUse(position + 1) == value)
+				if (starred != -1 && starred <= position + 1) {
+					for (int use = starred; use < invoke.getNumberOfPositionalParameters(); use++)
+						if (invoke.getUse(use) == value)
+							return true;
+				} else if (position + 1 < invoke.getNumberOfPositionalParameters() && invoke.getUse(position + 1) == value)
 					return true;
 
 			for (String keyword : arguments.keywords())

@@ -13047,8 +13047,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * TensorFlow-Examples' {@code resize_image}: a {@code .numpy()} array reaches the parameter with its shape unresolved, so its spec is
 	 * {@code shape=None}, and {@code tf.image.resize} raises at trace time without the rank of its {@code images}. Like a built-in Keras
 	 * layer's input (#883), the argument is a rank-only requirement, so the signature is withheld and the function hybridizes with a bare
-	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword. {@code cast_only} reaches no such op
-	 * and keeps its unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
+	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword, and {@code resize_spread} behind an
+	 * empty starred argument, whose positions are not aligned with the op's. {@code cast_only} reaches no such op and keeps its
+	 * unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
 	 */
 	@Test
 	public void testUnknownRankIntoRankRequiringOp() throws Exception {
@@ -13056,7 +13057,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : List.of("resize_image", "crop_image")) {
+		// `resize_spread` passes its parameter behind a starred argument, where the positions are not aligned: an empty spread puts it in
+		// `images`, so it is taken to reach the slot.
+		for (String name : List.of("resize_image", "crop_image", "resize_spread")) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "`'s parameter arrives with an unknown shape.",
 					function.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
