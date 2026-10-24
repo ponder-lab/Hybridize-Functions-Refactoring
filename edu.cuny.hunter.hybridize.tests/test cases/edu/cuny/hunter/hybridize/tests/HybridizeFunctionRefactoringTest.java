@@ -13581,13 +13581,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : Set.of("model_fn", "yolo", "model_fn_list", "model_fn_bn", "scale_op", "backbone", "convolutional", "upsample",
-				"head", "head_elem", "decode", "op_head", "upsample_bn")) {
+				"head", "head_elem", "op_head", "upsample_bn")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
 			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
+
+		// `decode`'s `i` is the `enumerate` index, a Python int the engine now represents by its type's key (wala/ML#1148), so `decode`
+		// has a primitive parameter. A function with one fails on it, so the Keras check isn't run for it.
+		Function decode = findFunction(functions, "decode");
+		assertEquals("`decode` has a primitive parameter.", TRUE, decode.getHasPrimitiveParameter());
+		assertNull("`decode` isn't checked for a Keras symbolic tensor.", decode.getHasKerasSymbolicArguments());
+		assertNull("`decode` does not convert.", decode.getPassingPrecondition());
+		assertNotNull("`decode` fails with HAS_PRIMITIVE_PARAMETERS.", decode.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 
 		for (String name : Set.of("upsample_eager", "head_eager")) {
 			Function function = findFunction(functions, name);
@@ -15257,10 +15265,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples;
 	 * {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which comes back as a tensor its
 	 * caller cannot write to; and {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of
-	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Two more change
-	 * but are not yet detected, for the engine reasons their TODOs cite: {@code returns_variable_pairs} builds its list with {@code +=},
-	 * and {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only
-	 * reads a variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
+	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword.
+	 * {@code returns_variable_pairs} returns a variable inside a list it builds with {@code +=}. One more changes but isn't yet detected,
+	 * for the engine reason its TODO cites: {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary
+	 * unchanged: {@code reads_variable} only reads a variable, {@code stacks_tensor_array} returns its array stacked, and
+	 * {@code selects_tensor_keys} is only passed tensors.
 	 */
 	@Test
 	public void testUncrossableBoundaryValues() throws Exception {
@@ -15280,10 +15289,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 		}
 
-		// TODO: Refuse this once Ariadne catalogs the elements `+=` appends to a list: https://github.com/wala/ML/issues/1069. Until then
-		// the appended tuple is held in a field that `m`'s object catalog does not name, so the walk does not see the returned variable.
+		// The tuple `+=` appends is held in a channel `m`'s object catalog doesn't name (https://github.com/wala/ML/issues/1069), but the
+		// engine lists that channel among the list's elements, so the walk sees the returned variable.
 		Function pairs = findFunction(functions, "returns_variable_pairs");
-		assertNull("`returns_variable_pairs`'s variable, appended with `+=`, is not yet seen.",
+		assertNull("`returns_variable_pairs` must not pass a precondition.", pairs.getPassingPrecondition());
+		assertNotNull("`returns_variable_pairs`'s variable, appended with `+=`, is seen.",
 				pairs.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
 		// TODO: Refuse this once Ariadne models a Keras weight as a variable rather than a tensor: https://github.com/wala/ML/issues/1068.
