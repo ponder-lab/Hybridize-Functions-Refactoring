@@ -681,6 +681,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
+				// Check whether the function reshapes with a scalar shape, which graph shape inference rejects (issue 1170). Same reachable
+				// region and gate; a transitive walk asking the engine which APIs each call invokes.
+				if (barrenCouldDecide)
+					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
+
 				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
 				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
 				if (barrenCouldDecide)
