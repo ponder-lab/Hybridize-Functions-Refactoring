@@ -15296,6 +15296,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A dynamic shape returned through a class method, {@code C.k(x)}: the outbound direction through a callee reached with its class bound
+	 * first, which the walk descends into.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryClassMethod() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "trailing");
+	}
+
+	/**
 	 * The controls: {@code constant_reshape} reshapes by a constant; {@code flatten_batch} reshapes by a dynamic shape it computes, which
 	 * stays inside its graph, and returns only the reshaped tensor; {@code scale} is an ordinary tensor function. Each converts.
 	 */

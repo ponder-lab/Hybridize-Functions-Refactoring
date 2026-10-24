@@ -12,16 +12,14 @@ import java.util.TreeMap;
 import java.util.stream.Stream;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
-import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
-import com.ibm.wala.cast.python.ipa.summaries.PythonInstanceMethodTrampoline;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
-import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
@@ -67,10 +65,11 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * when converted, whether or not the shape is later read statically. {@code tf.keras.backend.int_shape} has no summary either; it reads the
  * static shape and would launder a parameter's value, but its unnamed call passes the value on, which over-refuses rather than misses.
  * <p>
- * The walk is interprocedural over user functions the call reaches directly or through an instance-method trampoline, mapping arguments to
- * parameters by position and keyword; a starred argument, and a closure's free variables, are not followed. A container's elements written
- * under constant keys, such as a returned tuple's, are told apart, so a caller unpacking a helper's {@code (tensor, shape)} result colors
- * only the shape; an element written under a computed key colors the whole container.
+ * The walk is interprocedural over the program functions whose parameters receive the call's own arguments, as the engine reports them
+ * ({@link CallTargets}), with a bound method's instance or a class method's class bound first, mapping arguments to parameters by position
+ * and keyword; a starred argument, and a closure's free variables, are not followed. A container's elements written under constant keys,
+ * such as a returned tuple's, are told apart, so a caller unpacking a helper's {@code (tensor, shape)} result colors only the shape; an
+ * element written under a computed key colors the whole container.
  * <p>
  * Conservative by design: either direction refuses without proving that a static read of the lost dimensions exists downstream, so a
  * function whose caller never reads them statically, or reads them eagerly, where the returned tensor carries its value, is refused too.
@@ -259,11 +258,8 @@ class ShapeValueBoundaryAnalysis {
 		}
 	}
 
-	/** The call-graph builder, which the engine asks to name the TensorFlow API a call invokes. */
+	/** The call-graph builder, which the engine asks to name the TensorFlow API a call invokes and the program functions it runs. */
 	private final PythonSSAPropagationCallGraphBuilder builder;
-
-	/** The call graph, used to descend into user functions. */
-	private final CallGraph callGraph;
 
 	/** The pointer analysis, used to resolve member names and to look up tensor typing. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
@@ -276,7 +272,6 @@ class ShapeValueBoundaryAnalysis {
 
 	ShapeValueBoundaryAnalysis(PythonSSAPropagationCallGraphBuilder builder, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		this.builder = builder;
-		this.callGraph = builder.getCallGraph();
 		this.pointerAnalysis = builder.getPointerAnalysis();
 		this.tensorTypedKeys = tensorTypedKeys;
 	}
@@ -500,24 +495,16 @@ class ShapeValueBoundaryAnalysis {
 	}
 
 	/**
-	 * The user functions {@code invoke} reaches, each with whether it is reached through an instance-method trampoline, which binds its
-	 * first parameter.
+	 * The program functions whose parameters receive {@code invoke}'s own arguments, as the engine reports them
+	 * ({@link CallTargets#parameterBoundTargets}), each with whether a receiver, the instance of a bound method or the class of a class
+	 * method, is bound before the arguments.
+	 *
+	 * @param node The node whose IR holds {@code invoke}.
+	 * @param invoke The call.
+	 * @return Each such function's node, mapped to whether a receiver is bound first.
 	 */
 	private Map<CGNode, Boolean> userCallees(CGNode node, PythonInvokeInstruction invoke) {
-		Map<CGNode, Boolean> callees = new HashMap<>();
-
-		for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite()))
-			if (target.getMethod() instanceof AstMethod && !Util.isTensorFlowNode(target))
-				callees.put(target, Boolean.FALSE);
-			else if (target.getMethod().getDeclaringClass() instanceof PythonInstanceMethodTrampoline)
-				for (Iterator<CGNode> forwarded = this.callGraph.getSuccNodes(target); forwarded.hasNext();) {
-					CGNode method = forwarded.next();
-
-					if (method.getMethod() instanceof AstMethod && !Util.isTensorFlowNode(method))
-						callees.putIfAbsent(method, Boolean.TRUE);
-				}
-
-		return callees;
+		return CallTargets.parameterBoundTargets(this.builder, node, invoke);
 	}
 
 	/**
