@@ -3577,12 +3577,12 @@ public class Function {
 	 * decides it; otherwise a node without an IR leaves it undetermined. When the function has no call-graph node, the result is left
 	 * undetermined, mirroring the sibling safety checks.
 	 *
-	 * @param callGraph The call graph, whose resolved callees identify the shape ops.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks to name the TensorFlow APIs a call invokes.
 	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
 	 *        {@link Util#computeTensorTypedOrigins}), which tell a shape value combined with data apart from one combined with constants.
 	 */
-	public void computeShapeValueAcrossBoundary(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+	public void computeShapeValueAcrossBoundary(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
@@ -3600,7 +3600,7 @@ public class Function {
 			return;
 		}
 
-		ShapeValueBoundaryAnalysis analysis = new ShapeValueBoundaryAnalysis(callGraph, pointerAnalysis, tensorTypedKeys);
+		ShapeValueBoundaryAnalysis analysis = new ShapeValueBoundaryAnalysis(builder, tensorTypedKeys);
 		Boolean ret = Boolean.FALSE;
 
 		for (CGNode node : nodes) {

@@ -9,13 +9,13 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ipa.summaries.PythonInstanceMethodTrampoline;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
@@ -55,13 +55,17 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * comparison of one, which is a boolean, and so is the result of a shape operand's op, such as {@code tf.reshape(x, s)}, which is the
  * reason the shape was computed, even when its data operand is itself a shape vector.
  * </ul>
- * Ops are identified by the call graph's resolved callee, as {@link StaticShapeReadAnalysis}'s built-in Keras layer test and
- * {@link TensorIterationAnalysis}'s builtin test do: a call-graph target that is an Ariadne summary of a TensorFlow op, named by its
- * declaring class, so an alias or a rebinding of the op is identified as the op it is, and a user function named like an op is not. The op
- * names are the ones {@link StaticShapeReadAnalysis} catalogs. {@code tf.ensure_shape} is listed but has no summary in the engine, so a
- * call of it is not identified, and neither is {@code tf.keras.backend.int_shape}, a static read that would launder a parameter's value but
- * whose unresolved call passes the value on, over-refusing; {@code Tensor.shape} used as a tensor is not a source, since it is a static
- * {@code TensorShape} whose value is part of the type that crosses.
+ * Ops are identified by the engine: {@link TensorFlowApis} names the TensorFlow APIs a call may invoke, following the call graph's resolved
+ * callees, so an alias or a rebinding of an op is identified as the op it is, and a user function named like an op is not. The names are
+ * matched against the ones {@link StaticShapeReadAnalysis} catalogs. {@code Tensor.shape} used as a tensor is not a source, since it is a
+ * static {@code TensorShape} whose value is part of the type that crosses.
+ * <p>
+ * TODO: Three names are not yet answered by the engine (https://github.com/ponder-lab/ML/pull/1084). {@code tf.ensure_shape} has no summary
+ * and is named only when written as an attribute chain off the module, and {@code Tensor.set_shape} is named only on a parsed feature's
+ * tensor. A call of either one is therefore missed, so a parameter's value reaching its shape operand is not refused. Measured on
+ * TensorFlow 2.9.3, either accepts a tensor shape eagerly and raises a {@code TypeError} on one under tracing, so such a function breaks
+ * when converted, whether or not the shape is later read statically. {@code tf.keras.backend.int_shape} has no summary either; it reads the
+ * static shape and would launder a parameter's value, but its unnamed call passes the value on, which over-refuses rather than misses.
  * <p>
  * The walk is interprocedural over user functions the call reaches directly or through an instance-method trampoline, mapping arguments to
  * parameters by position and keyword; a starred argument, and a closure's free variables, are not followed. A container's elements written
@@ -129,21 +133,6 @@ class ShapeValueBoundaryAnalysis {
 						|| SHAPE_FIXING_OP_FQNS.contains(fqn)) : "Every shape-operand op is catalogued.";
 	}
 
-	/** {@link #SHAPE_OPERANDS}, keyed by the op's name, the last segment of its fully-qualified name. */
-	private static final Map<String, ShapeArguments> SHAPE_OPERANDS_BY_OP_NAME = SHAPE_OPERANDS.entrySet().stream()
-			.collect(Collectors.toMap(e -> opName(e.getKey()), Map.Entry::getValue));
-
-	/** The names of {@link StaticShapeReadAnalysis#DYNAMIC_SHAPE_OP_FQNS}, the last segments of their fully-qualified names. */
-	private static final Set<String> DYNAMIC_SHAPE_OP_NAMES = StaticShapeReadAnalysis.DYNAMIC_SHAPE_OP_FQNS.stream()
-			.map(ShapeValueBoundaryAnalysis::opName).collect(Collectors.toUnmodifiableSet());
-
-	/**
-	 * The declaring-class packages of Ariadne's TensorFlow op summaries: the functions namespace, the math namespace, and a Python
-	 * {@code ops} module. A class elsewhere under TensorFlow, such as {@code Dataset.range} or a {@code TensorArray} method, is not the op.
-	 */
-	private static final Pattern OP_SUMMARY_PACKAGE = Pattern
-			.compile("L\\$?tensorflow/(functions(/image)?|math|python/ops/[a-z_]+(/[a-z_]+)?)");
-
 	/**
 	 * The member reads that read a tensor's type rather than its value: a static {@code .shape}, {@code .get_shape()}, {@code .ndim} and
 	 * {@code .dtype}.
@@ -154,10 +143,11 @@ class ShapeValueBoundaryAnalysis {
 	 * The names of TensorFlow's elementwise comparison ops, whose result is a boolean, not a shape: a shape value compared, as in
 	 * {@code tf.cond(tf.equal(tf.shape(x)[-1], 4), ...)}, colors nothing outbound.
 	 */
-	private static final Set<String> COMPARISON_OP_NAMES = Set.of("equal", "not_equal", "less", "less_equal", "greater", "greater_equal");
+	private static final Set<String> COMPARISON_OP_FQNS = Set.of("tensorflow.equal", "tensorflow.not_equal", "tensorflow.less",
+			"tensorflow.less_equal", "tensorflow.greater", "tensorflow.greater_equal");
 
-	/** The name of the method fixing its receiver's static shape, whose receiver, not its result, takes the shape operand's dimensions. */
-	private static final String SET_SHAPE_OP_NAME = "set_shape";
+	/** The method fixing its receiver's static shape, whose receiver, not its result, takes the shape operand's dimensions. */
+	private static final String SET_SHAPE_OP_FQN = "tensorflow.Tensor.set_shape";
 
 	/**
 	 * What a walk finds reaching a node's returns: the colors of each returned value as a whole, and, for a returned container whose
@@ -269,7 +259,10 @@ class ShapeValueBoundaryAnalysis {
 		}
 	}
 
-	/** The call graph, used to resolve callees and descend into user functions. */
+	/** The call-graph builder, which the engine asks to name the TensorFlow API a call invokes. */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
+	/** The call graph, used to descend into user functions. */
 	private final CallGraph callGraph;
 
 	/** The pointer analysis, used to resolve member names and to look up tensor typing. */
@@ -281,10 +274,10 @@ class ShapeValueBoundaryAnalysis {
 	/** The walk memo, by (node, direction, seeded parameter colors). */
 	private final Map<String, Returned> memo = new HashMap<>();
 
-	ShapeValueBoundaryAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
-			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
-		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+	ShapeValueBoundaryAnalysis(PythonSSAPropagationCallGraphBuilder builder, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		this.builder = builder;
+		this.callGraph = builder.getCallGraph();
+		this.pointerAnalysis = builder.getPointerAnalysis();
 		this.tensorTypedKeys = tensorTypedKeys;
 	}
 
@@ -444,17 +437,17 @@ class ShapeValueBoundaryAnalysis {
 
 	/** Colors the result of {@code invoke}, one of whose uses was just colored. */
 	private void handleInvoke(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, Direction direction, Walk walk) {
-		Set<String> ops = this.resolvedOpNames(node, invoke);
+		Set<String> ops = this.resolvedApis(node, invoke);
 
 		// A dynamic shape op reads its argument's type: inbound it launders, and outbound its result is already a source.
-		if (ops.stream().anyMatch(DYNAMIC_SHAPE_OP_NAMES::contains))
+		if (ops.stream().anyMatch(StaticShapeReadAnalysis.DYNAMIC_SHAPE_OP_FQNS::contains))
 			return;
 
 		// Outbound, a comparison of a shape value is a boolean, not a shape.
-		if (direction == Direction.OUTBOUND && ops.stream().anyMatch(COMPARISON_OP_NAMES::contains))
+		if (direction == Direction.OUTBOUND && ops.stream().anyMatch(COMPARISON_OP_FQNS::contains))
 			return;
 
-		ShapeArguments shapeOperands = ops.stream().map(SHAPE_OPERANDS_BY_OP_NAME::get).filter(o -> o != null).findFirst().orElse(null);
+		ShapeArguments shapeOperands = ops.stream().map(SHAPE_OPERANDS::get).filter(o -> o != null).findFirst().orElse(null);
 
 		if (shapeOperands != null) {
 			// Outbound, the op consumes the shape: its result is the data the shape was computed for, whatever its data operand, so it is
@@ -473,7 +466,7 @@ class ShapeValueBoundaryAnalysis {
 			walk.colorDefs(invoke, result);
 
 			// `x.set_shape(s)` gives its receiver the dimensions rather than its result.
-			if (ops.contains(SET_SHAPE_OP_NAME) && defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead method)
+			if (ops.contains(SET_SHAPE_OP_FQN) && defUse.getDef(invoke.getUse(0)) instanceof PythonPropertyRead method)
 				walk.color(method.getObjectRef(), result);
 
 			return;
@@ -587,39 +580,18 @@ class ShapeValueBoundaryAnalysis {
 
 	/** True iff {@code invoke}'s resolved callee is a dynamic shape op. */
 	private boolean invokesDynamicShapeOp(CGNode node, PythonInvokeInstruction invoke) {
-		return this.resolvedOpNames(node, invoke).stream().anyMatch(DYNAMIC_SHAPE_OP_NAMES::contains);
+		return this.resolvedApis(node, invoke).stream().anyMatch(StaticShapeReadAnalysis.DYNAMIC_SHAPE_OP_FQNS::contains);
 	}
 
 	/**
-	 * The names of the TensorFlow op summaries {@code invoke} resolves to in the call graph: each target's, and, for a target that is not
-	 * user code (a trampoline), each of its successors'.
+	 * The fully-qualified names of the TensorFlow APIs {@code invoke} may invoke, as the engine names them ({@link TensorFlowApis}).
+	 *
+	 * @param node The node whose IR holds {@code invoke}.
+	 * @param invoke The call.
+	 * @return The APIs' names, such as {@code tensorflow.reshape}; empty when the call invokes no API the engine names.
 	 */
-	private Set<String> resolvedOpNames(CGNode node, PythonInvokeInstruction invoke) {
-		Set<String> names = new HashSet<>();
-
-		for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
-			addOpName(target, names);
-
-			if (!(target.getMethod() instanceof AstMethod))
-				for (Iterator<CGNode> forwarded = this.callGraph.getSuccNodes(target); forwarded.hasNext();)
-					addOpName(forwarded.next(), names);
-		}
-
-		return names;
-	}
-
-	/** Adds the op name of {@code target}'s declaring class to {@code names} if the class is an Ariadne TensorFlow op summary. */
-	private static void addOpName(CGNode target, Set<String> names) {
-		String type = target.getMethod().getDeclaringClass().getName().toString();
-		int last = type.lastIndexOf('/');
-
-		if (last > 0 && OP_SUMMARY_PACKAGE.matcher(type.substring(0, last)).matches())
-			names.add(type.substring(last + 1));
-	}
-
-	/** The last segment of a fully-qualified name. */
-	private static String opName(String fqn) {
-		return fqn.substring(fqn.lastIndexOf('.') + 1);
+	private Set<String> resolvedApis(CGNode node, PythonInvokeInstruction invoke) {
+		return TensorFlowApis.of(this.builder, node, invoke);
 	}
 
 	/** The value numbers {@code invoke} passes in {@code operands}. */
