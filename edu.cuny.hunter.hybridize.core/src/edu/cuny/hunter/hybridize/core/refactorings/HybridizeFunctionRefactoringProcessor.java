@@ -652,6 +652,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeEagerDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis());
 
+				// Check whether an element of a NumPy argument is combined with a value of another dtype (issue 1111). Same reachable
+				// region and gate; a caller-side origin query per parameter, and a body scan only for a parameter passed an array.
+				if (barrenCouldDecide)
+					func.computeNumpyElementDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis(), tensorTypedKeys);
+
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());

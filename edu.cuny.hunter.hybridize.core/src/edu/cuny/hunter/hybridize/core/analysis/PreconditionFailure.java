@@ -364,7 +364,21 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
 	 */
-	RETURNS_PYTHON_PRIMITIVE(40);
+	RETURNS_PYTHON_PRIMITIVE(40),
+
+	/**
+	 * A call site passes a parameter a NumPy array, and the body combines an element of it, read by a subscript, with a value of another
+	 * dtype at an operation that converts its operands, such as a comparison or an arithmetic operator. Eagerly the element is a NumPy
+	 * scalar, which the operation converts to the other operand's dtype; under {@code tf.function} the array crosses the boundary as a
+	 * tensor of its own dtype, and the operation rejects the element with a {@code TypeError}. No input signature repairs this, since one
+	 * casting the array to the imposed dtype changes every other read of it. Whether the argument is an array is Ariadne's fact, the NumPy
+	 * producing-library origin of the value the call site passes, so an element of a tensor's {@code numpy()} result counts. An element
+	 * read by unpacking, such as {@code h, w = shape}, is not covered: the engine doesn't yet tell a destructuring read from an attribute
+	 * read (https://github.com/wala/ML/issues/1117).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111">Issue 1111</a>
+	 */
+	HAS_NUMPY_ELEMENT_DTYPE_COERCIONS(43);
 
 	static {
 		// check that the codes are unique.
