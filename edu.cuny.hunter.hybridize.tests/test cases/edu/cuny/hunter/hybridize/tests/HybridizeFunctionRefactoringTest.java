@@ -16514,11 +16514,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
 		}
 
-		// FIXME: Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor. The unpacking lowers to the
-		// same read as an attribute read, so it is neither a subscript nor iteration here. With https://github.com/wala/ML/issues/1117,
-		// it fails with HAS_TENSOR_PARAMETER_ITERATION.
+		// FIXME: Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor, which is the iteration
+		// check's hazard (#830), not an element's dtype. The unpacking lowers to the same read as an attribute read, so the iteration
+		// check doesn't see it. With https://github.com/wala/ML/issues/1117, it fails with HAS_TENSOR_PARAMETER_ITERATION.
 		Function proposals = findFunction(functions, "proposals");
-		assertEquals("Today, `proposals` combines no subscripted element of its NumPy argument.", FALSE,
+		assertEquals("Today, `proposals` doesn't iterate its argument.", FALSE, proposals.getHasTensorParameterIteration());
+		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
 				proposals.getHasNumpyElementDtypeCoercions());
 		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
 	}

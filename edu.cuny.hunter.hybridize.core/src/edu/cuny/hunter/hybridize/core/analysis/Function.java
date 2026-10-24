@@ -3843,11 +3843,11 @@ public class Function {
 	 * scalar, which the operation converts to its other operand's dtype; traced, the array is a tensor of its own dtype, whose element the
 	 * operation rejects. No input signature repairs this: a signature casting the array to the imposed dtype changes every other read of
 	 * it. Whether the argument is an array is the engine's fact, the NumPy producing-library origin of the value the call site passes; the
-	 * parameter's dtype and the dtypes the element's consumers impose are the tensor-type analysis's, read as
+	 * element's dtype and the dtypes its consumers impose are the tensor-type analysis's, read as
 	 * {@link EagerCoercionAnalysis#divergentElementDtypes} reads them.
 	 *
 	 * @param callGraph The call graph.
-	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies the parameter's and the partner operands' dtypes.
+	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies the element's and its partner operands' dtypes.
 	 * @param pointerAnalysis The pointer analysis, used to resolve a call site's arguments and a coercing call's callee.
 	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
 	 *        {@link Util#computeTensorTypedOrigins}).

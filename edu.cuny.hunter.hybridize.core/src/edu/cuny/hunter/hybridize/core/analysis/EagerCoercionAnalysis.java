@@ -226,19 +226,18 @@ class EagerCoercionAnalysis {
 	}
 
 	/**
-	 * The concrete dtypes other than the parameter's own that the consumers of an element of the parameter value {@code parameterValue},
-	 * read by a subscript, impose on it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). The subscript is
-	 * treated as the parameter's own consumer one step removed: its direct consumers are read as {@link #eagerEffectiveDtypes} reads a
-	 * parameter's, and what they impose is compared with the parameter's tensor typing, which must be a single concrete dtype, the dtype at
-	 * which the argument crosses a {@code tf.function} boundary. An element whose consumers are indeterminate, or a parameter whose dtype
-	 * is not single and concrete, decides nothing, the allowing polarity of the parameter's own consumers.
+	 * The concrete dtypes that the consumers of an element of the parameter value {@code parameterValue}, read by a subscript, impose on it
+	 * where they differ from the element's own (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). The element's
+	 * direct consumers are read as {@link #eagerEffectiveDtypes} reads a parameter's, and what they impose is compared with the element's
+	 * own tensor typing, which must be a single concrete dtype. An element whose consumers are indeterminate, or whose own dtype is not
+	 * single and concrete, decides nothing, the allowing polarity of the parameter's own consumers.
 	 * <p>
 	 * A subscript is told from an attribute read by the engine's {@link PythonPropertyRead#isSubscript()}. A destructuring read, such as
 	 * {@code a, b = x}, is no subscript there (wala/ML#1117), so its elements are not read.
 	 *
 	 * @param node The call-graph node to scan.
 	 * @param parameterValue The parameter's IR value number.
-	 * @return The imposed dtypes that differ from the parameter's, empty if there is none.
+	 * @return The imposed dtypes that differ from an element's own, empty if there is none.
 	 */
 	Set<DType> divergentElementDtypes(CGNode node, int parameterValue) {
 		Set<DType> divergent = new HashSet<>();
@@ -246,20 +245,20 @@ class EagerCoercionAnalysis {
 		if (node.getIR() == null)
 			return divergent;
 
-		Set<DType> own = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(parameterValue, Set.of()).stream()
-				.map(TensorType::getDType).collect(Collectors.toSet());
-
-		if (own.size() != 1 || own.contains(null) || own.contains(DType.UNKNOWN))
-			return divergent;
-
-		DType parameterDtype = own.iterator().next();
-
 		for (Iterator<SSAInstruction> uses = node.getDU().getUses(parameterValue); uses.hasNext();)
 			if (uses.next() instanceof PythonPropertyRead read && read.isSubscript() && read.getObjectRef() == parameterValue) {
-				Outcome outcome = this.eagerEffectiveDtypes(node, read.getDef());
+				int element = read.getDef();
+				Set<DType> own = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(element, Set.of()).stream()
+						.map(TensorType::getDType).collect(Collectors.toSet());
+
+				if (own.size() != 1 || own.contains(null) || own.contains(DType.UNKNOWN))
+					continue;
+
+				DType elementDtype = own.iterator().next();
+				Outcome outcome = this.eagerEffectiveDtypes(node, element);
 
 				if (!outcome.indeterminate())
-					outcome.dtypes().stream().filter(dtype -> dtype != parameterDtype).forEach(divergent::add);
+					outcome.dtypes().stream().filter(dtype -> dtype != elementDtype).forEach(divergent::add);
 			}
 
 		return divergent;
