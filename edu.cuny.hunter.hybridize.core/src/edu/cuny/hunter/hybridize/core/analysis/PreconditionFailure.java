@@ -364,18 +364,7 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
 	 */
-	RETURNS_PYTHON_PRIMITIVE(40),
-
-	/**
-	 * The function, or code it calls, reshapes with a rank-0 shape operand, such as {@code tf.reshape(t, -1)}. Eagerly, TensorFlow's
-	 * {@code Reshape} kernel accepts a scalar shape; in a graph, its shape inference requires a rank-1 shape operand, so the converted
-	 * function raises {@code ValueError: Shape must be rank 1 but is rank 0} on its first trace, with a bare decorator or a signature
-	 * alike. The operand is refused when it may be a scalar on some path, a conservative over-refusal where it is a vector on others. See
-	 * {@link ScalarReshapeShapeAnalysis}.
-	 *
-	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
-	 */
-	RESHAPES_WITH_SCALAR_SHAPE(42);
+	RETURNS_PYTHON_PRIMITIVE(40);
 
 	static {
 		// check that the codes are unique.
