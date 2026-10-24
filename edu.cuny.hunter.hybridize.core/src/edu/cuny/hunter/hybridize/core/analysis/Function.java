@@ -1238,6 +1238,13 @@ public class Function {
 	private Boolean hasTensorParameterItemAssignment;
 
 	/**
+	 * True iff this {@link Function}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}, which
+	 * {@code tf.constant} rejects once tracing makes the value symbolic. {@code null} when it could not be determined (no call-graph node),
+	 * in which case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169.
+	 */
+	private Boolean hasTensorParameterConstant;
+
+	/**
 	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites (a call inside {@code assertRaises} or
 	 * {@code pytest.raises}), whose evidence a specification must not be derived from (#888). Empty when none is, when the question was not
 	 * asked, or when every node is guarded, in which case nothing is excluded: a function called only from expected-failure tests would
@@ -1636,6 +1643,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT,
 										"Can't hybridize a function that assigns into one of its tensor arguments by index; "
 												+ "tracing makes the argument symbolic, which does not support item assignment.");
+							else if (this.getHasTensorParameterConstant() != null && this.getHasTensorParameterConstant())
+								// Passes a parameter-derived tensor to tf.constant, which rejects a symbolic tensor (issue 1169). A safety
+								// failure in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_CONSTANT,
+										"Can't hybridize a function that passes one of its tensor arguments to tf.constant; "
+												+ "tracing makes the argument symbolic, which tf.constant rejects.");
 							else if (this.getHasConflictingEagerDtypeCoercions() != null && this.getHasConflictingEagerDtypeCoercions())
 								// A parameter's direct consumers impose different eager-effective dtypes (issue 861, Case 1): eager
 								// execution coerces the argument differently at each op, so no single input signature preserves
@@ -3243,18 +3256,22 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, directly or through a builtin that
-	 * iterates it, storing the result for {@link #getHasTensorParameterIteration()}, and whether it stores into one by subscript, storing
-	 * that for {@link #getHasTensorParameterItemAssignment()}. Eagerly both work; under tracing the parameter is symbolic, and iterating it
-	 * or assigning into it raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at
-	 * earlier Ariadne versions; issue 1098). When the function has no call-graph node, the results are left undetermined, mirroring the
-	 * sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830 and
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+	 * iterates it, storing the result for {@link #getHasTensorParameterIteration()}, whether it stores into one by subscript, storing that
+	 * for {@link #getHasTensorParameterItemAssignment()}, and whether it passes one to {@code tf.constant}, storing that for
+	 * {@link #getHasTensorParameterConstant()}. Eagerly all three work; under tracing the parameter is symbolic, and iterating it,
+	 * assigning into it, or giving it to {@code tf.constant} raises, so the conversion must be declined (issue 830, the shield the barren
+	 * verdict accidentally provided at earlier Ariadne versions; issues 1098 and 1169). When the function has no call-graph node, the
+	 * results are left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169.
 	 *
-	 * @param callGraph The call graph, used to resolve the builtin a tensor is passed to.
-	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, used to resolve the builtin a tensor is passed to and the iterated value's producer for the
+	 *        {@code tf.range} exemption, and which the engine asks to name the TensorFlow API a call invokes.
 	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
 	 */
-	public void computeTensorParameterIteration(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+	public void computeTensorParameterIteration(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<CGNode> nodes;
 
@@ -3272,15 +3289,18 @@ public class Function {
 			return;
 		}
 
-		TensorIterationAnalysis analysis = new TensorIterationAnalysis(callGraph, pointerAnalysis, tensorTypeAnalysis);
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(builder, tensorTypeAnalysis);
 		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
 		boolean assigns = nodes.stream().anyMatch(node -> analysis.assignsIntoTensorParameter(node, this.isMethod()));
+		boolean constant = nodes.stream().anyMatch(node -> analysis.passesTensorParameterToConstant(node, this.isMethod()));
 
 		this.hasTensorParameterIteration = iterates;
 		this.hasTensorParameterItemAssignment = assigns;
+		this.hasTensorParameterConstant = constant;
 
 		LOG.info(this + (iterates ? " iterates a tensor parameter." : " iterates no tensor parameter."));
 		LOG.info(this + (assigns ? " assigns into a tensor parameter by index." : " assigns into no tensor parameter by index."));
+		LOG.info(this + (constant ? " passes a tensor parameter to tf.constant." : " passes no tensor parameter to tf.constant."));
 	}
 
 	/**
@@ -3309,6 +3329,16 @@ public class Function {
 	 */
 	public Boolean getHasTensorParameterItemAssignment() {
 		return this.hasTensorParameterItemAssignment;
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value},
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter reaches {@code tf.constant}, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterConstant() {
+		return this.hasTensorParameterConstant;
 	}
 
 	/**

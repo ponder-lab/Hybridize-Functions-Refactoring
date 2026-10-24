@@ -375,7 +375,16 @@ public enum PreconditionFailure {
 	 * the boundary breaks the caller, with a bare decorator or an inferred signature alike. The check refuses on either direction without
 	 * proving that a static read exists downstream, a conservative over-refusal. See {@link ShapeValueBoundaryAnalysis}.
 	 */
-	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41);
+	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41),
+
+	/**
+	 * The function's body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}. Eagerly the value is a
+	 * NumPy array or an eager tensor, which {@code tf.constant} accepts; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * {@code tf.constant} rejects, so tracing raises a {@code TypeError} whatever the caller passes. A Python collection does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169">Issue 1169</a>
+	 */
+	HAS_TENSOR_PARAMETER_CONSTANT(42);
 
 	static {
 		// check that the codes are unique.

@@ -9,8 +9,10 @@ import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
@@ -51,6 +53,12 @@ import com.ibm.wala.util.collections.Pair;
  * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
  * a {@code TypeError}. A slice store ({@code y[1:3] = v}) is not seen: the engine lowers it to a call of the {@code slice} builtin, not to
  * a subscript store (https://github.com/wala/ML/issues/1130).
+ * <p>
+ * The same scan backs a third precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169): passing such a
+ * value as {@code tf.constant}'s {@code value} works eagerly, where it is a NumPy array or an eager tensor, but {@code tf.constant} rejects
+ * a symbolic tensor, so tracing raises a {@code TypeError}. The engine names the API a call invokes ({@link TensorFlowApis}), so an alias
+ * of {@code tf.constant} is seen, and a program function named like it is not. The scan is body-local, like the other two: a parameter
+ * passed to a helper that gives it to {@code tf.constant} is not seen.
  */
 class TensorIterationAnalysis {
 
@@ -63,9 +71,13 @@ class TensorIterationAnalysis {
 	/** The call graph, used to resolve the builtin a tensor is passed to. */
 	private final CallGraph callGraph;
 
-	TensorIterationAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
-		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+	/** The call-graph builder, which the engine asks to name the TensorFlow API a call invokes. */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
+	TensorIterationAnalysis(PythonSSAPropagationCallGraphBuilder builder, TensorTypeAnalysis tensorTypeAnalysis) {
+		this.builder = builder;
+		this.callGraph = builder.getCallGraph();
+		this.pointerAnalysis = builder.getPointerAnalysis();
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -122,6 +134,39 @@ class TensorIterationAnalysis {
 		// is legal on a symbolic tensor, so only a subscript store fires.
 		return anyTaintedUse(node, method, (use, value) -> use instanceof PythonPropertyWrite write && write.isSubscript()
 				&& write.getObjectRef() == value && this.isTensorTyped(node, value) && !this.pointsToContainer(node, value));
+	}
+
+	/** The API whose {@code value} argument must not be a symbolic tensor, as the engine names it ({@link TensorFlowApis}). */
+	private static final String CONSTANT_FQN = "tensorflow.constant";
+
+	/** The keyword of {@code tf.constant}'s first parameter, the value it converts. */
+	private static final String CONSTANT_VALUE_KEYWORD = "value";
+
+	/**
+	 * True iff {@code node}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}, which a symbolic
+	 * tensor cannot be (issue 1169). The container exemption keeps a Python collection out, as for the other two checks.
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
+	 * @return True iff {@code tf.constant} is given a parameter-derived tensor as its value.
+	 */
+	boolean passesTensorParameterToConstant(CGNode node, boolean method) {
+		return anyTaintedUse(node, method,
+				(use, value) -> use instanceof PythonInvokeInstruction invoke && passesAsConstantValue(invoke, value)
+						&& this.isTensorTyped(node, value) && !this.pointsToContainer(node, value)
+						&& TensorFlowApis.of(this.builder, node, invoke).contains(CONSTANT_FQN));
+	}
+
+	/**
+	 * True iff {@code invoke} passes {@code value} in {@code tf.constant}'s {@code value} slot: its first positional argument, or its
+	 * {@code value} keyword. A call spreading a starred argument first is not aligned, so it is not matched.
+	 */
+	private static boolean passesAsConstantValue(PythonInvokeInstruction invoke, int value) {
+		// The callee is the invoke's first use, so the first argument is use 1.
+		if (invoke.getNumberOfPositionalParameters() > 1 && invoke.firstStarredPosition() != 1 && invoke.getUse(1) == value)
+			return true;
+
+		return invoke.getKeywords().contains(CONSTANT_VALUE_KEYWORD) && invoke.getUse(CONSTANT_VALUE_KEYWORD) == value;
 	}
 
 	/**
