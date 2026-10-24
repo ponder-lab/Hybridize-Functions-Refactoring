@@ -16483,4 +16483,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Today's reason: the first grid's dtype is unknown.", Optional.of(InferenceResult.AbsenceReason.UNKNOWN_DTYPE),
 				grids.getInferredInputSignatureAbsenceReason());
 	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170: a reshape by a rank-0 shape. Measured on TensorFlow
+	 * 2.9.3, each of {@code pool}, {@code flatten_by_keyword} and {@code flatten_by_scalar_tensor} runs eagerly and raises
+	 * {@code ValueError: Shape must be rank 1 but is rank 0} under {@code tf.function}: {@code pool} through the helper it calls, as
+	 * tf_geometric's {@code DiffPool.call} does, with a Python int, {@code flatten_by_keyword} with one passed by keyword, and
+	 * {@code flatten_by_scalar_tensor} with a rank-0 tensor. {@code flatten_by_vector} reshapes by {@code [-1]} and converts.
+	 */
+	@Test
+	public void testReshapeWithScalarShape() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Refuse these once the engine reports the rank of a reshape's shape operand (https://github.com/wala/ML/issues/1147).
+		// Each one breaks when converted, but nothing refuses it today.
+		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
+			assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+
+		Function vector = findFunction(functions, "flatten_by_vector");
+		assertEquals("`flatten_by_vector` hybridizes (P1).", P1, vector.getPassingPrecondition());
+		assertTrue("`flatten_by_vector` is converted.", vector.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
 }
