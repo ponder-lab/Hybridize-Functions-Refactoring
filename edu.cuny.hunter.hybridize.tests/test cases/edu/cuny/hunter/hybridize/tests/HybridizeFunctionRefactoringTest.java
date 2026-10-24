@@ -12359,8 +12359,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Python scalars of unknown value as arguments: the engine represents each by its type's key (wala/ML#1148), which counts as a
 	 * primitive at the argument itself and as a container's element. {@code scale}'s {@code n} is only ever {@code len(xs)}, and
 	 * {@code scale_first}'s list holds it, so each is a primitive parameter. {@code wrapped}'s tensors and variable are built from
-	 * {@code len(xs)}, but a tensor is no primitive, whatever it was built from (wala/ML#451). {@code summed}'s parameter is a list of
-	 * tensors at one call and {@code len(xs)} at the other, so the int's key is among the values its container reduction reads.
+	 * {@code len(xs)}, but a tensor is no primitive, whatever it was built from (wala/ML#451). Nor is an object whose field holds a
+	 * computed {@code int}: {@code boxed}'s, of a program class, or {@code layered}'s Keras layer, whose units are {@code len(xs)}.
+	 * {@code summed}'s parameter is a list of tensors at one call and {@code len(xs)} at the other, so the int's key is among the values
+	 * its container reduction reads.
 	 */
 	@Test
 	public void testComputedScalarParameter() throws Exception {
@@ -12379,6 +12381,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("wrapped hybridizes (P1).", P1, wrapped.getPassingPrecondition());
 
 		// The call passing `len(xs)` has its own calling context, in which `v` is only that int.
+		// An object's fields are no elements of it, so a computed int held in one doesn't make the object a primitive (wala/ML#451).
+		for (String name : List.of("boxed", "layered")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s object, whose field holds a computed int, is no primitive.", FALSE,
+					function.getHasPrimitiveParameter());
+			assertNull(name + " doesn't fail HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		}
+
 		Function summed = findFunction(functions, "summed");
 		assertEquals("summed has a tensor parameter.", TRUE, summed.getHasTensorParameter());
 		assertEquals("summed has a primitive parameter.", TRUE, summed.getHasPrimitiveParameter());

@@ -4,6 +4,8 @@
 # - `scale_first`: `ns` is a list whose element is `len(xs)`.
 # - `wrapped`: `x` is a tensor or a variable built from `len(xs)`, which is no primitive.
 # - `summed`: `v` is a list of tensors at one call and `len(xs)` at the other.
+# - `boxed`: `box` is an object whose field is `len(xs)`, and `layered`: `layer` is a Keras layer whose units are `len(xs)`. Neither
+#   object is a primitive, whatever its fields hold.
 import tensorflow as tf
 
 
@@ -23,6 +25,19 @@ def summed(v):
     return tf.reduce_sum(v)
 
 
+class Box:
+    def __init__(self, n):
+        self.n = n
+
+
+def boxed(x, box):
+    return x * box.n
+
+
+def layered(x, layer):
+    return layer(x)
+
+
 t = tf.ones([2])
 xs = [1, 2, 3]
 
@@ -36,3 +51,5 @@ wrapped(tf.convert_to_tensor(len(xs)))
 wrapped(tf.range(len(xs)))
 summed([t, t])
 summed(len(xs))
+boxed(t, Box(len(xs)))
+layered(tf.ones([1, 2]), tf.keras.layers.Dense(len(xs)))
