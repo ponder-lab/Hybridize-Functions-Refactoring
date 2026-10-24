@@ -19,8 +19,10 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -61,6 +63,9 @@ class NumpyParameterFlowAnalysis {
 	/** The call graph, used to follow user-defined callees. */
 	private final CallGraph callGraph;
 
+	/** The call-graph builder, which the engine asks for the program functions a call runs ({@link CallTargets}). */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
 	/** The pointer analysis, used to resolve attribute names, module roots, and interprocedural integer constants. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
@@ -74,16 +79,18 @@ class NumpyParameterFlowAnalysis {
 	private final Map<String, NumpyScanResult> memo = new HashMap<>();
 
 	/**
-	 * Creates an analysis over the given call graph, pointer analysis, and tensor-type analysis, whose local pointer keys are indexed once
-	 * by (node, value number) for constant-time lookups at the shape sinks.
+	 * Creates an analysis over the given call graph, call-graph builder, and tensor-type analysis, whose local pointer keys are indexed
+	 * once by (node, value number) for constant-time lookups at the shape sinks.
 	 *
 	 * @param callGraph The call graph, used to follow user-defined callees.
-	 * @param pointerAnalysis The pointer analysis, used to resolve attribute names and module roots.
+	 * @param builder The call-graph builder, which the engine asks for a call's program targets, and whose pointer analysis resolves
+	 *        attribute names and module roots.
 	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness.
 	 */
-	NumpyParameterFlowAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+	NumpyParameterFlowAnalysis(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder, TensorTypeAnalysis tensorTypeAnalysis) {
 		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+		this.builder = builder;
+		this.pointerAnalysis = builder.getPointerAnalysis();
 		this.tensorTypeIndex = indexTensorTypes(tensorTypeAnalysis);
 	}
 
@@ -599,9 +606,8 @@ class NumpyParameterFlowAnalysis {
 						if (!(instruction instanceof PythonInvokeInstruction invoke))
 							continue;
 
-						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
-							if (Util.isTensorFlowNode(target) || target.getIR() == null
-									|| !isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
+						for (CGNode target : CallTargets.programTargets(this.builder, node, invoke)) {
+							if (!isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
 								continue;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, new HashSet<>(), new HashSet<>(), new HashMap<>(),
@@ -780,35 +786,37 @@ class NumpyParameterFlowAnalysis {
 					ShapeDescriptor calleeReturnDescriptor = null;
 					boolean calleeReturnDescriptorDropped = false;
 
+					// The engine reports the program functions whose parameters receive this call's arguments, each with whether a
+					// receiver, the instance of a bound method or the class of a class method, is bound before them, which shifts the
+					// arguments one parameter along.
 					if (!valueSlots.isEmpty() || !shapeSlots.isEmpty())
-						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
-							if (Util.isTensorFlowNode(target))
-								continue;
-
+						for (Map.Entry<CGNode, Boolean> entry : CallTargets.parameterBoundTargets(this.builder, node, invoke).entrySet()) {
+							CGNode target = entry.getKey();
 							IR targetIr = target.getIR();
 
 							if (targetIr == null)
 								continue;
 
+							int shift = entry.getValue() ? 1 : 0;
 							int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
 							Set<Integer> targetValueSeed = new HashSet<>();
 							Set<Integer> targetShapeSeed = new HashSet<>();
 							Map<Integer, ShapeDescriptor> targetDescriptorSeed = new HashMap<>();
 
 							for (int slot : valueSlots)
-								if (slot < targetParameters.length)
-									targetValueSeed.add(targetParameters[slot]);
+								if (slot + shift < targetParameters.length)
+									targetValueSeed.add(targetParameters[slot + shift]);
 
 							for (int slot : shapeSlots)
-								if (slot < targetParameters.length) {
-									targetShapeSeed.add(targetParameters[slot]);
+								if (slot + shift < targetParameters.length) {
+									targetShapeSeed.add(targetParameters[slot + shift]);
 
 									// Thread the argument's shape provenance into the callee's frame, so a numpy sink there still
 									// resolves staticness against the source tensor (issue 756).
 									ShapeDescriptor argumentDescriptor = shapeDescriptors.get(invoke.getUse(slot));
 
 									if (argumentDescriptor != null)
-										targetDescriptorSeed.put(targetParameters[slot], argumentDescriptor);
+										targetDescriptorSeed.put(targetParameters[slot + shift], argumentDescriptor);
 								}
 
 							if (targetValueSeed.isEmpty() && targetShapeSeed.isEmpty())

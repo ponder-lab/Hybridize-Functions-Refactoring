@@ -15505,6 +15505,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy precondition through a class method, which the engine reports as a call target with the class bound
+	 * before the call's arguments (https://github.com/ponder-lab/ML/pull/1084): {@code f} passes its tensor parameter to {@code C.k(a)},
+	 * whose body applies {@code np.asarray} to it, which raises under {@code tf.function} tracing, so {@code f} must not hybridize. The
+	 * class method is reached through a summarized trampoline, which the engine follows rather than this analysis. The control {@code g}
+	 * calls {@code C.j(3, a)}, whose body applies numpy only to the constant {@code n}: its tensor parameter lands on {@code x} only once
+	 * the arguments are shifted past the bound class, and without the shift it would land on {@code n} and read as a sink.
+	 */
+	@Test
+	public void testNumpyCallsThroughClassMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertTrue("`f` applies numpy to its parameter through a class method.", f.getHasNumpyCallsOnParameters());
+		assertNull("`f` must not pass a precondition.", f.getPassingPrecondition());
+		assertNotNull("`f` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				f.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function g = findFunction(functions, "g");
+		assertFalse("`g`'s tensor parameter reaches the class method's `x`, not the `n` numpy is applied to.",
+				g.getHasNumpyCallsOnParameters());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
