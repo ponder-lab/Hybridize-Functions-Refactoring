@@ -16519,7 +16519,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
 	 */
 	@Test
-	public void testLossSignatureFromDemoOnly() throws Exception {
+	public void testLossSignatureWithTrainingContext() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Function call = this.getFunction("TransformerLoss.call");
