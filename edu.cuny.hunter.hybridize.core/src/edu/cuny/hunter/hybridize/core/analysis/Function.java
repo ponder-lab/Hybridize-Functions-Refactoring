@@ -1314,6 +1314,12 @@ public class Function {
 	private Boolean hasUsedResults;
 
 	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, inbound or outbound
+	 * ({@link ShapeValueBoundaryAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean passesShapeValueAcrossBoundary;
+
+	/**
 	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
 	 * outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's first value.
 	 * {@code null} when it could not be determined, in which case the precondition does not block. See
@@ -1678,6 +1684,15 @@ public class Function {
 								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
 										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
 												+ "converts to a tensor.");
+							else if (TRUE.equals(this.getPassesShapeValueAcrossBoundary()))
+								// A shape known only as a tensor value crosses the boundary, inbound into a returned op's shape operand or
+								// outbound from a dynamic shape op: tracing keeps the shape tensor's type but not its value, so a caller's
+								// static dimensions become None. Conservative: no downstream static read is proven. A safety failure; it
+								// precedes the benefit signal. Converting a hybrid function's decorator cannot introduce it, since its
+								// boundary already exists, so the hybrid side does not check it.
+								this.addFailure(PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY,
+										"Can't hybridize a function that passes a tensor shape's value across its boundary; tracing keeps the "
+												+ "shape tensor's type but not its value, so a caller's static shape is lost.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -3554,6 +3569,64 @@ public class Function {
 	 */
 	public Boolean getHasUsedResults() {
 		return this.hasUsedResults;
+	}
+
+	/**
+	 * Computes whether a shape known only as a tensor value crosses this {@link Function}'s boundary ({@link ShapeValueBoundaryAnalysis}),
+	 * storing the result for {@link #getPassesShapeValueAcrossBoundary()}. A determinate {@code TRUE} from any of the function's nodes
+	 * decides it; otherwise a node without an IR leaves it undetermined. When the function has no call-graph node, the result is left
+	 * undetermined, mirroring the sibling safety checks.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks to name the TensorFlow APIs a call invokes.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), which tell a shape value combined with data apart from one combined with constants.
+	 */
+	public void computeShapeValueAcrossBoundary(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " passes a shape value across its boundary.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " passes a shape value across its boundary without a call graph node.");
+			return;
+		}
+
+		ShapeValueBoundaryAnalysis analysis = new ShapeValueBoundaryAnalysis(builder, tensorTypedKeys);
+		Boolean ret = Boolean.FALSE;
+
+		for (CGNode node : nodes) {
+			Boolean passes = analysis.passesShapeValue(node, this.isMethod());
+
+			if (Boolean.TRUE.equals(passes)) {
+				ret = Boolean.TRUE;
+				break;
+			}
+
+			if (passes == null)
+				ret = null;
+		}
+
+		this.passesShapeValueAcrossBoundary = ret;
+		LOG.info(this + " passes a shape value across its boundary: " + ret + ".");
+	}
+
+	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, {@code null} if undetermined.
+	 *
+	 * @return True iff a parameter's value gives a returned result's static dimensions, or a returned value derives from a dynamic shape
+	 *         op; null if undetermined.
+	 */
+	public Boolean getPassesShapeValueAcrossBoundary() {
+		return this.passesShapeValueAcrossBoundary;
 	}
 
 	/**
