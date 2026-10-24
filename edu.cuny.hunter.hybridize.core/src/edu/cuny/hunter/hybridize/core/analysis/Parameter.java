@@ -834,6 +834,24 @@ public final class Parameter {
 	}
 
 	/**
+	 * The elements of a value that is a dataset element's structured component, such as the inputs Keras's train step hands {@code call}
+	 * when {@code fit} is given {@code from_tensor_slices(((x, mask), y))}: a tuple at run time that no allocation stands for, so no
+	 * instance key the value points to is a container. A component is a container when the engine reads it as a tuple of known length, or
+	 * when it may be one ({@link ContainerElements#isComplete()} is {@code false}). A component known to be one tensor is not.
+	 *
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
+	 * @param value The value, a parameter's local.
+	 * @return The component's elements, or {@code null} when the value is no dataset component that is or may be a container.
+	 */
+	private static ContainerElements datasetContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
+		if (ContainerElements.datasetComponent(builder, value) == null)
+			return null;
+
+		ContainerElements elements = ContainerElements.ofValue(builder, value);
+		return elements.arity().isPresent() || !elements.isComplete() ? elements : null;
+	}
+
+	/**
 	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
 	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
 	 * whether the argument is a tensor.
@@ -890,6 +908,12 @@ public final class Parameter {
 			int param = ir.getParameter(i); // the first argument is the function being invoked.
 
 			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
+
+			if (datasetContainer(builder, paramePointerKey) != null) {
+				progress.done();
+				return true;
+			}
+
 			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
 
 			for (InstanceKey instanceKey : paramPointsToSet)
@@ -982,10 +1006,11 @@ public final class Parameter {
 		Predicate<InstanceKey> containers = getTensorContainers(tensorAnalysis, builder);
 		SubMonitor.done(monitor);
 
-		// What the engine says of each container's elements, asked once per container.
-		Map<InstanceKey, ContainerElements> elementsOf = new HashMap<>();
-		java.util.function.Function<InstanceKey, ContainerElements> elements = c -> elementsOf.computeIfAbsent(c,
-				x -> ContainerElements.of(builder, x));
+		// What the engine says of each container's elements, asked once per container. A container is an instance key, or the local of a
+		// dataset component that is or may be a tuple, whose elements are recorded when it is found.
+		Map<Object, ContainerElements> elementsOf = new HashMap<>();
+		java.util.function.Function<Object, ContainerElements> elements = c -> elementsOf.computeIfAbsent(c,
+				x -> ContainerElements.of(builder, (InstanceKey) x));
 
 		/*
 		 * Every check below runs whatever an earlier one found, so that each reason that holds is recorded (an arity disagreement and an
@@ -995,10 +1020,10 @@ public final class Parameter {
 		List<InferenceResult.AbsenceReason> reasons = new ArrayList<>();
 
 		// The container values reaching this parameter, matched by key identity exactly as the boolean Phase 3 matches them.
-		Set<InstanceKey> reaching = new LinkedHashSet<>();
+		Set<Object> reaching = new LinkedHashSet<>();
 
 		// Every sequence reaching the parameter, with element evidence or not, since the engine knows its length either way.
-		Set<InstanceKey> sequences = new LinkedHashSet<>();
+		Set<Object> sequences = new LinkedHashSet<>();
 
 		boolean mixed = false;
 
@@ -1010,6 +1035,20 @@ public final class Parameter {
 				continue;
 
 			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(paramInx));
+
+			// A dataset component that is or may be a tuple arrives here as no container instance, so the value itself is the container.
+			// What its local points to stands for no element of it, so it is not read.
+			ContainerElements component = datasetContainer(builder, pointerKey);
+
+			if (component != null) {
+				elementsOf.put(pointerKey, component);
+				reaching.add(pointerKey);
+
+				if (component.arity().isPresent())
+					sequences.add(pointerKey);
+
+				continue;
+			}
 
 			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
 				TypeReference reference = getTypeReference(instanceKey);
@@ -1051,7 +1090,7 @@ public final class Parameter {
 		 * first, displace the reason it has always reported.
 		 */
 		if (!mixed)
-			for (InstanceKey container : reaching)
+			for (Object container : reaching)
 				// Asked only of a container whose element keys are all of them. Of any other, the engine answers yes because an unlisted
 				// element may be anything, which says the elements are unknown, not that one is None. The arity check below declines
 				// that container as an unsupported form.
@@ -1070,9 +1109,9 @@ public final class Parameter {
 		// arity has none to compare, but the others still do. Nor does a container that may hold elements the analysis does not list: the
 		// types at its positions would describe only the elements it lists, so no position of it is read.
 		int arity = -1;
-		Map<InstanceKey, List<Set<TensorType>>> positionTypes = new HashMap<>();
+		Map<Object, List<Set<TensorType>>> positionTypes = new HashMap<>();
 
-		for (InstanceKey container : mixed ? sequences : reaching) {
+		for (Object container : mixed ? sequences : reaching) {
 			ContainerElements containerElements = elements.apply(container);
 
 			if (!containerElements.isComplete()) {
@@ -1105,7 +1144,7 @@ public final class Parameter {
 		}
 
 		// Every position of every container with a known arity must carry tensor evidence, whether or not the arities agree.
-		for (InstanceKey container : reaching) {
+		for (Object container : reaching) {
 			List<Set<TensorType>> types = positionTypes.get(container);
 
 			if (types == null)
@@ -1138,7 +1177,7 @@ public final class Parameter {
 		for (int j = 0; j < arity; j++) {
 			Set<TensorType> position = new HashSet<>();
 
-			for (InstanceKey container : reaching)
+			for (Object container : reaching)
 				position.addAll(positionTypes.get(container).get(j));
 
 			union.add(unmodifiableSet(position));
