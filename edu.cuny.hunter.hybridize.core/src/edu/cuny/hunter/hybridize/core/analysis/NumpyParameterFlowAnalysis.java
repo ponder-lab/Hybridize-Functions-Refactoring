@@ -19,8 +19,11 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -61,6 +64,9 @@ class NumpyParameterFlowAnalysis {
 	/** The call graph, used to follow user-defined callees. */
 	private final CallGraph callGraph;
 
+	/** The call-graph builder, which the engine asks for the program functions a call runs ({@link CallTargets}). */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
 	/** The pointer analysis, used to resolve attribute names, module roots, and interprocedural integer constants. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
@@ -74,16 +80,18 @@ class NumpyParameterFlowAnalysis {
 	private final Map<String, NumpyScanResult> memo = new HashMap<>();
 
 	/**
-	 * Creates an analysis over the given call graph, pointer analysis, and tensor-type analysis, whose local pointer keys are indexed once
-	 * by (node, value number) for constant-time lookups at the shape sinks.
+	 * Creates an analysis over the given call graph, call-graph builder, and tensor-type analysis, whose local pointer keys are indexed
+	 * once by (node, value number) for constant-time lookups at the shape sinks.
 	 *
 	 * @param callGraph The call graph, used to follow user-defined callees.
-	 * @param pointerAnalysis The pointer analysis, used to resolve attribute names and module roots.
+	 * @param builder The call-graph builder, which the engine asks for a call's program targets, and whose pointer analysis resolves
+	 *        attribute names and module roots.
 	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness.
 	 */
-	NumpyParameterFlowAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
+	NumpyParameterFlowAnalysis(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder, TensorTypeAnalysis tensorTypeAnalysis) {
 		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+		this.builder = builder;
+		this.pointerAnalysis = builder.getPointerAnalysis();
 		this.tensorTypeIndex = indexTensorTypes(tensorTypeAnalysis);
 	}
 
@@ -99,7 +107,13 @@ class NumpyParameterFlowAnalysis {
 	private static final String SHAPE_MEMBER_NAME = "shape";
 
 	/** The built-in {@code slice} constructor, into which a Python {@code x[a:b:c]} subscript is lowered. */
-	private static final String SLICE_BUILTIN_NAME = "slice";
+	private static final String SLICE_BUILTIN_API = "builtins.slice";
+
+	/** The prefixes of the NumPy and SciPy APIs' names. */
+	private static final Set<String> NUMPY_API_PREFIXES = Set.of("numpy.", "scipy.");
+
+	/** The APIs each call may invoke, as the engine names them ({@link TensorFlowApis}), by node and then by call. */
+	private final Map<CGNode, Map<SSAInstruction, Set<String>>> apis = new HashMap<>();
 
 	/**
 	 * The unary-negation operator, matched by name: the operator enum ({@code IUnaryOpInstruction.Operator}) lives in a non-exported WALA
@@ -358,23 +372,27 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/** True iff {@code invoke} calls the built-in {@code slice} constructor (how a Python {@code x[a:b:c]} subscript is modeled). */
-	private static boolean invokesSliceBuiltin(PythonInvokeInstruction invoke, DefUse defUse) {
-		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+	private boolean invokesSliceBuiltin(CGNode node, PythonInvokeInstruction invoke) {
+		return this.apis(node, invoke).contains(SLICE_BUILTIN_API);
+	}
 
-		if (!(def instanceof AstLexicalRead lexical))
-			return false;
-
-		// Read the name via getName() rather than the variableName field, and guard the array: mirrors PythonModRefWithBuiltinFunctions
-		// (WALA 1.8.0 encapsulated the field).
-		Access[] accesses = lexical.getAccesses();
-		return accesses.length > 0 && SLICE_BUILTIN_NAME.equals(accesses[0].getName().fst);
+	/**
+	 * The APIs {@code invoke} may invoke, as the engine names them.
+	 *
+	 * @param node The node whose IR holds the call.
+	 * @param invoke The call.
+	 * @return The APIs' fully qualified names.
+	 */
+	private Set<String> apis(CGNode node, PythonInvokeInstruction invoke) {
+		return this.apis.computeIfAbsent(node, n -> new HashMap<>()).computeIfAbsent(invoke,
+				i -> TensorFlowApis.of(this.builder, node, invoke));
 	}
 
 	/**
 	 * The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). Only {@code bool}: AutoGraph
 	 * converts {@code int} and {@code float} of a tensor to casts, measured on TensorFlow 2.9.3, so those trace.
 	 */
-	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
+	private static final Set<String> UNTRACEABLE_CONVERSION_APIS = Set.of("builtins.bool");
 
 	/**
 	 * True iff {@code node}'s own body applies {@code bool} to a tensor, or branches on a tensor with paths that disagree about
@@ -382,18 +400,17 @@ class NumpyParameterFlowAnalysis {
 	 *
 	 * @param node The call-graph node whose body is read.
 	 * @param ir The node's IR.
-	 * @param defUse The node's def-use chains.
 	 * @return True iff such a use appears in the body.
 	 */
-	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir, DefUse defUse) {
+	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir) {
 		Set<SSAConditionalBranchInstruction> tensorBranches = new HashSet<>();
 
 		for (SSAInstruction instruction : ir.getInstructions())
 			if (instruction instanceof SSAConditionalBranchInstruction branch) {
 				if (this.usesTensor(node, branch, 0))
 					tensorBranches.add(branch);
-			} else if (instruction instanceof PythonInvokeInstruction invoke && invokesUntraceableConversion(invoke, defUse)
-					&& this.usesTensor(node, invoke, 1))
+			} else if (instruction instanceof PythonInvokeInstruction invoke && this.usesTensor(node, invoke, 1)
+					&& this.invokesUntraceableConversion(node, invoke))
 				// Slot 0 of an invoke is the callee itself; the arguments start at 1.
 				return true;
 
@@ -409,15 +426,9 @@ class NumpyParameterFlowAnalysis {
 		return false;
 	}
 
-	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
-	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
-		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-
-		if (!(def instanceof AstLexicalRead lexical))
-			return false;
-
-		Access[] accesses = lexical.getAccesses();
-		return accesses.length > 0 && UNTRACEABLE_CONVERSION_BUILTIN_NAMES.contains(accesses[0].getName().fst);
+	/** True iff {@code invoke} may call one of {@link #UNTRACEABLE_CONVERSION_APIS}, as the engine names it. */
+	private boolean invokesUntraceableConversion(CGNode node, PythonInvokeInstruction invoke) {
+		return !Collections.disjoint(this.apis(node, invoke), UNTRACEABLE_CONVERSION_APIS);
 	}
 
 	/**
@@ -599,9 +610,8 @@ class NumpyParameterFlowAnalysis {
 						if (!(instruction instanceof PythonInvokeInstruction invoke))
 							continue;
 
-						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
-							if (Util.isTensorFlowNode(target) || target.getIR() == null
-									|| !isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
+						for (CGNode target : CallTargets.programTargets(this.builder, node, invoke)) {
+							if (!isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
 								continue;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, new HashSet<>(), new HashSet<>(), new HashMap<>(),
@@ -691,7 +701,7 @@ class NumpyParameterFlowAnalysis {
 				}
 
 				if (use instanceof PythonInvokeInstruction invoke) {
-					if (this.invokesNumpyApi(node, invoke, defUse)) {
+					if (this.invokesNumpyApi(node, invoke)) {
 						// A value-tainted argument is a sink (a value escape). A shape-derived argument is a sink only on a
 						// provably-dynamic covered dimension; an unprovable shape (⊤ or untracked/ambiguous provenance) is permitted,
 						// favoring precision. The sound decline-unless-provably-static variant is tracked on
@@ -720,7 +730,7 @@ class NumpyParameterFlowAnalysis {
 					// Both shapes regressed and both are pinned: `np.maximum(boxes[:2], 0.0)`, where the slice is a direct operand of
 					// the numpy call, and `h = bboxA[:,3] - bboxA[:,1]; np.maximum(w, h)`, where the slice is consumed by arithmetic
 					// first and no slice appears at the call site. The second does not follow from the first, so each has its own fixture.
-					if (valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+					if (valueColored && this.invokesSliceBuiltin(node, invoke) && invoke.getNumberOfUses() > 1
 							&& invoke.getUse(1) == valueNumber) {
 						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
 							colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
@@ -732,7 +742,7 @@ class NumpyParameterFlowAnalysis {
 					// metadata (covering the sliced dimensions); slicing a tensor VALUE yields a sub-tensor value (e.g. `boxes1[..., :2]`),
 					// which must remain value-tainted so numpy over it is still a sink. Guard on the receiver being shape-, not value-,
 					// tainted.
-					if (!valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+					if (!valueColored && this.invokesSliceBuiltin(node, invoke) && invoke.getNumberOfUses() > 1
 							&& invoke.getUse(1) == valueNumber) {
 						ShapeDescriptor base = shapeDescriptors.get(valueNumber);
 						ShapeDescriptor narrowed = base == null ? null : this.narrowBySlice(base, invoke, node, defUse);
@@ -746,7 +756,7 @@ class NumpyParameterFlowAnalysis {
 					}
 
 					// tf.shape/size/rank consume a tensor and return shape metadata covering every dimension of the argument tensor.
-					if (this.invokesShapeMetadataOp(node, invoke, defUse)) {
+					if (this.invokesShapeMetadataOp(node, invoke)) {
 						ShapeDescriptor descriptor = invoke.getNumberOfUses() > 1 ? new ShapeDescriptor(node, invoke.getUse(1), null)
 								: null;
 
@@ -780,35 +790,37 @@ class NumpyParameterFlowAnalysis {
 					ShapeDescriptor calleeReturnDescriptor = null;
 					boolean calleeReturnDescriptorDropped = false;
 
+					// The engine reports the program functions whose parameters receive this call's arguments, each with whether a
+					// receiver, the instance of a bound method or the class of a class method, is bound before them, which shifts the
+					// arguments one parameter along.
 					if (!valueSlots.isEmpty() || !shapeSlots.isEmpty())
-						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
-							if (Util.isTensorFlowNode(target))
-								continue;
-
+						for (Map.Entry<CGNode, Boolean> entry : CallTargets.parameterBoundTargets(this.builder, node, invoke).entrySet()) {
+							CGNode target = entry.getKey();
 							IR targetIr = target.getIR();
 
 							if (targetIr == null)
 								continue;
 
+							int shift = entry.getValue() ? 1 : 0;
 							int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
 							Set<Integer> targetValueSeed = new HashSet<>();
 							Set<Integer> targetShapeSeed = new HashSet<>();
 							Map<Integer, ShapeDescriptor> targetDescriptorSeed = new HashMap<>();
 
 							for (int slot : valueSlots)
-								if (slot < targetParameters.length)
-									targetValueSeed.add(targetParameters[slot]);
+								if (slot + shift < targetParameters.length)
+									targetValueSeed.add(targetParameters[slot + shift]);
 
 							for (int slot : shapeSlots)
-								if (slot < targetParameters.length) {
-									targetShapeSeed.add(targetParameters[slot]);
+								if (slot + shift < targetParameters.length) {
+									targetShapeSeed.add(targetParameters[slot + shift]);
 
 									// Thread the argument's shape provenance into the callee's frame, so a numpy sink there still
 									// resolves staticness against the source tensor (issue 756).
 									ShapeDescriptor argumentDescriptor = shapeDescriptors.get(invoke.getUse(slot));
 
 									if (argumentDescriptor != null)
-										targetDescriptorSeed.put(targetParameters[slot], argumentDescriptor);
+										targetDescriptorSeed.put(targetParameters[slot + shift], argumentDescriptor);
 								}
 
 							if (targetValueSeed.isEmpty() && targetShapeSeed.isEmpty())
@@ -936,7 +948,7 @@ class NumpyParameterFlowAnalysis {
 		// tensor
 		// are left alone too, since AutoGraph converts them to casts.
 		if (!untraceable)
-			untraceable = this.appliesUntraceablePythonToTensors(node, ir, defUse);
+			untraceable = this.appliesUntraceablePythonToTensors(node, ir);
 
 		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor, untraceable);
 		this.memo.put(key, result);
@@ -1016,7 +1028,7 @@ class NumpyParameterFlowAnalysis {
 			NavigableMap<String, Set<CGNode>> byType = new TreeMap<>();
 
 			for (CGNode node : k)
-				if (!Util.isTensorFlowNode(node) && node.getIR() != null)
+				if (CallTargets.isProgramCode(node))
 					byType.computeIfAbsent(stripTypePrefix(node.getMethod().getDeclaringClass().getName().toString()), t -> new HashSet<>())
 							.add(node);
 
@@ -1238,30 +1250,16 @@ class NumpyParameterFlowAnalysis {
 		return rank;
 	}
 
-	/** True iff {@code invoke}'s callee resolves to the numpy/scipy namespace by attribute-chain walk or import-alias fallback. */
-	private boolean invokesNumpyApi(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
-		return this.isNumpyRooted(node, invoke.getUse(0), defUse);
+	/** True iff {@code invoke} may invoke a NumPy or SciPy API, as the engine names it. */
+	private boolean invokesNumpyApi(CGNode node, PythonInvokeInstruction invoke) {
+		return this.apis(node, invoke).stream().anyMatch(api -> NUMPY_API_PREFIXES.stream().anyMatch(api::startsWith));
 	}
 
 	/** Fully-qualified names of the TensorFlow shape-metadata ops whose results are shape (not value) tainted. */
 	private static final Set<String> SHAPE_METADATA_FQNS = Set.of("tensorflow.shape", "tensorflow.size", "tensorflow.rank");
 
-	/** True iff {@code invoke}'s callee is a TensorFlow shape-metadata op ({@code tf.shape}/{@code size}/{@code rank}). */
-	private boolean invokesShapeMetadataOp(CGNode node, PythonInvokeInstruction invoke, DefUse defUse) {
-		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
-		return fqn != null && SHAPE_METADATA_FQNS.contains(fqn);
-	}
-
-	/** True iff {@code use}'s attribute chain roots at the numpy/scipy module (points-to preferred, import alias as fallback). */
-	private boolean isNumpyRooted(CGNode node, int use, DefUse defUse) {
-		if (Util.isNumpyModule(node, use, defUse, this.pointerAnalysis))
-			return true;
-
-		SSAInstruction def = defUse.getDef(use);
-
-		if (def instanceof PythonPropertyRead read)
-			return this.isNumpyRooted(node, read.getObjectRef(), defUse);
-
-		return false;
+	/** True iff {@code invoke} may invoke a TensorFlow shape-metadata op ({@code tf.shape}/{@code size}/{@code rank}). */
+	private boolean invokesShapeMetadataOp(CGNode node, PythonInvokeInstruction invoke) {
+		return !Collections.disjoint(this.apis(node, invoke), SHAPE_METADATA_FQNS);
 	}
 }

@@ -642,7 +642,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
 				// gate; overridable independently via alwaysCheckNumpyCalls.
 				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
-					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis(), analysis);
+					func.computeNumpyCallsOnParameters(callGraph, builder, analysis);
 
 				// Check whether the inferred input signature leaves unresolved an axis the body reads statically (issue 811). Same
 				// reachable region, same gate; overridable independently via alwaysCheckStaticShapeReads. The compute short-circuits

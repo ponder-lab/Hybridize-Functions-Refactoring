@@ -15505,6 +15505,87 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy precondition through a class method, which the engine reports as a call target with the class bound
+	 * before the call's arguments (https://github.com/ponder-lab/ML/pull/1084): {@code f} passes its tensor parameter to {@code C.k(a)},
+	 * whose body applies {@code np.asarray} to it, which raises under {@code tf.function} tracing, so {@code f} must not hybridize. The
+	 * class method is reached through a summarized trampoline, which the engine follows rather than this analysis. The control {@code g}
+	 * calls {@code C.j(3, a)}, whose body applies numpy only to the constant {@code n}: its tensor parameter lands on {@code x} only once
+	 * the arguments are shifted past the bound class, and without the shift it would land on {@code n} and read as a sink.
+	 */
+	@Test
+	public void testNumpyCallsThroughClassMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertTrue("`f` applies numpy to its parameter through a class method.", f.getHasNumpyCallsOnParameters());
+		assertNull("`f` must not pass a precondition.", f.getPassingPrecondition());
+		assertNotNull("`f` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				f.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function g = findFunction(functions, "g");
+		assertFalse("`g`'s tensor parameter reaches the class method's `x`, not the `n` numpy is applied to.",
+				g.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition through a static method called on an instance: {@code h} passes its tensor parameter to
+	 * {@code o.s(a)}, whose body applies {@code np.asarray} to it, which raises under {@code tf.function} tracing, so {@code h} must not
+	 * hybridize. A static method binds no receiver, so the call's argument lands on {@code s}'s first parameter.
+	 */
+	@Test
+	public void testNumpyCallsThroughStaticMethodOnInstance() throws Exception {
+		Function h = getFunction("h");
+		assertTrue("`h` applies numpy to its parameter through a static method.", h.getHasNumpyCallsOnParameters());
+		assertNull("`h` must not pass a precondition.", h.getPassingPrecondition());
+		assertNotNull("`h` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				h.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the shape-metadata rule of the parameter-flow numpy precondition on {@code tf.shape}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code g} applies {@code np.prod} to a slice of
+	 * {@code tf.shape(x)} covering only {@code x}'s trailing dimension, which is static, so the numpy reads shape metadata rather than the
+	 * tensor's value and is not a sink. Not recognizing {@code tf.shape} would leave its result value-tainted and flag {@code g}.
+	 */
+	@Test
+	public void testNumpyOnShapeOpOfStaticTensor() throws Exception {
+		Function g = getFunction("g");
+		assertFalse("`g`'s numpy reads a static dimension of `tf.shape(x)`.", g.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition on a SciPy API: {@code f} applies {@code special.expit}, imported as
+	 * {@code from scipy import special}, to its tensor parameter, and {@code g} applies {@code scipy.special.expit} after
+	 * {@code import scipy}. Like NumPy, SciPy over a tensor raises under {@code tf.function} tracing, so neither must hybridize.
+	 */
+	@Test
+	public void testScipyCallsOnParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("f", "g")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` applies SciPy to its parameter.", function.getHasNumpyCallsOnParameters());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition on a SciPy API imported by its dotted name: {@code f} applies {@code scipy.special.expit}
+	 * to its tensor parameter after a module-level {@code import scipy.special}, which raises under {@code tf.function} tracing, so
+	 * {@code f} must not hybridize.
+	 */
+	@Test
+	public void testScipyCallsOnParametersDottedImport() throws Exception {
+		Function f = getFunction("f");
+		// TODO: The front end doesn't bind `scipy` to the modeled module object after `import scipy.special`, so the call names no API and
+		// `f` passes the check. Flip to `assertTrue` and assert the HAS_NUMPY_CALLS_ON_PARAMETERS failure once it does
+		// (https://github.com/wala/ML/issues/1140).
+		assertFalse("Today, `f`'s SciPy call names no API.", f.getHasNumpyCallsOnParameters());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}

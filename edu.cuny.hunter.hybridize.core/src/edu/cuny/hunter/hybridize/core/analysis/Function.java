@@ -2262,10 +2262,10 @@ public class Function {
 	 * undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, which the engine asks for a call's program targets, with its pointer analysis.
 	 * @param tensorTypeAnalysis The tensor-type analysis, consulted for the per-dimension shape staticness of numpy over a tensor's shape.
 	 */
-	public void computeNumpyCallsOnParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+	public void computeNumpyCallsOnParameters(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<CGNode> nodes;
 
@@ -2286,8 +2286,7 @@ public class Function {
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It applies numpy to its parameters if
 		// any of them does; sampling a single node can miss the flow at an imprecise context. The analysis instance indexes the
 		// tensor-type analysis once and shares its scan memo across the nodes rather than rebuilding either per node.
-		NumpyParameterFlowAnalysis numpyParameterFlowAnalysis = new NumpyParameterFlowAnalysis(callGraph, pointerAnalysis,
-				tensorTypeAnalysis);
+		NumpyParameterFlowAnalysis numpyParameterFlowAnalysis = new NumpyParameterFlowAnalysis(callGraph, builder, tensorTypeAnalysis);
 		boolean numpyOnParameters = nodes.stream()
 				.anyMatch(cgNode -> numpyParameterFlowAnalysis.appliesNumpyToParameters(cgNode, this.isMethod()));
 
