@@ -103,6 +103,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static final String CANDIDATES_CSV_FILENAME = "candidate_functions.csv";
 
+	/**
+	 * One row per candidate function left decorated with {@code @tf.function} after the refactoring, and so able to carry an
+	 * {@code input_signature} (#1167); see {@link Function#isSignatureCandidate()}.
+	 */
+	private static final String SIGNATURE_CANDIDATES_CSV_FILENAME = "signature_candidates.csv";
+
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
 
 	private static final String OPTMIZABLE_CSV_FILENAME = "optimizable.csv";
@@ -262,7 +268,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	public IStatus evaluate(IProject[] pythonProjects, IProgressMonitor monitor) {
 		List<String> resultsHeader = new ArrayList<>(
-				Arrays.asList("subject", "functions", "optimization available functions", "optimizable functions", "failed preconditions"));
+				Arrays.asList("subject", "functions", "optimization available functions", "optimizable functions", "failed preconditions",
+						"signature candidate functions", "hybridized functions with input signature"));
 
 		for (Refactoring refactoring : Refactoring.values())
 			resultsHeader.add(refactoring.toString());
@@ -289,6 +296,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 				CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
 				CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
+				CSVPrinter signatureCandidatesPrinter = createCSVPrinter(SIGNATURE_CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 						buildAttributeColumnNames("transformation"));
 				CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -428,6 +436,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					resultsRecord.add(errorEntries.size()); // number.
 
 					printStatuses(errorPrinter, errorEntries);
+
+					// signature candidate functions: the candidates left decorated with `@tf.function` after the refactoring (#1167).
+					Set<Function> signatureCandidates = candidates.stream().filter(Function::isSignatureCandidate)
+							.collect(Collectors.toSet());
+					resultsRecord.add(signatureCandidates.size()); // number.
+
+					for (Function function : signatureCandidates)
+						signatureCandidatesPrinter.printRecord(buildAttributeColumnValues(function));
+
+					// hybridized functions with input signature: the conversions whose new decorator carries an `input_signature`. With the
+					// RECONFIGURE count, these are the signatures the refactoring adds or changes (#1167).
+					resultsRecord.add(candidates.stream().filter(Function::isHybridizedWithInputSignature).count());
 
 					// general refactoring statuses.
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
@@ -724,9 +744,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				| File | One row per |
 				| ---- | ----------- |
-				| `results.csv` | evaluated project (subject). |
+				| `results.csv` | evaluated project (subject). Its `signature candidate functions` column counts \
+				`signature_candidates.csv`'s rows, and its `hybridized functions with input signature` column counts the candidates \
+				converted to hybrid (`CONVERT_TO_HYBRID`) whose new decorator carries an `input_signature`; with the `RECONFIGURE` \
+				count, these are the signatures the refactoring adds or changes. |
 				| `functions.csv` | function considered by the refactoring. |
 				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
+				| `signature_candidates.csv` | candidate function left decorated with `@tf.function` after the refactoring, so it could \
+				carry an `input_signature`: one converted to hybrid, or a hybrid one that stays hybrid, whether reconfigured or kept \
+				because a precondition fails. Functions converted to eager and eager functions left eager are excluded. |
 				| `transformations.csv` | (candidate function, transformation). |
 				| `optimizable.csv` | candidate function passing the preconditions. |
 				| `nonoptimizable.csv` | candidate function failing a precondition. |

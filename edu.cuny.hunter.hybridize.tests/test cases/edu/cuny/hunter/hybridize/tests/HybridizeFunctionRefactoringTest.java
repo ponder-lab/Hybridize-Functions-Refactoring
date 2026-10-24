@@ -13552,6 +13552,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the input-signature funnel the evaluator reports (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167), on
+	 * the issue's example: {@code a} is hybrid and gains a signature ({@code RECONFIGURE}, P4); {@code b} converts with no signature, since
+	 * its calls disagree on dtype; {@code c} is refused, since it calls {@code numpy()}; and {@code d} converts with a signature. The
+	 * signature candidates, the functions left decorated, are {@code a}, {@code b}, and {@code d}, and only {@code d}'s new decorator
+	 * carries a signature, so the refactoring adds or changes two signatures with {@code a}'s reconfiguration. The evaluator has no test
+	 * harness of its own, so this pins the {@link Function} predicates it counts with, combined the way it combines them.
+	 */
+	@Test
+	public void testSignatureCandidates() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function a = findFunction(functions, "a");
+		assertEquals("`a` gains a signature on its existing decorator.", Set.of(RECONFIGURE), a.getTransformations());
+		assertEquals("Which passes P4.", P4, a.getPassingPrecondition());
+
+		Function b = findFunction(functions, "b");
+		assertEquals("`b` converts.", Set.of(Transformation.CONVERT_TO_HYBRID), b.getTransformations());
+		assertEquals("Its calls disagree on dtype, so no signature is written.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), b.getInferredInputSignatureAbsenceReason());
+
+		Function c = findFunction(functions, "c");
+		assertNotNull("`c` fails with HAS_EAGER_ONLY_CALLS.",
+				c.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function d = findFunction(functions, "d");
+		assertEquals("`d` converts.", Set.of(Transformation.CONVERT_TO_HYBRID), d.getTransformations());
+		assertTrue("`d` has an inferred signature.", d.getInferredInputSignature().isPresent());
+
+		assertEquals("The signature candidates are the functions left decorated.", Set.of("a", "b", "d"),
+				functions.stream().filter(Function::isSignatureCandidate).map(Function::getIdentifier).collect(toSet()));
+		assertEquals("Only `d`'s new decorator carries a signature.", Set.of("d"),
+				functions.stream().filter(Function::isHybridizedWithInputSignature).map(Function::getIdentifier).collect(toSet()));
+		assertEquals("One function is reconfigured.", 1,
+				functions.stream().filter(f -> f.getTransformations().contains(RECONFIGURE)).count());
+	}
+
+	/**
 	 * Pins the rank-sensitive sinks of issue https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/809: a body that reads
 	 * its input's static rank surface ({@code shape.as_list()}, {@code len(shape)}, {@code shape.rank}/{@code ndims}) stops working once
 	 * inference pins the parameter to unknown rank ({@code shape=None}), so each {@code wild_*} arm (called at differing ranks, degrading

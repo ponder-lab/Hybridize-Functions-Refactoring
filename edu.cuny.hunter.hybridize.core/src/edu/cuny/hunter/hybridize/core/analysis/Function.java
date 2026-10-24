@@ -6454,6 +6454,46 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
+	/**
+	 * Returns true iff the given transformation is applied to this function by the refactoring: it is selected, and the function fails no
+	 * precondition, which is what puts it among the processor's optimizable functions.
+	 *
+	 * @param transformation The transformation in question.
+	 * @return True iff the refactoring applies the given transformation to this function.
+	 */
+	private boolean appliesTransformation(Transformation transformation) {
+		return this.getTransformations().contains(transformation) && !this.getStatus().hasError();
+	}
+
+	/**
+	 * Returns true iff this function is left decorated with {@code @tf.function} after the refactoring, and so could carry an
+	 * {@code input_signature}: it is converted to hybrid, or it is already hybrid and stays hybrid, whether it is reconfigured or kept as
+	 * it is because a precondition fails. A function converted to eager and an eager function left eager are not (#1167).
+	 *
+	 * @return True iff this function is decorated with {@code @tf.function} after the refactoring.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isSignatureCandidate() {
+		if (this.appliesTransformation(CONVERT_TO_HYBRID))
+			return true;
+
+		return TRUE.equals(this.isHybrid()) && !this.appliesTransformation(CONVERT_TO_EAGER);
+	}
+
+	/**
+	 * Returns true iff the refactoring converts this function to hybrid and the decorator it writes carries an inferred
+	 * {@code input_signature} (#1167). Decided by the same gate {@link #convertToHybrid()} writes the keyword through, so a signature that
+	 * was inferred but is out of scope under the file's import shape, or that was withheld, does not count. Reads the memoized inference
+	 * result: a function converted to hybrid with inference on computed it while its preconditions were checked, and with inference off the
+	 * gate declines before inferring, so this leaves the function's status untouched.
+	 *
+	 * @return True iff the decorator added to this function carries an {@code input_signature}.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isHybridizedWithInputSignature() {
+		return this.appliesTransformation(CONVERT_TO_HYBRID) && this.canEmitInferredInputSignature();
+	}
+
 	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
 			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		List<TextEdit> ret = new ArrayList<>();
