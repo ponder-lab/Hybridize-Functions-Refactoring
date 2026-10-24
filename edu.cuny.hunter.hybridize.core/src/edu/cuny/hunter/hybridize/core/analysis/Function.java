@@ -1693,9 +1693,9 @@ public class Function {
 										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
 												+ "fails with it in either decorator order.");
 							else if (TRUE.equals(this.getReshapesWithScalarShape()))
-								// Reshapes with a shape operand that may be rank 0, which the eager kernel accepts and graph shape
-								// inference
-								// rejects (issue 1170). A safety failure; it precedes the benefit signal.
+								// Reshapes with a shape operand that may be rank 0, which the eager kernel accepts and
+								// graph shape inference rejects (issue 1170). A safety failure; it precedes the benefit
+								// signal.
 								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
 										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
 												+ "a rank-1 shape.");
