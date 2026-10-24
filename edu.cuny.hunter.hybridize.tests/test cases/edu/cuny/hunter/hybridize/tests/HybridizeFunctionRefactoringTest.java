@@ -16442,4 +16442,120 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Only `indices` blocks.", List.of("indices"),
 				gather.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
 	}
+
+	/**
+	 * With {@code fit} on {@code ((x, mask), y)} and Keras's default train step, {@code call} receives one batch of each member of the
+	 * tuple inputs, {@code (2, 4)} and {@code (2, 3)}, and none of the targets. {@code consume} receives those inputs from {@code call}.
+	 * {@code consume_mixed} receives a tuple whose members differ in dtype.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputs() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// TODO: The tuple inputs read beside the targets' type. With https://github.com/ponder-lab/ML/pull/1080, they read
+		// `FLOAT32[Constant,2; Constant,3] | FLOAT32[Constant,2; Constant,4]`.
+		assertEquals("Today's types: the members and the targets.",
+				"FLOAT32[Constant,2; Constant,1] | FLOAT32[Constant,2; Constant,3] | FLOAT32[Constant,2; Constant,4]",
+				inputs.getRenderedTensorTypes());
+
+		// FIXME: The tuple inputs are typed as one tensor of several shapes rather than as a container, so this specification, which
+		// rejects the pair `consume` receives, is wrong. It stays so with https://github.com/ponder-lab/ML/pull/1080. Related to
+		// https://github.com/wala/ML/issues/1138.
+		for (Function function : List.of(consume, findFunction(functions, "Model.call")))
+			assertEquals("Today's signature for `" + function.getIdentifier() + "`, a single tensor for a pair.",
+					"[tf.TensorSpec(shape=(2, None), dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The members of the mixed tuple disagree in dtype, so no specification is emitted, on either engine.
+		Function consumeMixed = findFunction(functions, "consume_mixed");
+		assertEquals("Members of two dtypes withhold the specification.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				consumeMixed.getInferredInputSignatureAbsenceReason());
+
+		// TODO: The mixed inputs read every shape beside every dtype, the targets' shape included. With
+		// https://github.com/ponder-lab/ML/pull/1080, the targets' shape is gone, and they read
+		// `FLOAT32[Constant,2; Constant,3] | FLOAT32[Constant,2; Constant,4] | INT32[Constant,2; Constant,3] | INT32[Constant,2;
+		// Constant,4]`.
+		// Two of those pairings never occur (https://github.com/wala/ML/issues/1138).
+		assertEquals("Today's types: every shape with every dtype.",
+				"FLOAT32[Constant,2; Constant,1] | FLOAT32[Constant,2; Constant,3] | FLOAT32[Constant,2; Constant,4] | "
+						+ "INT32[Constant,2; Constant,1] | INT32[Constant,2; Constant,3] | INT32[Constant,2; Constant,4]",
+				consumeMixed.getParameters().get(0).getRenderedTensorTypes());
+	}
+
+	/**
+	 * An integer subscript of a component unpacked from a tuple parameter in the same function, {@code a, gt = inputs} then
+	 * {@code f(gt[i])}, is a row of that component. {@code row_total} receives a constant index, {@code loop_total} a {@code range} loop
+	 * counter, and {@code call_total} a loop counter in a model's {@code call}.
+	 */
+	@Test
+	public void testInferInputSignatureSubscriptOfUnpackedLocal() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: The subscript of the unpacked component has no tensor type, so none of these functions has a tensor parameter. With
+		// https://github.com/ponder-lab/ML/pull/1081, each is hybridized: `row_total` and `loop_total` with
+		// `[tf.TensorSpec(shape=(4,), dtype=tf.int32)]`, and `call_total` with `[tf.TensorSpec(shape=(5,), dtype=tf.int32)]`.
+		for (String name : List.of("row_total", "loop_total", "call_total")) {
+			Function function = findFunction(functions, name);
+			assertEquals("Today, `" + name + "` has no tensor parameter.", FALSE, function.getHasTensorParameter());
+			assertFalse("Today, `" + name + "` is not hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * {@code tf.tensor_scatter_nd_update} returns a tensor of its input's shape and dtype, so {@code total} and {@code int_total} each
+	 * receive one dtype.
+	 */
+	@Test
+	public void testInferInputSignatureTensorScatterNdUpdate() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: The result carries an unknown member beside the input's type, so each dtype is partial. With
+		// https://github.com/ponder-lab/ML/pull/1082, the unknown member is gone, and the signatures are
+		// `[tf.TensorSpec(shape=(4,), dtype=tf.float32)]` for `total` and `[tf.TensorSpec(shape=(6,), dtype=tf.int32)]` for
+		// `int_total`.
+		for (String name : List.of("total", "int_total")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("Today's reason for `" + name + "`: a partial dtype.", Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
+	 * A grid {@code tf.meshgrid} returns is a float32 tensor, whether it is unpacked or subscripted. {@code grids} receives the whole list
+	 * of grids.
+	 */
+	@Test
+	public void testInferInputSignatureMeshgridElement() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: A grid carries an unknown member beside its float32 type, so its dtype is partial. With
+		// https://github.com/ponder-lab/ML/pull/1082, the unknown member is gone, and the signature is
+		// `[tf.TensorSpec(shape=None, dtype=tf.float32)]`, whose shape stays unknown because the grid's shape isn't composed.
+		for (String name : List.of("unpacked", "subscripted")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("Today's reason for `" + name + "`: a partial dtype.", Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// TODO: The list's first element has an unknown dtype. With https://github.com/ponder-lab/ML/pull/1082, the grid sits at no
+		// numbered position in the list, so the list is a library container of unknown length, and the reason is
+		// `TENSOR_CONTAINER_UNSUPPORTED`.
+		Function grids = findFunction(functions, "grids");
+		assertTrue("`grids` is still hybridized.", grids.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today's reason: the first grid's dtype is unknown.", Optional.of(InferenceResult.AbsenceReason.UNKNOWN_DTYPE),
+				grids.getInferredInputSignatureAbsenceReason());
+	}
 }
