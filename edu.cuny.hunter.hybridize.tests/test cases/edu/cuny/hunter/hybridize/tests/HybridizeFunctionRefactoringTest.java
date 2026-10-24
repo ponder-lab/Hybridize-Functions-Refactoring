@@ -15528,6 +15528,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the parameter-flow numpy precondition through a static method called on an instance: {@code h} passes its tensor parameter to
+	 * {@code o.s(a)}, whose body applies {@code np.asarray} to it, which raises under {@code tf.function} tracing, so {@code h} must not
+	 * hybridize. A static method binds no receiver, so the call's argument lands on {@code s}'s first parameter.
+	 */
+	@Test
+	public void testNumpyCallsThroughStaticMethodOnInstance() throws Exception {
+		Function h = getFunction("h");
+		// FIXME: The engine reports a receiver bound before the call's arguments for a static method called on an instance, so the
+		// argument is shifted past `x` and the numpy over it goes unseen. Flip to `assertTrue` and assert the HAS_NUMPY_CALLS_ON_PARAMETERS
+		// failure once the engine binds nothing there (https://github.com/ponder-lab/ML/pull/1084).
+		assertFalse("Today, `h`'s argument is shifted past the static method's `x`.", h.getHasNumpyCallsOnParameters());
+	}
+
+	/**
 	 * Pins the parameter-flow numpy precondition through closures
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
 	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
