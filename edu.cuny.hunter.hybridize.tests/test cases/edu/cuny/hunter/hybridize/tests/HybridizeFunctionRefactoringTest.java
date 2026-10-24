@@ -15554,14 +15554,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins the parameter-flow numpy precondition on a SciPy API: {@code f} applies {@code scipy.special.expit} to its tensor parameter,
-	 * which, like NumPy, raises under {@code tf.function} tracing, so {@code f} must not hybridize.
+	 * Pins the parameter-flow numpy precondition on a SciPy API: {@code f} applies {@code special.expit}, imported as
+	 * {@code from scipy import special}, to its tensor parameter, and {@code g} applies {@code scipy.special.expit} after
+	 * {@code import scipy}. Like NumPy, SciPy over a tensor raises under {@code tf.function} tracing, so neither must hybridize.
 	 */
 	@Test
 	public void testScipyCallsOnParameters() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("f", "g")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` applies SciPy to its parameter.", function.getHasNumpyCallsOnParameters());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition on a SciPy API imported by its dotted name: {@code f} applies {@code scipy.special.expit}
+	 * to its tensor parameter after a module-level {@code import scipy.special}, which raises under {@code tf.function} tracing, so
+	 * {@code f} must not hybridize.
+	 */
+	@Test
+	public void testScipyCallsOnParametersDottedImport() throws Exception {
 		Function f = getFunction("f");
-		// TODO: The engine names no SciPy API, so the call goes unseen and `f` passes the check. Flip to `assertTrue` and assert the
-		// HAS_NUMPY_CALLS_ON_PARAMETERS failure once it does (https://github.com/ponder-lab/ML/pull/1084).
+		// TODO: The front end doesn't bind `scipy` to the modeled module object after `import scipy.special`, so the call names no API and
+		// `f` passes the check. Flip to `assertTrue` and assert the HAS_NUMPY_CALLS_ON_PARAMETERS failure once it does
+		// (https://github.com/wala/ML/issues/1140).
 		assertFalse("Today, `f`'s SciPy call names no API.", f.getHasNumpyCallsOnParameters());
 	}
 

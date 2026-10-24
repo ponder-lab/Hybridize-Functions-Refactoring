@@ -109,8 +109,8 @@ class NumpyParameterFlowAnalysis {
 	/** The built-in {@code slice} constructor, into which a Python {@code x[a:b:c]} subscript is lowered. */
 	private static final String SLICE_BUILTIN_API = "builtins.slice";
 
-	/** The prefix of the NumPy APIs' names. */
-	private static final String NUMPY_API_PREFIX = "numpy.";
+	/** The prefixes of the NumPy and SciPy APIs' names. */
+	private static final Set<String> NUMPY_API_PREFIXES = Set.of("numpy.", "scipy.");
 
 	/** The APIs each call may invoke, as the engine names them ({@link TensorFlowApis}), by node and then by call. */
 	private final Map<CGNode, Map<SSAInstruction, Set<String>>> apis = new HashMap<>();
@@ -392,7 +392,7 @@ class NumpyParameterFlowAnalysis {
 	 * The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). Only {@code bool}: AutoGraph
 	 * converts {@code int} and {@code float} of a tensor to casts, measured on TensorFlow 2.9.3, so those trace.
 	 */
-	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
+	private static final Set<String> UNTRACEABLE_CONVERSION_APIS = Set.of("builtins.bool");
 
 	/**
 	 * True iff {@code node}'s own body applies {@code bool} to a tensor, or branches on a tensor with paths that disagree about
@@ -400,18 +400,17 @@ class NumpyParameterFlowAnalysis {
 	 *
 	 * @param node The call-graph node whose body is read.
 	 * @param ir The node's IR.
-	 * @param defUse The node's def-use chains.
 	 * @return True iff such a use appears in the body.
 	 */
-	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir, DefUse defUse) {
+	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir) {
 		Set<SSAConditionalBranchInstruction> tensorBranches = new HashSet<>();
 
 		for (SSAInstruction instruction : ir.getInstructions())
 			if (instruction instanceof SSAConditionalBranchInstruction branch) {
 				if (this.usesTensor(node, branch, 0))
 					tensorBranches.add(branch);
-			} else if (instruction instanceof PythonInvokeInstruction invoke && invokesUntraceableConversion(invoke, defUse)
-					&& this.usesTensor(node, invoke, 1))
+			} else if (instruction instanceof PythonInvokeInstruction invoke && this.usesTensor(node, invoke, 1)
+					&& this.invokesUntraceableConversion(node, invoke))
 				// Slot 0 of an invoke is the callee itself; the arguments start at 1.
 				return true;
 
@@ -427,15 +426,9 @@ class NumpyParameterFlowAnalysis {
 		return false;
 	}
 
-	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
-	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
-		SSAInstruction def = defUse.getDef(invoke.getUse(0));
-
-		if (!(def instanceof AstLexicalRead lexical))
-			return false;
-
-		Access[] accesses = lexical.getAccesses();
-		return accesses.length > 0 && UNTRACEABLE_CONVERSION_BUILTIN_NAMES.contains(accesses[0].getName().fst);
+	/** True iff {@code invoke} may call one of {@link #UNTRACEABLE_CONVERSION_APIS}, as the engine names it. */
+	private boolean invokesUntraceableConversion(CGNode node, PythonInvokeInstruction invoke) {
+		return !Collections.disjoint(this.apis(node, invoke), UNTRACEABLE_CONVERSION_APIS);
 	}
 
 	/**
@@ -955,7 +948,7 @@ class NumpyParameterFlowAnalysis {
 		// tensor
 		// are left alone too, since AutoGraph converts them to casts.
 		if (!untraceable)
-			untraceable = this.appliesUntraceablePythonToTensors(node, ir, defUse);
+			untraceable = this.appliesUntraceablePythonToTensors(node, ir);
 
 		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor, untraceable);
 		this.memo.put(key, result);
@@ -1257,9 +1250,9 @@ class NumpyParameterFlowAnalysis {
 		return rank;
 	}
 
-	/** True iff {@code invoke} may invoke a NumPy API, as the engine names it. */
+	/** True iff {@code invoke} may invoke a NumPy or SciPy API, as the engine names it. */
 	private boolean invokesNumpyApi(CGNode node, PythonInvokeInstruction invoke) {
-		return this.apis(node, invoke).stream().anyMatch(api -> api.startsWith(NUMPY_API_PREFIX));
+		return this.apis(node, invoke).stream().anyMatch(api -> NUMPY_API_PREFIXES.stream().anyMatch(api::startsWith));
 	}
 
 	/** Fully-qualified names of the TensorFlow shape-metadata ops whose results are shape (not value) tainted. */
