@@ -363,6 +363,13 @@ class ShapeValueBoundaryAnalysis {
 				SSAInstruction use = uses.next();
 
 				// A closure's free variables are not followed.
+				// TODO: Follow them. A shape built inside a nested scope, such as a list comprehension returning `tf.shape(x)[i]`
+				// elements, is missed here, so the function is not refused. The optimistic cycle guard above misses recursion the same
+				// way: a recursive revisit reads the memo's NONE and is never revisited once the walk settles, so a shape value
+				// returned only through the recursion is missed. The follow-up should follow the lexical-read precedent of
+				// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 (NumpyParameterFlowAnalysis and
+				// StaticShapeReadAnalysis color a lexical write's variable and scan the nested functions reading it), and iterate a
+				// recursive walk to a fixpoint rather than reading NONE.
 				if (use instanceof AstLexicalWrite)
 					continue;
 
