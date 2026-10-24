@@ -15,6 +15,7 @@ import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -144,7 +145,10 @@ class TensorIterationAnalysis {
 
 	/**
 	 * True iff {@code node}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}, which a symbolic
-	 * tensor cannot be (issue 1169). The container exemption keeps a Python collection out, as for the other two checks.
+	 * tensor cannot be (issue 1169). The container exemption keeps a Python collection out, as for the other two checks. Unlike theirs, the
+	 * taint stops at a static read of a tensor's type ({@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}), such as {@code x.shape}: it
+	 * yields Python values that tracing keeps concrete, so a NumPy array built from them, as in {@code tf.constant(np.arange(x.shape[0]))},
+	 * is a trace-time constant rather than a symbolic tensor.
 	 *
 	 * @param node The call-graph node to scan.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
@@ -154,7 +158,17 @@ class TensorIterationAnalysis {
 		return anyTaintedUse(node, method,
 				(use, value) -> use instanceof PythonInvokeInstruction invoke && passesAsConstantValue(invoke, value)
 						&& this.isTensorTyped(node, value) && !this.pointsToContainer(node, value)
-						&& TensorFlowApis.of(this.builder, node, invoke).contains(CONSTANT_FQN));
+						&& TensorFlowApis.of(this.builder, node, invoke).contains(CONSTANT_FQN),
+				(use, value) -> this.readsType(node, use, value));
+	}
+
+	/** True iff {@code use} reads {@code value}'s static type, a member of {@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}. */
+	private boolean readsType(CGNode node, SSAInstruction use, int value) {
+		if (!(use instanceof PythonPropertyRead read) || read.getObjectRef() != value)
+			return false;
+
+		String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+		return member != null && ShapeValueBoundaryAnalysis.TYPE_MEMBER_NAMES.contains(member);
 	}
 
 	/**
@@ -179,6 +193,20 @@ class TensorIterationAnalysis {
 	 * @return True iff {@code sink} holds for some tainted use.
 	 */
 	private static boolean anyTaintedUse(CGNode node, boolean method, TaintedUse sink) {
+		return anyTaintedUse(node, method, sink, (use, value) -> false);
+	}
+
+	/**
+	 * True iff {@code sink} holds for some use of a parameter-derived value in {@code node}'s body, as for
+	 * {@link #anyTaintedUse(CGNode, boolean, TaintedUse)}, except that a use satisfying {@code launders} does not taint its definitions.
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
+	 * @param sink The test, given a use and the tainted value it uses.
+	 * @param launders The test of a use whose definitions do not carry the taint, given the use and the tainted value it uses.
+	 * @return True iff {@code sink} holds for some tainted use.
+	 */
+	private static boolean anyTaintedUse(CGNode node, boolean method, TaintedUse sink, TaintedUse launders) {
 		IR ir = node.getIR();
 
 		if (ir == null)
@@ -206,6 +234,9 @@ class TensorIterationAnalysis {
 
 				if (sink.test(use, value))
 					return true;
+
+				if (launders.test(use, value))
+					continue;
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
 					int def = use.getDef(d);

@@ -5,7 +5,8 @@
 # (TypeError: Expected any non-tensor type, but got a tensor instead), so the
 # conversion must be declined. Converting the parameter with
 # `tf.convert_to_tensor`, passing `tf.constant` the static dimensions of a
-# parameter or its rank, and passing it a literal remain convertible.
+# parameter, its rank, or a NumPy array built from them, which tracing keeps
+# concrete, and passing it a literal remain convertible.
 import numpy as np
 import tensorflow as tf
 
@@ -45,6 +46,10 @@ def constant_rank(a):
     return tf.constant(len(a.shape))
 
 
+def constant_arange(a):
+    return tf.constant(np.arange(a.shape[0]), tf.float32) + a
+
+
 acts = np.array([0.1, 0.7, 0.2], dtype=np.float32)
 labels = np.array([1, 2], dtype=np.int32)
 
@@ -56,3 +61,4 @@ assert list(convert_param(acts).numpy()) == list(acts * 2)
 assert list(constant_shape(acts).numpy()) == [3]
 assert list(constant_literal(acts).numpy()) == list(acts * 2)
 assert int(constant_rank(acts)) == 1
+assert np.allclose(constant_arange(acts).numpy(), np.arange(3) + acts)
