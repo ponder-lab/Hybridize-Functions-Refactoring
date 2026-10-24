@@ -1,6 +1,5 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -15,9 +14,7 @@ import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
-import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
  * The eager-only-call analysis behind the {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS} safety precondition
@@ -124,41 +121,16 @@ class EagerOnlyCallAnalysis {
 
 	/**
 	 * True iff {@code node}, transitively over its call-graph successors, invokes an eager-only API, which raises under {@code tf.function}
-	 * tracing. Only user-defined bodies are scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks, both
-	 * mirroring {@code Util.performsTensorFlowOp}.
+	 * tracing. Only user-defined bodies are scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks
+	 * ({@link Util#reachesInstruction(CallGraph, CGNode, java.util.function.BiPredicate)}).
 	 *
 	 * @param node The call-graph node to check.
 	 * @return True iff an eager-only API call is reachable from {@code node}.
 	 */
 	boolean callsEagerOnlyApi(CGNode node) {
-		return this.callsEagerOnlyApi(node, Sets.newHashSet());
-	}
-
-	private boolean callsEagerOnlyApi(CGNode node, Set<CGNode> seen) {
-		if (!seen.add(node))
-			return false;
-
-		if (!Util.isTensorFlowNode(node)) {
-			IR ir = node.getIR();
-
-			if (ir != null) {
-				DefUse defUse = node.getDU();
-
-				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-					if (instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(node, invoke, defUse)
-							|| instruction instanceof PythonPropertyRead read && this.readsEagerOnlyTensorMember(node, read))
-						return true;
-			}
-		}
-
-		for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(node); succNodes.hasNext();) {
-			CGNode succNode = succNodes.next();
-
-			if (this.callsEagerOnlyApi(succNode, seen))
-				return true;
-		}
-
-		return false;
+		return Util.reachesInstruction(this.callGraph, node,
+				(n, instruction) -> instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(n, invoke, n.getDU())
+						|| instruction instanceof PythonPropertyRead read && this.readsEagerOnlyTensorMember(n, read));
 	}
 
 	/**
