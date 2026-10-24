@@ -15535,10 +15535,34 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testNumpyCallsThroughStaticMethodOnInstance() throws Exception {
 		Function h = getFunction("h");
-		// FIXME: The engine reports a receiver bound before the call's arguments for a static method called on an instance, so the
-		// argument is shifted past `x` and the numpy over it goes unseen. Flip to `assertTrue` and assert the HAS_NUMPY_CALLS_ON_PARAMETERS
-		// failure once the engine binds nothing there (https://github.com/ponder-lab/ML/pull/1084).
-		assertFalse("Today, `h`'s argument is shifted past the static method's `x`.", h.getHasNumpyCallsOnParameters());
+		assertTrue("`h` applies numpy to its parameter through a static method.", h.getHasNumpyCallsOnParameters());
+		assertNull("`h` must not pass a precondition.", h.getPassingPrecondition());
+		assertNotNull("`h` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				h.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins the shape-metadata rule of the parameter-flow numpy precondition on {@code tf.shape}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747): {@code g} applies {@code np.prod} to a slice of
+	 * {@code tf.shape(x)} covering only {@code x}'s trailing dimension, which is static, so the numpy reads shape metadata rather than the
+	 * tensor's value and is not a sink. Not recognizing {@code tf.shape} would leave its result value-tainted and flag {@code g}.
+	 */
+	@Test
+	public void testNumpyOnShapeOpOfStaticTensor() throws Exception {
+		Function g = getFunction("g");
+		assertFalse("`g`'s numpy reads a static dimension of `tf.shape(x)`.", g.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition on a SciPy API: {@code f} applies {@code scipy.special.expit} to its tensor parameter,
+	 * which, like NumPy, raises under {@code tf.function} tracing, so {@code f} must not hybridize.
+	 */
+	@Test
+	public void testScipyCallsOnParameters() throws Exception {
+		Function f = getFunction("f");
+		// TODO: The engine names no SciPy API, so the call goes unseen and `f` passes the check. Flip to `assertTrue` and assert the
+		// HAS_NUMPY_CALLS_ON_PARAMETERS failure once it does (https://github.com/ponder-lab/ML/pull/1084).
+		assertFalse("Today, `f`'s SciPy call names no API.", f.getHasNumpyCallsOnParameters());
 	}
 
 	/**
