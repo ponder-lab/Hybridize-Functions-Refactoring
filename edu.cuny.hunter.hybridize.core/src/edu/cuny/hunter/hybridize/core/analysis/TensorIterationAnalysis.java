@@ -162,9 +162,13 @@ class TensorIterationAnalysis {
 				(use, value) -> this.readsType(node, use, value));
 	}
 
-	/** True iff {@code use} reads {@code value}'s static type, a member of {@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}. */
+	/**
+	 * True iff {@code use} is an attribute read of {@code value}'s static type, a member of
+	 * {@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}.
+	 */
 	private boolean readsType(CGNode node, SSAInstruction use, int value) {
-		if (!(use instanceof PythonPropertyRead read) || read.getObjectRef() != value)
+		// A subscript under a key such as "shape" reads an element, not the type, so only an attribute read launders.
+		if (!(use instanceof PythonPropertyRead read) || read.isSubscript() || read.getObjectRef() != value)
 			return false;
 
 		String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);

@@ -16565,13 +16565,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,
 	 * but tracing makes it symbolic, which {@code tf.constant} rejects. Converting the parameter with {@code tf.convert_to_tensor}, passing
 	 * {@code tf.constant} a list of the parameter's static dimensions, its rank, or a NumPy array built from them, which tracing keeps
-	 * concrete, and passing it a literal remain convertible.
+	 * concrete, and passing it a literal remain convertible. A subscript under the key {@code "shape"} reads an element, not the type, so
+	 * it does not stop the check.
 	 */
 	@Test
 	public void testTensorParameterConstantBlocksHybridization() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("WarpRNNTTest._run_rnnt", "constant_param", "constant_derived", "constant_keyword")) {
+		for (String identifier : List.of("WarpRNNTTest._run_rnnt", "constant_param", "constant_derived", "constant_keyword",
+				"constant_keyed")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` passes a tensor parameter to tf.constant.", function.getHasTensorParameterConstant());
 			assertNull("`" + identifier + "` must not pass a precondition; tf.constant rejects a symbolic tensor.",
