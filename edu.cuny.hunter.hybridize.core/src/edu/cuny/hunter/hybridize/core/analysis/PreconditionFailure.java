@@ -375,7 +375,17 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
 	 */
-	RESHAPES_WITH_SCALAR_SHAPE(44);
+	RESHAPES_WITH_SCALAR_SHAPE(44),
+
+	/**
+	 * The hybrid function, or code it calls, calls an API that works only while a graph is being built, such as {@code tf.gradients} or an
+	 * optimizer's {@code get_gradients}. Removing the decorator runs the call eagerly, where it raises or returns {@code None} gradients,
+	 * so the function is kept hybrid. The engine names the APIs a call invokes; which of them are graph-only is HFR's policy. This is the
+	 * hybrid-to-eager counterpart of {@link #HAS_EAGER_ONLY_CALLS}. See {@link GraphOnlyCallAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171">Issue 1171</a>
+	 */
+	HAS_GRAPH_ONLY_CALLS(45);
 
 	static {
 		// check that the codes are unique.

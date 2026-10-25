@@ -16540,4 +16540,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
 		assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171: a hybrid function that calls an API that works only
+	 * while a graph is being built. Each function below but {@code double} has no parameters and no Python side effects, so P2 would
+	 * de-hybridize it. Measured on TensorFlow 2.9.3, each runs decorated and fails eagerly: {@code average_checkpoints._build_model},
+	 * reduced from OpenNMT-tf's {@code CheckpointTest.testCheckpointAveraging}, and {@code get_updates_step} with
+	 * {@code ValueError: Variable ... has None for gradient}, and {@code gradients_step}, {@code backend_gradients_step} and
+	 * {@code calls_gradients_helper}, through the helper it calls, with
+	 * {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}. {@code double} calls none and de-hybridizes.
+	 */
+	@Test
+	public void testGraphOnlyApiCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("average_checkpoints._build_model", "get_updates_step", "gradients_step", "backend_gradients_step",
+				"calls_gradients_helper")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` is hybrid.", function.isHybrid());
+			assertTrue("`" + identifier + "` calls a graph-only API.", function.getHasGraphOnlyCalls());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_GRAPH_ONLY_CALLS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_GRAPH_ONLY_CALLS.getCode()));
+			assertFalse("`" + identifier + "` is not de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		Function helper = findFunction(functions, "gradients_of_square");
+		assertNull("The eager helper `gradients_of_square` is not checked.", helper.getHasGraphOnlyCalls());
+
+		Function plain = findFunction(functions, "double");
+		assertFalse("`double` calls no graph-only API.", plain.getHasGraphOnlyCalls());
+		assertEquals("`double` de-hybridizes (P2).", P2, plain.getPassingPrecondition());
+		assertEquals("`double` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER), plain.getTransformations());
+	}
 }
