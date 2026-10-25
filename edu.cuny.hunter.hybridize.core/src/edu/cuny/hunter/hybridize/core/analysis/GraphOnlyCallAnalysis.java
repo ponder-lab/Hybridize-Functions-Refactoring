@@ -22,18 +22,23 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
  * <p>
  * The walk is the shared one of {@link Util#reachesInstruction(CallGraph, CGNode, java.util.function.BiPredicate)}, as for
  * {@link EagerOnlyCallAnalysis}.
+ * <p>
+ * Only a function known to be hybrid is checked. A function whose hybridity is undetermined is unchecked by design: no hybrid-to-eager rule
+ * converts it, so there is nothing to refuse.
  */
 class GraphOnlyCallAnalysis {
 
 	/**
 	 * The fully-qualified names, as the engine names them ({@link TensorFlowApis}), of the APIs that work only while a graph is being
-	 * built. Measured on TensorFlow 2.9.3, each fails when called eagerly: {@code tf.gradients} and {@code tf.keras.backend.gradients}
-	 * raise {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}, and an optimizer's {@code get_gradients}
-	 * and {@code get_updates}, which compute their gradients through {@code tf.gradients}, raise
-	 * {@code ValueError: Variable ... has None for gradient}.
+	 * built. Measured on TensorFlow 2.9.3, each fails when called eagerly: {@code tf.gradients}, {@code tf.compat.v1.gradients} and
+	 * {@code tf.keras.backend.gradients} raise {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}, and an
+	 * optimizer's {@code get_gradients} and {@code get_updates}, which compute their gradients through {@code tf.gradients}, raise
+	 * {@code ValueError: Variable ... has None for gradient}. The engine does not model {@code tf.compat.v1}, so it names a call of
+	 * {@code tf.compat.v1.gradients} by its attribute chain, which is listed here as its own name.
 	 */
-	private static final Set<String> GRAPH_ONLY_APIS = Set.of("tensorflow.gradients", "tensorflow.keras.backend.gradients",
-			"tensorflow.keras.optimizers.Optimizer.get_gradients", "tensorflow.keras.optimizers.Optimizer.get_updates");
+	private static final Set<String> GRAPH_ONLY_APIS = Set.of("tensorflow.gradients", "tensorflow.compat.v1.gradients",
+			"tensorflow.keras.backend.gradients", "tensorflow.keras.optimizers.Optimizer.get_gradients",
+			"tensorflow.keras.optimizers.Optimizer.get_updates");
 
 	/** The call graph, whose successors the walk follows. */
 	private final CallGraph callGraph;

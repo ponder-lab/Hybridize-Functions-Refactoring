@@ -45,8 +45,53 @@ def calls_gradients_helper():
 
 
 @tf.function
+def compat_gradients_step():
+    return tf.compat.v1.gradients(v * v, [v])
+
+
+@tf.function
 def double():
     return v * 2.0
+
+
+x_data = tf.ones([2, 3])
+
+
+class Regressor(tf.keras.Model):
+    def __init__(self):
+        super().__init__()
+        self.dense = tf.keras.layers.Dense(1)
+
+    def call(self, inputs):
+        return self.dense(inputs)
+
+
+class NamedOptimizerRegressor(Regressor):
+    @tf.function
+    def gradients_step(self):
+        loss = tf.reduce_mean(self(x_data))
+        return self.optimizer.get_gradients(loss, self.trainable_variables)
+
+
+class InstanceOptimizerRegressor(Regressor):
+    @tf.function
+    def gradients_step(self):
+        loss = tf.reduce_mean(self(x_data))
+        return self.optimizer.get_gradients(loss, self.trainable_variables)
+
+
+def named_optimizer_step():
+    model = NamedOptimizerRegressor()
+    model.compile(optimizer="sgd", loss="mse")
+    model(x_data)
+    return model.gradients_step()
+
+
+def instance_optimizer_step():
+    model = InstanceOptimizerRegressor()
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss="mse")
+    model(x_data)
+    return model.gradients_step()
 
 
 average_checkpoints()
@@ -55,3 +100,6 @@ gradients_step()
 backend_gradients_step()
 calls_gradients_helper()
 double()
+compat_gradients_step()
+named_optimizer_step()
+instance_optimizer_step()

@@ -16548,14 +16548,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * reduced from OpenNMT-tf's {@code CheckpointTest.testCheckpointAveraging}, and {@code get_updates_step} with
 	 * {@code ValueError: Variable ... has None for gradient}, and {@code gradients_step}, {@code backend_gradients_step} and
 	 * {@code calls_gradients_helper}, through the helper it calls, with
-	 * {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}. {@code double} calls none and de-hybridizes.
+	 * {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}. {@code compat_gradients_step} raises the same
+	 * through {@code tf.compat.v1.gradients}. The two {@code gradients_step} methods call {@code self.optimizer.get_gradients}, and fail
+	 * eagerly like {@code _build_model}: {@code InstanceOptimizerRegressor}'s model is compiled with an optimizer instance and is refused,
+	 * and {@code NamedOptimizerRegressor}'s with {@code optimizer="sgd"}, which is not yet caught. {@code double} calls none and
+	 * de-hybridizes.
 	 */
 	@Test
 	public void testGraphOnlyApiCall() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("average_checkpoints._build_model", "get_updates_step", "gradients_step", "backend_gradients_step",
-				"calls_gradients_helper")) {
+				"calls_gradients_helper", "compat_gradients_step", "InstanceOptimizerRegressor.gradients_step")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` is hybrid.", function.isHybrid());
 			assertTrue("`" + identifier + "` calls a graph-only API.", function.getHasGraphOnlyCalls());
@@ -16564,6 +16568,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_GRAPH_ONLY_CALLS.getCode()));
 			assertFalse("`" + identifier + "` is not de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
 		}
+
+		// TODO: Refuse this once the engine gives an optimizer that `compile` receives by name a callee
+		// (https://github.com/wala/ML/issues/1154). Until then the stored string has no `get_gradients`, so the call names no API, and the
+		// method de-hybridizes, though it fails eagerly as the instance spelling does.
+		Function named = findFunction(functions, "NamedOptimizerRegressor.gradients_step");
+		assertFalse("Today, `NamedOptimizerRegressor.gradients_step` calls no graph-only API the engine names.",
+				named.getHasGraphOnlyCalls());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` de-hybridizes (P2).", P2, named.getPassingPrecondition());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER),
+				named.getTransformations());
 
 		Function helper = findFunction(functions, "gradients_of_square");
 		assertNull("The eager helper `gradients_of_square` is not checked.", helper.getHasGraphOnlyCalls());
