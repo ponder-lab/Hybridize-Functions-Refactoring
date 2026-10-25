@@ -4,8 +4,9 @@
 # - `scale_first`: `ns` is a list whose element is `len(xs)`.
 # - `wrapped`: `x` is a tensor or a variable built from `len(xs)`, which is no primitive.
 # - `summed`: `v` is a list of tensors at one call and `len(xs)` at the other.
-# - `boxed`: `box` is an object whose field is `len(xs)`, and `layered`: `layer` is a Keras layer whose units are `len(xs)`. Neither
-#   object is a primitive, whatever its fields hold.
+# - `boxed`: `box` is an object of a program class whose field is `len(xs)`. `tf.function` keys it by its identity, and a trace reads
+#   the field at trace time, so it's a primitive, as `Box(3)` would be.
+# - `layered`: `layer` is a Keras layer whose units are `len(xs)`, which should be no primitive.
 import tensorflow as tf
 
 

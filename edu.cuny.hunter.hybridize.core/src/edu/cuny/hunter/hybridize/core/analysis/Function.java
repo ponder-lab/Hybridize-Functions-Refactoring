@@ -910,9 +910,8 @@ public class Function {
 	/**
 	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
 	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts at the value itself and as a
-	 * container's element, and nowhere else: a scalar in a tensor's fields, such as one {@code tf.constant(len(xs))} is built from, doesn't
-	 * make the tensor a primitive (wala/ML#451).
+	 * (#1047), so neither is a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's
+	 * one key per scalar type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -922,38 +921,18 @@ public class Function {
 	 */
 	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
 			IProgressMonitor monitor) {
-		return containsPrimitive(instanceKey, ignoreBooleans, true, pointerAnalysis, new HashSet<>(), monitor);
+		return containsPrimitive(instanceKey, ignoreBooleans, pointerAnalysis, new HashSet<>(), monitor);
 	}
 
-	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values, as
-	 * {@link #containsPrimitive(InstanceKey, boolean, PointerAnalysis, IProgressMonitor)} decides.
-	 *
-	 * @param instanceKey The {@link InstanceKey} in question.
-	 * @param ignoreBooleans True iff boolean values should not be considered.
-	 * @param countScalarKeys True iff the given {@link InstanceKey} is the value itself or a container's element, where a Python scalar of
-	 *        unknown value counts as a primitive.
-	 * @param pointerAnalysis The {@link PointerAnalysis} corresponding to the given {@link InstanceKey}.
-	 * @param seen The {@link InstanceKey}s already examined.
-	 * @param monitor To monitor progress.
-	 * @return True iff the given {@link InstanceKey} takes on primitive values according to the given {@link PointerAnalysis}.
-	 */
-	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, boolean countScalarKeys,
-			PointerAnalysis<InstanceKey> pointerAnalysis, Set<InstanceKey> seen, IProgressMonitor monitor) {
+	private static boolean containsPrimitive(InstanceKey instanceKey, boolean ignoreBooleans, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<InstanceKey> seen, IProgressMonitor monitor) {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Examining instance...", 1);
 
 		seen.add(instanceKey);
 
-		if (isPythonScalarKey(instanceKey)) {
-			// A scalar has no fields to examine.
+		if (isPythonScalarKey(instanceKey) || instanceKey instanceof ConstantKey<?>) {
 			subMonitor.done();
-			return countScalarKeys && isPrimitiveValue(instanceKey, ignoreBooleans);
-		} else if (instanceKey instanceof ConstantKey<?>) {
-			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
-				// We have found a primitive.
-				subMonitor.done();
-				return true;
-			}
+			return isPrimitiveValue(instanceKey, ignoreBooleans);
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
 			InstanceKey instanceKeyToProcess;
@@ -975,9 +954,6 @@ public class Function {
 
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
-			// A field's scalar counts only when the field is a container's element.
-			boolean container = Util.isContainerType(concreteType.getReference());
-
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
 
 			for (IField field : allInstanceFields) {
@@ -988,8 +964,7 @@ public class Function {
 				subMonitor.beginTask("Examining instance field instances...", instanceFieldPointsToSet.size());
 
 				for (InstanceKey key : instanceFieldPointsToSet)
-					if (!seen.contains(key)
-							&& containsPrimitive(key, ignoreBooleans, container, pointerAnalysis, seen, subMonitor.split(1))) {
+					if (!seen.contains(key) && containsPrimitive(key, ignoreBooleans, pointerAnalysis, seen, subMonitor.split(1))) {
 						subMonitor.done();
 						return true;
 					}
