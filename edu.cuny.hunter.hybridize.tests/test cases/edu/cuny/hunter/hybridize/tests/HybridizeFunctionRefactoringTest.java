@@ -15345,13 +15345,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testReturnedPrimitiveShapeList() throws Exception {
 		Function function = getFunction("shape_list");
 
-		// TODO: Refuse this once Ariadne gives an element of `TensorShape.as_list()` a value: https://github.com/wala/ML/issues/1104.
-		// Until then the static elements' points-to set is empty, so the returned list holds only the dynamic tensor elements. The
-		// proposed model there represents such an element as a Python int of unknown value, which this check counts as a primitive
-		// (wala/ML#1148).
-		assertFalse("`shape_list`'s static dimensions are not yet seen.", function.getReturnsPrimitive());
-		assertEquals("`shape_list` still hybridizes (P1).", P1, function.getPassingPrecondition());
-		assertNull("`shape_list` is not yet refused for a returned primitive.",
+		// An element of `x.shape.as_list()` is a Python int of unknown value (https://github.com/wala/ML/issues/1104), represented by the
+		// int type's key (wala/ML#1148). The comprehension stores it in the returned list, among the elements the engine lists for it.
+		assertTrue("`shape_list`'s static dimensions are seen.", function.getReturnsPrimitive());
+		assertTrue("`shape_list`'s result is used.", function.getHasUsedResults());
+		assertNull("`shape_list` must not pass a precondition.", function.getPassingPrecondition());
+		assertNotNull("`shape_list` fails with RETURNS_PYTHON_PRIMITIVE.",
 				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
 	}
 
