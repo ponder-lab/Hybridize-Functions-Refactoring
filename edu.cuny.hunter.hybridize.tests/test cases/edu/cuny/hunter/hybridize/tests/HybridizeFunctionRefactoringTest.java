@@ -8219,6 +8219,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (Function function : functions) {
 			switch (function.getIdentifier()) {
 			case "run_optimization":
+				// TODO: An over-refusal. `run_optimization` first calls `neural_net`, building it inside the trace, but a model's own
+				// `__call__` scope then runs inside the trace as well, so its weights keep distinct names. A free function has no
+				// receiver, which the rule reads as unknown: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172.
+				assertMayBuildLayers(function, true, null, true);
+				testFunction(function, false, true, false, false, false, CONVERT_EAGER_FUNCTION_TO_HYBRID, null, Collections.emptySet(),
+						RefactoringStatus.ERROR);
+				break;
 			case "accuracy":
 			case "cross_entropy_loss":
 			case "NeuralNet.call":
@@ -12914,7 +12921,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The read against `unpacked`'s container is answered by its elements' known ranks.", Boolean.FALSE,
 				unpacked.getHasUnresolvedStaticallyReadAxes());
 		assertTrue("So its nested specification stands rather than being withheld.", unpacked.getInferredInputSignature().isPresent());
-		assertEquals("`unpacked` hybridizes (P1).", P1, unpacked.getPassingPrecondition());
+		// TODO: An over-refusal. `unpacked` first calls `model`, building it inside the trace, but the model's own `__call__` scope runs
+		// inside the trace too, so its weights keep distinct names. A free function has no receiver, which the rule reads as unknown:
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172.
+		assertMayBuildLayers(unpacked, true, null, true);
+		assertNull("`unpacked` is refused for building `model` inside the trace.", unpacked.getPassingPrecondition());
 
 		Function arith = getFunction("arith");
 		assertTrue("`arith` does integer arithmetic over `x.shape[-1]`, which its signature leaves unresolved.",
@@ -13000,8 +13011,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function outerCall = getFunction("Outer.call");
 		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
 				outerCall.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`Outer.call` hybridizes bare (P1).", P1, outerCall.getPassingPrecondition());
-		assertEquals("`Outer.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+		// `Outer.call` calls `Proj` on its first call, building it inside the trace, so its receiver, a layer, is refused (issue 1172).
+		assertMayBuildLayers(outerCall, true, false, true);
+		assertNull("`Outer.call` is refused for building `Proj` inside the trace.", outerCall.getPassingPrecondition());
+		assertEquals("`Outer.call` is refused, so no signature is inferred and none is withheld.", Optional.empty(),
 				outerCall.getInferredInputSignatureAbsenceReason());
 
 		Function gateCall = getFunction("Gate.call");
@@ -13822,7 +13835,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testEnumerateLayerDispatchVendored() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		Function mlpCall = findFunction(functions, "MLP.call");
-		assertEquals("`MLP.call` is reached through the enumerate-loop pair binding and hybridizes (P1).", P1,
+		// `MLP.call` builds its `Dense` sublayers on its first call, and its receiver is a layer, so it is refused (issue 1172). That
+		// needs its call-graph node, so the reach stays pinned.
+		assertMayBuildLayers(mlpCall, true, false, true);
+		assertNull("`MLP.call` is reached through the enumerate-loop pair binding and refused for building its sublayers.",
 				mlpCall.getPassingPrecondition());
 	}
 
@@ -13913,7 +13929,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		this.setInferInputSignatures(true);
 
 		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
-		assertEquals("`BatchNormalization.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
+		// instead: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(call, true, false, true);
+		assertNull("`BatchNormalization.call` is refused for building the layer.", call.getPassingPrecondition());
 
 		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
 				call.getInferredInputSignature().isEmpty());
@@ -14375,11 +14394,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function freshRead = getFunction("fresh_read_after_helper");
 		assertFalse("`fresh_read_after_helper` reads the collection after the helper's forward pass builds the model.",
 				freshRead.getHasStaleVariableReads());
-		assertEquals("`fresh_read_after_helper` still hybridizes (P1).", P1, freshRead.getPassingPrecondition());
+		// TODO: An over-refusal. Both `fresh_read_after_helper` and `forward` first call `model`, building it inside the trace, but the
+		// model's own `__call__` scope runs inside the trace too, so its weights keep distinct names. A free function has no receiver,
+		// which the rule reads as unknown: https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172.
+		assertMayBuildLayers(freshRead, true, null, true);
+		assertNull("`fresh_read_after_helper` is refused for building `model` inside the trace.", freshRead.getPassingPrecondition());
 
 		Function forward = getFunction("forward");
 		assertFalse("`forward` reads no variable collection.", forward.getHasStaleVariableReads());
-		assertEquals("`forward` still hybridizes (P1).", P1, forward.getPassingPrecondition());
+		assertMayBuildLayers(forward, true, null, true);
+		assertNull("`forward` is refused for building `model` inside the trace.", forward.getPassingPrecondition());
 	}
 
 	/**
@@ -16532,5 +16556,123 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Today, `" + identifier + "`'s shape operand is of unknown rank.", function.getReshapesWithScalarShape());
 		assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
 		assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Asserts that the function named {@code identifier} may build a layer, has the given receiver, and is refused with
+	 * {@link PreconditionFailure#MAY_BUILD_LAYERS}, or is not, as {@code refused} says.
+	 *
+	 * @param functions The functions to look in.
+	 * @param identifier The function's identifier, such as {@code Inner.call}.
+	 * @param mayBuildLayers Whether the function may build a layer.
+	 * @param receiverIsModel Whether the function's receiver is a Keras model, {@code null} if unknown.
+	 * @param refused Whether the function is refused with {@link PreconditionFailure#MAY_BUILD_LAYERS}.
+	 */
+	private static void assertMayBuildLayers(Set<Function> functions, String identifier, boolean mayBuildLayers, Boolean receiverIsModel,
+			boolean refused) {
+		assertMayBuildLayers(findFunction(functions, identifier), mayBuildLayers, receiverIsModel, refused);
+	}
+
+	/**
+	 * Asserts that {@code function} may build a layer, has the given receiver, and is refused with
+	 * {@link PreconditionFailure#MAY_BUILD_LAYERS}, or is not, as {@code refused} says.
+	 *
+	 * @param function The function.
+	 * @param mayBuildLayers Whether the function may build a layer.
+	 * @param receiverIsModel Whether the function's receiver is a Keras model, {@code null} if unknown.
+	 * @param refused Whether the function is refused with {@link PreconditionFailure#MAY_BUILD_LAYERS}.
+	 */
+	private static void assertMayBuildLayers(Function function, boolean mayBuildLayers, Boolean receiverIsModel, boolean refused) {
+		String identifier = function.getIdentifier();
+		assertEquals("Whether `" + identifier + "` may build a layer.", mayBuildLayers, function.getMayBuildLayers());
+		assertEquals("Whether `" + identifier + "`'s receiver is a model.", receiverIsModel, function.getReceiverIsModel());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.MAY_BUILD_LAYERS.getCode());
+
+		if (refused) {
+			assertNotNull("`" + identifier + "` fails with MAY_BUILD_LAYERS.", entry);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertFalse("`" + identifier + "` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		} else
+			assertNull("`" + identifier + "` does not fail with MAY_BUILD_LAYERS.", entry);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172: a Keras {@code call} that builds its sublayers on
+	 * their first call. Measured on TensorFlow 2.9.3, decorating {@code Inner.call}, whose {@code Dense} is built on its first call, names
+	 * both {@code Inner} instances' weights {@code dense/kernel:0}, and the HDF5 save fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}, as TensorFlowTTS's FastSpeech layers do.
+	 * {@code Scaled.call} fails the same way through a program layer's {@code build}. Each is refused.
+	 * <p>
+	 * {@code Stack.call} builds the same sublayers, and decorating it drops the enclosing scopes from every weight name, but the names that
+	 * remain stay distinct, so the save succeeds. The engine cannot tell it from {@code Inner.call}, so it is refused too. {@code Net.call}
+	 * builds them as well, but its receiver is a Keras model, whose {@code call} saves regardless, so it is not refused.
+	 * {@code Flattener.call} calls a {@code Flatten}, which has no variables, and {@code Scale.call} runs after its own layer is built.
+	 */
+	@Test
+	public void testMayBuildLayers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String className : List.of("Inner", "Scaled", "Stack"))
+			assertMayBuildLayers(functions, className + ".call", true, false, true);
+
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+
+		for (String className : List.of("Flattener", "Scale"))
+			assertMayBuildLayers(functions, className + ".call", false, false, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a built-in {@code Embedding}, whose first call
+	 * creates its {@code embeddings} variable. {@code EmbLayer.call}, a layer's, is refused; {@code Net.call}, a model's, is not.
+	 */
+	@Test
+	public void testMayBuildLayersEmbedding() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "EmbLayer.call", true, false, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a subclass of {@code Embedding} that overrides
+	 * {@code call} without calling the superclass's. Keras builds the layer in {@code __call__}, before {@code call} runs, so
+	 * {@code TFEmbedding.call} builds nothing and is rightly not refused. {@code Net.call} does build it, but it is a model's, so it is not
+	 * refused either way.
+	 */
+	@Test
+	public void testMayBuildLayersEmbeddingSubclass() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "TFEmbedding.call", false, false, false);
+		// TODO: `Net.call` builds the embedding on its first call, but the engine dispatches `self.emb(x)` straight to the override and
+		// misses Keras's build: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(functions, "Net.call", false, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a subclass of {@code BatchNormalization},
+	 * reduced from YOLOv3, whose {@code call} calls the superclass's. Keras builds the layer in {@code __call__}, before {@code call} runs,
+	 * so decorating {@code BatchNormalization.call} keeps the weights' names distinct and the save succeeds, measured on TensorFlow 2.9.3.
+	 * {@code Block.call} builds both layers and is refused; {@code Net.call} is a model's and is not.
+	 */
+	@Test
+	public void testMayBuildLayersBatchNormalizationSubclass() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
+		// instead: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(functions, "BatchNormalization.call", true, false, true);
+		assertMayBuildLayers(functions, "Block.call", true, false, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model nested in another. Measured on
+	 * TensorFlow 2.9.3, decorating {@code Inner.call} names both {@code Inner} instances' weights {@code dense/kernel:0}, yet the HDF5 save
+	 * succeeds, since each model's weights are saved apart. Neither {@code call} is refused.
+	 */
+	@Test
+	public void testMayBuildLayersNestedModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Inner.call", true, true, false);
+		assertMayBuildLayers(functions, "Outer.call", true, true, false);
 	}
 }

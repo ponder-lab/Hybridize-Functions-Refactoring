@@ -687,6 +687,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
 
+				// Check whether the function may build a Keras layer, whose variables a trace would create outside the enclosing layers'
+				// name scopes (issue 1172). Same reachable region and gate; a transitive walk, through library nodes too, asking the
+				// engine which APIs each call invokes.
+				if (barrenCouldDecide)
+					func.computeMayBuildLayers(callGraph, builder);
+
 				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
 				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
 				if (barrenCouldDecide)

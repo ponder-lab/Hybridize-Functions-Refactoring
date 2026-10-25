@@ -376,7 +376,21 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
 	 */
-	RESHAPES_WITH_SCALAR_SHAPE(44);
+	RESHAPES_WITH_SCALAR_SHAPE(44),
+
+	/**
+	 * The function, or code it calls, may create a Keras layer's variables, as a layer's first call does when it builds the layer. Under
+	 * {@code tf.function}, the build runs inside the trace, outside the name scopes of the layers that enclose it, so sibling layers'
+	 * variables get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}. The engine names the variable creation of a program
+	 * layer's {@code build} and of a built-in layer's first call alike. A call graph can't tell which call to a layer is its first, so a
+	 * function calling a layer that may already be built is refused too. A Keras model's {@code call} saves regardless, so a function whose
+	 * receiver the engine knows to be a model is exempt; one whose receiver is unknown, or that has none, is refused. See
+	 * {@link LayerBuildAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
+	 */
+	MAY_BUILD_LAYERS(46);
 
 	static {
 		// check that the codes are unique.
