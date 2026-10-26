@@ -16512,8 +16512,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Each of these two breaks when converted, but the engine reports its shape operand's rank as unknown, and an unknown rank
 		// converts.
 
-		// TODO: Refuse this once a binary operation over Python scalars has an instance key
-		// (https://github.com/wala/ML/issues/1149). Until then the product's points-to set is empty.
+		// TODO: Refuse this (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1181). Until then the product's
+		// points-to set is empty.
 		assertConvertedWithUnknownShapeRank(findFunction(functions, "flatten_by_computed_int"));
 
 		// Behind a starred argument, the shape operand is not aligned with any argument, so its rank is unknown by design.
