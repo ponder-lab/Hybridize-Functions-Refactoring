@@ -12376,12 +12376,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Control for issues 1025 and 1109: an object of a program class is keyed by its identity, so its primitive field never causes a
-	 * retrace, and it's no primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The hybrid
-	 * {@code hybrid_apply} is no longer de-hybridized under P3, and the eager {@code eager_apply} is converted.
+	 * An object of a program class, allocated once, with a primitive field: {@code tf.function} keys it by its identity, so the field never
+	 * causes a retrace, and it's no primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The
+	 * hybrid {@code hybrid_apply} isn't de-hybridized under P3, and the eager {@code eager_apply} is converted. Formerly the control for
+	 * issues 1025 and 1109, which held such an object to be a primitive parameter.
 	 */
 	@Test
-	public void testProgramObjectPrimitiveUnchanged() throws Exception {
+	public void testProgramObjectIdentityKeyed() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		Function hybrid = findFunction(functions, "hybrid_apply");
