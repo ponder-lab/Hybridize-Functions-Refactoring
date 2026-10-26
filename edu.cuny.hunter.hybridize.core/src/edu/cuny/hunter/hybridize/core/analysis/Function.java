@@ -908,10 +908,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
-	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047), so neither is a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's
-	 * one key per scalar type (wala/ML#1148), counts wherever a constant does.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container with an
+	 * element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not examined (#1048).
+	 * Neither is an object of a library class that Ariadne models (#1047), such as a tensor, whatever {@code int} it was built from
+	 * (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts wherever a constant
+	 * does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -945,9 +946,15 @@ public class Function {
 			IClass concreteType = instanceKeyToProcess.concreteType();
 
 			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
-			// learning rate, and before the model existed there were none (#1047). Built-in containers and objects of program-defined
-			// classes are still examined.
+			// learning rate, and before the model existed there were none (#1047).
 			if (isLibraryModeled(concreteType)) {
+				subMonitor.done();
+				return false;
+			}
+
+			// `tf.function` keys a built-in container by its contents but any other object by its identity, so a primitive field of such an
+			// object never causes a retrace (#1048). Only a container's elements are examined.
+			if (!isKeyedByContents(concreteType)) {
 				subMonitor.done();
 				return false;
 			}
@@ -1033,6 +1040,18 @@ public class Function {
 	 */
 	private static boolean isLibraryModeled(IClass type) {
 		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
+	}
+
+	/**
+	 * True iff {@code tf.function} keys an argument of the given class by its contents rather than by its identity: the class is a built-in
+	 * container, as the engine decides. An object of any other class is keyed by its identity, so its fields never enter the trace key
+	 * (https://www.tensorflow.org/guide/function#rules_of_tracing).
+	 *
+	 * @param type The class in question.
+	 * @return True iff the engine counts the given class as a container.
+	 */
+	private static boolean isKeyedByContents(IClass type) {
+		return Util.isContainerType(type.getReference());
 	}
 
 	/**

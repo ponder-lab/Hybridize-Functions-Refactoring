@@ -7925,23 +7925,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This is a user-defined class with no fields.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * {@code tf.function} keys an object of a program-defined class by its identity, so its primitive field never causes a retrace and
+	 * doesn't make a primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter16() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This is a user-defined class with a primitive field?", f.getHasPrimitiveParameter());
+		assertFalse("An object of a user-defined class with a primitive field is keyed by its identity.", f.getHasPrimitiveParameter());
 	}
 
 	/**
 	 * An object of a library class that Ariadne models, such as a Keras optimizer, is not examined for primitive fields, so the learning
 	 * rate its model stores doesn't make the optimizer a primitive parameter
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). Before the model existed, such an object had no fields
-	 * to examine. An object of a program-defined class is still examined, as in {@link #testLikelyHasNonTensorParameter16()}.
+	 * to examine. Neither is an object of a program-defined class, which {@code tf.function} keys by its identity
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048), as in {@link #testLikelyHasNonTensorParameter16()}.
 	 */
 	@Test
 	public void testLibraryModeledObjectParameter() throws Exception {
 		assertFalse("A modeled optimizer's learning rate does not make it a primitive parameter.",
 				getFunction("with_optimizer").getHasPrimitiveParameter());
-		assertTrue("Control: an object of a program-defined class with a primitive field is a primitive parameter.",
+		assertFalse(
+				"An object of a program-defined class with a primitive field is keyed by its identity, so it is no primitive parameter.",
 				getFunction("with_program_object").getHasPrimitiveParameter());
 
 		// A program-defined subclass of a modeled optimizer is a program-defined class, so it is examined. Neither subclass stores a field
@@ -7950,6 +7956,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				getFunction("with_optimizer_subclass").getHasPrimitiveParameter());
 		assertFalse("A program-defined subclass forwarding its rate to the modeled constructor is not a primitive parameter.",
 				getFunction("with_optimizer_subclass_init").getHasPrimitiveParameter());
+	}
+
+	/**
+	 * {@code tf.function} keys an object of a program-defined class by its identity and a built-in container by its contents
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). {@code boxed}'s object and {@code boxes}'s list of
+	 * objects have an {@code int} field that differs across calls, which never causes a retrace, so neither is a primitive parameter.
+	 * {@code listed}'s list, {@code tupled}'s tuple and {@code keyed}'s dict have an {@code int} element that differs across calls, a
+	 * retrace each, so each is.
+	 */
+	@Test
+	public void testIdentityKeyedObjectParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("boxed", "boxes")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s object is keyed by its identity, so its int field is no primitive.", FALSE,
+					function.getHasPrimitiveParameter());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertTrue(name + " is converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals(name + " hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		for (String name : List.of("listed", "tupled", "keyed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s container is keyed by its contents, so its int element is a primitive.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		}
+
+		// TODO: Expect a primitive parameter once the engine models `namedtuple` and `attrs` classes, which `tf.function` keys by their
+		// contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine counts neither as a container,
+		// and neither read as a primitive before the identity rule either.
+		for (String name : List.of("named", "attributed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s object reads as no primitive.", FALSE, function.getHasPrimitiveParameter());
+		}
 	}
 
 	@Test
@@ -12357,11 +12400,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Python scalars of unknown value as arguments: the engine represents each by its type's key (wala/ML#1148), which counts as a
-	 * primitive wherever a constant does. {@code scale}'s {@code n} is only ever {@code len(xs)}, {@code scale_first}'s list holds it, and
-	 * {@code boxed}'s object of a program class has it in a field, so each is a primitive parameter. {@code wrapped}'s tensors and variable
-	 * are built from {@code len(xs)}, but a tensor is no primitive, whatever it was built from (wala/ML#451). Neither should
-	 * {@code layered}'s Keras layer be, whose units are {@code len(xs)}, but today it is. {@code summed}'s parameter is a list of tensors
-	 * at one call and {@code len(xs)} at the other, so the int's key is among the values its container reduction reads.
+	 * primitive wherever a constant does. {@code scale}'s {@code n} is only ever {@code len(xs)}, and {@code scale_first}'s list holds it,
+	 * so each is a primitive parameter. {@code boxed}'s object of a program class has it in a field, and {@code layered}'s Keras layer has
+	 * it as its units, but neither is a container, so each is keyed by its identity and is no primitive parameter (#1048).
+	 * {@code wrapped}'s tensors and variable are built from {@code len(xs)}, but a tensor is no primitive, whatever it was built from
+	 * (wala/ML#451). {@code summed}'s parameter is a list of tensors at one call and {@code len(xs)} at the other, so the int's key is
+	 * among the values its container reduction reads.
 	 */
 	@Test
 	public void testComputedScalarParameter() throws Exception {
@@ -12379,21 +12423,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("wrapped has a tensor parameter.", TRUE, wrapped.getHasTensorParameter());
 		assertEquals("wrapped hybridizes (P1).", P1, wrapped.getPassingPrecondition());
 
-		// A computed int counts wherever a constant does, so `Box(len(xs))` is a primitive parameter as `Box(3)` is. `tf.function` keys
-		// such an object by its identity, and a trace reads the field's value at trace time, so a later change to it isn't seen.
+		// `tf.function` keys `Box(len(xs))` by its identity, so its field, a computed int, never causes a retrace, and it is no primitive
+		// parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		// TODO: A trace reads the field's value at trace time, so a field rewritten after tracing is read stale, and nothing refuses that
+		// now (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
 		Function boxed = findFunction(functions, "boxed");
-		assertEquals("boxed's program object, whose field holds a computed int, is a primitive parameter.", TRUE,
+		assertEquals("boxed's program object is keyed by its identity, so its computed int field is no primitive.", FALSE,
 				boxed.getHasPrimitiveParameter());
-		assertNotNull("boxed fails HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertNull("boxed doesn't fail HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		// It's still not converted, though: no tensor computation is found in `x * box.n` when the field is the computed int, while
+		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant, converts.
+		assertFalse("boxed isn't converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("boxed fails NO_TENSOR_COMPUTATION.",
+				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
 
-		// TODO: Expect no primitive parameter once the engine identifies a Keras model or layer instance from the class hierarchy
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). A Keras model or layer, a library class or a
-		// program subclass of one, is exempt from primitive-field counting. The Keras layer classes are loaded where program classes are,
-		// so the loader test doesn't exclude them, and the units the layer stores read as a primitive field, as `Dense(3)`'s would.
+		// A Keras layer is no container, so `tf.function` keys it by its identity, and the units it stores, a computed int, are no
+		// primitive (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
 		Function layered = findFunction(functions, "layered");
-		assertEquals("layered's Keras layer, whose units are a computed int, reads as a primitive.", TRUE,
+		assertEquals("layered's Keras layer is keyed by its identity, so its computed int units are no primitive.", FALSE,
 				layered.getHasPrimitiveParameter());
-		assertNotNull("layered fails HAS_PRIMITIVE_PARAMETERS.", layered.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertNull("layered doesn't fail HAS_PRIMITIVE_PARAMETERS.", layered.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue("layered is converted.", layered.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("layered hybridizes (P1).", P1, layered.getPassingPrecondition());
 
 		// The call passing `len(xs)` has its own calling context, in which `v` is only that int.
 		Function summed = findFunction(functions, "summed");
