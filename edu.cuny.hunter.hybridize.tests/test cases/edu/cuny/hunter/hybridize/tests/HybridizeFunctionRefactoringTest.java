@@ -7959,11 +7959,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * {@code tf.function} keys an object of a program-defined class by its identity and a built-in container by its contents
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). {@code boxed}'s object and {@code boxes}'s list of
-	 * objects have an {@code int} field that differs across calls, which never causes a retrace, so neither is a primitive parameter.
-	 * {@code listed}'s list, {@code tupled}'s tuple and {@code keyed}'s dict have an {@code int} element that differs across calls, a
-	 * retrace each, so each is.
+	 * {@code tf.function} keys an object of a program-defined class or an {@code enumerate} object by its identity and a list, a tuple or a
+	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048), and it can't key a set at all.
+	 * {@code boxed}'s object and {@code boxes}'s list of objects have an {@code int} field that differs across calls, which never causes a
+	 * retrace, so neither is a primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and {@code keyed}'s dict have an
+	 * {@code int} element that differs across calls, a retrace each, so each is.
 	 */
 	@Test
 	public void testIdentityKeyedObjectParameter() throws Exception {
@@ -7985,6 +7985,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 		}
+
+		// TODO: Expect no primitive parameter: `tf.function` keys an `enumerate` object by its identity, whatever it enumerates
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine's `enumerate` summary returns a fresh
+		// list of (index, element) tuples (wala/ML#826), so the object reads as a list, whose int elements are primitives.
+		Function enumerated = findFunction(functions, "enumerated");
+		assertEquals("enumerated's enumerate object reads as a list of ints.", TRUE, enumerated.getHasPrimitiveParameter());
+		assertFalse("enumerated isn't converted.", enumerated.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// TODO: A set is no list, tuple or dict, so its elements aren't examined, and `setted` converts. But `tf.function` can't key a
+		// set argument at all and raises a `TypeError`, so nothing refuses a call that fails now
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		Function setted = findFunction(functions, "setted");
+		assertEquals("setted's set isn't examined.", FALSE, setted.getHasPrimitiveParameter());
+		assertTrue("setted is converted.", setted.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 
 		// TODO: Expect a primitive parameter once the engine models `namedtuple` and `attrs` classes, which `tf.function` keys by their
 		// contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine counts neither as a container,
@@ -12433,6 +12447,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("boxed doesn't fail HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 		// It's still not converted, though: no tensor computation is found in `x * box.n` when the field is the computed int, while
 		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant, converts.
+		// TODO: Expect conversion at P1 once the engine's scalar-operand test keeps the int key: https://github.com/wala/ML/issues/1161.
 		assertFalse("boxed isn't converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		assertNotNull("boxed fails NO_TENSOR_COMPUTATION.",
 				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
