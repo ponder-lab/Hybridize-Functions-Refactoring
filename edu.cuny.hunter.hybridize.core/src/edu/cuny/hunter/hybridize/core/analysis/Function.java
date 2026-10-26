@@ -4818,7 +4818,8 @@ public class Function {
 				}
 
 				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)
-						&& !isInvariantPrimitive(paramInx, nodes, pointerAnalysis)) {
+						&& !(isInvariantPrimitive(paramInx, nodes, pointerAnalysis)
+								&& this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -4873,6 +4874,57 @@ public class Function {
 		}
 
 		return constant != null;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} binds the parameter at the given IR parameter index to an argument the
+	 * analysis aligns, so that its points-to set holds every value it receives. The supply state of the parameter, as
+	 * {@link #isSuppliedAtAnyCallSite} computes it, must be determined at each call site: a starred (unpacked) positional argument at or
+	 * before the parameter's slot, unless the call names the parameter by keyword, makes the alignment past it undetermined (wala/ML#751),
+	 * and the parameter may then receive a value its points-to set doesn't show, such as a loop index forwarded through {@code *args}. A
+	 * call site that can't be examined, a parameter that can't be mapped to a positional {@link Parameter}, and a function with no call
+	 * site are undetermined too.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @return True iff the parameter's argument is aligned at every call site, and there is at least one.
+	 */
+	private boolean isArgumentAlignedAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		if (parameter.isKeywordOnly() || parameter.isSelf() || parameter.getIndex() != declarationIndex)
+			return false;
+
+		int positionalSlot = parameter.getIndex() + 1;
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null)
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						sawCallSite = true;
+
+						if (!invoke.getKeywords().contains(parameter.getName()) && hasStarredArgumentAtOrBefore(invoke, positionalSlot))
+							return false;
+					}
+			}
+
+		return sawCallSite;
 	}
 
 	/**
