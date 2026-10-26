@@ -12196,7 +12196,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	/**
 	 * Issue 1025, reduced from tf-image's {@code _random_augmentations}: a hybrid function's primitive parameter that every call binds to
-	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, but P3 still de-hybridizes the function.
+	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, so P3 doesn't de-hybridize the function.
 	 */
 	@Test
 	public void testInvariantPrimitiveForwardedDefault() throws Exception {
@@ -12205,17 +12205,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.isHybrid());
 		assertEquals("The tensor `image` is a tensor parameter.", TRUE, function.getHasTensorParameter());
-		// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars unrepresented,
-		// it can't (https://github.com/wala/ML/issues/805).
-		assertEquals("`prob_demanding_ops` is always 0.5, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertEquals(P3, function.getPassingPrecondition());
+		assertEquals("`prob_demanding_ops` is always 0.5, so it isn't a primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+		assertFalse(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNotEquals(P3, function.getPassingPrecondition());
 	}
 
 	/**
 	 * Issue 1025, reduced from tf-image's {@code random_pad_to_square} under {@code @convert_type}. The primitive {@code max_extend} is
-	 * always its default, but the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
-	 * argument at or before the parameter's slot, and P3 de-hybridizes the function.
+	 * always its default, and the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
+	 * argument at or before the parameter's slot. The parameter points to that one constant in every calling context, so P3 doesn't
+	 * de-hybridize the function.
 	 */
 	@Test
 	public void testInvariantPrimitiveConvertTypeForwarding() throws Exception {
@@ -12223,16 +12222,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = findFunction(functions, "random_pad_to_square");
 
 		assertTrue(function.isHybrid());
-		// TODO: Keep the decorator once the alignment past an unpacked argument is determined (https://github.com/wala/ML/issues/751).
-		assertEquals("`max_extend` is always 0.1, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertEquals(P3, function.getPassingPrecondition());
+		assertEquals("`max_extend` is always 0.1, so it isn't a primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+		assertFalse(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNotEquals(P3, function.getPassingPrecondition());
 	}
 
 	/**
 	 * Issue 1025, reduced from VaDER's {@code _reconstruction_loss} and {@code _latent_loss}: the primitive arguments {@code K} and
-	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, but P3 still de-hybridizes both
-	 * methods. {@code output_activation} is a function object, not a primitive.
+	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, so they can't vary the trace key,
+	 * and P3 doesn't de-hybridize either method. {@code output_activation} is a function object, not a primitive.
 	 */
 	@Test
 	public void testInvariantPrimitiveInstanceAttributes() throws Exception {
@@ -12243,12 +12241,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
-			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
-			assertEquals(name + "'s primitive arguments are each one constant, but it has a primitive parameter.", TRUE,
+			assertEquals(name + "'s primitive arguments are each one constant, so it has no primitive parameter.", FALSE,
 					function.getHasPrimitiveParameter());
-			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-			assertEquals(name, P3, function.getPassingPrecondition());
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertNotEquals(name, P3, function.getPassingPrecondition());
 		}
 	}
 
@@ -12266,13 +12262,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertFalse(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			// TODO: Convert once the points-to set can show the value set complete. With computed Python scalars unrepresented, it can't
-			// (https://github.com/wala/ML/issues/805).
+			// TODO: Convert once tuples with equal constant elements count as one value. Each caller passes its own tuple, a separate
+			// allocation, not a single constant, so the parameter isn't exempt
+			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1109).
 			assertEquals(name + "'s tuples of constants are fixed, but it has a primitive parameter.", TRUE,
 					function.getHasPrimitiveParameter());
 			assertNotNull(name, function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
+	}
+
+	/**
+	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta} with scalar instance state: {@code bbox2delta}'s primitive
+	 * {@code std} is the same constant at every call, so it can't vary the trace key, and P1 converts the function. {@code offset} is the
+	 * control: its callers pass different constants, so it's still declined.
+	 */
+	@Test
+	public void testInvariantPrimitiveEagerScalars() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function bbox2delta = findFunction(functions, "bbox2delta");
+		assertFalse(bbox2delta.isHybrid());
+		assertEquals("bbox2delta has a tensor parameter.", TRUE, bbox2delta.getHasTensorParameter());
+		assertEquals("`std` is always 0.1, so it isn't a primitive parameter.", FALSE, bbox2delta.getHasPrimitiveParameter());
+		assertNull(bbox2delta.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(bbox2delta.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals(P1, bbox2delta.getPassingPrecondition());
+
+		Function offset = findFunction(functions, "offset");
+		assertFalse(offset.isHybrid());
+		assertEquals("offset has a tensor parameter.", TRUE, offset.getHasTensorParameter());
+		assertEquals("`amount` is 1.0 at one call and 2.0 at the other.", TRUE, offset.getHasPrimitiveParameter());
+		assertNotNull(offset.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(offset.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 	}
 
 	/**
@@ -12403,10 +12425,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Control for issues 1025 and 1109: the analysis gives a computed Python scalar, the result of a binary operation, no abstract value
-	 * (wala/ML#805, wala/ML#398), so a value set merged with one keeps only its constant operands. {@code f}'s {@code n} is incremented in
-	 * a loop from 0 and points to 0 alone; {@code g}'s tuple has a computed second element whose field points to nothing. Each primitive
-	 * takes six values, six traces under {@code tf.function}, so it declines the function.
+	 * Control for issues 1025 and 1109: a computed Python scalar, the result of a binary operation, points to its type's key
+	 * (wala/ML#1149), not to a constant. {@code f}'s {@code n} is incremented in a loop from 0, and its computed values point to the
+	 * {@code int} key, so it isn't one constant and isn't exempt as an invariant primitive; {@code g}'s tuple has a computed second
+	 * element. Each primitive takes six values, six traces under {@code tf.function}, so it declines the function.
 	 */
 	@Test
 	public void testComputedPrimitiveValuesUnchanged() throws Exception {
