@@ -16460,6 +16460,46 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The control for {@link #testInferInputSignatureFitStructuredInputs()}: {@code consume} receives the structured inputs of two models'
+	 * {@code fit}, a pair of float32 inputs from one and a pair of a float32 and an int32 input from the other. The pairs agree on their
+	 * length, but their second members disagree in dtype, so no nested specification admits both, and the signature is dropped at that
+	 * member. Each {@code call} receives one pair and keeps its specification.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsDisagree() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		assertEquals("`Model.call` receives the float32 pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+				findFunction(functions, "Model.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`MixedModel.call` receives the mixed pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				findFunction(functions, "MixedModel.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// The engine reads both pairs as dataset components of two members (https://github.com/ponder-lab/ML/pull/1087), so the form is
+		// modeled, and each member unions what the two pairs hold there.
+		List<Set<TensorType>> elementTypes = inputs.getContainerElementTypes();
+		assertNotNull("The pairs' members surface.", elementTypes);
+		assertEquals("The pairs have two members.", 2, elementTypes.size());
+		assertEquals("The first members agree.", 1, elementTypes.get(0).size());
+		assertEquals("The second members disagree.", 2, elementTypes.get(1).size());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No nested specification admits both pairs.", result.signature().isPresent());
+		assertEquals("The second members disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = consume.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the second member.", entry.getMessage().contains("Element 1 of parameter `inputs`"));
+	}
+
+	/**
 	 * An integer subscript of a component unpacked from a tuple parameter in the same function, {@code a, gt = inputs} then
 	 * {@code f(gt[i])}, is a row of that component. {@code row_total} receives a constant index, {@code loop_total} a {@code range} loop
 	 * counter, and {@code call_total} a loop counter in a model's {@code call}.
