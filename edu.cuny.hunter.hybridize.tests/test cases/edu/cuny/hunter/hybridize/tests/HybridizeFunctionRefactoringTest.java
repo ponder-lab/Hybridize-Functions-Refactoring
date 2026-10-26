@@ -12376,22 +12376,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Control for issues 1025 and 1109: an object of a program class is keyed by its identity, and that it's allocated once isn't a
-	 * points-to fact, so it's a primitive parameter.
+	 * Control for issues 1025 and 1109: an object of a program class is keyed by its identity, so its primitive field never causes a
+	 * retrace, and it's no primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The hybrid
+	 * {@code hybrid_apply} is no longer de-hybridized under P3, and the eager {@code eager_apply} is converted.
 	 */
 	@Test
 	public void testProgramObjectPrimitiveUnchanged() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		Function hybrid = findFunction(functions, "hybrid_apply");
-		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
-		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertEquals(P3, hybrid.getPassingPrecondition());
+		assertEquals(FALSE, hybrid.getHasPrimitiveParameter());
+		assertFalse(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNull(hybrid.getPassingPrecondition());
 
 		Function eager = findFunction(functions, "eager_apply");
-		assertEquals(TRUE, eager.getHasPrimitiveParameter());
-		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertEquals(FALSE, eager.getHasPrimitiveParameter());
+		assertTrue(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals(P1, eager.getPassingPrecondition());
+		assertNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
