@@ -12298,6 +12298,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Control for issues 1025 and 1109: {@code f}'s {@code n} is 0 at one call and each index of a {@code range} loop at the other, so it
+	 * varies, and it's still a primitive parameter.
+	 */
+	@Test
+	public void testRangeIndexPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
+		assertEquals("`n` varies over the loop, so it's a primitive parameter.", TRUE, f.getHasPrimitiveParameter());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
 	 * Issue 1025, reduced from tf-image's {@code random_aspect_ratio_deformation}: the primitive arguments differ between the three call
 	 * sites but are constant at each, so the traces are bounded by the call sites, but P3 still de-hybridizes the function. So does
 	 * {@code jitter}, whose two values share one calling context.
