@@ -18,7 +18,7 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
  * <p>
  * Both facts come from the engine. {@link TensorFlowApis} names the TensorFlow APIs a call may invoke, and {@link ShapeOperandRank} gives
  * the rank of a {@code tf.reshape} call's shape operand. Only {@link Rank#MAY_BE_RANK_0} refuses. An operand of {@link Rank#UNKNOWN} rank,
- * such as a computed Python int or one behind a starred argument, converts as it did before this check.
+ * such as one behind a starred argument, converts as it did before this check.
  * <p>
  * The walk is the shared one of {@link Util#reachesInstruction(CallGraph, CGNode, java.util.function.BiPredicate)}, as for
  * {@link EagerOnlyCallAnalysis}.
