@@ -15815,9 +15815,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * function converted returns what it returns eagerly, except {@code Grown.read}, {@code Prefixed.read} and {@code Retuned.scaled},
 	 * which return the first call's value after their field is rewritten. {@code module_scaled} reads a constant of another module,
 	 * {@code Rated.self_scaled} and {@code Rated.class_scaled} a class-body constant, which the class body writes, and {@code switched} a
-	 * keyword argument two call sites pass. {@code Grown.read} reads a field only ever holding a computed number, which the engine keys as
-	 * an {@code int} (https://github.com/wala/ML/issues/1149), {@code Prefixed.read} one only ever holding a computed string, and
-	 * {@code Retuned.scaled} a class-body constant the module reassigns to another literal.
+	 * keyword argument two call sites pass with different values. {@code Grown.read} reads a field only ever holding a computed number,
+	 * which the engine keys as an {@code int} (https://github.com/wala/ML/issues/1149), {@code Prefixed.read} one only ever holding a
+	 * computed string, and {@code Retuned.scaled} a class-body constant the module reassigns to another literal.
 	 */
 	@Test
 	public void testReboundScalarFieldReadsControls() throws Exception {

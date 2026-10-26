@@ -4,7 +4,7 @@
 # Scalar reads that no other function rewrites, and the scalars the engine computes or doesn't.
 # - `module_scaled`: reads `config.N`, a module constant set only where the module defines it.
 # - `Rated.self_scaled` and `Rated.class_scaled`: read the class-body constant `RATE` as `self.RATE` and as `Rated.RATE`.
-# - `switched`: takes `training=True` as a keyword at two call sites.
+# - `switched`: takes `training=True` as a keyword at one call site and `training=False` at another.
 # - `Grown.read`: reads `self.n`, only ever a computed number, which `Grown.grow` rewrites between calls.
 # - `Prefixed.read`: reads `self.prefix`, only ever a computed string, which `Prefixed.rename` rewrites between calls.
 # - `Retuned.scaled`: reads the class-body constant `Retuned.RATE`, which the module reassigns to another literal between calls.
@@ -72,7 +72,7 @@ print(rated.self_scaled(t))
 print(rated.class_scaled(t))
 
 print(switched(t, training=True))
-print(switched(t, training=True))
+print(switched(t, training=False))
 
 grown = Grown(tf.ones([2, 3]))
 print(grown.read(t))
