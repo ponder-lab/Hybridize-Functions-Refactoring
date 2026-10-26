@@ -16490,17 +16490,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code ValueError: Shape must be rank 1 but is rank 0} under {@code tf.function}: {@code pool} through the helper it calls, as
 	 * tf_geometric's {@code DiffPool.call} does, with a Python int, {@code flatten_by_keyword} with one passed by keyword, and
 	 * {@code flatten_by_scalar_tensor} with a rank-0 tensor. So does {@code flatten_by_len}, with the result of {@code len}, an int of
-	 * unknown value. The engine reports each shape operand as possibly rank 0, so each is refused. {@code flatten_by_vector} reshapes by
-	 * {@code [-1]} and converts.
+	 * unknown value, and {@code flatten_by_computed_int}, with the product of two dimensions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1181). The engine reports each shape operand as possibly rank
+	 * 0, so each is refused. {@code flatten_by_vector} reshapes by {@code [-1]} and converts.
 	 * <p>
-	 * {@code flatten_by_computed_int} and {@code flatten_by_starred} raise the same way, but the engine reports the rank of each shape
-	 * operand as unknown, and an unknown rank is not refused, so each still converts.
+	 * {@code flatten_by_starred} raises the same way, but the engine reports the rank of its shape operand as unknown, and an unknown rank
+	 * is not refused, so it still converts.
 	 */
 	@Test
 	public void testReshapeWithScalarShape() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor", "flatten_by_len")) {
+		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor", "flatten_by_len",
+				"flatten_by_computed_int")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("`" + identifier + "` reshapes with a scalar shape.", function.getReshapesWithScalarShape());
 			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
@@ -16509,14 +16511,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertFalse("`" + identifier + "` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 		}
 
-		// Each of these two breaks when converted, but the engine reports its shape operand's rank as unknown, and an unknown rank
-		// converts.
-
-		// TODO: Refuse this (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1181). Until then the product's
-		// points-to set is empty.
-		assertConvertedWithUnknownShapeRank(findFunction(functions, "flatten_by_computed_int"));
-
-		// Behind a starred argument, the shape operand is not aligned with any argument, so its rank is unknown by design.
+		// This breaks when converted, but behind a starred argument, the shape operand is not aligned with any argument, so its rank is
+		// unknown by design, and an unknown rank converts.
 		assertConvertedWithUnknownShapeRank(findFunction(functions, "flatten_by_starred"));
 
 		Function vector = findFunction(functions, "flatten_by_vector");
