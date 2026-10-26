@@ -139,7 +139,6 @@ import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
-import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -910,9 +909,9 @@ public class Function {
 	/**
 	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple, a dict or a
 	 * set with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not
-	 * examined (#1048). Neither is an object of a library class that Ariadne models (#1047), such as a tensor, whatever {@code int} it was
-	 * built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts wherever a
-	 * constant does.
+	 * examined (#1048). That includes an object of a library class that Ariadne models, which is keyed by its identity too (#1047), such as
+	 * a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar
+	 * type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -945,15 +944,10 @@ public class Function {
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
 
-			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
-			// learning rate, and before the model existed there were none (#1047).
-			if (isLibraryModeled(concreteType)) {
-				subMonitor.done();
-				return false;
-			}
-
 			// `tf.function` keys a list, a tuple or a dict by its contents but any other object by its identity, so a primitive field of
-			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined.
+			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined. That
+			// covers
+			// an object of a library class that Ariadne models too, such as an optimizer whose model stores its learning rate (#1047).
 			if (!isKeyedByContents(concreteType)) {
 				subMonitor.done();
 				return false;
@@ -1024,22 +1018,6 @@ public class Function {
 			return !ignoreBooleans || !instanceKey.concreteType().getReference().equals(PythonTypes.PYTHON_BOOL);
 
 		return isPrimitiveConstant(instanceKey, ignoreBooleans);
-	}
-
-	/**
-	 * The name of the class loader into which Ariadne registers the classes its library summaries allocate (WALA's synthetic loader).
-	 */
-	private static final Atom SYNTHETIC_LOADER_NAME = Atom.findOrCreateUnicodeAtom("Synthetic");
-
-	/**
-	 * True iff the given class is a library class that Ariadne models in a summary, rather than a built-in container or a class the program
-	 * defines.
-	 *
-	 * @param type The class in question.
-	 * @return True iff the given class is loaded from Ariadne's library summaries and is not a built-in container.
-	 */
-	private static boolean isLibraryModeled(IClass type) {
-		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
 	}
 
 	/**
