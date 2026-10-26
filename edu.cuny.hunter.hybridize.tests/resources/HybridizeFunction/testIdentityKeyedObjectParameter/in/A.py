@@ -4,7 +4,8 @@
 # - `boxed`: an object of a program class whose field is an `int` that differs across calls.
 # - `listed`, `tupled`, `keyed`: a list, a tuple and a dict whose element is an `int` that differs across calls.
 # - `boxes`: a list whose element is an object of a program class with an `int` field.
-# - `setted`: a set whose `int` differs across calls, which `tf.function` can't key, raising a `TypeError`.
+# - `setted`: a set whose `int` differs across calls, which `tf.function` can't key, raising a `TypeError`; its elements are
+#   still examined.
 # - `enumerated`: an `enumerate` object over a list whose `int` differs across calls, which `tf.function` keys by its identity.
 # - `named`: a `namedtuple` whose field is an `int` that differs across calls.
 # - `attributed`: an `attrs` object whose field is an `int` that differs across calls.

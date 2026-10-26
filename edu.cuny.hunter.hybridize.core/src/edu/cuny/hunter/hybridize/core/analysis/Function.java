@@ -908,11 +908,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple or a dict
-	 * with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not examined
-	 * (#1048). Neither is an object of a library class that Ariadne models (#1047), such as a tensor, whatever {@code int} it was built
-	 * from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts wherever a constant
-	 * does.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple, a dict or a
+	 * set with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not
+	 * examined (#1048). Neither is an object of a library class that Ariadne models (#1047), such as a tensor, whatever {@code int} it was
+	 * built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar type (wala/ML#1148), counts wherever a
+	 * constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -953,7 +953,7 @@ public class Function {
 			}
 
 			// `tf.function` keys a list, a tuple or a dict by its contents but any other object by its identity, so a primitive field of
-			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple or a dict are examined.
+			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined.
 			if (!isKeyedByContents(concreteType)) {
 				subMonitor.done();
 				return false;
@@ -1046,14 +1046,15 @@ public class Function {
 	 * True iff {@code tf.function} keys an argument of the given class by its contents rather than by its identity: the class is a list, a
 	 * tuple or a dict, as the engine's types decide. An object of any other class is keyed by its identity, so its fields never enter the
 	 * trace key (https://www.tensorflow.org/guide/function#rules_of_tracing). Of the engine's other containers, an {@code enumerate} object
-	 * is keyed by its identity, and a set can't be keyed at all.
+	 * is keyed by its identity. A set is included as a safe stand-in: {@code tf.function} can't key a set at all, and examining its
+	 * elements at least gets a primitive element refused.
 	 *
 	 * @param type The class in question.
-	 * @return True iff the given class is a list, a tuple or a dict.
+	 * @return True iff the given class is a list, a tuple, a dict or a set.
 	 */
 	private static boolean isKeyedByContents(IClass type) {
 		TypeReference reference = type.getReference();
-		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference);
+		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference) || PythonTypes.set.equals(reference);
 	}
 
 	/**

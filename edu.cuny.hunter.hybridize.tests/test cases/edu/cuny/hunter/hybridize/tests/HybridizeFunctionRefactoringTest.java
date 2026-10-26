@@ -7960,10 +7960,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * {@code tf.function} keys an object of a program-defined class or an {@code enumerate} object by its identity and a list, a tuple or a
-	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048), and it can't key a set at all.
-	 * {@code boxed}'s object and {@code boxes}'s list of objects have an {@code int} field that differs across calls, which never causes a
-	 * retrace, so neither is a primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and {@code keyed}'s dict have an
-	 * {@code int} element that differs across calls, a retrace each, so each is.
+	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). It can't key a set at all, whose
+	 * elements are still examined. {@code boxed}'s object and {@code boxes}'s list of objects have an {@code int} field that differs across
+	 * calls, which never causes a retrace, so neither is a primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and
+	 * {@code keyed}'s dict have an {@code int} element that differs across calls, a retrace each, so each is.
 	 */
 	@Test
 	public void testIdentityKeyedObjectParameter() throws Exception {
@@ -7993,12 +7993,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("enumerated's enumerate object reads as a list of ints.", TRUE, enumerated.getHasPrimitiveParameter());
 		assertFalse("enumerated isn't converted.", enumerated.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 
-		// TODO: A set is no list, tuple or dict, so its elements aren't examined, and `setted` converts. But `tf.function` can't key a
-		// set argument at all and raises a `TypeError`, so nothing refuses a call that fails now
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		// `tf.function` can't key a set argument at all and raises a `TypeError`. A set's elements are still examined as a safe stand-in,
+		// so `setted`'s int element gets it refused, as before the identity rule.
+		// TODO: Whether a set argument should get a refusal of its own is an open question.
 		Function setted = findFunction(functions, "setted");
-		assertEquals("setted's set isn't examined.", FALSE, setted.getHasPrimitiveParameter());
-		assertTrue("setted is converted.", setted.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("setted's set holds an int, a primitive.", TRUE, setted.getHasPrimitiveParameter());
+		assertFalse("setted isn't converted.", setted.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("setted fails HAS_PRIMITIVE_PARAMETERS.", setted.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 
 		// TODO: Expect a primitive parameter once the engine models `namedtuple` and `attrs` classes, which `tf.function` keys by their
 		// contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine counts neither as a container,
