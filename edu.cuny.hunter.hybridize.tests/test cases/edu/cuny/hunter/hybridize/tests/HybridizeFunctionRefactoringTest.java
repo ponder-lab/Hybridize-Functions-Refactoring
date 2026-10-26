@@ -15810,6 +15810,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Scalar reads of a field only ever holding one literal aren't rebound state, however the field is written, while a field holding more
+	 * than one value is (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076). Measured on TensorFlow 2.9.3, each
+	 * function converted returns what it returns eagerly, except {@code Grown.read}, {@code Prefixed.read} and {@code Retuned.scaled},
+	 * which return the first call's value after their field is rewritten. {@code module_scaled} reads a constant of another module,
+	 * {@code Rated.self_scaled} and {@code Rated.class_scaled} a class-body constant, which the class body writes, and {@code switched} a
+	 * keyword argument two call sites pass. {@code Grown.read} reads a field only ever holding a computed number, which the engine keys as
+	 * an {@code int} (https://github.com/wala/ML/issues/1149), {@code Prefixed.read} one only ever holding a computed string, and
+	 * {@code Retuned.scaled} a class-body constant the module reassigns to another literal.
+	 */
+	@Test
+	public void testReboundScalarFieldReadsControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("module_scaled", "Rated.self_scaled", "Rated.class_scaled", "switched")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// The computed string is refused, though not as a scalar read: the refusal doesn't depend on the scalar test.
+		for (Entry<String, String> reader : Map.of("Grown.read", "field `n` of `.*Grown`, rebound by `.*Grown/grow` at A\\.py:\\d+\\.",
+				"Prefixed.read", "field `prefix` of `.*Prefixed`, rebound by `.*Prefixed/rename` at A\\.py:\\d+\\.", "Retuned.scaled",
+				"field `RATE` of `.*Retuned`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rewritten field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1078: a function reaching a replica context's
 	 * {@code merge_call}, nested in a function a {@code tf.distribute.MirroredStrategy} runs per replica. Measured on TensorFlow 2.9.3 with
 	 * two logical CPU devices, with {@code strategy.run} called eagerly and from a {@code tf.function}: with {@code apply_step}, which

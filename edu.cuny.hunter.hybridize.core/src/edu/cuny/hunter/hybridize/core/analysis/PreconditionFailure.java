@@ -339,10 +339,11 @@ public enum PreconditionFailure {
 	 * the first call's state. A field set only there, and a {@code tf.Variable} updated in place with {@code assign}, are read live and
 	 * left alone. A rebound Python scalar is read stale the same way. Its read counts since
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048, under which a primitive field of an object keyed by its
-	 * identity no longer makes a primitive parameter, since it never causes a retrace. The elements of a list, tuple, dictionary, or set
-	 * aren't covered, though, which {@code tf.function} passes in afresh when the container is an argument. Objects are told apart by
-	 * allocation site, so a getter of an object created afresh on each call is refused although no instance it reads is rebound between two
-	 * of its reads.
+	 * identity no longer makes a primitive parameter, since it never causes a retrace. A field only ever holding one constant, such as a
+	 * class-body constant, is read live, since a scalar read counts only when its field may hold more than one value. The elements of a
+	 * list, tuple, dictionary, or set aren't covered, though, which {@code tf.function} passes in afresh when the container is an argument.
+	 * Objects are told apart by allocation site, so a getter of an object created afresh on each call is refused although no instance it
+	 * reads is rebound between two of its reads.
 	 * <p>
 	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
 	 * among them, does not retrace, and the value read when the function was traced persists.

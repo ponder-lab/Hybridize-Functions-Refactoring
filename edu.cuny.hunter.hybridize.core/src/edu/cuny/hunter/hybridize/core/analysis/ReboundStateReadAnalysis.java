@@ -41,6 +41,7 @@ import com.ibm.wala.ssa.SSAPutInstruction;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
+import com.ibm.wala.util.intset.OrdinalSet;
 
 import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
 
@@ -57,19 +58,22 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * gives a scalar of unknown value. Scalar reads count since https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048,
  * under which a primitive field of an object keyed by its identity no longer makes a primitive parameter: such a field never causes a
  * retrace, so a rewrite of it after tracing is read stale, and this is the check that refuses it. A scalar read counts whatever it's used
- * for, so a string field used only as an op's name is refused though the values the function computes don't change. The fields a read
- * reads, and the fields a body writes, are the pointer keys {@link ModRef} gives for its instructions, so a read and a write are of the
- * same state exactly when they are the same instance key and field. A write counts when it is made outside the reader's closure, whose own
- * writes are the side-effect precondition's, and outside the methods that set the written object up once: the {@code __init__} of its class
- * or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved through the engine's class hierarchy from
- * the class whose constructor allocated the object, and invoked on the object itself, per the points-to set of their {@code self}
- * parameter. A field set only there is read live. So is a field set only by the engine summary that allocates the object, such as the
- * engine's constructor of a {@code NamedTuple} without an {@code __init__}, or the summary of a TensorFlow operation populating the tensor
- * it returns: these are the objects {@code tf.function} flattens into its inputs on every call, and a read through an argument holding one
- * is live. An {@code __init__} or {@code build} of another class, a {@code build} outside Keras, or a set-up method writing a field of an
- * object other than its receiver, runs whenever it is called, so its writes count. So do the writes of a helper that only a set-up method
- * calls, a known over-refusal: the helper may be called elsewhere too. A {@code tf.Variable} updated with {@code assign} is not rebound,
- * since {@code assign} writes the variable, not the field holding it.
+ * for, so a string field used only as an op's name is refused though the values the function computes don't change. It counts only when the
+ * field may hold more than one value, though: a field whose points-to set is exactly one constant, such as a class-body constant or a field
+ * rebound only to the same literal, is read live whatever writes it. A value from a source the engine doesn't model adds nothing to that
+ * set, so a field holding one literal and such a value reads as holding the literal alone, and its read is missed. A tensor-typed read
+ * counts whatever its field holds. The fields a read reads, and the fields a body writes, are the pointer keys {@link ModRef} gives for its
+ * instructions, so a read and a write are of the same state exactly when they are the same instance key and field. A write counts when it
+ * is made outside the reader's closure, whose own writes are the side-effect precondition's, and outside the methods that set the written
+ * object up once: the {@code __init__} of its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass,
+ * resolved through the engine's class hierarchy from the class whose constructor allocated the object, and invoked on the object itself,
+ * per the points-to set of their {@code self} parameter. A field set only there is read live. So is a field set only by the engine summary
+ * that allocates the object, such as the engine's constructor of a {@code NamedTuple} without an {@code __init__}, or the summary of a
+ * TensorFlow operation populating the tensor it returns: these are the objects {@code tf.function} flattens into its inputs on every call,
+ * and a read through an argument holding one is live. An {@code __init__} or {@code build} of another class, a {@code build} outside Keras,
+ * or a set-up method writing a field of an object other than its receiver, runs whenever it is called, so its writes count. So do the
+ * writes of a helper that only a set-up method calls, a known over-refusal: the helper may be called elsewhere too. A {@code tf.Variable}
+ * updated with {@code assign} is not rebound, since {@code assign} writes the variable, not the field holding it.
  * <p>
  * The elements of a list, tuple, dictionary, or set are not read as state: {@code tf.function} passes a container argument's tensors in
  * afresh on each call, and the code building a container writes its elements as fields. A container held in a field is missed with them,
@@ -237,8 +241,9 @@ class ReboundStateReadAnalysis {
 
 	/**
 	 * Adds the fields of objects that {@code node}'s own instructions read as state. A field read into a value typed as a tensor, or into a
-	 * value that may be a Python scalar (see {@link #definesPythonScalar(CGNode, SSAInstruction)}), is a tensor field, rebound by any write
-	 * that doesn't set its object up. A field read into a value that may be an object a summary allocated is a holder field (see
+	 * value that may be a Python scalar (see {@link #definesPythonScalar(CGNode, SSAInstruction)}) when the field doesn't hold just one
+	 * constant (see {@link #holdsOneConstant(InstanceFieldPointerKey)}), is a tensor field, rebound by any write that doesn't set its
+	 * object up. A field read into a value that may be an object a summary allocated is a holder field (see
 	 * {@link #isAllocatingSummary(CGNode, InstanceFieldPointerKey)}): a summary's writes to such an object are excused as its
 	 * initialization, so a rebinding of the field holding it, say {@code self.g = G(v)} for a {@code NamedTuple} {@code G}, is what changes
 	 * what a read through the field sees, tensor-typed or not. A holder field is rebound only by program source. A summary writing one
@@ -259,10 +264,15 @@ class ReboundStateReadAnalysis {
 
 		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
 			Set<PointerKey> fields;
+			// A read counted only for its scalar value, not for a tensor's.
+			boolean scalarOnly = false;
 
-			if (this.definesTensor(node, instruction) || this.definesPythonScalar(node, instruction))
+			if (this.definesTensor(node, instruction))
 				fields = tensorFields;
-			else if (this.readsSummaryAllocation(node, instruction))
+			else if (this.definesPythonScalar(node, instruction)) {
+				fields = tensorFields;
+				scalarOnly = true;
+			} else if (this.readsSummaryAllocation(node, instruction))
 				fields = holderFields;
 			else
 				continue;
@@ -270,9 +280,21 @@ class ReboundStateReadAnalysis {
 			for (PointerKey pointerKey : this.modRef.getRef(node, this.heapModel, this.pointerAnalysis, instruction, null))
 				if (pointerKey instanceof InstanceFieldPointerKey field
 						&& !Util.isContainerType(field.getInstanceKey().concreteType().getReference())
-						&& !isSuperProxy(field.getInstanceKey()))
+						&& !isSuperProxy(field.getInstanceKey()) && !(scalarOnly && this.holdsOneConstant(field)))
 					fields.add(field);
 		}
+	}
+
+	/**
+	 * True iff the points-to set of {@code field} is exactly one {@link ConstantKey}: the field only ever holds one literal, so whatever
+	 * writes it, a read of it can't be stale.
+	 *
+	 * @param field A field read for its scalar value.
+	 * @return True iff {@code field} points to a single constant and nothing else.
+	 */
+	private boolean holdsOneConstant(InstanceFieldPointerKey field) {
+		OrdinalSet<InstanceKey> pointsToSet = this.pointerAnalysis.getPointsToSet(field);
+		return pointsToSet.size() == 1 && pointsToSet.iterator().next() instanceof ConstantKey<?>;
 	}
 
 	/**
