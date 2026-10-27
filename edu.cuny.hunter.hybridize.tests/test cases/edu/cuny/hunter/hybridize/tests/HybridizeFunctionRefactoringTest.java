@@ -17706,6 +17706,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testKeywordOnlyInvariantPrimitive() throws Exception {
 		Function f = this.getFunction("f");
 		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
+		// TODO: A conservative decline, not the intended semantics. Every call passes `scale` by keyword, so its binding is provable:
+		// `PythonInvokeInstruction.getKeywords()` and `getUse(String)` align it, and it could be exempt like a positional parameter.
 		assertEquals("`scale` is keyword-only, so it isn't exempt though it's always 2.", TRUE, f.getHasPrimitiveParameter());
 		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 		assertFalse(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
