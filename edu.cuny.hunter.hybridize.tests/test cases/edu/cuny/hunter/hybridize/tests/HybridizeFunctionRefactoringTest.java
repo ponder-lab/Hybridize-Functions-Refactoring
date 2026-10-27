@@ -12443,14 +12443,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// `tf.function` keys `Box(len(xs))` by its identity, so its field, a computed int, never causes a retrace, and it is no primitive
 		// parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
-		// A trace reads the field's value at trace time, so a field rewritten after tracing is read stale, but `Box`'s field is set only in
-		// `__init__`, so `boxed` reads it live.
-		// TODO: Nothing refuses a stale read of a rewritten scalar field yet
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		// A trace reads the field's value at trace time, so a field rewritten after tracing is read stale. The rebound-state check refuses
+		// that for a scalar field too (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076;
+		// `testReboundScalarFieldReads`), but `Box`'s field is set only in `__init__`, so `boxed` reads it live and isn't refused.
 		Function boxed = findFunction(functions, "boxed");
 		assertEquals("boxed's program object is keyed by its identity, so its computed int field is no primitive.", FALSE,
 				boxed.getHasPrimitiveParameter());
 		assertNull("boxed doesn't fail HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertEquals("boxed's field is set only in `__init__`, so it isn't rebound state.", FALSE, boxed.getHasReboundStateReads());
+		assertNull("boxed isn't refused for rebound state.",
+				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 		// `x * box.n` is a tensor computation when the field is the computed int (https://github.com/wala/ML/issues/1161), as it is in
 		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant.
 		assertNull("boxed doesn't fail NO_TENSOR_COMPUTATION.",
@@ -15772,11 +15774,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * batch that a {@code build} outside Keras rebinds on each call, and {@code Node.read} the field that a child's {@code __init__}
 	 * rebinds on its parent, an object it doesn't set up. {@code make_features} (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the
 	 * dictionary its caller passes, which {@code tf.function} refuses with a {@code ValueError}; the side-effect precondition refuses it.
-	 * Five controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
+	 * Four controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
 	 * {@code Derived.scaled} one set only in a base's {@code __init__}, {@code BuildOnly.call} one set only in a Keras layer's
-	 * {@code build}, {@code StringField.labeled} a string field another method rebinds, used only as an op's name, and
-	 * {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads an {@code int} field
-	 * another method rebinds, which diverges under tracing too but holds no tensor, so this precondition leaves it alone. Two more controls
+	 * {@code build}, and {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads
+	 * an {@code int} field another method rebinds, which diverges under tracing too, and is refused, since a scalar read counts
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). {@code StringField.labeled} reads a string field another
+	 * method rebinds, used only as an op's name, which matches but is refused for the same reason, as its TODO says. Two more controls
 	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
 	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
 	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused. Four
@@ -15818,8 +15821,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`Holder.get` fails with HAS_REBOUND_STATE_READS.",
 				get.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
 
-		for (String identifier : List.of("InitOnly.scaled", "BuildOnly.call", "StringField.labeled", "IntField.counted",
-				"VariableField.read", "sums_list", "uses_fresh_holder", "Derived.scaled")) {
+		// A rebound `int` field is read stale under tracing too, and a scalar read counts since
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048.
+		Function counted = findFunction(functions, "IntField.counted");
+		assertEquals("`IntField.counted` reads an int field `IntField.recount` rebinds.", TRUE, counted.getHasReboundStateReads());
+		assertNull("`IntField.counted` must not pass a precondition.", counted.getPassingPrecondition());
+		assertNotNull("`IntField.counted` fails with HAS_REBOUND_STATE_READS.",
+				counted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// TODO: Convert this. A known false refusal: the rebound string is a scalar read, which counts whatever it's used for, but it's
+		// used only as an op's name, so the values the function computes don't change
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		Function labeled = findFunction(functions, "StringField.labeled");
+		assertEquals("`StringField.labeled` reads a string field `StringField.relabel` rebinds.", TRUE, labeled.getHasReboundStateReads());
+		assertNotNull("`StringField.labeled` fails with HAS_REBOUND_STATE_READS.",
+				labeled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		for (String identifier : List.of("InitOnly.scaled", "BuildOnly.call", "VariableField.read", "sums_list", "uses_fresh_holder",
+				"Derived.scaled")) {
 			Function function = findFunction(functions, identifier);
 			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
 			assertNull("`" + identifier + "` is not refused for rebound state.",
@@ -16005,6 +16024,76 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"scaled", "field `factor` of `.*`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
 			Function function = findFunction(functions, reader.getKey());
 			assertEquals("`" + reader.getKey() + "` reads a rebound tensor field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
+	 * A Python scalar read from a field another function rewrites is rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076). Since
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048, a primitive field of an object keyed by its identity makes
+	 * no primitive parameter, since it never causes a retrace, so a rewrite of it after tracing is read stale. Measured on TensorFlow
+	 * 2.9.3, {@code read_box} and {@code Counter.read}, each converted, return {@code [1. 2.]} twice after {@code set_box} and
+	 * {@code Counter.bump} rewrite the field, with one trace, where the eager calls return {@code [1. 2.]} then {@code [5. 10.]}.
+	 * {@code read_fixed} and {@code Fixed.read}, whose field is set only in {@code __init__}, match the eager calls. The status message
+	 * names the field and the write.
+	 */
+	@Test
+	public void testReboundScalarFieldReads() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("read_box", "field `n` of `.*Box`, rebound by `.*set_box` at A\\.py:23\\.",
+				"Counter.read", "field `n` of `.*Counter`, rebound by `.*Counter/bump` at A\\.py:31\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rebound scalar field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+
+		for (String identifier : List.of("read_fixed", "Fixed.read")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
+	 * Scalar reads of a field only ever holding one literal aren't rebound state, however the field is written, while a field holding more
+	 * than one value is (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076). Measured on TensorFlow 2.9.3, each
+	 * function converted returns what it returns eagerly, except {@code Grown.read}, {@code Prefixed.read} and {@code Retuned.scaled},
+	 * which return the first call's value after their field is rewritten. {@code module_scaled} reads a constant of another module,
+	 * {@code Rated.self_scaled} and {@code Rated.class_scaled} a class-body constant, which the class body writes, and {@code switched} a
+	 * keyword argument two call sites pass with different values. {@code Grown.read} reads a field only ever holding a computed number,
+	 * which the engine keys as an {@code int} (https://github.com/wala/ML/issues/1149), {@code Prefixed.read} one only ever holding a
+	 * computed string, and {@code Retuned.scaled} a class-body constant the module reassigns to another literal.
+	 */
+	@Test
+	public void testReboundScalarFieldReadsControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("module_scaled", "Rated.self_scaled", "Rated.class_scaled", "switched")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// The computed string is refused, though not as a scalar read: the refusal doesn't depend on the scalar test.
+		for (Entry<String, String> reader : Map.of("Grown.read", "field `n` of `.*Grown`, rebound by `.*Grown/grow` at A\\.py:\\d+\\.",
+				"Prefixed.read", "field `prefix` of `.*Prefixed`, rebound by `.*Prefixed/rename` at A\\.py:\\d+\\.", "Retuned.scaled",
+				"field `RATE` of `.*Retuned`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rewritten field.", TRUE, function.getHasReboundStateReads());
 			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
 			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
@@ -17231,6 +17320,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
 				proposals.getHasNumpyElementDtypeCoercions());
 		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169 (distilling TensorSpeech-TensorFlowASR's
+	 * {@code WarpRNNTTest._run_rnnt}): passing a tensor parameter's value to {@code tf.constant}, positionally or as its {@code value}
+	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,
+	 * but tracing makes it symbolic, which {@code tf.constant} rejects. Converting the parameter with {@code tf.convert_to_tensor}, passing
+	 * {@code tf.constant} a list of the parameter's static dimensions, its rank, or a NumPy array built from them, which tracing keeps
+	 * concrete, and passing it a literal remain convertible. A subscript under the key {@code "shape"} reads an element, not the type, so
+	 * it does not stop the check.
+	 */
+	@Test
+	public void testTensorParameterConstantBlocksHybridization() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("WarpRNNTTest._run_rnnt", "constant_param", "constant_derived", "constant_keyword",
+				"constant_keyed")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` passes a tensor parameter to tf.constant.", function.getHasTensorParameterConstant());
+			assertNull("`" + identifier + "` must not pass a precondition; tf.constant rejects a symbolic tensor.",
+					function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_CONSTANT.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_CONSTANT.getCode()));
+		}
+
+		for (String identifier : List.of("convert_param", "constant_shape", "constant_literal", "constant_rank", "constant_arange")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` passes no tensor parameter to tf.constant.", Boolean.FALSE,
+					function.getHasTensorParameterConstant());
+			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**

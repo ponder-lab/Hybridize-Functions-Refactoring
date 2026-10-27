@@ -670,10 +670,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
 					func.computeStaleVariableReads(callGraph, builder.getPointerAnalysis());
 
-				// Check whether the function iterates a parameter-derived tensor (issue 830). Same reachable region, same gate;
-				// overridable independently via alwaysCheckTensorIteration.
+				// Check whether the function iterates a parameter-derived tensor (issue 830), assigns into one (issue 1098), or passes
+				// one to tf.constant (issue 1169). Same reachable region, same gate; overridable independently via
+				// alwaysCheckTensorIteration.
 				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
-					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
+					func.computeTensorParameterIteration(callGraph, builder, analysis);
 
 				// Check whether a call site passes a Keras symbolic tensor (issue 887). Same reachable region, same gate;
 				// overridable independently via alwaysCheckKerasSymbolicArguments.
@@ -703,8 +704,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (TRUE.equals(func.isHybrid()))
 					func.computeGraphOnlyCalls(callGraph, builder);
 
-				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
-				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
+				// Check whether the function reads a tensor or a Python scalar from a field another function rebinds (issues 1076 and
+				// 1048). Same reachable region and gate; a ref query per instruction of the reader's closure and a memoized mod query per
+				// writer.
 				if (barrenCouldDecide)
 					func.computeReboundStateReads(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
