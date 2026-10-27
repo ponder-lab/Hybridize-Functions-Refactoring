@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
@@ -910,7 +911,8 @@ public class Function {
 	/**
 	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
 	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047).
+	 * (#1047), so neither is a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's
+	 * one key per scalar type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -929,12 +931,9 @@ public class Function {
 
 		seen.add(instanceKey);
 
-		if (instanceKey instanceof ConstantKey<?>) {
-			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
-				// We have found a primitive.
-				subMonitor.done();
-				return true;
-			}
+		if (isPythonScalarKey(instanceKey) || instanceKey instanceof ConstantKey<?>) {
+			subMonitor.done();
+			return isPrimitiveValue(instanceKey, ignoreBooleans);
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
 			InstanceKey instanceKeyToProcess;
@@ -1003,6 +1002,22 @@ public class Function {
 
 		// It's a primitive unless it's a boolean value and we are ignoring booleans.
 		return !foundBooleanValue || !ignoreBooleans;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a Python primitive: a primitive constant per
+	 * {@link #isPrimitiveConstant(InstanceKey, boolean)}, or a Python {@code int}, {@code float} or {@code bool} of unknown value, which
+	 * the engine represents by one key per type (wala/ML#1148).
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a primitive constant or a Python scalar.
+	 */
+	static boolean isPrimitiveValue(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (isPythonScalarKey(instanceKey))
+			return !ignoreBooleans || !instanceKey.concreteType().getReference().equals(PythonTypes.PYTHON_BOOL);
+
+		return isPrimitiveConstant(instanceKey, ignoreBooleans);
 	}
 
 	/**
@@ -1313,6 +1328,12 @@ public class Function {
 	 * True iff some call site of this {@link Function} uses its result (issue 1117); false if none does; null if undetermined.
 	 */
 	private Boolean hasUsedResults;
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean reshapesWithScalarShape;
 
 	/**
 	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, inbound or outbound
@@ -1716,6 +1737,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
 										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
 												+ "fails with it in either decorator order.");
+							else if (TRUE.equals(this.getReshapesWithScalarShape()))
+								// Reshapes with a shape operand that may be rank 0, which the eager kernel accepts and
+								// graph shape inference rejects (issue 1170). A safety failure; it precedes the benefit
+								// signal.
+								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
+										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
+												+ "a rank-1 shape.");
 							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
 								// A guard around a call dispatches on its exception, but the argument may fail a static check, which a
 								// bare decorator raises at trace time as another exception than the kernel's (issue 1014). The decorator
@@ -2687,9 +2715,10 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 *
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the reads and through which the engine names the TensorFlow
+	 *        APIs a call invokes.
 	 */
-	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
 		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
 		if (!this.getInferInputSignatures()) {
 			this.hasUnresolvedStaticallyReadAxes = FALSE;
@@ -2733,7 +2762,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
 		// sampling a single node can miss a read at an imprecise context.
-		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, builder);
 		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
 		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
 
@@ -3585,6 +3614,50 @@ public class Function {
 	 */
 	public Boolean getHasUsedResults() {
 		return this.hasUsedResults;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}), storing the result for {@link #getReshapesWithScalarShape()}. When the function has no
+	 * call-graph node, the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes and for a shape operand's values.
+	 * @param tensorTypeAnalysis The solved tensor-type analysis, which gives a tensor shape operand's rank.
+	 */
+	public void computeReshapesWithScalarShape(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reshapes with a scalar shape.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reshapes with a scalar shape without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it reshapes with a scalar shape if any of them does.
+		ScalarShapeReshapeAnalysis analysis = new ScalarShapeReshapeAnalysis(callGraph, builder, tensorTypeAnalysis);
+		this.reshapesWithScalarShape = nodes.stream().anyMatch(analysis::reshapesWithScalarShape);
+
+		LOG.info(this + (this.reshapesWithScalarShape ? " reshapes with a scalar shape." : " reshapes with no scalar shape."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a reshape by a shape that may be a scalar is reachable from this function; null if undetermined.
+	 */
+	public Boolean getReshapesWithScalarShape() {
+		return this.reshapesWithScalarShape;
 	}
 
 	/**
@@ -5853,6 +5926,20 @@ public class Function {
 			}
 		}
 
+		// An unknown-rank spec where every context that resolved agrees on one rank: the unknown comes from a context the analysis did not
+		// resolve, not from the callers, and it discards a rank the body or a traced caller may need, so the signature is withheld (#1150).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet())
+			if (entry.getValue() instanceof InputSignature.Single single && single.type().getDims() == null
+					&& isPartialRank(entry.getKey().getConformingTensorTypes())) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this
+								+ "` receives tensors of one rank at some call sites and "
+								+ "a tensor whose shape could not be determined at others, so its specification would have an unknown "
+								+ "rank, which an operation needing the rank rejects at trace time; input-signature inference is dropped "
+								+ "and the function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_PARTIAL_RANK);
+			}
+
 		/*
 		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
 		 * omitted when nothing after it contributes a spec: dropping one that precedes a spec would bind that spec to the dropped
@@ -6497,6 +6584,20 @@ public class Function {
 		}
 
 		return Optional.of(withSparseness(new TensorType(dtype, shape), sparse));
+	}
+
+	/**
+	 * True iff {@code contexts} hold a tensor of unknown shape beside tensors that all have one known rank: the unknown-rank reduction
+	 * {@link #inferSpec} makes of them is due to the unresolved contexts alone (#1150). {@code None} members are left out, since they have
+	 * no shape and block the parameter on their own.
+	 *
+	 * @param contexts The {@link TensorType}s observed for a parameter across call contexts.
+	 * @return True iff some context has unknown dimensions and the others agree on a single rank, of which there is at least one.
+	 */
+	public static boolean isPartialRank(Set<TensorType> contexts) {
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+		Set<Integer> ranks = tensors.stream().map(TensorType::getDims).filter(Objects::nonNull).map(List::size).collect(Collectors.toSet());
+		return ranks.size() == 1 && tensors.stream().anyMatch(t -> t.getDims() == null);
 	}
 
 	/**

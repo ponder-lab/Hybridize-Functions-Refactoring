@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiPredicate;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -739,6 +740,42 @@ public class Util {
 	static boolean isTensorFlowNode(CGNode node) {
 		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
 		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
+	}
+
+	/**
+	 * True iff {@code test} holds of a normal instruction of {@code node} or of a node it transitively calls. This is the walk of the
+	 * transitive call-graph preconditions, such as {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS} and
+	 * {@link PreconditionFailure#RESHAPES_WITH_SCALAR_SHAPE}. Only program bodies are tested: the walk passes through TensorFlow library
+	 * nodes ({@link #isTensorFlowNode(CGNode)}) without testing their instructions, to reach the program callbacks they call.
+	 *
+	 * @param callGraph The call graph, whose successors the walk follows.
+	 * @param node The call-graph node to start from.
+	 * @param test The test, given each instruction with the node whose IR contains it.
+	 * @return True iff {@code test} holds of an instruction of a program body reachable from {@code node}.
+	 */
+	static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test) {
+		return reachesInstruction(callGraph, node, test, Sets.newHashSet());
+	}
+
+	private static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test,
+			Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		if (!isTensorFlowNode(node)) {
+			IR ir = node.getIR();
+
+			if (ir != null)
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (test.test(node, instruction))
+						return true;
+		}
+
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
+			if (reachesInstruction(callGraph, succNodes.next(), test, seen))
+				return true;
+
+		return false;
 	}
 
 	/** The origin set of a value produced by numpy only: tensor-convertible, but not a TensorFlow computation. */

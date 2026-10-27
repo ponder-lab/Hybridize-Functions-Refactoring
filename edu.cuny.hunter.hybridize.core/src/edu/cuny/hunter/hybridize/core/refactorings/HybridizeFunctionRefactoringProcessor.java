@@ -659,7 +659,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
-					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
+					func.computeUnresolvedStaticallyReadAxes(callGraph, builder);
 
 				// Whether the replica dispatch is a caller decides if an emitted signature would describe a calling convention
 				// the function is never called by (issue 928). Cheap: a caller-direction walk with no points-to query.
@@ -690,6 +690,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// reachable region and gate; a def-use walk over the function and the user functions it calls.
 				if (barrenCouldDecide)
 					func.computeShapeValueAcrossBoundary(callGraph, builder, tensorTypedKeys);
+
+				// Check whether the function reshapes with a shape that may be a scalar, which graph shape inference rejects (issue 1170).
+				// Same reachable region and gate; a transitive walk asking the engine which APIs each call invokes and the rank of a
+				// reshape's shape operand.
+				if (barrenCouldDecide)
+					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
 
 				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
 				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
