@@ -17691,6 +17691,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model whose first base is a mixin,
+	 * {@code class Net(ProjectMixin, tf.keras.Model)}. The engine records a single superclass per class, here the mixin, so only a walk
+	 * over every base reaches the model. {@code Net.call} builds its sublayer, but it is a model's, so it is not refused.
+	 * {@code Block.call} is a layer's with the same mixin first, and it is refused.
+	 */
+	@Test
+	public void testMayBuildLayersMixinFirst() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+		assertMayBuildLayers(functions, "Block.call", true, false, true);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model whose mixin base follows the
+	 * model, {@code class Net(tf.keras.Model, ProjectMixin)}. {@code Net.call} builds its {@code Dense}, but it is a model's, so it is not
+	 * refused.
+	 */
+	@Test
+	public void testMayBuildLayersMixinLast() throws Exception {
+		assertMayBuildLayers(this.getFunctions(), "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model reached through a mixin two
+	 * classes up: {@code Net} extends {@code Mid}, which extends {@code ProjectMixin} and then {@code Base}, a {@code tf.keras.Model}.
+	 * {@code Net.call} builds its {@code Dense}, but it is a model's, so it is not refused.
+	 */
+	@Test
+	public void testMayBuildLayersMixinChain() throws Exception {
+		assertMayBuildLayers(this.getFunctions(), "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a plain class whose only base is a mixin.
+	 * {@code Projector.project} builds a {@code Dense} on its first call, and its receiver reaches no Keras model through its bases, so it
+	 * is refused.
+	 */
+	@Test
+	public void testMayBuildLayersMixinPlainClass() throws Exception {
+		assertMayBuildLayers(this.getFunctions(), "Projector.project", true, false, true);
+	}
+
+	/**
 	 * A keyword-only primitive is not exempt from {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} as one constant at every call
 	 * (issues 1025 and 1109), since a keyword-only parameter's alignment with the call's arguments is unproven. {@code f}'s {@code scale}
 	 * is {@code 2} at both calls, yet it is still a primitive parameter. Every parameter of {@code f} is keyword-only, so each one's index

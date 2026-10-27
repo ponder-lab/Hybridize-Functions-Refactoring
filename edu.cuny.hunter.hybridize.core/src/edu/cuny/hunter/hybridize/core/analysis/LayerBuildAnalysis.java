@@ -30,7 +30,11 @@ import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
  * program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a
  * TensorFlow library node, so the walk of {@link Util#reachesInstruction(CallGraph, CGNode, java.util.function.BiPredicate, boolean)} tests
  * library nodes too. The receiver's class is {@link com.ibm.wala.cast.python.util.Util#allocatedClass(InstanceKey)} of each object it may
- * be, checked against the engine's modeled {@code tf.keras.Model} with the class hierarchy (wala/ML#1165).
+ * be (wala/ML#1165), whose bases {@link Function#getClassAndBaseNames(IClassHierarchy, com.ibm.wala.types.TypeReference)} walks
+ * transitively, through every declared Python base and every superclass, for the engine's modeled {@code tf.keras.Model}. The class
+ * hierarchy's own subtype test would not do: the engine records a single superclass per class, so {@code class Net(Mixin, tf.keras.Model)}
+ * would read as no model in either order of bases. In the engine's model, unlike at run time, {@code Model} does not extend {@code Layer},
+ * so the walk names a model and not a layer.
  * <p>
  * It is a may-fact: a call graph can't tell which call to a layer is its first, and the engine does not model a layer's {@code built}
  * state, so a function calling a layer that an earlier call has already built is refused as well.
@@ -71,9 +75,11 @@ class LayerBuildAnalysis {
 
 	/**
 	 * Whether {@code node}'s receiver, the {@code self} of an instance method, is a Keras model: true iff the engine allocated every object
-	 * the receiver may be by a constructor of a subclass of {@code tf.keras.Model}, false iff it allocated every one by a constructor of
-	 * another class, and {@code null}, unknown, otherwise. Unknown covers a receiver with an object of unknown class, one mixing models
-	 * with other objects, one with no object, and a function that is no instance method.
+	 * the receiver may be by a constructor of a class reaching {@code tf.keras.Model} through its Python bases, false iff it allocated
+	 * every one by a constructor of another class, and {@code null}, unknown, otherwise. Unknown covers a receiver with an object of
+	 * unknown class, one mixing models with other objects, one with no object, and a function that is no instance method. A base the engine
+	 * does not model is not recorded, so a class reaching no model may still be one; it reads as no model, and its method is refused, which
+	 * is the conservative side.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, whose second parameter slot is its receiver.
@@ -95,9 +101,8 @@ class LayerBuildAnalysis {
 			return null;
 
 		IClassHierarchy classHierarchy = this.builder.getClassHierarchy();
-		IClass modelClass = classHierarchy.lookupClass(KERAS_MODEL_TYPE);
 
-		if (modelClass == null)
+		if (classHierarchy.lookupClass(KERAS_MODEL_TYPE) == null)
 			return null;
 
 		PointerKey receiver = this.builder.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, parameters[1]);
@@ -111,7 +116,7 @@ class LayerBuildAnalysis {
 			if (allocatedClass.isEmpty())
 				return null;
 
-			if (classHierarchy.isSubclassOf(allocatedClass.get(), modelClass))
+			if (Function.getClassAndBaseNames(classHierarchy, allocatedClass.get().getReference()).contains(KERAS_MODEL_TYPE.getName()))
 				anyModel = true;
 			else
 				anyOther = true;
