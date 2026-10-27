@@ -754,15 +754,32 @@ public class Util {
 	 * @return True iff {@code test} holds of an instruction of a program body reachable from {@code node}.
 	 */
 	static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test) {
-		return reachesInstruction(callGraph, node, test, Sets.newHashSet());
+		return reachesInstruction(callGraph, node, test, false);
+	}
+
+	/**
+	 * True iff {@code test} holds of a normal instruction of {@code node} or of a node it transitively calls, as
+	 * {@link #reachesInstruction(CallGraph, CGNode, BiPredicate)} decides, except that the instructions of TensorFlow library nodes
+	 * ({@link #isTensorFlowNode(CGNode)}) are tested too when {@code testLibraryNodes} holds. A fact the engine models inside a library
+	 * summary, such as the variable creation of a built-in Keras layer's first call, is found only so.
+	 *
+	 * @param callGraph The call graph, whose successors the walk follows.
+	 * @param node The call-graph node to start from.
+	 * @param test The test, given each instruction with the node whose IR contains it.
+	 * @param testLibraryNodes Whether the instructions of the TensorFlow library nodes the walk passes through are tested as well.
+	 * @return True iff {@code test} holds of an instruction of a tested body reachable from {@code node}.
+	 */
+	static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test,
+			boolean testLibraryNodes) {
+		return reachesInstruction(callGraph, node, test, testLibraryNodes, Sets.newHashSet());
 	}
 
 	private static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test,
-			Set<CGNode> seen) {
+			boolean testLibraryNodes, Set<CGNode> seen) {
 		if (!seen.add(node))
 			return false;
 
-		if (!isTensorFlowNode(node)) {
+		if (testLibraryNodes || !isTensorFlowNode(node)) {
 			IR ir = node.getIR();
 
 			if (ir != null)
@@ -772,7 +789,7 @@ public class Util {
 		}
 
 		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
-			if (reachesInstruction(callGraph, succNodes.next(), test, seen))
+			if (reachesInstruction(callGraph, succNodes.next(), test, testLibraryNodes, seen))
 				return true;
 
 		return false;
