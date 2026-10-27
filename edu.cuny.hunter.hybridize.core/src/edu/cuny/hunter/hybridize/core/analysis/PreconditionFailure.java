@@ -368,7 +368,18 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
 	 */
-	RETURNS_PYTHON_PRIMITIVE(40);
+	RETURNS_PYTHON_PRIMITIVE(40),
+
+	/**
+	 * A shape known only as a tensor value crosses the function's boundary: a parameter's value gives the static dimensions of an op's
+	 * result that the function returns, such as the shape operand of {@code tf.reshape}, or the function returns a value derived from a
+	 * dynamic shape op, such as {@code tf.shape(x)[1:]}. Inside one graph, shape inference partially evaluates such a shape tensor back to
+	 * static extents; across a {@code tf.function} call only the tensor's type crosses, not its value, so the dimensions become
+	 * {@code None}, and a caller that reads them statically, such as a Keras layer's lazy {@code build}, raises. Converting either side of
+	 * the boundary breaks the caller, with a bare decorator or an inferred signature alike. The check refuses on either direction without
+	 * proving that a static read exists downstream, a conservative over-refusal. See {@link ShapeValueBoundaryAnalysis}.
+	 */
+	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41);
 
 	static {
 		// check that the codes are unique.
