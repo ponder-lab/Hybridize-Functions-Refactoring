@@ -91,5 +91,8 @@ barren(tf.constant([1.0, 2.0, 3.0]))
 sig_zero()
 e = Exporter()
 e.get_step()
+# The primitive takes two values, so without a signature it would retrace.
 sig_prim(tf.constant([1.0, 2.0, 3.0]), 3)
+sig_prim(tf.constant([1.0, 2.0, 3.0]), 4)
 prim(tf.constant([1.0, 2.0, 3.0]), 3)
+prim(tf.constant([1.0, 2.0, 3.0]), 4)

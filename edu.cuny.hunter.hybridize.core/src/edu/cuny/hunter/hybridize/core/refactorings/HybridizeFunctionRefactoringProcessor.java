@@ -57,6 +57,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.loader.ScriptOutsidePythonPathException;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
+import com.ibm.wala.cast.python.ml.client.TensorGenerator;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
@@ -670,10 +671,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
 					func.computeStaleVariableReads(callGraph, builder.getPointerAnalysis());
 
-				// Check whether the function iterates a parameter-derived tensor (issue 830). Same reachable region, same gate;
-				// overridable independently via alwaysCheckTensorIteration.
+				// Check whether the function iterates a parameter-derived tensor (issue 830), assigns into one (issue 1098), or passes
+				// one to tf.constant (issue 1169). Same reachable region, same gate; overridable independently via
+				// alwaysCheckTensorIteration.
 				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
-					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
+					func.computeTensorParameterIteration(callGraph, builder, analysis);
 
 				// Check whether a call site passes a Keras symbolic tensor (issue 887). Same reachable region, same gate;
 				// overridable independently via alwaysCheckKerasSymbolicArguments.
@@ -703,8 +705,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeMayBuildLayers(callGraph, builder);
 
-				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
-				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
+				// Check whether the function reads a tensor or a Python scalar from a field another function rebinds (issues 1076 and
+				// 1048). Same reachable region and gate; a ref query per instruction of the reader's closure and a memoized mod query per
+				// writer.
 				if (barrenCouldDecide)
 					func.computeReboundStateReads(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
@@ -860,8 +863,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return projectToCallGraphBuilder.get(project);
 	}
 
+	/**
+	 * Clears this processor's per-project analysis caches and the static function caches.
+	 * <p>
+	 * It also releases the engine's per-builder tensor caches for every builder this processor holds. The engine clears them itself at the
+	 * end of its own analysis, but queries made afterward through the builder, such as the dataset-component lookups made while inferring
+	 * parameters, write fresh entries that nothing else removes. Those entries' values strongly reach their weakly held builder, so they
+	 * never expire on their own and would keep each builder, its call graph, and its class hierarchy alive.
+	 * {@link TensorGenerator#clearCaches} is the engine's API for releasing them deterministically and is safe to call more than once.
+	 */
 	@Override
 	public void clearCaches() {
+		// Release the engine's caches before forgetting the builders that key them.
+		this.getProjectToCallGraphBuilder().values().forEach(TensorGenerator::clearCaches);
 		this.getProjectToCallGraphBuilder().clear();
 		this.getProjectToMod().clear();
 		this.getProjectToCallGraph().clear();
