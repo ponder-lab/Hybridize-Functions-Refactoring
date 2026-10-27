@@ -12453,12 +12453,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("boxed's field is set only in `__init__`, so it isn't rebound state.", FALSE, boxed.getHasReboundStateReads());
 		assertNull("boxed isn't refused for rebound state.",
 				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
-		// It's still not converted, though: no tensor computation is found in `x * box.n` when the field is the computed int, while
-		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant, converts.
-		// TODO: Expect conversion at P1 once the engine's scalar-operand test keeps the int key: https://github.com/wala/ML/issues/1161.
-		assertFalse("boxed isn't converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertNotNull("boxed fails NO_TENSOR_COMPUTATION.",
+		// `x * box.n` is a tensor computation when the field is the computed int (https://github.com/wala/ML/issues/1161), as it is in
+		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant.
+		assertNull("boxed doesn't fail NO_TENSOR_COMPUTATION.",
 				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+		assertTrue("boxed is converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("boxed hybridizes (P1).", P1, boxed.getPassingPrecondition());
 
 		// A Keras layer is no container, so `tf.function` keys it by its identity, and the units it stores, a computed int, are no
 		// primitive (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
