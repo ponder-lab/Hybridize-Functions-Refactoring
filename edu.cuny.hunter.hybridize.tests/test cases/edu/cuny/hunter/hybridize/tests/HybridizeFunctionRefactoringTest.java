@@ -16507,4 +16507,80 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`flatten_by_vector` hybridizes (P1).", P1, vector.getPassingPrecondition());
 		assertTrue("`flatten_by_vector` is converted.", vector.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
+
+	/**
+	 * Reduced from TensorFlow2.0-Examples' YOLOV3 {@code bbox_giou} and {@code bbox_iou}. The predicted boxes, each function's first
+	 * parameter, come from an element of the result of a functional model built with a list of outputs. The label boxes, the second
+	 * parameter of {@code bbox_giou}, come from an {@code np.zeros} whose shape tuple holds an element of an ndarray.
+	 */
+	@Test
+	public void testInferInputSignatureListOutputModelBoxes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: The predicted boxes are float32 of unknown shape because an element of a list-output model's result isn't read as
+		// the output at its position (https://github.com/wala/ML/issues/1157). They should be rank 5 here, `(4, 13, 13, 3, 4)`.
+		Function giou = findFunction(functions, "bbox_giou");
+		assertTrue("`bbox_giou` is hybridized.", giou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today, `boxes1` has no shape; `boxes2` keeps its rank, with the ndarray element's axes unresolved.",
+				"[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=(4, None, None, 3, 4), dtype=tf.float32)]",
+				giou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// TODO: As above (https://github.com/wala/ML/issues/1157). `boxes1` should be rank 6 here, `(4, 13, 13, 3, 1, 4)`.
+		Function iou = findFunction(functions, "bbox_iou");
+		assertTrue("`bbox_iou` is hybridized.", iou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("Today, `boxes1` has no shape.",
+				"[tf.TensorSpec(shape=None, dtype=tf.float32), tf.TensorSpec(shape=(4, 1, 1, 1, 5, 4), dtype=tf.float32)]",
+				iou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from NLPGNN's {@code MaskCategoricalCrossentropy.__call__} and {@code MaskAccuracy.__call__}, as GAT's training script calls
+	 * them. The predictions come from an unsorted segment reduction whose {@code num_segments} is {@code tf.shape(x)[0]}, and the mask from
+	 * an {@code np.zeros} of an ndarray's {@code .shape[0]}. The labels come from an array loaded with {@code pickle}, whose shape is
+	 * unknown. {@code masked_mean} receives an {@code np.zeros} of a {@code len()}.
+	 */
+	@Test
+	public void testInferInputSignatureMaskLossesRuntimeSizes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: The predictions have no shape because a segment reduction whose `num_segments` isn't a static constant has no rank
+		// (https://github.com/wala/ML/issues/1160). They should be rank 2 here, `(None, 4)`.
+		// TODO: The mask has no shape because `np.zeros(labels.shape[0])` has no rank (https://github.com/wala/ML/issues/1159). It
+		// should be rank 1 here, `(None,)`.
+		for (String name : List.of("MaskCategoricalCrossentropy.__call__", "MaskAccuracy.__call__")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("Today, neither the predictions nor the mask of `" + name + "` has a shape.",
+					"[tf.TensorSpec(shape=None, dtype=tf.float64), tf.TensorSpec(shape=None, dtype=tf.float32), "
+							+ "tf.TensorSpec(shape=None, dtype=tf.bool)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function maskedMean = findFunction(functions, "masked_mean");
+		assertTrue("`masked_mean` is hybridized.", maskedMean.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("A mask of `len()` entries is rank 1, with its extent unresolved.",
+				"[tf.TensorSpec(shape=(8,), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.float64)]",
+				maskedMean.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from transformer's {@code MultiplyConstant.call}, which receives an {@code Embedding} output whose {@code output_dim} the
+	 * analysis can't read.
+	 */
+	@Test
+	public void testInferInputSignatureEmbeddingUnreadDimension() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function call = findFunction(functions, "MultiplyConstant.call");
+		assertTrue("`MultiplyConstant.call` is hybridized.", call.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The embedding keeps its rank, with its last axis unresolved.",
+				"[tf.TensorSpec(shape=(None, None, None), dtype=tf.float32)]",
+				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
 }
