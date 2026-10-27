@@ -11,6 +11,8 @@ import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_NO_TENSOR_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.IS_RECURSIVE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT;
@@ -46,6 +48,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -70,10 +73,12 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourceAttributes;
 import org.eclipse.core.runtime.CoreException;
@@ -134,6 +139,7 @@ import org.python.pydev.refactoring.ast.PythonModuleManager;
 import org.python.pydev.shared_core.io.FileUtils;
 import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.preferences.InMemoryEclipsePreferences;
+import org.python.pydev.shared_core.resource_stubs.FolderStub;
 import org.python.pydev.shared_core.string.CoreTextSelection;
 import org.python.pydev.shared_core.string.StringUtils;
 import org.python.pydev.ui.BundleInfoStub;
@@ -155,6 +161,7 @@ import edu.cuny.hunter.hybridize.core.analysis.FunctionExtractor;
 import edu.cuny.hunter.hybridize.core.analysis.InferenceResult;
 import edu.cuny.hunter.hybridize.core.analysis.Information;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
@@ -516,10 +523,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * entries written by one test are never read by another; without clearing, every test's call graph is retained for the remainder of the
 	 * suite run. The evaluator clears per project for the same reason; only {@code analyzeAccuracyYPredAtDepth} cleared here, for its own
 	 * within-test reason. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/798.
+	 * <p>
+	 * It also clears the caches of every processor the test created, which releases the engine's per-builder tensor caches (see
+	 * {@link HybridizeFunctionRefactoringProcessor#clearCaches()}). Entries written there after the engine's own analysis finishes would
+	 * otherwise keep each test's call-graph builder, call graph, and class hierarchy alive for the rest of the run.
 	 */
 	@After
-	@SuppressWarnings("static-method") // JUnit 4 requires @After methods to be instance methods.
 	public void clearAnalysisCaches() {
+		this.processors.forEach(HybridizeFunctionRefactoringProcessor::clearCaches);
+		this.processors.clear();
 		Function.clearCaches();
 	}
 
@@ -567,12 +579,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	private boolean alwaysCheckStaticShapeReads;
 
+	/** Whether a script that no PYTHONPATH entry contains is skipped rather than failing the project (off by default; #990). */
+	private boolean skipScriptsOutsidePythonPath;
+
+	/** The processor {@link #getFunctions(String)} last ran, for tests that inspect what it reports beyond the functions. */
+	private HybridizeFunctionRefactoringProcessor lastProcessor;
+
+	/** The processors {@link #createProcessor} created during the current test, whose caches {@link #clearAnalysisCaches()} clears. */
+	private final List<HybridizeFunctionRefactoringProcessor> processors = new ArrayList<>();
+
 	/**
 	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to the refactoring's own
 	 * {@link HybridizeFunctionRefactoringProcessor#DEFAULT_TARGETED_CFA_DEPTH} so the harness does not override it. A test sets it via
 	 * {@link #setTargetedCfaDepth(int)} to analyze a fixture at a chosen depth (#600).
 	 */
 	private int targetedCfaDepth = HybridizeFunctionRefactoringProcessor.DEFAULT_TARGETED_CFA_DEPTH;
+
+	/**
+	 * Whether the harness's processor checks functions in parallel (issue 315). Serial unless a test asks otherwise.
+	 */
+	private boolean processFunctionsInParallel = PROCESS_FUNCTIONS_IN_PARALLEL;
 
 	private Entry<SimpleNode, IDocument> createPythonNodeFromTestFile(String fileNameWithoutExtension)
 			throws IOException, MisconfigurationException {
@@ -648,6 +674,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	public void setAlwaysCheckStaticShapeReads(boolean alwaysCheckStaticShapeReads) {
 		this.alwaysCheckStaticShapeReads = alwaysCheckStaticShapeReads;
+	}
+
+	/**
+	 * Sets whether a script that no PYTHONPATH entry contains is skipped rather than failing the project, as the evaluator's
+	 * {@code skipScriptsOutsidePythonPath} does (#990).
+	 *
+	 * @param skipScriptsOutsidePythonPath Whether to skip such scripts.
+	 */
+	public void setSkipScriptsOutsidePythonPath(boolean skipScriptsOutsidePythonPath) {
+		this.skipScriptsOutsidePythonPath = skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Makes the fixture's directory, which holds {@code in/}, the project's directory, while its source folder stays {@code in/}. A script
+	 * elsewhere in the fixture is then one the project's source folders do not cover (#990). The nature is shared across tests, so the
+	 * caller restores the returned source path afterward.
+	 *
+	 * @return The nature's source path before the change, to restore.
+	 * @throws CoreException If the nature's source path cannot be read or set.
+	 */
+	private String useFixtureDirectoryAsProjectRoot() throws CoreException {
+		String sourceFolder = getAbsolutePath(this.getInputTestFileName("A")).getParent().toString();
+		String fixtureDirectory = new File(sourceFolder).getParent();
+
+		ProjectStub projectStub = new ProjectStub("TestProject", sourceFolder, new IProject[0], new IProject[0]) {
+			@Override
+			public IPath getFullPath() {
+				return fromOSString(fixtureDirectory);
+			}
+
+			// The stub resolves every source folder to the project's directory, so the one source folder is resolved here instead.
+			@Override
+			public IFolder getFolder(IPath path) {
+				return new FolderStub(new org.python.pydev.shared_core.resource_stubs.ProjectStub(new File(fixtureDirectory), nature),
+						new File(sourceFolder));
+			}
+		};
+
+		setAstManager(sourceFolder, projectStub);
+
+		String previous = nature.getPythonPathNature().getProjectSourcePath(false);
+		nature.getPythonPathNature().setProjectSourcePath(sourceFolder);
+		return previous;
 	}
 
 	/**
@@ -745,16 +814,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Returns the {@link Function}s in the test file.
+	 * Returns the processor of the refactoring over the refactoring available {@link FunctionDef}s found in the test file X.py, where X is
+	 * fileNameWithoutExtension, configured as this test is.
 	 *
 	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
-	 * @return The set of {@link Function}s analyzed.
+	 * @param documentToAvailableFunctionDefs The refactoring available {@link FunctionDef}s in X.py, keyed by the module's AST root and the
+	 *        {@link IDocument}, as {@link #getDocumentToAvailableFunctionDefinitions(String)} returns them.
+	 * @return The processor of the refactoring over the given {@link FunctionDef}s.
 	 */
-	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
+	private HybridizeFunctionRefactoringProcessor createProcessor(String fileNameWithoutExtension,
+			Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs) {
 		File inputTestFile = this.getInputTestFile(fileNameWithoutExtension);
-
-		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
-				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
 
 		SimpleNode moduleRoot = documentToAvailableFunctionDefs.getKey().getKey();
 		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
@@ -793,11 +863,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.collect(Collectors.toSet());
 
 		HybridizeFunctionRefactoringProcessor processor = new HybridizeFunctionRefactoringProcessor(inputFunctionDefinitions,
-				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, PROCESS_FUNCTIONS_IN_PARALLEL, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
+				ALWAYS_CHECK_PYTHON_SIDE_EFFECTS, this.processFunctionsInParallel, ALWAYS_CHECK_RECURSION, USE_TEST_ENTRYPOINTS,
 				ALWAYS_FOLLOW_TYPE_HINTS, USE_SPECULATIVE_ANALYSIS, this.getInferInputSignatures());
 		processor.setTargetedCfaDepth(this.targetedCfaDepth);
 		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
+		processor.setSkipScriptsOutsidePythonPath(this.skipScriptsOutsidePythonPath);
+		this.lastProcessor = processor;
+		this.processors.add(processor);
+		return processor;
+	}
 
+	/**
+	 * Returns the {@link Function}s in the test file.
+	 *
+	 * @param fileNameWithoutExtension The name of the test file excluding the file extension.
+	 * @return The set of {@link Function}s analyzed.
+	 */
+	private Set<Function> getFunctions(String fileNameWithoutExtension) throws Exception {
+		Entry<Entry<SimpleNode, IDocument>, Collection<FunctionDef>> documentToAvailableFunctionDefs = this
+				.getDocumentToAvailableFunctionDefinitions(fileNameWithoutExtension);
+
+		IDocument document = documentToAvailableFunctionDefs.getKey().getValue();
+		HybridizeFunctionRefactoringProcessor processor = this.createProcessor(fileNameWithoutExtension, documentToAvailableFunctionDefs);
 		ProcessorBasedRefactoring refactoring = new ProcessorBasedRefactoring(processor);
 
 		RefactoringStatus status = refactoring.checkAllConditions(new NullProgressMonitor());
@@ -961,7 +1048,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			switch (function.getIdentifier()) {
 			case "Test.value":
+				// The getter is evaluated when the instance is constructed (ponder-lab/ML#909), so it has a call-graph node and a
+				// side-effect verdict: it only reads an attribute.
+				assertFalse("The property getter is reached (ponder-lab/ML#909) and has no side effects.",
+						function.getHasPythonSideEffects());
+				break;
 			case "Test.name":
+				// A setter is not reached: `k.name = 2` is a plain attribute write.
 				checkSideEffectStatus(function);
 				break;
 			default:
@@ -1830,6 +1923,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test that hybridizing a {@code tf.custom_gradient} function places {@code @tf.function} above {@code @tf.custom_gradient}, not
+	 * beneath it. Beneath it, a Keras layer calling the function can no longer infer its output shape, while above it the shape, the call
+	 * and the gradient all work.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/996">Issue 996</a>
+	 */
+	@Test
+	public void testConvertToHybridAboveCustomGradient() throws Exception {
+		helperAssertConvertToHybridAboveCustomGradient();
+	}
+
+	/**
+	 * Method variant of {@link #testConvertToHybridAboveCustomGradient()}: {@code @staticmethod} stays outermost, and {@code @tf.function}
+	 * goes between it and {@code @tf.custom_gradient}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/996">Issue 996</a>
+	 */
+	@Test
+	public void testConvertToHybridAboveCustomGradientStaticMethod() throws Exception {
+		helperAssertConvertToHybridAboveCustomGradient();
+	}
+
+	private void helperAssertConvertToHybridAboveCustomGradient() throws Exception {
+		Function f = this.getFunctions().stream().filter(fun -> fun.getIdentifier().endsWith("log1pexp")).findFirst().orElseThrow();
+		assertTrue("Fixture function should carry `tf.custom_gradient`.",
+				f.getDecoratorNames(null).contains("tensorflow.python.ops.custom_gradient.custom_gradient"));
+		assertFalse("Fixture function should be eager pre-refactoring.", f.isHybrid());
+		assertTrue("Fixture function should select CONVERT_TO_HYBRID.", f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		IDocument doc = f.getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>(f.transform());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
+	}
+
+	/**
 	 * Test that {@code RECONFIGURE} adds an inferred {@code input_signature=[tf.TensorSpec(...)]} to an already-hybrid function whose bare
 	 * {@code @tf.function} decorator (no parentheses) carries no signature. The remaining half of #563: the eager case is
 	 * {@code CONVERT_TO_HYBRID} (#565); this is the already-hybrid case. The source-write appends a parenthesized argument list right after
@@ -2015,10 +2149,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function under a named import ({@code from tensorflow import function}) that brings the decorator into scope but not
 	 * {@code TensorSpec}: the inferred signature cannot be emitted unqualified, so {@code RECONFIGURE} must not be selected (it would be a
-	 * no-op). The function keeps its {@code HAS_NO_PRIMITIVE_PARAMETERS} status. Pins the emittability gate on {@code RECONFIGURE}
-	 * selection, ensuring a passing precondition is never reported for a transformation that would produce no edit.
+	 * no-op). Pins the emittability gate on {@code RECONFIGURE} selection, ensuring a passing precondition is never reported for a
+	 * transformation that would produce no edit. The function isn't already optimal, since a signature was inferred and withheld, so it
+	 * reports {@code INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED} rather than {@code HAS_NO_PRIMITIVE_PARAMETERS} (issue 1018).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/563">Issue 563</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
 	 */
 	@Test
 	public void testReconfigureNamedImportMissingTensorSpec() throws Exception {
@@ -2031,8 +2167,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("Emission is impossible under this import shape, so RECONFIGURE must not be selected.",
 				f.getTransformations().contains(RECONFIGURE));
 		assertNull("No passing precondition when the signature is not emittable.", f.getPassingPrecondition());
-		assertNotNull("The function keeps its HAS_NO_PRIMITIVE_PARAMETERS failure.",
+		assertTrue("A signature is inferred.", f.getInferredInputSignature().isPresent());
+		assertNotNull("The withheld signature is reported as unwritable.",
+				f.getEntryMatchingFailure(INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED));
+		assertNull("A function whose inferred signature is withheld isn't reported as already optimal.",
 				f.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * An already-hybrid method whose file reaches TensorFlow only through a star import ({@code from B import *}, with {@code B} importing
+	 * {@code tensorflow as tf}). The file has no TensorFlow import of its own, so a {@code from tensorflow import ...} line is injected, as
+	 * for a fresh decorator, and the inferred signature is appended to the decorator, keeping {@code experimental_relax_shapes=True}
+	 * (#982).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImport() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Direct-import control for {@link #testReconfigureStarImport()}: with {@code tf} imported by the file itself, no import is injected
+	 * and the signature is qualified under {@code tf}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureRelaxShapesMethod() throws Exception {
+		helperAssertReconfigure();
+	}
+
+	/**
+	 * Two already-hybrid methods in a file that reaches TensorFlow only through a star import, with signatures needing different dtypes.
+	 * Both are reconfigured, and the single injected import carries both dtypes.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImportUnion() throws Exception {
+		helperAssertStarImportTransforms(Map.of("step", RECONFIGURE, "evaluate", RECONFIGURE));
+	}
+
+	/**
+	 * An eager function converted to hybrid and an already-hybrid one reconfigured, in a file that reaches TensorFlow only through a star
+	 * import. The two paths share a single injected import.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureStarImportMixed() throws Exception {
+		helperAssertStarImportTransforms(Map.of("scale", CONVERT_TO_HYBRID, "shift", RECONFIGURE));
+	}
+
+	/**
+	 * Applies the edits of every function in the current test's fixture, after the processor's import-planning pre-pass, and asserts that
+	 * each function selects its expected transformation and that the produced source matches the expected {@code out/A.py}.
+	 *
+	 * @param expected The transformation each function, by name, is expected to select.
+	 */
+	private void helperAssertStarImportTransforms(Map<String, Transformation> expected) throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+		assertEquals(expected.size(), functions.size());
+
+		for (Function function : functions)
+			assertEquals(function.getSimpleName() + " selects its expected transformation.",
+					singleton(expected.get(function.getSimpleName())), function.getTransformations());
+
+		// Mirror the processor's pre-pass so the injected import line carries every function's dtypes.
+		Function.planAutoInjectedImports(functions);
+
+		IDocument doc = functions.iterator().next().getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>();
+		for (Function function : functions)
+			edits.addAll(function.transform());
+
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(doc);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), doc.get());
 	}
 
 	/**
@@ -2167,6 +2385,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testReconfigureNarrowBroaderTuple() throws Exception {
+		helperAssertNarrowing();
+	}
+
+	/**
+	 * Star-import variant of {@link #testReconfigureNarrowBroader()}: the file reaches TensorFlow only through a star import, so a
+	 * {@code from tensorflow import ...} line is injected and the supplied literal is replaced by the inferred signature, unqualified.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	@Test
+	public void testReconfigureNarrowBroaderStarImport() throws Exception {
 		helperAssertNarrowing();
 	}
 
@@ -2734,6 +2963,47 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), f.getInferredInputSignatureAbsenceReason());
 		assertEquals("An unreachable function infers no signature, so it reads no unresolved axis.", FALSE,
 				f.getHasUnresolvedStaticallyReadAxes());
+	}
+
+	/**
+	 * A project whose source folders leave a script with an import uncovered fails, naming the script, rather than failing with the
+	 * analysis's own exception (#990).
+	 */
+	@Test
+	public void testScriptOutsidePythonPath() throws Exception {
+		String previous = this.useFixtureDirectoryAsProjectRoot();
+
+		try {
+			CoreException e = assertThrows(CoreException.class, () -> this.getFunctions());
+			assertTrue("The failure names the uncovered script: " + e.getMessage(), e.getMessage().contains("extra/B.py"));
+			assertTrue("The failure says the source folders do not cover it: " + e.getMessage(),
+					e.getMessage().contains("its source folders do not cover it"));
+		} finally {
+			nature.getPythonPathNature().setProjectSourcePath(previous);
+		}
+	}
+
+	/**
+	 * With skipping on, a script no source folder covers is left out and listed, and the rest of the project is analyzed (#990).
+	 */
+	@Test
+	public void testScriptOutsidePythonPathSkipped() throws Exception {
+		String previous = this.useFixtureDirectoryAsProjectRoot();
+		this.setSkipScriptsOutsidePythonPath(true);
+
+		try {
+			Set<Function> functions = this.getFunctions();
+			assertEquals(1, functions.size());
+			// The script sits under a directory whose name is full of regular-expression metacharacters, which the exclusion must take
+			// literally.
+			assertEquals("The skipped script is listed.", List.of("extra/{{slug}} (c++)/B.py"),
+					this.lastProcessor.getProjectToSkippedScripts().values().stream().flatMap(List::stream).toList());
+
+			Function f = functions.iterator().next();
+			assertEquals("The covered script is still analyzed.", TRUE, f.getHasTensorParameter());
+		} finally {
+			nature.getPythonPathNature().setProjectSourcePath(previous);
+		}
 	}
 
 	/**
@@ -5442,9 +5712,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Test lists. {@code add(list, list)} where {@code list = [tf.ones([1, 2]), tf.ones([2, 2])]}—both parameters bind to a Python list
 	 * literal containing tensors. Phase-3 container detection classifies each parameter as tensor-bearing (so
 	 * {@link Function#getHasTensorParameter()} is {@code true}), while the parameter binds to the list itself, not to a tensor;
-	 * per-parameter {@link Parameter#getTensorTypes()} is empty. Since #781, the two-element sequence reduces per position, so the inferred
-	 * signature carries a two-element {@code InputSignature.Sequence} per parameter, the arity-2 form of the reduction, rather than
-	 * dropping as it did before the elements' types were surfaced.
+	 * per-parameter {@link Parameter#getTensorTypes()} is empty. Since #781, a two-element sequence reduces per position, but this one does
+	 * not: the body's {@code a + b} leaves the engine unable to vouch for the list's length (see the TODO below).
 	 */
 	@Test
 	public void testHasLikelyTensorParameter146() throws Exception {
@@ -5457,19 +5726,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		List<Parameter> params = function.getParameters();
 		assertEquals(2, params.size());
 
+		// TODO: https://github.com/ponder-lab/ML/pull/1079. `a + b` makes the list the left operand of a `+`, which the front end also
+		// lowers `l += m` to, so the engine gives the list no length although this `+` builds a new list and leaves the two-element
+		// display as it was. The nested specification this pinned, [[tf.TensorSpec(shape=(1, 2), dtype=tf.float32),
+		// tf.TensorSpec(shape=(2, 2), dtype=tf.float32)], [the same]], is lost. Flip back to it once the engine tells the two apart.
 		for (Parameter p : params) {
 			assertTrue("The parameter binds to the list itself, not a tensor.", p.getTensorTypes().isEmpty());
 			assertEquals("Phase 3 classifies each parameter as a container.", TRUE, p.isTensorContainer());
-			assertNotNull("The two-element sequence's element types are surfaced (#781).", p.getContainerElementTypes());
-			assertEquals("Both element positions carry evidence.", 2, p.getContainerElementTypes().size());
+			assertNull("The engine gives the list no length, so no element structure.", p.getContainerElementTypes());
 		}
 
 		InferenceResult result = function.inferInputSignature();
-		assertTrue("A two-element list of concrete tensors reduces per position (#781).", result.signature().isPresent());
-		assertEquals("Each parameter renders as a two-element nested spec, positions in order.",
-				"[[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)], "
-						+ "[tf.TensorSpec(shape=(1, 2), dtype=tf.float32), tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]]",
-				result.signature().get().toTensorSpecList("tf."));
+		assertFalse("No specification is written for a list of unknown length.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
 	}
 
 	/**
@@ -6457,8 +6727,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	/**
@@ -6469,8 +6741,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function function = getSingleFunction();
 		assertFalse(function.isHybrid());
 		assertFalse(function.getHasTensorParameter());
-		// NOTE: Switch to asserTrue when https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273 is fixed.
-		assertFalse("Not expecting a Python side-effect.", function.getHasPythonSideEffects());
+		// The call to `open` writes the file system (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). A write
+		// to a file the function does not open itself is still unseen
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/273).
+		assertTrue("Expecting a Python side-effect from `open`.", function.getHasPythonSideEffects());
 	}
 
 	@Test
@@ -7250,6 +7524,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				function.getHasPythonSideEffects());
 	}
 
+	/**
+	 * A write to a global is a Python side-effect even when the value written is created inside the function. The function stores a list it
+	 * allocates into the module-level {@code x}; the write outlives the call, so the creation site of the value must not filter it out of
+	 * the mod set the way it does for a local or a field of an object the function itself creates.
+	 */
+	@Test
+	public void testPythonSideEffects70() throws Exception {
+		Function function = this.getFunction("leaky_function");
+		assertTrue("Storing a value created in the function into a global is a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * The default of a nested {@code def} is bound with that definition, not to a module-level global, so a default the function itself
+	 * creates is not a Python side-effect of the function. Complements {@link #testPythonSideEffects70()}.
+	 */
+	@Test
+	public void testPythonSideEffects71() throws Exception {
+		Function function = this.getFunction("f");
+		assertFalse("Creating a nested definition's default is not a Python side-effect.", function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * The {@code Box} that {@code left} and {@code right} write is created in {@code make}, which both reach through {@code hub}, so
+	 * neither writes outside its closure. The closure walk skips a method it has already entered, so it can answer for a method on a cycle
+	 * before that method's walk is complete. {@code hub} calls both {@code left} and {@code right} before {@code make}: whichever function
+	 * is analyzed first, the walk reaches one of the two partners only after cutting the cycle back to {@code hub}. A remembered answer
+	 * from such a cut walk then made that partner's write an external one, and which partner it hit depended on the order the functions
+	 * were analyzed.
+	 */
+	@Test
+	public void testPythonSideEffects72() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(4, functions.size());
+
+		for (Function function : functions)
+			assertFalse(function.getIdentifier() + " writes only a Box created within its own closure.",
+					function.getHasPythonSideEffects());
+	}
+
+	/**
+	 * {@code Layer.add_loss} appends to the layer's losses (https://github.com/wala/ML/issues/1095), so a {@code call} that registers a
+	 * loss writes the layer, an object that outlives the call. {@code Var.call} adds a loss to its own layer, {@code Outer.call} reaches
+	 * that write by calling its inner {@code Var}, and {@code Vae.call} adds one to a subclassed {@code tf.keras.Model}. Each has a Python
+	 * side-effect and fails P1. {@code Plain.call} adds no loss and hybridizes.
+	 */
+	@Test
+	public void testLayerAddLossIsSideEffect() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Var.call", "Outer.call", "Vae.call")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse(function.isHybrid());
+			assertTrue("`" + identifier + "` registers a loss on a layer, which is a Python side-effect.",
+					function.getHasPythonSideEffects());
+
+			RefactoringStatus status = function.getStatus();
+			assertTrue(status.hasError());
+			assertEquals(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode(), status.getEntryWithHighestSeverity().getCode());
+			assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, function.getRefactoring());
+			assertNull(function.getPassingPrecondition());
+			assertEquals(Collections.emptySet(), function.getTransformations());
+		}
+
+		Function plain = findFunction(functions, "Plain.call");
+		assertFalse(plain.isHybrid());
+		assertFalse("`Plain.call` registers no loss.", plain.getHasPythonSideEffects());
+		assertFalse(plain.getStatus().hasError());
+		assertEquals(Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID, plain.getRefactoring());
+		assertEquals(P1, plain.getPassingPrecondition());
+		assertEquals(Collections.singleton(Transformation.CONVERT_TO_HYBRID), plain.getTransformations());
+	}
+
+	/**
+	 * The {@link Function}s whose changes are built come in {@link HybridizeFunctionRefactoringProcessor#PROCESSING_ORDER}, by position in
+	 * the file. The processor receives them in a hash-ordered {@link Set}, whose order changes from run to run, and some analysis state is
+	 * first-come, so iterating that set directly made the output depend on the run.
+	 */
+	@Test
+	public void testProcessingOrder() throws Exception {
+		this.getFunctions();
+		List<String> order = this.lastProcessor.getOptimizableFunctions().stream().map(Function::getIdentifier).toList();
+		assertEquals(List.of("zeta", "Model.beta", "Model.omega", "alpha", "kappa", "delta", "mu", "gamma"), order);
+	}
+
 	@Test
 	public void testRecursion() throws Exception {
 		Function f = getFunction("recursive_fn");
@@ -7261,6 +7619,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue("No recursive functions.", f.getStatus().hasError());
 		assertTrue(f.getEntryMatchingFailure(IS_RECURSIVE).isError());
+
+		// Unlike testRecursion2's `not_recursive_fn`, the recursive call returns its result, so a caller uses it (issue 1117).
+		assertTrue(f.getReturnsPrimitive());
+		assertTrue(f.getHasUsedResults());
 	}
 
 	@Test
@@ -7278,6 +7640,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertFalse(f.isRecursive()); // F.
 		assertNull(f.getEntryMatchingFailure(PreconditionFailure.IS_RECURSIVE));
+
+		// The `else` path returns the Python int 1, which `tf.function` returns as a tensor (issue 1117), but the only call is a
+		// statement that discards the result, so no caller can see the change and the function still hybridizes.
+		assertTrue(f.getReturnsPrimitive());
+		assertFalse(f.getHasUsedResults());
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE));
 
 		assertFalse(f.getStatus().hasError());
 		assertEquals(P1, f.getPassingPrecondition());
@@ -7469,11 +7837,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This function has no parameters.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Each function has one primitive parameter. {@code f}'s is the same literal at its only call, so it isn't counted; {@code g}'s is a
+	 * different literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter2() throws Exception {
 		Function f = getFunction("f");
 		assertFalse("This function has one parameter.", f.getHasTensorParameter());
-		assertTrue("This function has one parameter.", f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertFalse("This function has one parameter.", g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	@Test
@@ -7483,11 +7859,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This function has one (tensor) parameter.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Each function has one tensor parameter and one non-tensor parameter. {@code f}'s non-tensor argument is one literal at its only call,
+	 * so it isn't counted; {@code g}'s is a different literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter4() throws Exception {
 		Function f = getFunction("f");
 		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getHasTensorParameter());
-		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	@Test
@@ -7504,25 +7888,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * A tensor and an int argument. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different
+	 * literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter7() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getHasTensorParameter());
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int passed through a module variable. {@code f} receives one variable holding one literal, so it isn't counted; {@code g} receives
+	 * two variables holding different literals, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter8() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
+	/**
+	 * An int passed through a module variable defined before the function. {@code f} receives one variable holding one literal, so it isn't
+	 * counted; {@code g} receives two variables holding different literals, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter9() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
 	@Test
@@ -7546,11 +7954,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getHasTensorParameter());
 	}
 
+	/**
+	 * A string argument. {@code f}'s is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at each of
+	 * two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter13() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
 	@Test
@@ -7566,10 +7982,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This is a user-defined class with no fields.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * {@code tf.function} keys an object of a program-defined class by its identity, so its primitive field never causes a retrace and
+	 * doesn't make a primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter16() throws Exception {
 		Function f = getFunction("f");
-		assertTrue("This is a user-defined class with a primitive field?", f.getHasPrimitiveParameter());
+		assertFalse("An object of a user-defined class with a primitive field is keyed by its identity.", f.getHasPrimitiveParameter());
+	}
+
+	/**
+	 * An object of a library class that Ariadne models, such as a Keras optimizer, is not examined for primitive fields, so the learning
+	 * rate its model stores doesn't make the optimizer a primitive parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). Before the model existed, such an object had no fields
+	 * to examine. Neither is an object of a program-defined class, which {@code tf.function} keys by its identity
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048), as in {@link #testLikelyHasNonTensorParameter16()}.
+	 */
+	@Test
+	public void testLibraryModeledObjectParameter() throws Exception {
+		assertFalse("A modeled optimizer's learning rate does not make it a primitive parameter.",
+				getFunction("with_optimizer").getHasPrimitiveParameter());
+		assertFalse(
+				"An object of a program-defined class with a primitive field is keyed by its identity, so it is no primitive parameter.",
+				getFunction("with_program_object").getHasPrimitiveParameter());
+
+		// A program-defined subclass of a modeled optimizer is a program-defined class, so it is examined. Neither subclass stores a field
+		// itself, with or without its own constructor, so neither is a primitive parameter.
+		assertFalse("A program-defined subclass of a modeled optimizer is not a primitive parameter.",
+				getFunction("with_optimizer_subclass").getHasPrimitiveParameter());
+		assertFalse("A program-defined subclass forwarding its rate to the modeled constructor is not a primitive parameter.",
+				getFunction("with_optimizer_subclass_init").getHasPrimitiveParameter());
+	}
+
+	/**
+	 * {@code tf.function} keys an object of a program-defined class or an {@code enumerate} object by its identity and a list, a tuple or a
+	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). It can't key a set at all, whose
+	 * elements are still examined. {@code boxed}'s object and {@code boxes}'s list of objects have an {@code int} field that differs across
+	 * calls, which never causes a retrace, so neither is a primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and
+	 * {@code keyed}'s dict have an {@code int} element that differs across calls, a retrace each, so each is.
+	 */
+	@Test
+	public void testIdentityKeyedObjectParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("boxed", "boxes")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s object is keyed by its identity, so its int field is no primitive.", FALSE,
+					function.getHasPrimitiveParameter());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertTrue(name + " is converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals(name + " hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		for (String name : List.of("listed", "tupled", "keyed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s container is keyed by its contents, so its int element is a primitive.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		}
+
+		// TODO: Expect no primitive parameter: `tf.function` keys an `enumerate` object by its identity, whatever it enumerates
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine's `enumerate` summary returns a fresh
+		// list of (index, element) tuples (wala/ML#826), so the object reads as a list, whose int elements are primitives.
+		Function enumerated = findFunction(functions, "enumerated");
+		assertEquals("enumerated's enumerate object reads as a list of ints.", TRUE, enumerated.getHasPrimitiveParameter());
+		assertFalse("enumerated isn't converted.", enumerated.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// `tf.function` can't key a set argument at all and raises a `TypeError`. A set's elements are still examined as a safe stand-in,
+		// so `setted`'s int element gets it refused, as before the identity rule.
+		// TODO: Whether a set argument should get a refusal of its own is an open question.
+		Function setted = findFunction(functions, "setted");
+		assertEquals("setted's set holds an int, a primitive.", TRUE, setted.getHasPrimitiveParameter());
+		assertFalse("setted isn't converted.", setted.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("setted fails HAS_PRIMITIVE_PARAMETERS.", setted.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+
+		// TODO: Expect a primitive parameter once the engine models `namedtuple` and `attrs` classes, which `tf.function` keys by their
+		// contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine counts neither as a container,
+		// and neither read as a primitive before the identity rule either.
+		for (String name : List.of("named", "attributed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + "'s object reads as no primitive.", FALSE, function.getHasPrimitiveParameter());
+		}
 	}
 
 	@Test
@@ -7584,22 +8079,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int beside a boolean. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at
+	 * each of two calls, beside the same boolean, so it is.
+	 */
 	@Test
 	public void testBooleanParameter3() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int beside a {@code False}. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different
+	 * literal at each of two calls, beside the same boolean, so it is.
+	 */
 	@Test
 	public void testBooleanParameter4() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int alone. {@code f}'s is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at each of two
+	 * calls, so it is.
+	 */
 	@Test
 	public void testBooleanParameter5() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	/**
@@ -8220,12 +8736,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Functions called from pytest tests are analyzed. {@code func} is called with one literal, so its parameter isn't counted (#1025,
+	 * #1109); {@code func2} is called with two different literals, so it is a primitive parameter.
+	 */
 	@Test
 	public void testPytest() throws Exception {
 		Set<Function> functions = this.getFunctions("test_sample");
-		assertEquals(2, functions.size());
+		assertEquals(4, functions.size());
 		long count = functions.stream().filter(f -> f.getIdentifier().equals("func")).filter(Function::getHasPrimitiveParameter).count();
-		assertEquals(1, count);
+		assertEquals("`func`'s argument is one constant.", 0, count);
+		count = functions.stream().filter(f -> f.getIdentifier().equals("func2")).filter(Function::getHasPrimitiveParameter).count();
+		assertEquals("`func2`'s argument varies.", 1, count);
 	}
 
 	@Test
@@ -8710,6 +9232,88 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (Function function : functions)
 			assertTrue(function.getHasTensorParameter());
+	}
+
+	/**
+	 * A hybrid function reached only through a bare program-defined decorator built on {@code functools.wraps} is not de-hybridized as
+	 * having no tensor parameter (P2) when the forwarding loses its argument
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Behind {@code wrapper(*args, **kwargs)}, the analysis
+	 * models no abstract value for {@code hybrid_scale}'s {@code x}, so its "not a tensor" classification concluded nothing
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}), and the function is kept hybrid. Where the analysis doesn't reach the function
+	 * at all, it is likewise left alone. The undecorated twin, {@code plain}, is reached directly and still hybridizes. The eager
+	 * {@code scale} behind the same wrapper now receives its tensor argument, since the wrapper forwards its {@code *args}
+	 * (ponder-lab/ML#908), so it hybridizes.
+	 */
+	@Test
+	public void testBareUserDecoratorWithWraps() throws Exception {
+		Function plain = getFunction("plain");
+		assertTrue("Control: the undecorated twin has a tensor parameter.", plain.getHasTensorParameter());
+		assertTrue("Control: the undecorated twin hybridizes.", plain.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		Function hybrid = getFunction("hybrid_scale");
+		assertTrue("`hybrid_scale` is hybrid.", hybrid.isHybrid());
+		assertFalse("`hybrid_scale` is not de-hybridized on a parameter with no abstract value.",
+				hybrid.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotEquals("`hybrid_scale` does not pass P2.", P2, hybrid.getPassingPrecondition());
+
+		if (FALSE.equals(hybrid.getHasTensorParameter()))
+			// Reached through the wrapper: the parameter's classification records that it has no abstract value.
+			assertEquals("`hybrid_scale`'s `x` has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+					hybrid.getParameters().get(0).getTensorClassificationBasis());
+
+		Function scale = getFunction("scale");
+		assertTrue("`scale` is reached through the forwarding wrapper with a tensor (ponder-lab/ML#908), so it hybridizes.",
+				scale.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Test that a {@code tf.custom_gradient} method with a bound first argument, an instance method or a {@code classmethod}, is not
+	 * hybridized. Under {@code tf.function} in either decorator order, graph-mode {@code custom_gradient} converts the bound {@code self}
+	 * or {@code cls} to a tensor and raises, or the gradient function's return is rejected. A {@code staticmethod} and a plain function
+	 * have no bound argument and are still hybridized (above {@code tf.custom_gradient}, per #996).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	@Test
+	public void testCustomGradientBoundMethod() throws Exception {
+		Function bound = getFunction("Ops.bound");
+		assertTrue("An instance method is bound.", bound.isBoundCustomGradientMethod());
+		assertFalse("A bound custom-gradient method is not hybridized.",
+				bound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull("It is declined with a reason.",
+				bound.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD.getCode()));
+
+		// The classmethod is identified structurally, whether or not the analysis reaches it.
+		Function classBound = getFunction("Ops.class_bound");
+		assertTrue("A classmethod is bound.", classBound.isBoundCustomGradientMethod());
+		assertFalse("A bound custom-gradient classmethod is not hybridized.",
+				classBound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		for (String name : new String[] { "Ops.unbound", "plain" }) {
+			Function unbound = getFunction(name);
+			assertFalse(name + " has no bound argument.", unbound.isBoundCustomGradientMethod());
+			assertTrue(name + " is still hybridized.", unbound.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Test that an already-hybrid {@code tf.custom_gradient} method with a bound first argument is not reconfigured. Its
+	 * {@code tf.function} already fails in either decorator order, so adding an inferred {@code input_signature} to it would change nothing
+	 * that runs. It is reported instead.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	@Test
+	public void testCustomGradientBoundMethodNotReconfigured() throws Exception {
+		this.setInferInputSignatures(true);
+		Function already = getFunction("Ops.already");
+		assertTrue("The fixture method is already hybrid.", already.isHybrid());
+		assertTrue("It is bound.", already.isBoundCustomGradientMethod());
+		assertFalse("It is not reconfigured.", already.getTransformations().contains(Transformation.RECONFIGURE));
+		assertNotNull("It is reported.", already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD.getCode()));
+		assertNull("It is not reported as already optimal, since its decorator fails on every call.",
+				already.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS.getCode()));
 	}
 
 	@Test
@@ -9323,10 +9927,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * The comprehension-built variant of the sequence reduction (#807): the container's catalog at Ariadne 0.52.58+ carries the
-	 * analysis-internal append-contents key (wala/ML#773 stores comprehension elements under the same channel {@code append} uses)
-	 * alongside its numeric indices. With the synthetic key filtered before the contiguity check, the contiguous singleton reduces exactly
-	 * like the literal-list fixture; without the filter, it declined as non-contiguous.
+	 * The comprehension-built variant of the sequence reduction (#807). The analysis does not position a comprehension's elements, so the
+	 * engine gives the list no length ({@code ContainerElements.arity()} is empty), and the parameter declines with
+	 * {@code TENSOR_CONTAINER_UNSUPPORTED}. This fixture's comprehension happens to run once, but its length is the iteration count, which
+	 * the analysis does not know: the same list read as length 1 for {@code range(3)} too (see
+	 * {@link #testInputSignatureContainerComprehensionLength()}). Before the engine answered the length, Hybridize read it off the object
+	 * catalog's constant indices, filtering the comprehension's element channel out, and reduced this list to a nested entry of length 1.
 	 */
 	@Test
 	public void testInputSignatureContainerComprehension() throws Exception {
@@ -9337,12 +9943,124 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Parameter xs = function.getParameters().get(0);
 		assertEquals("xs", xs.getName());
 		assertEquals("Phase 3 must classify the comprehension-built container.", TRUE, xs.isTensorContainer());
-		assertNotNull("The container's element types must survive the synthetic catalog key (#807).", xs.getContainerElementTypes());
-		assertEquals("A singleton comprehension has one element position.", 1, xs.getContainerElementTypes().size());
+		// Was a singleton nested entry while the length came from the object catalog; the engine gives a comprehension no length.
+		assertNull("A comprehension-built list has no known length, so no element structure.", xs.getContainerElementTypes());
 
 		InferenceResult result = function.inferInputSignature();
-		assertTrue("The comprehension-built singleton reduces to a nested entry.", result.signature().isPresent());
-		assertEquals("The nested rendering matches the literal-list fixture's.", "[[tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+		assertFalse("A comprehension-built list blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+	}
+
+	/**
+	 * A comprehension that builds a list of three tensors. The analysis does not position its elements, so the engine gives it no length
+	 * and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the object catalog gave 1 here, and a
+	 * nested specification of length 1 rejects the three-element list the call passes.
+	 */
+	@Test
+	public void testInputSignatureContainerComprehensionLength() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * A list a single {@code append} grows after its one-element display, so the call passes two elements. The engine gives a list an
+	 * {@code append} reads off no length, and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the
+	 * object catalog gave 1, and a nested specification of length 1 rejects the call.
+	 */
+	@Test
+	public void testInputSignatureContainerAppend() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * A list {@code extend} grows after its one-element display, so the call passes three elements. The engine gives a list an
+	 * {@code extend} reads off no length, and the parameter declines with {@code TENSOR_CONTAINER_UNSUPPORTED}. Reading the length off the
+	 * object catalog gave 1, and a nested specification of length 1 rejects the call.
+	 */
+	@Test
+	public void testInputSignatureContainerExtend() throws Exception {
+		this.assertUnknownContainerLength();
+	}
+
+	/**
+	 * Asserts that the one function's one parameter, {@code xs}, receives a container of tensors whose length the engine does not know, so
+	 * that it has no element structure and the signature declines with {@code TENSOR_CONTAINER_UNSUPPORTED}.
+	 *
+	 * @throws Exception On a failure to analyze the fixture.
+	 */
+	private void assertUnknownContainerLength() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNull("A list of unknown length has no element structure.", xs.getContainerElementTypes());
+		assertEquals("The only reason the form is not reduced is that it is unsupported.",
+				List.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), xs.getContainerFormReasons());
+
+		InferenceResult result = function.inferInputSignature();
+		assertFalse("A list of unknown length blocks the signature.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+	}
+
+	/**
+	 * A dict of tensors reaching a parameter is a container of tensors by its elements' types, which the engine gives over the dict's
+	 * element keys ({@code ContainerElements.elementTypes}). A dict keyed by a string is one, and so is a dict keyed by another constant, a
+	 * float or a bool, whose key the engine names as well. Each function hybridizes (P1).
+	 */
+	@Test
+	public void testTensorContainerDictNonStringKey() throws Exception {
+		this.setInferInputSignatures(true);
+
+		for (String identifier : List.of("by_string", "by_float", "by_bool")) {
+			Function function = getFunction(identifier);
+			Parameter d = function.getParameters().get(0);
+			assertEquals("`" + identifier + "`'s dict of tensors is a container of tensors.", TRUE, d.isTensorContainer());
+			assertEquals("`" + identifier + "` has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * A dict that may hold an element the analysis does not list: {@code store} writes a tensor into it under a key the analysis cannot
+	 * resolve, and then passes it to {@code read}. The engine reports the dict incomplete ({@code ContainerElements.isComplete()}), and an
+	 * incomplete container may hold a tensor, so {@code read}'s parameter is a container of tensors. No nested specification is built from
+	 * the elements the analysis lists, since they may not be all of them.
+	 */
+	@Test
+	public void testTensorContainerIncomplete() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function read = getFunction("read");
+		Parameter d = read.getParameters().get(0);
+		assertEquals("An incomplete dict may hold a tensor, so it is a container of tensors.", TRUE, d.isTensorContainer());
+		assertNull("No element structure is read off an incomplete container.", d.getContainerElementTypes());
+		assertTrue("No signature is written for it.", read.getInferredInputSignature().isEmpty());
+	}
+
+	/**
+	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
+	 * one specification per position.
+	 */
+	@Test
+	public void testInputSignatureContainerTupleLiteral() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertEquals("Phase 3 classifies the parameter as a container.", TRUE, xs.isTensorContainer());
+		assertNotNull("A tuple display has an element structure.", xs.getContainerElementTypes());
+		assertEquals("The tuple has two positions.", 2, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertTrue("A tuple of concrete tensors reduces to a nested entry.", result.signature().isPresent());
+		assertEquals("Each position gets its own specification.",
+				"[[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
 				result.signature().get().toTensorSpecList("tf."));
 	}
 
@@ -9371,7 +10089,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("No single nested spec admits lists of disagreeing lengths.", result.signature().isPresent());
 		assertEquals("The reason must name the arity disagreement, not an unsupported form.",
 				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY,
+		assertEquals("The blocking parameter must carry the same reason.", Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY),
 				function.getBlockingParameterReasons().get(xs));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -9467,7 +10185,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The reason is the unsupported container form.",
 				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
 		assertEquals("Only the container blocks; the sibling reduces.",
-				Map.of(adjacencyLists, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), function.getBlockingParameterReasons());
+				Map.of(adjacencyLists, Set.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED)),
+				function.getBlockingParameterReasons());
 	}
 
 	/**
@@ -9488,8 +10207,211 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("No conforming caller passes a container.", FALSE, x.isConformingTensorContainer());
 		assertFalse("The conforming caller's tensor is flat evidence.", x.getConformingTensorTypes().isEmpty());
 
-		assertTrue("The flat reduction of the conforming evidence stands.", function.getInferredInputSignature().isPresent());
-		assertTrue("Nothing blocks.", function.getBlockingParameterReasons().isEmpty());
+		// The flat reduction stands, so the parameter is not blocked as an unmodeled container. Its specification is then withheld for a
+		// different reason: it would convert the rejected call's list of differently shaped tensors and raise `InvalidArgumentError`, which
+		// the call's `TypeError` guard does not admit (#1005).
+		assertEquals("The flat reduction stands, and only the declared failure withholds it.",
+				Map.of(x, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				function.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A call declared to fail is set aside as evidence (#888), but it still runs against the inferred signature, which validates the
+	 * argument before the body does. The signature is withheld exactly where it would reject that argument with an exception the call's
+	 * guard does not admit, which would make the test fail; each kept and each withheld case below was checked against TensorFlow 2.9.3 by
+	 * running its guarded call eagerly, under a bare decorator, and under the signature.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
+	 */
+	@Test
+	public void testExpectedFailureGuardAdmitsSignatureRejection() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		// `None` against a flat specification raises `ValueError`, and against a nested one `TypeError`; a list of tensors of different
+		// shapes against a flat one raises `InvalidArgumentError`, which a `ValueError` guard does not admit either. A `tf.errors` guard is
+		// judged like any other (`gather_oob`'s out-of-range gather survives a bare decorator), a sparse specification's rejection is not
+		// predicted (`sparse_value`), an argument that may be a tensor or `None` does not conform (`mixed`), and a dict against a nested
+		// specification raises `KeyError` (`pair_dict`).
+		for (String name : List.of("type_guard", "pytest_type_guard", "regex_guard", "list_type_guard", "list_value_guard", "sparse_value",
+				"mixed", "pair_dict")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s guard does not admit the signature's rejection.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+					function.getInferredInputSignatureAbsenceReason());
+			assertTrue("`" + name + "` is still hybridized, with a bare decorator.",
+					function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+
+		// A `tf.errors` guard around an argument of a shape no other call passes refuses the conversion itself (#1014), since a bare
+		// decorator may raise a static shape error at trace time. `op_error_guard`'s does; `gather_oob`'s out-of-range gather is
+		// data-dependent and would survive, but nothing tells it from a static error. Their signatures are still judged, and withheld.
+		for (String name : List.of("op_error_guard", "gather_oob")) {
+			Function function = findFunction(functions, name);
+			assertNotNull("`" + name + "` is refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			function.inferInputSignature();
+			assertEquals("`" + name + "`'s guard does not admit the signature's rejection either.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		// The guard admits the rejection (`value_guard`, `tuple_guard`, `broad_guard`, `nested_type_guard`, `nested_value_guard`), or the
+		// argument conforms (`conforming`).
+		for (String name : List.of("value_guard", "tuple_guard", "broad_guard", "nested_type_guard", "nested_value_guard", "conforming"))
+			assertTrue("`" + name + "` keeps its signature.", findFunction(functions, name).getInferredInputSignature().isPresent());
+
+		assertEquals("The tuple of classes is the guard's, not its pattern.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				findFunction(functions, "tuple_guard").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A call declared to fail with a TensorFlow error can raise another exception once the function is hybridized, since a bare decorator
+	 * traces the function with the argument's own shape and dtype, and an operation whose static check fails on them raises at trace time:
+	 * {@code ValueError} for a shape, {@code TypeError} for a dtype. The conversion is refused where the declared failure's argument has a
+	 * type no unguarded call passes, or one that is not fully known, and the guard does not admit the exception tracing would raise. Each
+	 * case was checked against TensorFlow 2.9.3 by running its guarded call eagerly and under a bare decorator. The refusal is the bare
+	 * decorator's, so it holds with inference off and on.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedException() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			// A shape no other call passes (`rank_mismatch`, `pytest_rank_mismatch`, and `shape_differs_assert`, whose data-dependent
+			// failure would survive but is not told from a static one), a dtype no other call passes under a guard admitting only the
+			// shape's `ValueError` (`dtype_mismatch`), a dict whose elements are not the argument's type (`from_dict`), no call that is
+			// not declared to fail (`only_declared`), and a type the other call passes that is not fully known (`masked`).
+			for (String name : List.of("rank_mismatch", "pytest_rank_mismatch", "shape_differs_assert", "dtype_mismatch", "from_dict",
+					"only_declared", "masked")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			// Arguments of the types the other calls pass, whose failures are therefore the kernel's (`same_shape_assert`,
+			// `same_shape_gather`, and `same_shape_default`, whose parameter that is not a tensor is not compared), a guard admitting what
+			// tracing raises (`admits_value`, `admits_any`, `admits_type`), a guard naming no `tf.errors` class (`no_op_error`), and one
+			// naming only a class a failed static check is not raised as (`out_of_range_guard`).
+			for (String name : List.of("same_shape_assert", "same_shape_gather", "same_shape_default", "admits_value", "admits_any",
+					"admits_type", "no_op_error", "out_of_range_guard")) {
+				Function function = findFunction(functions, name);
+				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
+						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+				assertNull("`" + name + "` is not refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+						PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			}
+
+			// A function that is already hybrid is not converted, so its decorator changes nothing.
+			Function hybrid = findFunction(functions, "already_hybrid");
+			assertTrue("`already_hybrid` is hybrid.", hybrid.isHybrid());
+			assertNull("`already_hybrid` is not refused.", hybrid.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		}
+	}
+
+	/**
+	 * The Keras shape of {@link #testTracingChangesGuardedException()}: {@code LanguageModel.call} is reached from the test through a
+	 * layer's {@code __call__}, and the call declared to fail passes a dict whose element fails {@code tf.matmul}'s static shape check. On
+	 * TensorFlow 2.9.3 the test passes eagerly and fails under a bare decorator, with {@code ValueError} at trace time in place of the
+	 * declared {@code InvalidArgumentError}, so the conversion is refused.
+	 * <p>
+	 * The guard is seen whether the analysis dispatches {@code model(...)} through the synthesized {@code Layer.__call__} trampoline or to
+	 * the user's {@code Model.__call__} override: the override's {@code super().__call__} is outside any guard, but nothing in the override
+	 * handles what it raises, so the walk to the guarded frame continues through it to the test
+	 * ({@link #testTracingChangesGuardedThroughCaller()}).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedKerasMethod() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Function call = findFunction(this.getFunctions("test_A"), "LanguageModel.call");
+			assertNotNull("`LanguageModel.call` is refused with inference " + (infer ? "on." : "off."), call.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			assertFalse("`LanguageModel.call` is not hybridized.", call.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * A guard around a call reaches the function the call reaches through user functions between them, since what the function raises
+	 * leaves each such frame unhandled: {@code forwarded} is reached through one frame, {@code forwarded_twice} through two, and
+	 * {@code diamond} through a frame the walk reaches along two paths, since the frame above it calls it from two sites. Each argument
+	 * fails {@code tf.matmul}'s static shape check, as in {@link #testTracingChangesGuardedException()}, so the conversion is refused. A
+	 * frame between whose {@code try} statement catches every exception and raises the declared one in its place ({@code call_caught})
+	 * handles the call itself, so the guard above it is not the call's, and {@code caught} is converted. Each case was checked against
+	 * TensorFlow 2.9.3 by running the program eagerly and with a bare decorator on the function.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedThroughCaller() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			for (String name : List.of("forwarded", "forwarded_twice", "diamond")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			Function caught = findFunction(functions, "caught");
+			assertTrue("`caught` is hybridized with inference " + (infer ? "on." : "off."),
+					caught.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNull("`caught` is not refused.", caught.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		}
+	}
+
+	/**
+	 * The program-code counterpart of {@link #testTracingChangesGuardedException()}: a {@code try} statement around a call dispatches on
+	 * the exception the call raises, but declares nothing about whether it raises, so its {@code except} clauses distinguish a TensorFlow
+	 * error from what tracing raises in either direction. Each case was checked against TensorFlow 2.9.3 by running the program eagerly and
+	 * with a bare decorator on the function, comparing which clause handles the call.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	@Test
+	public void testTracingChangesHandledException() throws Exception {
+		for (boolean infer : List.of(false, true)) {
+			this.setInferInputSignatures(infer);
+			Set<Function> functions = this.getFunctions();
+
+			// A clause catching the eager error but not the traced one (`square`), the same clause in the function's own body
+			// (`safe_square`), a clause catching the traced error but not the eager one (`reverse`), the eager one named through an
+			// assigned name (`named_clause`), a clause whose classes are not read (`computed_clause`), and, in the function's own body, a
+			// clause the graph's data-dependent error bypasses: `Exception` (`body_broad`), a bare `except` (`body_bare`), and one naming
+			// the kernel's error and both traced ones (`body_tuple`), and one whose classes are not read (`body_computed`).
+			for (String name : List.of("square", "safe_square", "reverse", "named_clause", "computed_clause", "body_broad", "body_bare",
+					"body_tuple", "body_computed")) {
+				Function function = findFunction(functions, name);
+				assertNotNull("`" + name + "` is refused with inference " + (infer ? "on." : "off."), function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+				assertFalse("`" + name + "` is not hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			}
+
+			// A data-dependent error on the shapes an unguarded call passes (`pick`), a clause catching both (`caught_either_way`), a bare
+			// `except` (`caught_by_bare`), an inner clause catching both before an outer one catching one (`caught_inside`), a call in an
+			// `else` clause, which the statement does not guard (`in_else`), a function defined but not called inside a `try` statement
+			// (`defined_in_try`), a `try` statement in the function's own body around a builtin (`scaled`), and a clause naming only
+			// `OutOfRangeError`, which a failed static check is not raised as (`loop_guarded`).
+			for (String name : List.of("pick", "caught_either_way", "caught_by_bare", "caught_inside", "in_else", "defined_in_try",
+					"scaled", "loop_guarded")) {
+				Function function = findFunction(functions, name);
+				assertTrue("`" + name + "` is hybridized with inference " + (infer ? "on." : "off."),
+						function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+				assertNull("`" + name + "` is not refused.", function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+						PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+			}
+		}
 	}
 
 	/**
@@ -9522,6 +10444,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
 		assertTrue("The diagnostic cites the element position.", entry.getMessage().contains("Element 0 of parameter `xs`"));
+	}
+
+	/**
+	 * A container whose lengths disagree and whose form the reduction does not model reports both reasons, each with its own INFO, with the
+	 * function-level reason the one reported before both could be. {@code nested} receives lists of different lengths, one nesting a list;
+	 * {@code scalar} receives lists of different lengths, one holding a Python number; {@code ragged} receives lists of tensors that only
+	 * differ in length.
+	 */
+	@Test
+	public void testInputSignatureContainerArityAndUnmodeledForm() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		String arityMessage = "receives lists of tensors whose lengths disagree";
+		String formMessage = "is classified as a container of tensors of a form not currently reduced";
+
+		for (String name : List.of("nested", "scalar")) {
+			Function function = findFunction(functions, name);
+			Parameter xs = function.getParameters().get(0);
+
+			assertEquals("`" + name + "` reports the arity disagreement first, as it did alone.",
+					Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY), function.inferInputSignature().absenceReason());
+			assertEquals("`" + name + "` reports both reasons, in the order they were found.",
+					List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+					List.copyOf(function.getBlockingParameterReasons().get(xs)));
+
+			List<String> messages = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+					.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage)
+					.filter(m -> m.contains("`xs`")).toList();
+
+			assertEquals("`" + name + "` has one INFO for each reason.", 2, messages.size());
+			assertTrue("`" + name + "` reports the arity disagreement.", messages.stream().anyMatch(m -> m.contains(arityMessage)));
+			assertTrue("`" + name + "` reports the unmodeled form.", messages.stream().anyMatch(m -> m.contains(formMessage)));
+		}
+
+		Function ragged = findFunction(functions, "ragged");
+		assertEquals("Lists that differ only in length report the arity disagreement alone.",
+				Map.of(ragged.getParameters().get(0), Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY)),
+				ragged.getBlockingParameterReasons());
+	}
+
+	/**
+	 * Every element position of a container parameter is reduced, and each one that bottoms reports every reason that holds for it, not
+	 * only the first position's first reason. {@code xs}'s element 0 is dense at one call and sparse at the other, element 1 disagrees
+	 * about the dtype, and element 2 does both.
+	 */
+	@Test
+	public void testInputSignatureContainerEveryElementReason() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertEquals(1, functions.size());
+		Function function = functions.iterator().next();
+
+		Parameter xs = function.getParameters().get(0);
+		assertEquals("xs", xs.getName());
+		assertNotNull("The form is modeled, so element types surface.", xs.getContainerElementTypes());
+		assertEquals("Three element positions.", 3, xs.getContainerElementTypes().size());
+
+		InferenceResult result = function.inferInputSignature();
+		assertEquals("The function-level reason is the first position's first.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY), result.absenceReason());
+		assertEquals("Every position's reasons are reported, in position order.",
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY, InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				List.copyOf(function.getBlockingParameterReasons().get(xs)));
+
+		List<String> messages = Arrays.stream(function.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage).toList();
+
+		Map<Integer, List<InferenceResult.AbsenceReason>> expected = Map.of(0,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY), 1,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), 2,
+				List.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE, InferenceResult.AbsenceReason.HETEROGENEOUS_SPARSITY));
+
+		for (Map.Entry<Integer, List<InferenceResult.AbsenceReason>> position : expected.entrySet()) {
+			String prefix = "Element " + position.getKey() + " of parameter `xs`";
+			List<String> positionMessages = messages.stream().filter(m -> m.startsWith(prefix)).toList();
+
+			assertEquals("One INFO per reason of element " + position.getKey() + ".", position.getValue().size(), positionMessages.size());
+
+			for (InferenceResult.AbsenceReason reason : position.getValue())
+				assertTrue("Element " + position.getKey() + " reports " + reason + ".",
+						positionMessages.stream().anyMatch(m -> m.endsWith(Function.dropMessage(reason))));
+		}
 	}
 
 	/**
@@ -9578,7 +10583,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// `signature_absences.csv` must separate the two so the container gap can be sized.
 		assertEquals("A type-hint-only parameter must report the type-hint-specific absence reason.",
 				Optional.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE,
+		assertEquals("The blocking parameter must carry the same reason.", Set.of(InferenceResult.AbsenceReason.TYPE_HINT_WITHOUT_DTYPE),
 				function.getBlockingParameterReasons().get(x));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -9683,8 +10688,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("A supplied defaulted parameter blocks the signature.", result.signature().isPresent());
 		assertEquals("The reason must name the supply, not the non-tensor classification.",
 				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED,
-				function.getBlockingParameterReasons().get(training));
+		assertEquals("The blocking parameter must carry the same reason.",
+				Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), function.getBlockingParameterReasons().get(training));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
@@ -9721,7 +10726,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("A parameter preceding a spec cannot be omitted, so the signature drops.", result.signature().isPresent());
 		assertEquals("The reason must name the positional conflict, not the supply.",
 				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC), result.absenceReason());
-		assertEquals("The blocking parameter must carry the same reason.", InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC,
+		assertEquals("The blocking parameter must carry the same reason.",
+				Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC),
 				function.getBlockingParameterReasons().get(training));
 
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
@@ -9799,12 +10805,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// Per-parameter attribution (#654): both blocking parameters are recorded with their reason, in declaration order, where the
 		// function-level `absenceReason()` collapses to only the first.
-		Map<Parameter, InferenceResult.AbsenceReason> blocking = function.getBlockingParameterReasons();
+		Map<Parameter, Set<InferenceResult.AbsenceReason>> blocking = function.getBlockingParameterReasons();
 		assertEquals("Both non-tensor parameters must be recorded as blocking.", 2, blocking.size());
-		assertEquals("Parameter `m` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
-				blocking.get(m));
-		assertEquals("Parameter `n` blocks for the non-tensor-parameter reason.", InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER,
-				blocking.get(n));
+		assertEquals("Parameter `m` blocks for the non-tensor-parameter reason.",
+				Set.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), blocking.get(m));
+		assertEquals("Parameter `n` blocks for the non-tensor-parameter reason.",
+				Set.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), blocking.get(n));
 		assertEquals("Blocking parameters must be in declaration order.", List.of(m, n), new ArrayList<>(blocking.keySet()));
 	}
 
@@ -10599,6 +11605,144 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator bound at run time has no definition PyDev can follow from the module that uses it, although another module of the project
+	 * defines a function with the same name. The lookup leaves it unresolved rather than guess the other module's definition by name from
+	 * PyDev's global token index (#1121).
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testRuntimeBoundDecoratorUnresolved() throws Exception {
+		Function function = getFunction("f");
+		assertEquals("A decorator bound at run time stays unresolved, rather than resolving to `B.runtime_bound_decorator` by name.",
+				Set.of(), function.getDecoratorNames(null));
+		assertFalse(function.isHybrid());
+		assertEquals("The unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(function).size());
+	}
+
+	/**
+	 * Checks the conditions of the refactoring over the test file A.py while the given module of the test's source folder is a forced
+	 * builtin, which PyDev answers lookups into by importing the module in its completion server (#1121).
+	 *
+	 * @param module The module of the test's source folder to make a forced builtin.
+	 * @return The status of the condition checking.
+	 * @throws Exception On error.
+	 */
+	private RefactoringStatus checkConditionsWithForcedBuiltin(String module) throws Exception {
+		String sourceFolder = getAbsolutePath(this.getInputTestFileName("A")).getParent().toString();
+		InterpreterInfo info = getDefaultInterpreterInfo();
+
+		// The server imports a forced builtin from the interpreter's PYTHONPATH rather than the project's.
+		info.addForcedLib(module);
+		info.libs.add(sourceFolder);
+
+		try {
+			HybridizeFunctionRefactoringProcessor processor = this.createProcessor("A",
+					this.getDocumentToAvailableFunctionDefinitions("A"));
+			return new ProcessorBasedRefactoring(processor).checkAllConditions(new NullProgressMonitor());
+		} finally {
+			info.libs.remove(sourceFolder);
+			info.removeForcedLib(module);
+		}
+	}
+
+	/**
+	 * Asserts that the given status has a fatal error carrying a {@link LostPyDevAnswerError} whose message names the given lookup and
+	 * selection in module {@code A} (#1121).
+	 *
+	 * @param status The status of the condition checking.
+	 * @param lookup The kind of lookup that lost its answer.
+	 * @param selection The text the lookup was made for.
+	 */
+	private static void assertLostPyDevAnswer(RefactoringStatus status, String lookup, String selection) {
+		assertTrue("The analysis stops with a fatal error: " + status, status.hasFatalError());
+
+		RefactoringStatusEntry entry = status.getEntryWithHighestSeverity();
+		assertTrue("The fatal error carries the lost answer: " + entry.getData(), entry.getData() instanceof LostPyDevAnswerError);
+
+		String message = entry.getMessage();
+		assertTrue("The error names the lookup: " + message, message.contains(lookup + " lookup"));
+		assertTrue("The error names the selection: " + message, message.contains("selection: " + selection + ","));
+		assertTrue("The error names the module: " + message, message.contains("module: A,"));
+	}
+
+	/**
+	 * A PyDev lookup that loses its answer to a dead PyDev completion server stops the analysis with a fatal error naming the lookup,
+	 * rather than leaving the decorator it was made for unresolved (#1121). The module here kills the server when imported there, so the
+	 * lookup of the decorator from it loses its answer.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testLostPyDevAnswer() throws Exception {
+		assertLostPyDevAnswer(this.checkConditionsWithForcedBuiltin("lost_answer_aborts"), "definition", "decorate");
+	}
+
+	/**
+	 * As {@link #testLostPyDevAnswer()}, but the lookup that loses its answer is the one for the parent classes of a method's class, made
+	 * as the method's name suggests a tensor context (#1121). The fixture has no decorators, so no definition lookup reaches the module
+	 * first: the class-hierarchy lookup's request for the base class kills the server.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testLostPyDevAnswerInClassHierarchy() throws Exception {
+		assertLostPyDevAnswer(this.checkConditionsWithForcedBuiltin("lost_base_answer_aborts"), "class hierarchy", "M");
+	}
+
+	/**
+	 * A decorator whose name can't be resolved is recorded on its function rather than dropped silently (#1121). The decorator here is
+	 * bound only at run time, so no definition of it is found. Both the hybridization check and the decorator naming fail on it, and the
+	 * entry is recorded once.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testUnresolvedDecorator() throws Exception {
+		Function function = getFunction("f");
+
+		assertFalse(function.isHybrid());
+		assertEquals("The analysis records the unresolved decorator before anything names the decorators.", 1,
+				getUnresolvedDecoratorEntries(function).size());
+
+		assertEquals("The unresolved decorator has no name to report.", Set.of(), function.getDecoratorNames(null));
+
+		List<RefactoringStatusEntry> entries = getUnresolvedDecoratorEntries(function);
+		assertEquals("The unresolved decorator is recorded once, though both lookups fail on it.", 1, entries.size());
+
+		String message = entries.get(0).getMessage();
+		assertTrue("The entry names the decorator: " + message, message.contains("`unregistered_decorator`"));
+		assertTrue("The entry names why the lookup failed: " + message, message.contains("NoDeclaringModuleException"));
+	}
+
+	/**
+	 * The {@code tf.custom_gradient} lookups skip a decorator whose name can't be resolved (#1121). Beneath {@code @tf.function}, the
+	 * unresolved decorator counts as intervening, since nothing shows it passes its arguments through. On a method, it isn't taken for
+	 * {@code tf.custom_gradient}. Either way, the decorator is recorded once.
+	 *
+	 * @throws Exception On error.
+	 */
+	@Test
+	public void testUnresolvedDecoratorInCustomGradientLookups() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertTrue("`f` is hybrid.", f.isHybrid());
+		assertTrue("An unresolved decorator beneath `@tf.function` counts as intervening.", f.hasInterveningDecorator());
+		assertEquals("`f`'s unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(f).size());
+
+		Function m = findFunction(functions, "C.m");
+		assertFalse("An unresolved decorator isn't taken for `tf.custom_gradient`.", m.isBoundCustomGradientMethod());
+		assertEquals("`C.m`'s unresolved decorator is recorded once.", 1, getUnresolvedDecoratorEntries(m).size());
+	}
+
+	private static List<RefactoringStatusEntry> getUnresolvedDecoratorEntries(Function function) {
+		return Arrays.stream(function.getStatus().getEntries())
+				.filter(e -> e.getCode() == Information.UNRESOLVED_DECORATOR.getCode() && e.getSeverity() == RefactoringStatus.WARNING)
+				.toList();
+	}
+
+	/**
 	 * Regression guard against a destructuring assignment whose left-hand side rebinds the name being destructured losing every field but
 	 * the first (fixed by <a href="https://github.com/wala/ML/issues/819">wala/ML#819</a>, released in Ariadne 0.52.79). Through 0.52.78
 	 * the read that followed the rebinding was carried to field 0's definition, so field 1 was read out of field 0's result rather than out
@@ -10834,10 +11978,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A generator boundary does not lose the destination's allocation.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int64)]",
 				render(getFunction("via_generator")));
 
-		// Today's behavior, pinned rather than endorsed: through a class implementing the iterator protocol, filled in a loop indexed by
-		// a variable, no signature is emitted at all. Whether the evidence is lost on that path or never reaches the parameter here has
-		// not been separated, so this asserts what happens and claims nothing about what should.
-		assertEquals("Pins today's behavior for the class-iterator path, which emits no signature.", "ABSENT",
+		// Through a class implementing the iterator protocol, filled in a loop indexed by a variable. This emitted no signature through
+		// Ariadne 0.52.104; it now reads all three allocations, and the int64 destination still decides over its float32 partners and the
+		// float64 value assigned into it.
+		assertEquals("Through a class implementing the iterator protocol, the destination allocation still decides.",
+				"[tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), tf.TensorSpec(shape=(2, 4, 3), dtype=tf.float32), "
+						+ "tf.TensorSpec(shape=(2, 4, 3), dtype=tf.int64)]",
 				render(getFunction("via_loader")));
 
 		// How the allocation spells its dtype, which the cases above never vary: they all say `np.int64`. Resolution is per-spelling,
@@ -10851,9 +11997,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// int64 cannot be the default coming back. Contrast `np.float`, which is float64 either way and therefore cannot distinguish
 		// resolution from a restored default on its own; it is pinned here for coverage, not as evidence.
 		//
-		// Two spellings still reach nothing, and both are deliberate rather than unexplained. `np.int16` has no dtype enum value to
-		// map to at all, so no field reference can be written for it. The builtin `bool` is not in the modeled family, where `np.bool`
-		// and `np.bool_` are. Those are known absences: a change that made either resolve would be news, not noise.
+		// One spelling still reaches nothing, deliberately rather than unexplained: `np.int16` has no dtype enum value to map to at all,
+		// so no field reference can be written for it. That is a known absence: a change that made it resolve would be news, not noise.
+		// The builtin `bool` reached nothing too until https://github.com/ponder-lab/ML/pull/1071 made it name the builtin object.
 
 		assertEquals("`np.int32` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.int32)]", render(getFunction("via_int32")));
 
@@ -10887,7 +12033,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("`np.int16` does not resolve, and no longer falls back to float64.", "ABSENT", render(getFunction("via_int16")));
 
-		assertEquals("The builtin `bool` does not resolve, and no longer falls back to float64.", "ABSENT",
+		// With https://github.com/ponder-lab/ML/pull/1071, the builtin `bool` names the builtin object and resolves to the array's
+		// run-time dtype.
+		assertEquals("The builtin `bool` resolves.", "[tf.TensorSpec(shape=(4, 3), dtype=tf.bool)]",
 				render(getFunction("via_builtin_bool")));
 	}
 
@@ -10933,6 +12081,164 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`compute` is hybrid.", compute.isHybrid());
 		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
 		assertFalse("A computing hybrid function is not de-hybridized as barren.", compute.getTransformations().contains(CONVERT_TO_EAGER));
+	}
+
+	/**
+	 * A hybrid function whose body computes only through a call the call graph does not resolve is not established as barren, so it keeps
+	 * its decorator (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). Its tensor op is fetched with
+	 * {@code getattr}: the {@code getattr} call itself is a builtin, but the call of its result is unresolved, so the scan finds no op
+	 * without having seen every call. De-hybridizing such a function on that basis breaks one that relies on graph mode. A truly barren
+	 * function still de-hybridizes (P6), including one whose only calls are Python builtins or methods of builtin strings, dictionaries,
+	 * lists, tuples and sets, which Ariadne leaves without a target but which compute no tensors. The eager-to-hybrid side is unchanged:
+	 * the eager twin still fails {@link PreconditionFailure#NO_TENSOR_COMPUTATION}.
+	 */
+	@Test
+	public void testUnresolvedCallKeepsHybrid() throws Exception {
+		Function opaque = getFunction("opaque");
+		assertTrue("`opaque` is hybrid.", opaque.isHybrid());
+		assertTrue("`opaque` has a tensor parameter.", opaque.getHasTensorParameter());
+		assertFalse("The scan finds no tensor op in `opaque`.", opaque.getHasTensorComputation());
+		assertTrue("Calling `getattr`'s result, by a name the analysis can't model, is an unresolved call.",
+				opaque.isTensorComputationUnresolved());
+		assertFalse("`opaque` is not de-hybridized on an incomplete scan.", opaque.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotEquals("`opaque` does not pass the barren precondition.", P6, opaque.getPassingPrecondition());
+
+		// Ariadne reads `getattr` on a constant name as the attribute read (ponder-lab/ML#909), so the call resolves to `tf.reduce_sum`:
+		// the scan sees a tensor op, and the function stays hybrid because it computes tensors, not because a call is unresolved.
+		Function constant = getFunction("opaque_constant");
+		assertFalse("`opaque_constant` is not de-hybridized.", constant.getTransformations().contains(CONVERT_TO_EAGER));
+		assertFalse("`getattr(tf, \"reduce_sum\")` resolves (ponder-lab/ML#909).", constant.isTensorComputationUnresolved());
+		assertTrue("`opaque_constant`'s resolved call is a tensor op.", constant.getHasTensorComputation());
+
+		for (String name : new String[] { "barren", "builtin_function", "string_method", "dict_method", "list_method", "dict_items_loop",
+				"tuple_method", "set_method", "numpy_call", "uses_user_abs", "calls_recursive", "global_builtin", "user_keyed" }) {
+			Function barren = getFunction(name);
+			assertFalse("`" + name + "` performs no tensor computation.", barren.getHasTensorComputation());
+			assertFalse("`" + name + "` has no unresolved call that may compute tensors.", barren.isTensorComputationUnresolved());
+			assertEquals("`" + name + "`, a barren hybrid function, still de-hybridizes (P6).", P6, barren.getPassingPrecondition());
+			assertTrue("`" + name + "` selects CONVERT_TO_EAGER.", barren.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		// Calls that read like builtins but are bound otherwise, or that call a function argument, may compute tensors.
+		for (String name : new String[] { "make.step", "rebound", "global_rebound", "mapped", "keyed", "sorted_keyed", "global_keyed",
+				"sorted_in_place" }) {
+			Function kept = getFunction(name);
+			assertFalse("The scan finds no tensor op in `" + name + "`.", kept.getHasTensorComputation());
+			assertTrue("`" + name + "` has a call that may compute tensors.", kept.isTensorComputationUnresolved());
+			assertFalse("`" + name + "` is not de-hybridized.", kept.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		Function eager = getFunction("opaque_eager");
+		assertFalse("`opaque_eager` is eager.", eager.isHybrid());
+		assertNotNull("The eager-to-hybrid side is unchanged: `opaque_eager` still fails NO_TENSOR_COMPUTATION.",
+				eager.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+	}
+
+	/**
+	 * A hybrid function with a supplied {@code input_signature} is kept hybrid where a hybrid-to-eager rule would otherwise remove it
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997), and it reports a status that says why rather than one
+	 * that contradicts its classification. Here {@code declared}'s Python {@code int} argument is converted to a tensor by the signature,
+	 * so neither "no tensor parameter" (P2) nor "a primitive parameter" (P3) holds; {@code sig_barren} is barren, but removing its
+	 * decorator would delete the boundary it enforces (P6); and {@code sig_zero} and {@code Exporter.get_step} carry an empty signature,
+	 * which converts nothing but pins the one concrete function a SavedModel export relies on. {@code sig_prim} has a tensor and a
+	 * primitive parameter (P3), and under its signature the primitive does not cause retracing. The same functions without a signature
+	 * still de-hybridize, and each kept function's failure gives its rule's reason.
+	 */
+	@Test
+	public void testSuppliedSignatureKeepsHybrid() throws Exception {
+		assertSuppliedSignatureKeepsHybrid();
+	}
+
+	/**
+	 * {@link #testSuppliedSignatureKeepsHybrid()} with input-signature inference on. The supplied-signature branch is terminal: it neither
+	 * reconfigures nor infers a signature, so an empty signature on a zero-argument or {@code self}-only function, which has no parameter
+	 * to infer a spec for, does not reach signature inference.
+	 */
+	@Test
+	public void testSuppliedSignatureKeepsHybridInferring() throws Exception {
+		this.setInferInputSignatures(true);
+		assertSuppliedSignatureKeepsHybrid();
+	}
+
+	private void assertSuppliedSignatureKeepsHybrid() throws Exception {
+		for (String name : new String[] { "declared", "sig_barren", "sig_zero", "Exporter.get_step", "rec", "sig_prim" }) {
+			Function kept = getFunction(name);
+			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
+			assertTrue("`" + name + "` carries a supplied input_signature.", kept.getHybridizationParameters().hasInputSignatureParam());
+			assertTrue("`" + name + "` selects no transformation.", kept.getTransformations().isEmpty());
+			assertNull("`" + name + "` passes no precondition.", kept.getPassingPrecondition());
+			assertNotNull("`" + name + "` is kept for its signature, reported as a failure so that it isn't counted optimizable.",
+					kept.getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE));
+			assertNull("`" + name + "` reports no missing primitive parameter.", kept.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+		}
+
+		for (String name : new String[] { "declared", "sig_zero", "Exporter.get_step" }) {
+			Set<String> messages = Arrays.stream(getFunction(name).getStatus().getEntries()).map(RefactoringStatusEntry::getMessage)
+					.collect(toSet());
+			assertFalse("`" + name + "`, with no tensor parameter seen, isn't reported as likely having one.",
+					messages.contains("This hybrid function likely has a tensor parameter."));
+		}
+
+		assertFalse("The analysis doesn't see `declared`'s parameter as a tensor.", getFunction("declared").getHasTensorParameter());
+		assertTrue("`sig_barren`'s parameter is a tensor.", getFunction("sig_barren").getHasTensorParameter());
+		assertFalse("`sig_barren` performs no tensor computation.", getFunction("sig_barren").getHasTensorComputation());
+
+		// The checks before the conversion still run as they do without a signature.
+		for (String name : new String[] { "se", "se_barren" }) {
+			Function sideEffecting = getFunction(name);
+			assertTrue("`" + name + "` has Python side-effects.", sideEffecting.getHasPythonSideEffects());
+			assertNotNull("`" + name + "` still fails HAS_PYTHON_SIDE_EFFECTS.",
+					sideEffecting.getEntryMatchingFailure(HAS_PYTHON_SIDE_EFFECTS));
+			assertTrue("`" + name + "` selects no transformation.", sideEffecting.getTransformations().isEmpty());
+		}
+
+		Function rec = getFunction("rec");
+		assertTrue("`rec` is recursive.", rec.isRecursive());
+		assertTrue("`rec` still carries the recursion warning.", Arrays.stream(rec.getStatus().getEntries())
+				.anyMatch(e -> e.getMessage().equals("Recursive tf.functions are not supported by TensorFlow.")));
+
+		assertEquals("Without a signature, `undeclared` still de-hybridizes (P2).", P2, getFunction("undeclared").getPassingPrecondition());
+		assertEquals("Without a signature, `barren` still de-hybridizes (P6).", P6, getFunction("barren").getPassingPrecondition());
+		assertEquals("Without a signature, `prim` still de-hybridizes (P3).", P3, getFunction("prim").getPassingPrecondition());
+
+		// Each rule gives its own reason for keeping the decorator.
+		String p2 = "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		String p3 = "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		String p6 = "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+
+		for (String name : new String[] { "declared", "sig_zero", "Exporter.get_step" })
+			assertEquals("`" + name + "` has no tensor parameter (P2).", p2,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		for (String name : new String[] { "sig_prim", "rec" })
+			assertEquals("`" + name + "` has a primitive parameter (P3).", p3,
+					getFunction(name).getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+
+		assertEquals("`sig_barren` performs no tensor computation (P6).", p6,
+				getFunction("sig_barren").getEntryMatchingFailure(HAS_SUPPLIED_INPUT_SIGNATURE).getMessage());
+	}
+
+	/**
+	 * A hybrid function whose parameter has no abstract value is not de-hybridized as having no tensor parameter (P2)
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from string
+	 * formatting, an op the analysis doesn't model, so its "not a tensor" classification concluded nothing
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}). The argument of {@code p_int} is a modeled literal, so its classification is a
+	 * determination and it still de-hybridizes.
+	 */
+	@Test
+	public void testParameterWithNoAbstractValue() throws Exception {
+		Function fmt = getFunction("p_fmt");
+		assertFalse("`p_fmt`'s parameter isn't seen as a tensor.", fmt.getHasTensorParameter());
+		assertEquals("`p_fmt`'s parameter has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+				fmt.getParameters().get(0).getTensorClassificationBasis());
+		assertFalse("`p_fmt` is not de-hybridized.", fmt.getTransformations().contains(CONVERT_TO_EAGER));
+		assertNotNull("`p_fmt` is kept as having tensor parameters that can't be inferred, so that it isn't counted optimizable.",
+				fmt.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER));
+
+		Function literal = getFunction("p_int");
+		assertEquals("`p_int`'s parameter is determined not to be a tensor.", TensorClassificationBasis.ANALYZED_NOT_TENSOR,
+				literal.getParameters().get(0).getTensorClassificationBasis());
+		assertEquals("`p_int` still de-hybridizes (P2).", P2, literal.getPassingPrecondition());
 	}
 
 	/**
@@ -11031,6 +12337,288 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * numpy-on-parameters precondition (code 16) instead, so their tensor-computation flag stays set.
 	 */
 	/**
+	 * Issue 1025, reduced from tf-image's {@code _random_augmentations}: a hybrid function's primitive parameter that every call binds to
+	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, so P3 doesn't de-hybridize the function.
+	 */
+	@Test
+	public void testInvariantPrimitiveForwardedDefault() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "_random_augmentations");
+
+		assertTrue(function.isHybrid());
+		assertEquals("The tensor `image` is a tensor parameter.", TRUE, function.getHasTensorParameter());
+		assertEquals("`prob_demanding_ops` is always 0.5, so it isn't a primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+		assertFalse(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNotEquals(P3, function.getPassingPrecondition());
+	}
+
+	/**
+	 * Issue 1025, reduced from tf-image's {@code random_pad_to_square} under {@code @convert_type}. The primitive {@code max_extend} is
+	 * always its default, but the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
+	 * argument at or before the parameter's slot, and P3 de-hybridizes the function. The parameter points to that one constant, but past
+	 * the unpack its points-to set needn't hold every value it receives, so it isn't exempt.
+	 */
+	@Test
+	public void testInvariantPrimitiveConvertTypeForwarding() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function function = findFunction(functions, "random_pad_to_square");
+
+		assertTrue(function.isHybrid());
+		// TODO: Keep the decorator once the alignment past an unpacked argument is determined (https://github.com/wala/ML/issues/751).
+		assertEquals("`max_extend` is always 0.1, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, function.getPassingPrecondition());
+	}
+
+	/**
+	 * Issue 1025, reduced from VaDER's {@code _reconstruction_loss} and {@code _latent_loss}: the primitive arguments {@code K} and
+	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, so they can't vary the trace key,
+	 * and P3 doesn't de-hybridize either method. {@code output_activation} is a function object, not a primitive.
+	 */
+	@Test
+	public void testInvariantPrimitiveInstanceAttributes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("VaDER._reconstruction_loss", "VaDER._latent_loss")) {
+			Function function = findFunction(functions, name);
+
+			assertTrue(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals(name + "'s primitive arguments are each one constant, so it has no primitive parameter.", FALSE,
+					function.getHasPrimitiveParameter());
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertNotEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta}: the eager function's tuple arguments are each a tuple of constants
+	 * set once in a constructor, keyed by their contents, but P1 still declines the function. {@code scale_boxes} takes a nested tuple of
+	 * constants.
+	 */
+	@Test
+	public void testInvariantPrimitiveTuples() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("bbox2delta", "scale_boxes")) {
+			Function function = findFunction(functions, name);
+
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			// TODO: Convert once tuples with equal constant elements count as one value. Each caller passes its own tuple, a separate
+			// allocation, not a single constant, so the parameter isn't exempt
+			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1109).
+			assertEquals(name + "'s tuples of constants are fixed, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertNotNull(name, function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta} with scalar instance state: {@code bbox2delta}'s primitive
+	 * {@code std} is the same constant at every call, so it can't vary the trace key, and P1 converts the function. {@code offset} is the
+	 * control: its callers pass different constants, so it's still declined.
+	 */
+	@Test
+	public void testInvariantPrimitiveEagerScalars() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function bbox2delta = findFunction(functions, "bbox2delta");
+		assertFalse(bbox2delta.isHybrid());
+		assertEquals("bbox2delta has a tensor parameter.", TRUE, bbox2delta.getHasTensorParameter());
+		assertEquals("`std` is always 0.1, so it isn't a primitive parameter.", FALSE, bbox2delta.getHasPrimitiveParameter());
+		assertNull(bbox2delta.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(bbox2delta.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals(P1, bbox2delta.getPassingPrecondition());
+
+		Function offset = findFunction(functions, "offset");
+		assertFalse(offset.isHybrid());
+		assertEquals("offset has a tensor parameter.", TRUE, offset.getHasTensorParameter());
+		assertEquals("`amount` is 1.0 at one call and 2.0 at the other.", TRUE, offset.getHasPrimitiveParameter());
+		assertNotNull(offset.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(offset.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: {@code f}'s {@code n} is 0 at one call and each index of a {@code range} loop at the other, so it
+	 * varies, and it's still a primitive parameter.
+	 */
+	@Test
+	public void testRangeIndexPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
+		assertEquals("`n` varies over the loop, so it's a primitive parameter.", TRUE, f.getHasPrimitiveParameter());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Issue 1025, reduced from tf-image's {@code random_aspect_ratio_deformation}: the primitive arguments differ between the three call
+	 * sites but are constant at each, so the traces are bounded by the call sites, but P3 still de-hybridizes the function. So does
+	 * {@code jitter}, whose two values share one calling context.
+	 */
+	@Test
+	public void testBoundedPrimitivePerCallSite() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("random_aspect_ratio_deformation", "jitter")) {
+			Function function = findFunction(functions, name);
+
+			assertTrue(name, function.isHybrid());
+			assertEquals(name, TRUE, function.getHasTensorParameter());
+			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
+			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
+			assertEquals(name + "'s literals bound its traces, but it has a primitive parameter.", TRUE,
+					function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: a primitive bound to five distinct constants makes P3 de-hybridize the hybrid function and P1
+	 * decline the eager one.
+	 */
+	@Test
+	public void testVaryingPrimitiveStillTriggers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function hybrid = findFunction(functions, "hybrid_scale");
+		assertEquals(TRUE, hybrid.getHasPrimitiveParameter());
+		assertTrue(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals(P3, hybrid.getPassingPrecondition());
+
+		Function eager = findFunction(functions, "eager_scale");
+		assertEquals(TRUE, eager.getHasPrimitiveParameter());
+		assertFalse(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertNotNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * An object of a program class, allocated once, with a primitive field: {@code tf.function} keys it by its identity, so the field never
+	 * causes a retrace, and it's no primitive parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The
+	 * hybrid {@code hybrid_apply} isn't de-hybridized under P3, and the eager {@code eager_apply} is converted. Formerly the control for
+	 * issues 1025 and 1109, which held such an object to be a primitive parameter.
+	 */
+	@Test
+	public void testProgramObjectIdentityKeyed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function hybrid = findFunction(functions, "hybrid_apply");
+		assertEquals(FALSE, hybrid.getHasPrimitiveParameter());
+		assertFalse(hybrid.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNull(hybrid.getPassingPrecondition());
+
+		Function eager = findFunction(functions, "eager_apply");
+		assertEquals(FALSE, eager.getHasPrimitiveParameter());
+		assertTrue(eager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals(P1, eager.getPassingPrecondition());
+		assertNull(eager.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: each primitive points to one constant, but a call passes a value the analysis has no abstract value
+	 * for, so the set isn't complete. In {@code scaled}, that call has its own calling context, in which the parameter points to nothing;
+	 * {@code relayed} is reached from one call site whose argument points to nothing in one of its caller's contexts. {@code defaulted}'s
+	 * default has no abstract value, so the parameter points to nothing in the context of the call that omits it. A list is mutable, so
+	 * {@code listed}'s list of constants isn't a fixed value either.
+	 */
+	@Test
+	public void testUnknownPrimitiveValueSetUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("scaled", "relayed", "defaulted", "listed")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals(name, P3, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Python scalars of unknown value as arguments: the engine represents each by its type's key (wala/ML#1148), which counts as a
+	 * primitive wherever a constant does. {@code scale}'s {@code n} is only ever {@code len(xs)}, and {@code scale_first}'s list holds it,
+	 * so each is a primitive parameter. {@code boxed}'s object of a program class has it in a field, and {@code layered}'s Keras layer has
+	 * it as its units, but neither is a container, so each is keyed by its identity and is no primitive parameter (#1048).
+	 * {@code wrapped}'s tensors and variable are built from {@code len(xs)}, but a tensor is no primitive, whatever it was built from
+	 * (wala/ML#451). {@code summed}'s parameter is a list of tensors at one call and {@code len(xs)} at the other, so the int's key is
+	 * among the values its container reduction reads.
+	 */
+	@Test
+	public void testComputedScalarParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("scale", "scale_first")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		}
+
+		Function wrapped = findFunction(functions, "wrapped");
+		assertEquals("A tensor built from a computed int is no primitive.", FALSE, wrapped.getHasPrimitiveParameter());
+		assertEquals("wrapped has a tensor parameter.", TRUE, wrapped.getHasTensorParameter());
+		assertEquals("wrapped hybridizes (P1).", P1, wrapped.getPassingPrecondition());
+
+		// `tf.function` keys `Box(len(xs))` by its identity, so its field, a computed int, never causes a retrace, and it is no primitive
+		// parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		// A trace reads the field's value at trace time, so a field rewritten after tracing is read stale. The rebound-state check refuses
+		// that for a scalar field too (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076;
+		// `testReboundScalarFieldReads`), but `Box`'s field is set only in `__init__`, so `boxed` reads it live and isn't refused.
+		Function boxed = findFunction(functions, "boxed");
+		assertEquals("boxed's program object is keyed by its identity, so its computed int field is no primitive.", FALSE,
+				boxed.getHasPrimitiveParameter());
+		assertNull("boxed doesn't fail HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertEquals("boxed's field is set only in `__init__`, so it isn't rebound state.", FALSE, boxed.getHasReboundStateReads());
+		assertNull("boxed isn't refused for rebound state.",
+				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		// `x * box.n` is a tensor computation when the field is the computed int (https://github.com/wala/ML/issues/1161), as it is in
+		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant.
+		assertNull("boxed doesn't fail NO_TENSOR_COMPUTATION.",
+				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+		assertTrue("boxed is converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("boxed hybridizes (P1).", P1, boxed.getPassingPrecondition());
+
+		// A Keras layer is no container, so `tf.function` keys it by its identity, and the units it stores, a computed int, are no
+		// primitive (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		Function layered = findFunction(functions, "layered");
+		assertEquals("layered's Keras layer is keyed by its identity, so its computed int units are no primitive.", FALSE,
+				layered.getHasPrimitiveParameter());
+		assertNull("layered doesn't fail HAS_PRIMITIVE_PARAMETERS.", layered.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue("layered is converted.", layered.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("layered hybridizes (P1).", P1, layered.getPassingPrecondition());
+
+		// The call passing `len(xs)` has its own calling context, in which `v` is only that int.
+		Function summed = findFunction(functions, "summed");
+		assertEquals("summed has a tensor parameter.", TRUE, summed.getHasTensorParameter());
+		assertEquals("summed has a primitive parameter.", TRUE, summed.getHasPrimitiveParameter());
+		assertNotNull("summed fails HAS_PRIMITIVE_PARAMETERS.", summed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: a computed Python scalar, the result of a binary operation, points to its type's key
+	 * (wala/ML#1149), not to a constant. {@code f}'s {@code n} is incremented in a loop from 0, and its computed values point to the
+	 * {@code int} key, so it isn't one constant and isn't exempt as an invariant primitive; {@code g}'s tuple has a computed second
+	 * element. Each primitive takes six values, six traces under {@code tf.function}, so it declines the function.
+	 */
+	@Test
+	public void testComputedPrimitiveValuesUnchanged() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("f", "g")) {
+			Function function = findFunction(functions, name);
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
 	 * #795: a defaulted primitive parameter no call site supplies does not decline the function for `HAS_PRIMITIVE_PARAMETERS`. `f`'s
 	 * `flag` is a defaulted int passed by no caller, so it is the constant default and induces no retracing. Module-level, so the default
 	 * is materialized on this release; the exemption is what keeps `f` optimizable (without it, `flag` is a detected primitive and `f`
@@ -11094,7 +12682,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * is undetermined: {@link Function#isSuppliedAtAnyCallSite} consults {@code PythonInvokeInstruction.getStarredPositions()} and reads
 	 * {@code null} rather than {@code FALSE}, so the defaulted-primitive exemption (which requires a definite {@code FALSE}) does not apply
 	 * and {@code combine} declines for {@code HAS_PRIMITIVE_PARAMETERS}. This is the corpus {@code compute_loss(pred, conv, *target[i], i)}
-	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable.
+	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable. Past the unpack,
+	 * {@code scale} points only to its default, one constant, though it receives the loop index, so the one-constant exemption (#1025,
+	 * #1109) must not apply either: it requires the argument to be aligned at every call site.
 	 */
 	@Test
 	public void testDefaultedPrimitiveAfterStarUnpackDeclines() throws Exception {
@@ -11213,6 +12803,48 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins a READ of {@code Tensor.numpy} that is never called as eager-only
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code y.numpy} is a bound method; under
+	 * {@code tf.function} {@code y} is a symbolic tensor without the attribute, so the read itself raises
+	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'}. The call form ({@code calls_numpy}) is the existing behavior and
+	 * stays blocked. {@code Model.get_loss} is the shape the issue was found in: the receiver is the result of a
+	 * {@code tf.function}-decorated method called through {@code self}.
+	 * <p>
+	 * The two controls guard the receiver scoping: unlike the call form, the read form cannot match on the member name alone, since
+	 * {@code numpy} is also an ordinary attribute of non-tensors. A user object's {@code numpy} field and the {@code tf.experimental.numpy}
+	 * module both trace fine, so neither may block.
+	 */
+	@Test
+	public void testEagerOnlyMemberRead() throws Exception {
+		Function readsNumpy = getFunction("reads_numpy");
+		assertTrue("`reads_numpy` reads `numpy` off a tensor, which raises under tracing.", readsNumpy.getHasEagerOnlyCalls());
+		assertNull("`reads_numpy` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				readsNumpy.getPassingPrecondition());
+		assertNotNull("`reads_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				readsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		// The shape #1100 was found in: the receiver is the result of a `tf.function`-decorated method called through `self`, so its
+		// tensor typing comes from the hybrid callee's return rather than from a local tensor expression.
+		Function getLoss = getFunction("Model.get_loss");
+		assertTrue("`Model.get_loss` reads `numpy` off the tensor a hybrid method returns.", getLoss.getHasEagerOnlyCalls());
+		assertNull("`Model.get_loss` must not pass a precondition; reading `Tensor.numpy` raises under tracing.",
+				getLoss.getPassingPrecondition());
+		assertNotNull("`Model.get_loss` fails with HAS_EAGER_ONLY_CALLS.",
+				getLoss.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function callsNumpy = getFunction("calls_numpy");
+		assertTrue("`calls_numpy` calls `numpy()` on a tensor.", callsNumpy.getHasEagerOnlyCalls());
+		assertNotNull("`calls_numpy` fails with HAS_EAGER_ONLY_CALLS.",
+				callsNumpy.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		for (String name : List.of("reads_holder_numpy", "reads_experimental_numpy")) {
+			Function function = getFunction(name);
+			assertFalse("`" + name + "` reads `numpy` off a non-tensor, which traces fine.", function.getHasEagerOnlyCalls());
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the training-surface eager-only precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/836): the
 	 * Keras training-surface members ({@code fit}, {@code predict}, {@code evaluate}, the {@code *_on_batch} family) raise
 	 * {@code RuntimeError} inside a {@code tf.function} trace, so a function calling the framework's own endpoint must not hybridize.
@@ -11225,6 +12857,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testEagerOnlyTrainingSurface() throws Exception {
 		Function callsFit = getFunction("calls_fit");
+		// `compile` stores its `optimizer` string on the model (https://github.com/wala/ML/issues/1146), but a model is keyed by its
+		// identity, so its fields aren't examined (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		assertEquals("The model `calls_fit` receives is no primitive parameter.", FALSE, callsFit.getHasPrimitiveParameter());
 		assertTrue("`calls_fit` invokes the guarded Keras `fit` endpoint.", callsFit.getHasEagerOnlyCalls());
 		assertNull("`calls_fit` must not pass a precondition; the endpoint raises inside a trace.", callsFit.getPassingPrecondition());
 		assertNotNull("`calls_fit` fails with HAS_EAGER_ONLY_CALLS.",
@@ -11234,6 +12869,119 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`calls_override` dispatches to a user-defined `predict`, not the guarded endpoint.",
 				callsOverride.getHasEagerOnlyCalls());
 		assertEquals("`calls_override` still hybridizes (P1).", P1, callsOverride.getPassingPrecondition());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1039. {@code calls_replaced} calls {@code predict} on a
+	 * Keras model whose {@code predict} was replaced with the builtin {@code len}, so the call never reaches the guarded endpoint and runs
+	 * under {@code tf.function}. Its target is the builtin's summary, which is neither user code nor in the TensorFlow namespace. Reading
+	 * through every such target, rather than only trampolines, read the builtin through to nothing and left the TensorFlow receiver to
+	 * decide, which blocked the call. {@code calls_fit} is the control: it reaches the real endpoint and still blocks.
+	 * <p>
+	 * From Ariadne 0.52.105, the call also targets the trampoline for the model's own {@code predict}, since the analysis does not tell the
+	 * instance attribute from the class member, so {@code calls_replaced} blocks there and this pin moves with that bump.
+	 */
+	@Test
+	public void testEagerOnlyTrainingSurface2() throws Exception {
+		Function callsFit = getFunction("calls_fit");
+		// As in `testEagerOnlyTrainingSurface`, the compiled model is no primitive parameter
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		assertEquals("The model `calls_fit` receives is no primitive parameter.", FALSE, callsFit.getHasPrimitiveParameter());
+		assertTrue("`calls_fit` invokes the guarded Keras `fit` endpoint.", callsFit.getHasEagerOnlyCalls());
+
+		Function callsReplaced = getFunction("calls_replaced");
+		assertFalse("`calls_replaced` dispatches to the builtin `len` assigned over `predict`, not the guarded endpoint.",
+				callsReplaced.getHasEagerOnlyCalls());
+	}
+
+	/**
+	 * Test for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077. A function whose body, directly or through the
+	 * program's own code it calls, does Python file I/O, reads the clock, or draws Python-level randomness must not hybridize, since that
+	 * code runs once, when {@code tf.function} traces the function, rather than on every call. Such a call is a Python side-effect, so it
+	 * fails with {@link PreconditionFailure#HAS_PYTHON_SIDE_EFFECTS} once the side-effect analysis sees the state the call reads or
+	 * changes. The fixture distills the five functions the issue cites, from OpenNMT-tf, FCN, and NLPGNN, and adds one function per API
+	 * family. Each was run on TensorFlow 2.9.3 twice eagerly and twice under {@code tf.function}, with the files it reads changed between
+	 * the calls: both {@code get_dataset_size} overrides, which count lines through {@code tf.io.gfile.GFile}, return the first call's
+	 * count again; {@code Model.visualize} writes its projector file only on the first call; {@code process_image_label},
+	 * {@code TUDataset.load}, and the {@code random}, {@code numpy.random}, and {@code time.time} functions return the same value on both
+	 * calls; the {@code open} and {@code cv2.imread} functions do not see the changed file; and {@code predict_dataset} raises
+	 * {@code AttributeError} from the {@code numpy()} call in its lambda.
+	 * <p>
+	 * A call to the built-in {@code open}, which the side-effect analysis recognizes by the object its callee points to, writes the file
+	 * system, so the functions reaching one are refused, including {@code opens_through_alias}, which calls it through a local alias. From
+	 * the {@code random} summary of https://github.com/wala/ML/issues/1080, a draw reads and writes the module's {@code state} field, so
+	 * {@code draws_python_random} is refused for that write. The same issue's summaries model {@code time.time} as a read of the
+	 * {@code time} module's {@code clock} field, {@code cv2.imread} as a read of the {@code cv2} module's {@code files} field, and a
+	 * {@code tf.io.gfile.GFile} read as a read of the {@code tf.io.gfile} module's {@code files} field. The side-effect analysis consults
+	 * only the functions' mod sets, not what they read, so {@code reads_clock}, {@code reads_image}, and both {@code get_dataset_size}
+	 * overrides are pinned as not yet refused. The {@code numpy.random} functions are pinned the same way, since their summaries model a
+	 * draw's result but not the generator state it advances (https://github.com/wala/ML/issues/1118).
+	 * <p>
+	 * The controls run on every call under {@code tf.function} and still hybridize: {@code tf.random.uniform} draws per call,
+	 * {@code tf.print} prints per call, {@code reads_user_clock} calls a {@code time} method on the program's own class, and
+	 * {@code calls_local_open} calls its own function bound to the name {@code open}. Each was run the same way, and each behaves the same
+	 * in both modes, as {@code opens_through_alias} does not.
+	 */
+	@Test
+	public void testTraceTimePythonEffects() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("Model.visualize", "predict_dataset", "process_image_label", "reads_file", "calls_reader",
+				"opens_through_alias")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` reaches a call to `open`, which runs once at trace time.", TRUE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_PYTHON_SIDE_EFFECTS: " + function.getStatus(),
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		}
+
+		// The `random` summary (https://github.com/wala/ML/issues/1080) writes the module's generator state on each draw.
+		Function drawsPythonRandom = findFunction(functions, "draws_python_random");
+		assertEquals("`draws_python_random` advances `random`'s modeled generator state.", TRUE,
+				drawsPythonRandom.getHasPythonSideEffects());
+		assertNull("`draws_python_random` must not pass a precondition.", drawsPythonRandom.getPassingPrecondition());
+		assertNotNull("`draws_python_random` fails with HAS_PYTHON_SIDE_EFFECTS: " + drawsPythonRandom.getStatus(),
+				drawsPythonRandom.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// TODO: Refuse these once the side-effect analysis counts a read of module state that a trace freezes
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). The summaries of
+		// https://github.com/wala/ML/issues/1080 model each call here as a read only: `time.time` reads the `time` module's `clock` field,
+		// `cv2.imread` the `cv2` module's `files` field, and a `tf.io.gfile.GFile` read the `tf.io.gfile` module's `files` field. The
+		// fields a `GFile` call writes belong to the file object the call allocates, so they are filtered out as created within the
+		// function. Since `Function.inferPythonSideEffects` consults only the mod set, each function hybridizes today, freezing its clock
+		// read, image read, or line count at trace time. `process_image_label` and `predict_dataset` are refused above for their `open`
+		// calls, and `process_image_label` also writes `random`'s state.
+		for (String name : List.of("reads_clock", "reads_image", "ExampleInputter.get_dataset_size", "ParallelInputter.get_dataset_size")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s module call only reads modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until reads of module state are counted.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Refuse these once the `numpy.random` summaries model the generator state a draw advances
+		// (https://github.com/wala/ML/issues/1118). The summaries of `np.random.uniform` and its siblings allocate the result and write
+		// nothing else, and `np.random.choice` has no summary (https://github.com/wala/ML/issues/1008), so the side-effect analysis sees
+		// no write; each function hybridizes today, freezing its draw at trace time.
+		for (String name : List.of("draws_numpy_random", "draws_aliased_numpy_random", "TUDataset.load")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s draw changes no modeled state.", FALSE, function.getHasPythonSideEffects());
+			assertEquals("`" + name + "` hybridizes (P1) until the draw is modeled.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
+		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
+		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
+		Function predictDataset = findFunction(functions, "predict_dataset");
+		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+
+		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock", "calls_local_open")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` runs nothing at trace time that the traced function would not run per call.", FALSE,
+					function.getHasPythonSideEffects());
+			assertNull("`" + name + "` must not fail with HAS_PYTHON_SIDE_EFFECTS.",
+					function.getStatus().getEntryMatchingCode(PLUGIN_ID, HAS_PYTHON_SIDE_EFFECTS.getCode()));
+			assertEquals("`" + name + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**
@@ -11272,6 +13020,78 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins that the parameter-flow numpy precondition ({@link PreconditionFailure#HAS_NUMPY_CALLS_ON_PARAMETERS}) follows a parameter's
+	 * value into and back out of a container or an object. The shape is a method passing {@code (X_c, W_c)} to a Keras model and the
+	 * model's outputs to a numpy/scipy helper with a nested function and a comprehension ({@code C.cluster}). The value crosses a plain
+	 * Python callee, a TensorFlow op, a Keras model call returning one tensor or a tuple, and the unpacking of a returned tuple, and it is
+	 * followed through a store into a tuple, list, or dict literal, a dict or list subscript store, and an attribute store, each a property
+	 * write defining nothing that the def-use walk would otherwise stop at. A store taints the whole object, so an attribute store into
+	 * {@code self} taints its other attributes too. A container holding nothing from a parameter stays clean.
+	 */
+	@Test
+	public void testNumpyCallsOnParametersThroughKerasModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("C.direct", "C.via_plain", "C.via_tf", "C.via_plain_tuple_out", "C.via_model", "C.via_model_tuple_out",
+				"C.cluster_direct", "C._cluster", "C._cluster.f", "C.sink")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` applies numpy to a value flowing from its parameters.", function.getHasNumpyCallsOnParameters());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// Each stores its parameter into a container or an object before the value reaches numpy.
+		for (String name : List.of("C.via_plain_tuple_in", "C.via_plain_list_in", "C.via_local_tuple", "C.via_model_tuple_in", "C.cluster",
+				"C.via_dict_literal", "C.via_dict_store", "C.via_list_store", "C.via_attribute_store")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` applies numpy to a parameter's value read back out of a container.",
+					function.getHasNumpyCallsOnParameters());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		// A store taints the whole object. Storing into `self` is a Python side effect, which refuses each of these on its own, so only the
+		// numpy precondition is asserted.
+		Function sameField = findFunction(functions, "C.attribute_same_field");
+		assertTrue("`C.attribute_same_field` applies numpy to the attribute it stored its parameter in.",
+				sameField.getHasNumpyCallsOnParameters());
+
+		// TODO: Taint only the stored attribute once the engine marks a tuple, list, or dict literal's element writes as it marks subscript
+		// writes (wala/ML#1100), so that an attribute store can be told from both. Until then, storing into `self` taints `self`, so numpy
+		// over its other attributes is refused too.
+		Function otherField = findFunction(functions, "C.attribute_other_field");
+		assertTrue("`C.attribute_other_field` applies numpy to another attribute of the object it stored its parameter in.",
+				otherField.getHasNumpyCallsOnParameters());
+
+		// TODO: An attribute written in one method and read in another isn't followed. The store taints `self` in the writing method, but
+		// `self.read_a()` passes no argument besides the method the read of `self.read_a` yields, so `C.read_a` is never scanned with a
+		// tainted receiver. Converting `C.attribute_across_methods` applies numpy to a symbolic tensor in `C.read_a`.
+		Function acrossMethods = findFunction(functions, "C.attribute_across_methods");
+		assertFalse("`C.attribute_across_methods` reads the stored attribute only in another method.",
+				acrossMethods.getHasNumpyCallsOnParameters());
+		assertNull("`C.attribute_across_methods` doesn't fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", acrossMethods.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		// Passing the object as an argument, rather than calling a method on it, carries the taint into the callee.
+		Function passedOn = findFunction(functions, "C.attribute_passed_on");
+		assertTrue("`C.attribute_passed_on` passes the object it stored its parameter in to a callee applying numpy to the attribute.",
+				passedOn.getHasNumpyCallsOnParameters());
+
+		// A string-keyed store into the result of an unmodeled call taints the whole object.
+		Function unknown = findFunction(functions, "C.via_unknown_store");
+		assertTrue("`C.via_unknown_store` applies numpy to an object of unknown type it stored its parameter in.",
+				unknown.getHasNumpyCallsOnParameters());
+		assertNotNull("`C.via_unknown_store` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
+				unknown.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+
+		Function untainted = findFunction(functions, "C.via_untainted_container");
+		assertFalse("`C.via_untainted_container` applies numpy only to a container holding nothing from its parameter.",
+				untainted.getHasNumpyCallsOnParameters());
+		assertEquals("`C.via_untainted_container` still hybridizes (P1).", P1, untainted.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the invalid-name-argument safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814): a
 	 * function that passes a non-string constant where a TensorFlow API declares its {@code name} parameter must not hybridize, since eager
 	 * execution never validates the name but tracing opens a name scope with it and raises (it fails with
@@ -11307,6 +13127,91 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function compute = getFunction("compute");
 		assertFalse("`compute` passes a string name to `tf.sqrt`.", compute.getHasInvalidNameArguments());
 		assertEquals("`compute` still hybridizes (P1).", P1, compute.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: a {@code name} argument of {@code None} where the
+	 * TensorFlow API's own default is a string. Passing {@code None} overrides that default, and tracing then opens a name scope with
+	 * neither a name nor a default name and raises. Measured on TensorFlow 2.9.3, {@code tf.boolean_mask} and
+	 * {@code tf.linalg.matrix_transpose} are the public APIs that raise this way, under each of their export paths. {@code trim_zeros},
+	 * distilling tf-eager-fasterrcnn's, forwards its own parameter, which defaults to {@code None}, as do {@code not_last}, whose
+	 * {@code None} default precedes another default, and {@code keyword_only}, a keyword-only parameter; {@code mask_none},
+	 * {@code transpose_none}, {@code compat_mask}, and {@code compat_transpose} pass the literal, the last two under {@code compat.v1}
+	 * paths. Seven controls trace: {@code sqrt_none} passes {@code None} to {@code tf.sqrt}, whose own default is {@code None}, and
+	 * {@code ragged_none} to {@code tf.ragged.boolean_mask}, which shares {@code tf.boolean_mask}'s trailing name but accepts it;
+	 * {@code reassigned} rebinds its {@code None}-defaulting parameter before forwarding it; {@code mask_named} forwards a parameter
+	 * defaulting to a string, and {@code mask_constant} one defaulting to a module constant; and {@code mask_default} passes no name.
+	 */
+	@Test
+	public void testNoneNameArgumentsBlockHybridization() throws Exception {
+		for (String identifier : List.of("trim_zeros", "not_last", "keyword_only", "mask_none", "transpose_none", "compat_mask",
+				"compat_transpose")) {
+			Function function = getFunction(identifier);
+			assertTrue("`" + identifier + "` passes `None` where the API's default name is a string.",
+					function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("sqrt_none", "ragged_none", "reassigned", "mask_named", "mask_constant", "mask_default")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes a valid name argument.", function.getHasInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for its name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		// It calls `trim_zeros` without a name, so tracing it traces `trim_zeros` with `name=None`; its own body passes no invalid name.
+		Function trims = getFunction("trims");
+		assertFalse("`trims`'s own body passes no invalid name argument.", trims.getHasInvalidNameArguments());
+		assertTrue("`trims` calls `trim_zeros` without a name.", trims.getCallsInvalidNameArguments());
+		assertNotNull("`trims` fails with HAS_INVALID_NAME_ARGUMENTS.",
+				trims.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+	}
+
+	/**
+	 * Pins the callers half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087: tracing a function traces what it
+	 * calls, so a caller of a function whose name argument raises under tracing raises too. Measured under {@code tf.function} on
+	 * TensorFlow 2.9.3: {@code evaluates} calls {@code evaluate}, which passes {@code tf.float32} as {@code tf.sqrt}'s name; {@code trims}
+	 * calls {@code trim_zeros}, distilling tf-eager-fasterrcnn's, without its {@code name}, which then reaches {@code tf.boolean_mask} as
+	 * {@code None}; {@code calls_trims} calls {@code trims}; and {@code maps_caller} runs {@code row_sum}, which calls {@code trim_zeros}
+	 * without a name, through {@code tf.map_fn}. Each raises. {@code trims_named} and {@code trims_positional} pass {@code trim_zeros} a
+	 * name, by keyword and by position, and trace.
+	 */
+	@Test
+	public void testInvalidNameArgumentCallers() throws Exception {
+		for (String identifier : List.of("evaluates", "trims", "calls_trims", "this_omitted", "unbound_omitted", "maps_caller")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "`'s own body passes no invalid name argument.", function.getHasInvalidNameArguments());
+			assertTrue("`" + identifier + "` calls a function whose name argument raises under tracing.",
+					function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_INVALID_NAME_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+		}
+
+		for (String identifier : List.of("trims_named", "trims_positional", "this_positional", "unbound_positional",
+				"classmethod_positional")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` passes `trim_zeros` a name.", function.getCallsInvalidNameArguments());
+			assertNull("`" + identifier + "` is not refused for a name argument.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS.getCode()));
+
+			// TODO: Refuse this once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1047, released in 0.52.105. Until
+			// then a classmethod called through its class reaches no method body, so the call to `Masker.trim` without a name is not seen.
+			Function classmethodOmitted = getFunction("classmethod_omitted");
+			assertFalse("`classmethod_omitted`'s classmethod is not yet reached.", classmethodOmitted.getCallsInvalidNameArguments());
+
+			// TODO: Refuse this once a forwarder is followed through user callees:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087. It calls `forwards` without a name, which forwards
+			// its
+			// own `None` to `trim_zeros` by keyword, so it raises; but `forwards` passes `trim_zeros` a name, so it is no caller, and its
+			// callee
+			// is not a TensorFlow API, so it is no forwarder.
+			Function callsForwards = getFunction("calls_forwards");
+			assertFalse("`calls_forwards`'s forwarding through a user function is not yet seen.",
+					callsForwards.getCallsInvalidNameArguments());
+		}
 	}
 
 	/**
@@ -11416,8 +13321,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function kerasStatic = getFunction("keras_static");
 		assertTrue("`keras_static` reads axis 1 statically via `K.int_shape`.", kerasStatic.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`keras_static` hybridizes bare (P1).", P1, kerasStatic.getPassingPrecondition());
-		assertEquals("`keras_static`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+		// TODO: Hybridize this bare again once Ariadne summarizes `tf.keras.backend.int_shape`. It reads `x`'s static shape, which crosses
+		// a tf.function boundary, so the `tf.range` it bounds keeps its static extent, but the call has no resolved callee, so the
+		// shape-value check passes `x`'s value through it into `tf.range`'s bound and refuses the function as passing a shape value
+		// inbound. An over-refusal.
+		assertNull("`keras_static` is refused for now.", kerasStatic.getPassingPrecondition());
+		assertNotNull("`keras_static` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", kerasStatic.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		// Refused, it is not converted, so no signature is inferred for it to withhold; converted bare, it would be withheld as
+		// WITHHELD_STATICALLY_READ_AXES.
+		assertEquals("`keras_static` infers no signature to withhold.", Optional.empty(),
 				kerasStatic.getInferredInputSignatureAbsenceReason());
 
 		Function casted = getFunction("casted");
@@ -11460,8 +13373,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function outerCall = getFunction("Outer.call");
 		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
 				outerCall.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`Outer.call` hybridizes bare (P1).", P1, outerCall.getPassingPrecondition());
-		assertEquals("`Outer.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+		// `Outer.call` calls `Proj` on its first call, building it inside the trace, so its receiver, a layer, is refused (issue 1172).
+		assertMayBuildLayers(outerCall, true, false, true);
+		assertNull("`Outer.call` is refused for building `Proj` inside the trace.", outerCall.getPassingPrecondition());
+		assertEquals("`Outer.call` is refused, so no signature is inferred and none is withheld.", Optional.empty(),
 				outerCall.getInferredInputSignatureAbsenceReason());
 
 		Function gateCall = getFunction("Gate.call");
@@ -11500,6 +13415,97 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				opOnly.getHasUnresolvedStaticallyReadAxes());
 		assertEquals("`op_only` hybridizes (P1).", P1, opOnly.getPassingPrecondition());
 		assertTrue("An unknown-rank signature is emitted for `op_only`.", opOnly.getInferredInputSignature().isPresent());
+	}
+
+	/**
+	 * Pins the rank-requiring-op rule of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150, reduced from
+	 * TensorFlow-Examples' {@code resize_image}: a {@code .numpy()} array reaches the parameter with its shape unresolved, so its spec is
+	 * {@code shape=None}, and {@code tf.image.resize} raises at trace time without the rank of its {@code images}. Like a built-in Keras
+	 * layer's input (#883), the argument is a rank-only requirement, so the signature is withheld and the function hybridizes with a bare
+	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword, and {@code resize_spread} and
+	 * {@code resize_spread_twice} behind one and two empty starred arguments, whose positions are not aligned with the op's.
+	 * {@code cast_only} reaches no such op and keeps its unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
+	 */
+	@Test
+	public void testUnknownRankIntoRankRequiringOp() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// `resize_spread` and `resize_spread_twice` pass their parameter behind starred arguments, where the positions are not aligned: an
+		// empty spread puts it in `images`, so it is taken to reach the slot.
+		for (String name : List.of("resize_image", "crop_image", "resize_spread", "resize_spread_twice")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "`'s parameter arrives with an unknown shape.",
+					function.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
+			assertTrue("`" + name + "` passes its unknown-rank parameter where an op requires its rank.",
+					function.getHasUnresolvedStaticallyReadAxes());
+
+			// TODO: `resize_spread` should hybridize bare (P1). The shape-value boundary check counts the starred argument as one position,
+			// so the parameter lands in `size`'s slot and the function is refused:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1190.
+			if (name.equals("resize_spread")) {
+				assertNull("Today, `resize_spread` passes no precondition.", function.getPassingPrecondition());
+				assertNotNull("Today, `resize_spread` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+				assertFalse("Today, `resize_spread` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+				continue;
+			}
+
+			assertEquals("`" + name + "` hybridizes bare (P1); only the signature was unwritable.", P1, function.getPassingPrecondition());
+			assertTrue("`" + name + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		Function castOnly = findFunction(functions, "cast_only");
+		assertFalse("`cast_only` reaches no op requiring its rank.", castOnly.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`cast_only` hybridizes (P1).", P1, castOnly.getPassingPrecondition());
+		assertEquals("`cast_only` keeps its unknown-rank signature.", "[tf.TensorSpec(shape=None, dtype=tf.uint8)]",
+				castOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function resizeRanked = findFunction(functions, "resize_ranked");
+		assertFalse("`resize_ranked`'s known rank satisfies the op.", resizeRanked.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`resize_ranked` hybridizes (P1).", P1, resizeRanked.getPassingPrecondition());
+		assertEquals("`resize_ranked` keeps its signature.", "[tf.TensorSpec(shape=(8, 8, 3), dtype=tf.uint8)]",
+				resizeRanked.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins the partial-rank withholding of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150, reduced from
+	 * tf-image's {@code _clip_random_with_bboxes}: one call passes a {@code .numpy()} array whose shape is unresolved and the others pass
+	 * rank-2 boxes, so the reduced spec is {@code shape=None}, though every call that resolved agrees on the rank. The signature is
+	 * withheld ({@code WITHHELD_PARTIAL_RANK}) and {@code clip_boxes} hybridizes with a bare decorator. {@code known_only} keeps its rank,
+	 * {@code unknown_only} has no rank to lose, and {@code ranks_disagree}'s callers themselves require {@code shape=None}, so all three
+	 * keep their signatures.
+	 */
+	@Test
+	public void testUnknownRankBesideKnownRank() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function clipBoxes = findFunction(functions, "clip_boxes");
+		assertTrue("One call passes `bboxes` an unknown shape.",
+				clipBoxes.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
+		assertEquals("`clip_boxes` hybridizes bare (P1).", P1, clipBoxes.getPassingPrecondition());
+		assertTrue("`clip_boxes` is converted.", clipBoxes.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`clip_boxes`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_PARTIAL_RANK),
+				clipBoxes.getInferredInputSignatureAbsenceReason());
+		assertEquals("`bboxes` is the blocker, for the partial rank alone.",
+				List.of(Set.of(InferenceResult.AbsenceReason.WITHHELD_PARTIAL_RANK)),
+				List.copyOf(clipBoxes.getBlockingParameterReasons().values()));
+
+		Function knownOnly = findFunction(functions, "known_only");
+		assertEquals("`known_only` keeps its rank.", "[tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]",
+				knownOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		for (String name : List.of("unknown_only", "ranks_disagree")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` keeps its unknown-rank signature.", "[tf.TensorSpec(shape=None, dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
 	}
 
 	/**
@@ -11592,6 +13598,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A decorator between {@code @tf.function} and the definition withholds the signature
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1046). {@code tf.function} traces the callable the decorator
+	 * returns, so a signature constrains that callable's arguments, while the definition's parameters see only what the decorator passes
+	 * on. Here {@code convert_type} casts both arguments to {@code float32}, so a signature read off {@code flip}'s parameters is
+	 * {@code float32} and rejects the {@code int32} call (runtime-verified on the pinned TF 2.9.3: {@code ValueError}).
+	 * <p>
+	 * {@code flip_direct} has nothing in between and keeps its signature. {@code flip_eager} is eager beneath the decorator, so the added
+	 * {@code @tf.function} goes on the definition, traces it, and the cast values are exactly what it receives. {@code clip_gradient} sits
+	 * over {@code tf.custom_gradient}, which passes its arguments through unchanged, so it is not withheld for this reason.
+	 */
+	@Test
+	public void testInterveningDecorator() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function flip = findFunction(functions, "flip");
+		assertTrue("`flip` is hybrid.", flip.isHybrid());
+		assertEquals("No signature is read off the definition beneath `convert_type`.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), flip.getInferredInputSignatureAbsenceReason());
+
+		Function flipDirect = findFunction(functions, "flip_direct");
+		assertTrue("`flip_direct` has nothing between its decorator and its definition, so its signature is inferred.",
+				flipDirect.getInferredInputSignature().isPresent());
+
+		Function flipEager = findFunction(functions, "flip_eager");
+		assertTrue("`flip_eager` converts.", flipEager.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertTrue("The added decorator traces the definition itself, so its signature is inferred.",
+				flipEager.getInferredInputSignature().isPresent());
+
+		Function clipGradient = findFunction(functions, "clip_gradient");
+		assertNotEquals("`tf.custom_gradient` passes its arguments through, so it does not withhold the signature.",
+				Optional.of(InferenceResult.AbsenceReason.INTERVENING_DECORATOR), clipGradient.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the annotation half of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899. A type hint answers whether a
 	 * parameter is tensor-like. It does not answer what specification may be written for it, and it carries no dtype of its own (#494), so
 	 * a hit was reported as {@code TYPE_HINT_WITHOUT_DTYPE} however much the callers supported. Classification returned on the hint before
@@ -11659,7 +13701,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code with} rather than of the context manager, and which no fixture pinned at all before this one.
 	 * <p>
 	 * Runtime-verified on the pinned TF 2.9.3: {@code tf.matmul} of a rank-1 tensor raises the {@code InvalidArgumentError} both guards
-	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results.
+	 * expect, while the square calls return their {@code (2, 2)} and {@code (3, 3)} results. Under a bare {@code tf.function} it raises
+	 * {@code ValueError} at trace time instead, so both functions are refused (#1014).
 	 */
 	@Test
 	public void testExpectedFailureGuardRegion() throws Exception {
@@ -11671,10 +13714,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Both call sites are observed, so both shapes are seen.", 2, x.getTensorTypes().size());
 		assertEquals("Only the call inside the block is a declared failure, so only its shape is set aside.", 1,
 				x.getConformingTensorTypes().size());
-		assertEquals("What survives is the square argument the call below the block passes.",
-				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
-				afterGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-		assertEquals("`after_guard` converts (P1).", P1, afterGuard.getPassingPrecondition());
+		// Under any hybridization this guarded test fails: a bare decorator raises `ValueError` at trace time, from the static shape
+		// check, in place of the body's `InvalidArgumentError`, so the conversion is refused (#1014).
+		assertNotNull("A bare decorator would change the declared failure's exception.", afterGuard.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		assertFalse("`after_guard` is not hybridized.", afterGuard.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+
+		// A square spec survives the reduction, and it would reject the declared failure's rank-1 argument with `ValueError` too (#1005).
+		// The withholding is reached only from a reduced spec, so it still witnesses that the guard region set the failure aside.
+		afterGuard.inferInputSignature();
+		assertEquals("The reduced spec would change the declared failure's exception.",
+				Map.of(x, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				afterGuard.getBlockingParameterReasons());
 
 		// The pytest spelling shares the lowering, since the region is a property of `with` rather than of the manager, and this is the
 		// first arm to pin that guard form at all.
@@ -11683,9 +13734,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("Both call sites are observed under the pytest spelling too.", 2, pytestParameter.getTensorTypes().size());
 		assertEquals("Only the call inside the `pytest.raises` block is set aside.", 1, pytestParameter.getConformingTensorTypes().size());
-		assertEquals("What survives is the square argument the call below that block passes.",
-				"[tf.TensorSpec(shape=(3, 3), dtype=tf.float32)]",
-				pytestGuard.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertNotNull("A bare decorator would change that declared failure's exception too.", pytestGuard.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		pytestGuard.inferInputSignature();
+		assertEquals("The reduced spec would change that declared failure's exception too.",
+				Map.of(pytestParameter, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				pytestGuard.getBlockingParameterReasons());
 	}
 
 	/**
@@ -11736,11 +13790,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				inputs.isTensorContainer());
 		assertEquals("The guarded node's bare tensor is left out of the extraction, so the tuple's structure survives it.", 2,
 				inputs.getContainerElementTypes().size());
-		assertEquals("The specification the conforming caller supports is recovered rather than lost with the rejected call.",
-				"[[tf.TensorSpec(shape=(2, 3, 5), dtype=tf.float32), tf.TensorSpec(shape=(2, 5, 3), dtype=tf.float32)]]",
-				cin.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-		assertTrue("Nothing is withheld once the nested spec is emitted.", cin.getInferredInputSignatureAbsenceReason().isEmpty());
-		assertEquals("`cin` converts (P1).", P1, cin.getPassingPrecondition());
+		// Under a bare decorator this guarded test fails (`ValueError` at trace time, from the static shape check on the bare tensor's
+		// slices), so the conversion is refused (#1014).
+		assertNotNull("A bare decorator would change the declared failure's exception.",
+				cin.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode()));
+		assertFalse("`cin` is not hybridized.", cin.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		// The nested spec the conforming caller supports is recovered, and it would reject the declared failure's bare tensor with
+		// `TypeError` too (#1005). The withholding is reached only from the reduced nested spec, so it still witnesses the recovery.
+		cin.inferInputSignature();
+		assertEquals("The recovered nested spec would change the declared failure's exception.",
+				Map.of(inputs, Set.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION)),
+				cin.getBlockingParameterReasons());
 
 		Function usePair = findFunction(functions, "use_pair");
 		Parameter pair = usePair.getParameters().get(0);
@@ -11766,15 +13826,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins the Keras symbolic-argument decline of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887, reducing
 	 * TensorFlow2.0-Examples' YOLOv3: a function factored out of Keras Functional model construction is called with the symbolic input, and
 	 * {@code tf.function} is one of the APIs a {@code KerasTensor} refuses, so the decorator raises a {@code TypeError} on the first call,
-	 * before anything is traced. The declining arms cover each way the provenance walk reaches an {@code Input}: {@code symbolic} takes its
-	 * result directly, {@code derived} takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, and
-	 * {@code by_keyword} takes it by keyword rather than positionally, and {@code both_paths} takes a merge whose every operand is
-	 * symbolic, through two different layers over the one {@code Input}, which the walk must decide once rather than skip on the second
-	 * branch. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, {@code merged} receives the
-	 * symbolic input on one path and a real tensor on the other, which makes the argument's symbolicness path-dependent and so leaves the
-	 * verdict allowing, and {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application
-	 * propagates symbolicness rather than producing it. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm
-	 * raises the {@code TypeError}, decorating any allowing arm runs.
+	 * before anything is traced. The declining arms cover each way the engine's Keras symbolic origin
+	 * (https://github.com/wala/ML/issues/1101) reaches a parameter: {@code symbolic} takes the {@code Input} directly, {@code derived}
+	 * takes it threaded through a built-in {@code Dense}, which the Functional API keeps symbolic, {@code by_keyword} takes it by keyword
+	 * rather than positionally, and {@code both_paths} takes a merge whose every operand is symbolic, through two different layers over the
+	 * one {@code Input}. The allowing arms cover the ways it does not: {@code eager} is called only with a real tensor, and
+	 * {@code layer_on_eager} receives a built-in layer's output over a real tensor, pinning that a layer application propagates
+	 * symbolicness rather than producing it. {@code merged} receives the symbolic input on one path and a real tensor on the other, and the
+	 * program takes the eager one. Every arm was runtime-verified on the pinned TF 2.9.3: decorating any declining arm raises the
+	 * {@code TypeError}, decorating any allowing arm, and {@code merged}, runs.
 	 */
 	@Test
 	public void testKerasSymbolicArgument() throws Exception {
@@ -11788,12 +13848,123 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
 
-		for (String name : Set.of("eager", "merged", "layer_on_eager")) {
+		for (String name : Set.of("eager", "layer_on_eager")) {
 			Function function = findFunction(functions, name);
-			assertFalse("`" + name + "` is not called with a value that is symbolic on every path.",
+			assertFalse("`" + name + "` is not called with a Keras symbolic tensor.", function.getHasKerasSymbolicArguments());
+			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// `merged`'s argument is the `tf.keras.Input` only on the graph-mode branch of `tf.executing_eagerly()`, and the program runs
+		// eagerly, so decorating it runs. The engine folds the call in the module's own body to `True`, so only the eager arm reaches the
+		// merge (https://github.com/wala/ML/issues/1110).
+		Function merged = findFunction(functions, "merged");
+		assertFalse("`merged` receives only the eager arm of its merge.", merged.getHasKerasSymbolicArguments());
+		assertEquals("`merged` still converts (P1).", P1, merged.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the Keras symbolic-argument decline across frames of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097,
+	 * reducing TensorFlow2.0-Examples' YOLOv3, where the {@code KerasTensor} reaches the call site from another frame. The engine records
+	 * it as the {@code KERAS_SYMBOLIC} tensor origin (https://github.com/wala/ML/issues/1101), which crosses parameter barriers, type
+	 * feeds, and TensorFlow calls, so each of these parameters carries it, and each function declines:
+	 * <ul>
+	 * <li>{@code model_fn}, {@code yolo}, {@code model_fn_list}, and {@code model_fn_bn} take the {@code Input} directly, and
+	 * {@code scale_op} takes a built-in layer's output over it.
+	 * <li>{@code backbone} takes {@code yolo}'s parameter, as YOLOv3's {@code darknet53} takes {@code YOLOv3}'s, and {@code convolutional}
+	 * takes {@code model_fn_bn}'s.
+	 * <li>{@code upsample} takes a {@code Conv2D} application over {@code model_fn}'s parameter.
+	 * <li>{@code head} takes {@code model_fn}'s return value, a {@code tf.image.resize} result.
+	 * <li>{@code head_elem} and {@code decode} take elements of {@code model_fn_list}'s returned list, the second the way YOLOv3's driver
+	 * iterates {@code enumerate(conv_tensors)}.
+	 * <li>{@code op_head} takes {@code inp * 2.0}.
+	 * <li>{@code upsample_bn} takes {@code convolutional}'s result, a merge over the application of {@code Frozen}, a user subclass of
+	 * {@code BatchNormalization}, as YOLOv3's {@code common.convolutional} is.
+	 * </ul>
+	 * The controls stay convertible: the {@code _eager} arms repeat the shapes rooted at {@code tf.ones(...)}, and {@code scale_inside},
+	 * called from a custom layer's own {@code call}, which Keras gives a placeholder, converts. Of two custom layers applied to the
+	 * {@code Input}, {@code after_scaled} receives one whose {@code call} ends in an operator, and {@code after_relued} one whose
+	 * {@code call} ends in {@code tf.nn.relu}; the engine puts the origin onto the application's result
+	 * (https://github.com/wala/ML/issues/1109), so both decline. Every arm was runtime-verified on the pinned TF 2.9.3, undecorated and
+	 * decorated. ({@code model_fn_eager} decorated fails for an unrelated reason, creating the layer's variables inside the trace, so only
+	 * its Keras verdict is pinned.)
+	 */
+	@Test
+	public void testKerasSymbolicArgumentAcrossFrames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : Set.of("model_fn", "yolo", "model_fn_list", "model_fn_bn", "scale_op", "backbone", "convolutional", "upsample",
+				"head", "head_elem", "op_head", "upsample_bn")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+		}
+
+		// `decode`'s `i` is the `enumerate` index, a Python int the engine now represents by its type's key (wala/ML#1148), so `decode`
+		// has a primitive parameter. A function with one fails on it, so the Keras check isn't run for it.
+		Function decode = findFunction(functions, "decode");
+		assertEquals("`decode` has a primitive parameter.", TRUE, decode.getHasPrimitiveParameter());
+		assertNull("`decode` isn't checked for a Keras symbolic tensor.", decode.getHasKerasSymbolicArguments());
+		assertNull("`decode` does not convert.", decode.getPassingPrecondition());
+		assertNotNull("`decode` fails with HAS_PRIMITIVE_PARAMETERS.", decode.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+
+		for (String name : Set.of("upsample_eager", "head_eager")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` is called only with values rooted at a real tensor.", FALSE,
 					function.getHasKerasSymbolicArguments());
 			assertEquals("`" + name + "` still converts (P1).", P1, function.getPassingPrecondition());
 		}
+
+		assertEquals("`model_fn_eager` is called only with a real tensor.", FALSE,
+				findFunction(functions, "model_fn_eager").getHasKerasSymbolicArguments());
+
+		// `scale_inside` is called from `Scale.call`, which Keras gives a graph tensor rather than the KerasTensor the layer is applied
+		// to, so decorating it runs. The engine keeps the Keras symbolic origin out of `call` (https://github.com/wala/ML/issues/1109).
+		Function scaleInside = findFunction(functions, "scale_inside");
+		assertEquals("`scale_inside` is called only with the graph tensor Keras gives the layer body.", FALSE,
+				scaleInside.getHasKerasSymbolicArguments());
+		assertEquals("`scale_inside` still converts (P1).", P1, scaleInside.getPassingPrecondition());
+
+		// `after_scaled` receives `Scale()(inp)`, a KerasTensor, and decorating it raises. The engine puts the Keras symbolic origin onto
+		// the application's result, though `Scale.call` ends in an operator (https://github.com/wala/ML/issues/1109).
+		Function afterScaled = findFunction(functions, "after_scaled");
+		assertEquals("`after_scaled` is called with a Keras symbolic tensor.", TRUE, afterScaled.getHasKerasSymbolicArguments());
+		assertNull("`after_scaled` does not convert.", afterScaled.getPassingPrecondition());
+		assertNotNull("`after_scaled` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterScaled.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+
+		// The control: `Relued.call` ends in `tf.nn.relu`, and its application's result carries the origin too, so `after_relued`
+		// declines.
+		Function afterRelued = findFunction(functions, "after_relued");
+		assertEquals("`after_relued` is called with a Keras symbolic tensor.", TRUE, afterRelued.getHasKerasSymbolicArguments());
+		assertNull("`after_relued` does not convert.", afterRelued.getPassingPrecondition());
+		assertNotNull("`after_relued` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", afterRelued.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+	}
+
+	/**
+	 * Pins the Keras symbolic-argument decline through an instance call of
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1110, reducing transformer's {@code text_classification.py}:
+	 * {@code Encoder}, a plain class rather than a Keras layer, is applied to an in-frame {@code Input} as {@code Encoder(args)(inp)},
+	 * which dispatches to {@code __call__} through Ariadne's synthesized trampoline. The engine carries the {@code KERAS_SYMBOLIC} origin
+	 * (https://github.com/wala/ML/issues/1101) across that binding onto {@code __call__}'s parameter, so the method declines. The control,
+	 * {@code Scaler.__call__}, is applied the same way to a real tensor and converts. Both arms were runtime-verified on the pinned TF
+	 * 2.9.3: decorating {@code Encoder.__call__} raises the {@code TypeError}, and decorating {@code Scaler.__call__} runs.
+	 */
+	@Test
+	public void testKerasSymbolicArgumentInstanceCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function encoder = findFunction(functions, "Encoder.__call__");
+		assertEquals("`Encoder.__call__` is called with a Keras symbolic tensor.", TRUE, encoder.getHasKerasSymbolicArguments());
+		assertNull("`Encoder.__call__` does not convert.", encoder.getPassingPrecondition());
+		assertNotNull("`Encoder.__call__` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				encoder.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
+
+		Function scaler = findFunction(functions, "Scaler.__call__");
+		assertEquals("`Scaler.__call__` is called only with a real tensor.", FALSE, scaler.getHasKerasSymbolicArguments());
+		assertEquals("`Scaler.__call__` still converts (P1).", P1, scaler.getPassingPrecondition());
 	}
 
 	/**
@@ -11852,6 +14023,45 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Adding it to the existing bare decorator is the reconfigure transformation.", Set.of(Transformation.RECONFIGURE),
 				trainStep.getTransformations());
 		assertEquals("Which passes P4, not P1.", PreconditionSuccess.P4, trainStep.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the input-signature funnel the evaluator reports (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167), on
+	 * the issue's example: {@code a} is hybrid and gains a signature ({@code RECONFIGURE}, P4); {@code b} converts with no signature, since
+	 * its calls disagree on dtype; {@code c} is refused, since it calls {@code numpy()}; and {@code d} converts with a signature. The
+	 * signature candidates, the functions left decorated, are {@code a}, {@code b}, and {@code d}, and only {@code d}'s new decorator
+	 * carries a signature, so the refactoring adds or changes two signatures with {@code a}'s reconfiguration. The evaluator has no test
+	 * harness of its own, so this pins the {@link Function} predicates it counts with, combined the way it combines them.
+	 */
+	@Test
+	public void testSignatureCandidates() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function a = findFunction(functions, "a");
+		assertEquals("`a` gains a signature on its existing decorator.", Set.of(RECONFIGURE), a.getTransformations());
+		assertEquals("Which passes P4.", P4, a.getPassingPrecondition());
+
+		Function b = findFunction(functions, "b");
+		assertEquals("`b` converts.", Set.of(Transformation.CONVERT_TO_HYBRID), b.getTransformations());
+		assertEquals("Its calls disagree on dtype, so no signature is written.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), b.getInferredInputSignatureAbsenceReason());
+
+		Function c = findFunction(functions, "c");
+		assertNotNull("`c` fails with HAS_EAGER_ONLY_CALLS.",
+				c.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
+
+		Function d = findFunction(functions, "d");
+		assertEquals("`d` converts.", Set.of(Transformation.CONVERT_TO_HYBRID), d.getTransformations());
+		assertTrue("`d` has an inferred signature.", d.getInferredInputSignature().isPresent());
+
+		assertEquals("The signature candidates are the functions left decorated.", Set.of("a", "b", "d"),
+				functions.stream().filter(Function::isSignatureCandidate).map(Function::getIdentifier).collect(toSet()));
+		assertEquals("Only `d`'s new decorator carries a signature.", Set.of("d"),
+				functions.stream().filter(Function::isHybridizedWithInputSignature).map(Function::getIdentifier).collect(toSet()));
+		assertEquals("One function is reconfigured.", 1,
+				functions.stream().filter(f -> f.getTransformations().contains(RECONFIGURE)).count());
 	}
 
 	/**
@@ -11925,6 +14135,138 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1058: a dimension read statically from an axis its
+	 * signature leaves wild is {@code None} at trace time, and each of these consumers raises on it under TensorFlow 2.9.3: the TensorFlow
+	 * ops that take a shape ({@code tf.ones}, positionally and as {@code shape=}; {@code tf.zeros}; {@code tf.fill}, in either argument;
+	 * {@code tf.eye}; {@code tf.random.normal}, {@code uniform} and {@code truncated_normal}; {@code tf.broadcast_to}; {@code tf.tile};
+	 * {@code tf.one_hot}; {@code tf.split}) and the Python builtins {@code range} and {@code int}. So each {@code wild_*} function, called
+	 * at two extents, keeps its conversion and has its signature withheld. So do {@code free_uniform_maxval} and
+	 * {@code free_eye_num_columns}, which pass the dimension to an argument that accepts {@code None} but then means something else: a
+	 * float {@code maxval} of 1 and a square matrix (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066). Two
+	 * controls keep their signatures. {@code dynamic_ones} reads the extent with {@code tf.shape}, a tensor valid under a wildcard.
+	 * {@code ranked_ones}, called at one extent, has the axis resolved.
+	 */
+	@Test
+	public void testUnresolvedStaticDimensionIntoShapeOps() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_ones", "wild_ones_keyword", "wild_zeros", "wild_fill", "wild_fill_value", "wild_eye",
+				"wild_normal", "wild_uniform", "wild_truncated_normal", "wild_uniform_int_maxval", "wild_broadcast_to", "wild_tile",
+				"wild_one_hot", "wild_split", "wild_range", "wild_int", "free_uniform_maxval", "free_eye_num_columns")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable.", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		for (String identifier : List.of("dynamic_ones", "ranked_ones")) {
+			Function function = functions.stream().filter(f -> f.getIdentifier().equals(identifier)).findFirst().orElseThrow();
+			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
+			assertTrue("`" + identifier + "` keeps its signature.", function.getInferredInputSignature().isPresent());
+		}
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066: a dimension read statically from a wild axis is
+	 * {@code None} at trace time, and an op argument that accepts {@code None} then computes something else without raising, so the
+	 * signature that makes the axis wild changes what the function computes. Measured on TensorFlow 2.9.3 against eager execution:
+	 * {@code tf.one_hot}'s {@code on_value} and {@code off_value} fall back to 1 and 0, {@code tf.random.normal}'s and
+	 * {@code tf.random.uniform}'s {@code seed} leaves the op unseeded, and {@code tf.sequence_mask}'s {@code maxlen} falls back to the
+	 * longest length. {@code counted_split_num} passes the dimension to {@code tf.split}'s {@code num}, which is unused beside an integer
+	 * {@code num_or_size_splits}; it is withheld anyway, since counting every argument a dimension can fill is the simpler rule. Each,
+	 * called at two extents, keeps its conversion and has its signature withheld.
+	 */
+	@Test
+	public void testStaticDimensionChangingMeaning() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("meaning_one_hot_on_value", "meaning_one_hot_off_value", "meaning_normal_seed",
+				"meaning_uniform_seed", "meaning_sequence_mask", "counted_split_num")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable.", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
+	 * Pins the static-shape-read check through closures (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a
+	 * dimension read statically inside a nested function, from an axis the enclosing function's signature leaves wild, is {@code None} at
+	 * trace time just as it is in the enclosing body. Each {@code wild_*} function, called at two extents, reads the axis inside a lambda,
+	 * a nested {@code def}, a lambda a helper calls or {@code tf.map_fn} runs, or a comprehension and passes it to a shape op, and each
+	 * raises under {@code tf.function} tracing on TensorFlow 2.9.3, so its signature is withheld. The control {@code ranked_nested_def},
+	 * called at one extent, has the axis resolved and keeps its signature.
+	 */
+	@Test
+	public void testUnresolvedStaticDimensionThroughClosure() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("wild_lambda", "wild_nested_def", "wild_helper_call", "wild_map_fn", "wild_comprehension")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		Function ranked = findFunction(functions, "ranked_nested_def");
+		assertFalse("`ranked_nested_def`'s statically-read axes are all resolved.", ranked.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`ranked_nested_def` keeps its signature.", ranked.getInferredInputSignature().isPresent());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1062: a dimension read statically from an axis on which the
+	 * callers pass different extents is {@code None} at trace time under the emitted signature, whatever each calling context shows, so a
+	 * NumPy call consuming it misbehaves. Each {@code wild_*} function, called at extents 3 and 4 on axis 0, passes that axis to a NumPy
+	 * call: {@code np.arange}, {@code np.linspace}'s {@code num}, {@code np.eye} and {@code np.tile} raise {@code TypeError} under a
+	 * wildcard on TensorFlow 2.9.3, and {@code np.random.uniform(size=None)} silently returns a scalar instead of a vector. Each traces
+	 * under a bare decorator, so each keeps its conversion and has its signature withheld. Two controls keep their signatures:
+	 * {@code resolved_axis_arange} reads axis 1, on which every caller agrees, and {@code ranked_arange}, called at one extent, has the
+	 * axis resolved.
+	 */
+	@Test
+	public void testNumpyOverWildDimension() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Refuse `wild_random_size` with HAS_PYTHON_SIDE_EFFECTS once the `numpy.random` summaries model the generator state a draw
+		// advances (https://github.com/wala/ML/issues/1118; https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1077). Its
+		// `np.random.uniform` draw runs once at trace time, but the side-effect analysis sees no write.
+		for (String identifier : List.of("wild_arange", "wild_linspace", "wild_eye", "wild_tile", "wild_random_size")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` consumes an axis its signature leaves unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature was unwritable.", P1,
+					function.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		for (String identifier : List.of("resolved_axis_arange", "ranked_arange")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "`'s statically-read axes are all resolved.", function.getHasUnresolvedStaticallyReadAxes());
+			assertTrue("`" + identifier + "` keeps its signature.", function.getInferredInputSignature().isPresent());
+		}
+	}
+
+	/**
 	 * Vendored regression pin for the trampoline keyword-name collision Ariadne 0.52.34 fixed (wala/ML#740;
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/791). The fixture reduces the MusicTransformer subject while
 	 * keeping the structure the collision needs: {@code MusicTransformerDecoder.sanity_check(self, x, y, mode='v', step=None)} reached from
@@ -11954,7 +14296,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testEnumerateLayerDispatchVendored() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		Function mlpCall = findFunction(functions, "MLP.call");
-		assertEquals("`MLP.call` is reached through the enumerate-loop pair binding and hybridizes (P1).", P1,
+		// `MLP.call` builds its `Dense` sublayers on its first call, and its receiver is a layer, so it is refused (issue 1172). That
+		// needs its call-graph node, so the reach stays pinned.
+		assertMayBuildLayers(mlpCall, true, false, true);
+		assertNull("`MLP.call` is reached through the enumerate-loop pair binding and refused for building its sublayers.",
 				mlpCall.getPassingPrecondition());
 	}
 
@@ -12030,6 +14375,214 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the framework-supplied parameter rule (#881) on a subclass of a built-in Keras layer
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1099), reducing TensorFlow2.0-Examples' YOLOV3
+	 * {@code core/common.py}. The class extends {@code tf.keras.layers.BatchNormalization}, whose own {@code Layer} ancestor is declared in
+	 * TensorFlow's sources. PyDev's hierarchy stops at the unresolved base and sees only its last segment, {@code BatchNormalization},
+	 * while the engine's layer summaries declare {@code Layer} as their superclass (https://github.com/wala/ML/issues/1098), so the
+	 * engine's walk reaches it and {@code training} is recognized as supplied by Keras. A signature covering only {@code x} would be wrong:
+	 * {@code Layer.__call__} passes {@code training} on every invocation, and the first call raises ("got keyword argument `training` that
+	 * was not included in input_signature", TF 2.9.3). Inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED} while the function
+	 * still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasBuiltinLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
+		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
+		// instead: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(call, true, false, true);
+		assertNull("`BatchNormalization.call` is refused for building the layer.", call.getPassingPrecondition());
+
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} pin (#1099) over a second built-in base,
+	 * {@code tf.keras.layers.Dense}, so the rule is not specific to one layer class.
+	 */
+	@Test
+	public void testKerasBuiltinDenseSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Affine.call");
+		assertEquals("`Affine.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The framework-supplied parameter rule (#881) recognized through the engine's class hierarchy alone (#1099). The class extends
+	 * {@code tf.keras.Sequential}: PyDev's hierarchy stops at the unresolved base and sees only {@code Sequential}, which is neither
+	 * {@code Layer} nor {@code Model}, while the engine resolves the base to its summary class, whose superclass chain reaches
+	 * {@code Ltensorflow/keras/models/Model}. Keras supplies {@code training} from {@code Layer.__call__}, so inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED} while the function still hybridizes bare (P1).
+	 */
+	@Test
+	public void testKerasSequentialSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Stack.call");
+		assertEquals("`Stack.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * The negative side of the engine's Keras-class walk (#1099): a {@code call} override whose class is no Keras layer or model, with
+	 * bases forming a diamond over {@code object}. The walk reaches the shared base along both paths and visits it once, follows
+	 * {@code object} to the root, and finds no Keras class, so {@code training} is not taken as supplied by Keras. No call site passes it,
+	 * so it is left out of the signature, which runs.
+	 */
+	@Test
+	public void testNonKerasDiamondCallOverride() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Diamond.call");
+		assertEquals("`Diamond.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+		assertTrue("A signature is inferred; nothing supplies `training`.", call.getInferredInputSignature().isPresent());
+		assertEquals("The signature covers only `x`, `training` being omittable.", "[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]",
+				call.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * The name side of the engine's Keras-class walk (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): the
+	 * program defines a class named {@code Layer}, and {@code Scaled} extends it, so the last segment of {@code Scaled}'s base is
+	 * {@code Layer}. Neither class is a Keras layer, and the engine's hierarchy reaches no Keras class from either, so neither {@code call}
+	 * is a Keras call override and {@code training} is not taken as supplied by Keras. No call site passes it, so it is left out of each
+	 * signature, which runs on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testNonKerasClassNamedLayer() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Layer.call", "Scaled.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, call.getPassingPrecondition());
+			assertTrue("A signature is inferred for `" + identifier + "`; nothing supplies `training`.",
+					call.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s signature covers only `x`, `training` being omittable.",
+					"[tf.TensorSpec(shape=(1, 3), dtype=tf.float32)]", call.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * A Keras layer whose base is a Keras layer defined in another module
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107): {@code Tripled} extends {@code layers.Doubled}, which
+	 * extends {@code tf.keras.layers.Layer}. The engine resolves the base across modules, so the walk reaches {@code Layer} and inference
+	 * is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on
+	 * TensorFlow 2.9.3, since Keras supplies {@code training}. The engine's cross-module base resolution depends on translation order
+	 * (https://github.com/wala/ML/issues/944), which this fixture doesn't reach under any base-module name tried.
+	 */
+	@Test
+	public void testKerasLayerBaseInAnotherModule() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Tripled.call");
+		assertEquals("`Tripled.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Keras layers whose bases the engine has had a class for since https://github.com/wala/ML/issues/1127: {@code Doubled} extends
+	 * {@code keras.layers.Layer}, the same class as {@code tf.keras.layers.Layer} spelled through the standalone package, and
+	 * {@code Pooled} extends {@code tf.keras.layers.MaxPooling2D}, a built-in layer aliasing {@code MaxPool2D}. The walk reaches
+	 * {@code Layer} from either, so each {@code call} is recognized as a Keras call override, and inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3,
+	 * since Keras supplies {@code training}.
+	 */
+	@Test
+	public void testKerasUnmodeledLayerBases() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Doubled.call", "Pooled.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+			assertTrue("No input signature is emitted for `" + identifier + "`; Keras supplies `training`.",
+					call.getInferredInputSignature().isEmpty());
+			assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+					Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
+	 * Keras layers defined in a function and in a class (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107):
+	 * {@code make_layer.Local} and {@code Outer.Inner} each extend {@code tf.keras.layers.Layer}. The engine type name derived for each
+	 * nested class names a class of the engine's hierarchy, so the walk reaches {@code Layer} and inference is dropped with
+	 * {@code DEFAULTED_PARAMETER_SUPPLIED}. An input signature covering only {@code x} raises a {@code TypeError} on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testKerasNestedLayerClasses() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("make_layer.Local.call", "Outer.Inner.call")) {
+			Function call = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+			assertTrue("No input signature is emitted for `" + identifier + "`; Keras supplies `training`.",
+					call.getInferredInputSignature().isEmpty());
+			assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+					Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+		}
+	}
+
+	/**
+	 * Keras models that build a functional model in their constructors and don't override {@code call}
+	 * (https://github.com/wala/ML/issues/1128): {@code FunctionalKeyword} passes {@code inputs} and {@code outputs} to
+	 * {@code super().__init__} by keyword, and {@code FunctionalPositional} by position. Applying an instance runs {@code Model.call} over
+	 * the graph, so on TensorFlow 2.9.3 each consumer receives a (2, 4) {@code float32} tensor, which its signature specifies. The same
+	 * model built directly with {@code tf.keras.Model} is the control.
+	 */
+	@Test
+	public void testKerasFunctionalModelSubclass() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("consume_keyword", "consume_positional", "consume_direct")) {
+			Function consumer = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` has a tensor parameter.", consumer.getHasTensorParameter());
+			assertEquals("`" + identifier + "` hybridizes (P1).", P1, consumer.getPassingPrecondition());
+			assertEquals("`" + identifier + "`'s signature is the applied model's output.",
+					"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]", consumer.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * The direct-{@code Layer} control for {@link #testKerasBuiltinLayerSubclassSuppliedParameters()} (#1099): a class extending
+	 * {@code tf.keras.layers.Layer} itself is recognized by the framework-supplied parameter rule (#881) through the engine's class
+	 * hierarchy, so inference is dropped with {@code DEFAULTED_PARAMETER_SUPPLIED}.
+	 */
+	@Test
+	public void testKerasLayerSubclassSuppliedParameters() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = findFunction(this.getFunctions(), "Doubled.call");
+		assertEquals("`Doubled.call` hybridizes bare (P1); only the signature is unwritable.", P1, call.getPassingPrecondition());
+		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
+				call.getInferredInputSignature().isEmpty());
+		assertEquals("The absence reason is the supplied-defaulted-parameter block.",
+				Optional.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the container question of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888, reduced from its batch-tuple
 	 * case. A tuple of tensors reaching a parameter reports as the <em>union</em> of its elements' types, which is indistinguishable from a
 	 * tensor parameter that several call sites type differently. Classification returned on that typing and put the container question only
@@ -12038,7 +14591,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * pair.
 	 * <p>
 	 * The flat specification is not merely imprecise. Bound to it, the parameter arrives as a single tensor and the body's unpacking
-	 * raises, which is why the emitted nested form is executed here rather than compared.
+	 * raises, which is why the emitted nested form is executed here rather than compared. No specification is written at all for now, as
+	 * the TODO below explains, which is a lost optimization rather than that hazard.
 	 */
 	@Test
 	public void testTensorTypedContainerParameter() throws Exception {
@@ -12049,12 +14603,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("The parameter is tensor-typed by the union of its elements' types.", TRUE, pair.isTensor());
 		assertEquals("The container question is now put to it, and answered.", TRUE, pair.isTensorContainer());
-		assertEquals("Both element positions are surfaced.", 2, pair.getContainerElementTypes().size());
 		assertEquals("The parameter's own typing is the elements flattened, so it is the union of both.", 2, pair.getTensorTypes().size());
-		assertEquals("The emitted structure is nested, one specification per element, rather than one flat specification.",
-				"[[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None), dtype=tf.float32)]]",
-				batched.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`batched` hybridizes (P1).", P1, batched.getPassingPrecondition());
+
+		// TODO: https://github.com/ponder-lab/ML/pull/1079. The engine now gives a tuple a library summary allocates no length, since a
+		// summary's slots are in general not its run-time elements. This summary's are, as the batch is a pair at run time, so the nested
+		// specification this pinned, [[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None),
+		// dtype=tf.float32)]], is lost. Flip back to it once the engine vouches for this summary's length.
+		assertNull("The engine gives the summary's tuple no length, so no element structure.", pair.getContainerElementTypes());
+		assertEquals("No specification is written for a container of unknown length.", Optional.empty(),
+				batched.getInferredInputSignature());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				batched.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
@@ -12271,7 +14831,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`compiled_stale`'s earlier `model.compile` builds nothing, so it must not suppress the stale read.",
 				compiledStale.getHasStaleVariableReads());
 		assertNull("`compiled_stale` must not pass a precondition.", compiledStale.getPassingPrecondition());
-		assertNotNull("`compiled_stale` fails with HAS_STALE_VARIABLE_READS.",
+		// `model.compile` stores the loss and optimizer on the model (https://github.com/wala/ML/issues/1146), a write to the caller's
+		// object, so HAS_PYTHON_SIDE_EFFECTS is the failure reported, ahead of the stale read.
+		assertEquals("`compile` writes the caller's model.", TRUE, compiledStale.getHasPythonSideEffects());
+		assertNotNull("`compiled_stale` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				compiledStale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		assertNull("The stale read is no longer the failure reported for `compiled_stale`.",
 				compiledStale.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_STALE_VARIABLE_READS.getCode()));
 
 		Function freshRead = getFunction("fresh_read");
@@ -12332,9 +14897,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Pins the symbolic-iteration safety precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830, distilling
-	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but raises
-	 * {@code OperatorNotAllowedInGraphError} under tracing once the parameter is symbolic, even with AutoGraph converting the loop (it
-	 * fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). {@code range_loop}'s in-body {@code tf.range} iteration is
+	 * {@code EventSeq.from_array}): iterating a tensor parameter works eagerly, since the elements are tensors, but under tracing AutoGraph
+	 * converts the loop to a {@code tf.while_loop}, which raises or traces to a different result when the body can't be staged (it fails
+	 * with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}). TODO: {@code iterate_param}'s body only updates a tensor
+	 * accumulator of fixed dtype and shape, so its conversion is faithful, and the refusal is conservative here:
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137. {@code range_loop}'s in-body {@code tf.range} iteration is
 	 * AutoGraph-supported, is not parameter-derived, and remains P1.
 	 */
 	@Test
@@ -12360,6 +14927,120 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`range_loop` iterates an in-body `tf.range`, the AutoGraph-supported form.",
 				rangeLoop.getHasTensorParameterIteration());
 		assertEquals("`range_loop` still hybridizes (P1).", P1, rangeLoop.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 (distilling TensorFlow-Examples'
+	 * {@code to_binary_class}): passing a tensor parameter to a builtin that iterates it fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}, and storing into a parameter-derived tensor by subscript fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT}. Both work eagerly but raise under tracing once the parameter is
+	 * symbolic. Each builtin in {@code TensorIterationAnalysis}'s table has a function here. {@code sorted}, which AutoGraph converts,
+	 * enumerating a Python list of tensors (issue 832's exemption), storing into a list built in the body, and setting an attribute on a
+	 * tensor remain P1.
+	 */
+	@Test
+	public void testTensorParameterEnumerateAndItemAssignmentBlockHybridization() throws Exception {
+		Function toBinaryClass = getFunction("to_binary_class");
+		assertTrue("`to_binary_class` iterates its tensor parameter through `enumerate`.", toBinaryClass.getHasTensorParameterIteration());
+		assertTrue("`to_binary_class` assigns into its tensor parameter by index.", toBinaryClass.getHasTensorParameterItemAssignment());
+		assertNull("`to_binary_class` must not pass a precondition; tracing cannot iterate or assign into a symbolic tensor.",
+				toBinaryClass.getPassingPrecondition());
+		// The `enumerate` index now has an instance key (https://github.com/wala/ML/issues/1148), so `y[i] = 1` is seen as a write into
+		// the caller's array, and HAS_PYTHON_SIDE_EFFECTS is the failure reported, ahead of the iteration and item assignment.
+		assertEquals("`to_binary_class` writes into the caller's array.", TRUE, toBinaryClass.getHasPythonSideEffects());
+		assertNotNull("`to_binary_class` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				toBinaryClass.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+		assertNull("The iteration is no longer the failure reported for `to_binary_class`.", toBinaryClass.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		for (String identifier : List.of("enumerate_param", "zip_param", "list_param", "sum_param", "iter_param")) {
+			Function function = getFunction(identifier);
+			assertTrue("`" + identifier + "` iterates its tensor parameter through a builtin that iterates it.",
+					function.getHasTensorParameterIteration());
+			assertFalse("`" + identifier + "` assigns into nothing.", function.getHasTensorParameterItemAssignment());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_ITERATION.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+		}
+
+		// Tracing raises a TypeError here (len of a symbolic tensor) rather than an OperatorNotAllowedInGraphError.
+		Function reversedParam = getFunction("reversed_param");
+		assertTrue("`reversed_param` iterates its tensor parameter through `reversed`.", reversedParam.getHasTensorParameterIteration());
+		assertNull("`reversed_param` must not pass a precondition.", reversedParam.getPassingPrecondition());
+		assertNotNull("`reversed_param` fails with HAS_TENSOR_PARAMETER_ITERATION.", reversedParam.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITERATION once the engine summarizes these builtins, so that their calls have targets:
+		// https://github.com/wala/ML/issues/1129.
+		for (String identifier : List.of("tuple_param", "min_param", "max_param", "any_param", "all_param"))
+			assertFalse("`" + identifier + "`'s builtin call has no target yet, so its iteration is not seen.",
+					getFunction(identifier).getHasTensorParameterIteration());
+
+		Function sortedParam = getFunction("sorted_param");
+		assertFalse("`sorted_param` passes its tensor parameter to `sorted`, which AutoGraph converts.",
+				sortedParam.getHasTensorParameterIteration());
+		assertEquals("`sorted_param` remains convertible (P1).", P1, sortedParam.getPassingPrecondition());
+
+		// The loop lowers to a call of `iter` on the range, which is not a call of the builtin in the source.
+		Function rangeLoopParam = getFunction("range_loop_param");
+		assertFalse("`range_loop_param` loops over a `tf.range` bounded by its parameter's shape, which AutoGraph converts.",
+				rangeLoopParam.getHasTensorParameterIteration());
+
+		Function storeIntoDerived = getFunction("store_into_derived");
+		assertFalse("`store_into_derived` iterates nothing.", storeIntoDerived.getHasTensorParameterIteration());
+		assertTrue("`store_into_derived` assigns by index into a tensor computed from its parameter.",
+				storeIntoDerived.getHasTensorParameterItemAssignment());
+		assertNull("`store_into_derived` must not pass a precondition; a symbolic tensor does not support item assignment.",
+				storeIntoDerived.getPassingPrecondition());
+		assertNotNull("`store_into_derived` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeIntoDerived.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		Function storeMultiIndex = getFunction("store_multi_index");
+		assertTrue("`store_multi_index` assigns into a tensor computed from its parameter by a tuple index.",
+				storeMultiIndex.getHasTensorParameterItemAssignment());
+		assertNull("`store_multi_index` must not pass a precondition.", storeMultiIndex.getPassingPrecondition());
+		assertNotNull("`store_multi_index` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeMultiIndex.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		Function storeStringKey = getFunction("store_string_key");
+		assertTrue(
+				"`store_string_key` assigns by a string key into a tensor computed from its parameter, a subscript store (wala/ML#1100).",
+				storeStringKey.getHasTensorParameterItemAssignment());
+		assertNull("`store_string_key` must not pass a precondition.", storeStringKey.getPassingPrecondition());
+		assertNotNull("`store_string_key` fails with HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.", storeStringKey.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT.getCode()));
+
+		// TODO: Expect HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT once the engine lowers a slice store to a subscript store:
+		// https://github.com/wala/ML/issues/1130.
+		for (String identifier : List.of("store_slice", "add_to_slice"))
+			assertFalse("`" + identifier + "`'s slice store lowers to a `slice` call, so it is not yet seen as an assignment.",
+					getFunction(identifier).getHasTensorParameterItemAssignment());
+
+		// A store into the parameter itself also mutates the caller's array, which the side-effect precondition declines first.
+		for (String identifier : List.of("set_first", "add_to_first")) {
+			Function function = getFunction(identifier);
+			assertFalse("`" + identifier + "` iterates nothing.", function.getHasTensorParameterIteration());
+			assertTrue("`" + identifier + "` assigns into its tensor parameter by index.", function.getHasTensorParameterItemAssignment());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+		}
+
+		Function enumerateList = getFunction("enumerate_list");
+		assertFalse("`enumerate_list` enumerates a Python list of tensors, which tracing unrolls (issue 832).",
+				enumerateList.getHasTensorParameterIteration());
+		assertFalse("`enumerate_list` assigns into nothing.", enumerateList.getHasTensorParameterItemAssignment());
+		assertEquals("`enumerate_list` remains convertible (P1).", P1, enumerateList.getPassingPrecondition());
+
+		Function storeIntoLocalList = getFunction("store_into_local_list");
+		assertFalse("`store_into_local_list` iterates nothing.", storeIntoLocalList.getHasTensorParameterIteration());
+		assertFalse("`store_into_local_list` stores into a Python list, not a tensor.",
+				storeIntoLocalList.getHasTensorParameterItemAssignment());
+		assertEquals("`store_into_local_list` stores into a list built in its body and remains convertible (P1).", P1,
+				storeIntoLocalList.getPassingPrecondition());
+
+		Function tagDerived = getFunction("tag_derived");
+		assertFalse("`tag_derived` sets an attribute on a tensor, which is legal under tracing.",
+				tagDerived.getHasTensorParameterItemAssignment());
+		assertEquals("`tag_derived` remains convertible (P1).", P1, tagDerived.getPassingPrecondition());
 	}
 
 	/**
@@ -12472,10 +15153,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				reduce.getHasNumpyCallsOnParameters());
 		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
 
-		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), so the numpy check is gated off (it fails on the literal
-		// regardless) and never runs: its result is left undetermined.
+		// `einsum_via_matmul`'s `num_inner_dims` is the literal 1 at its only call, so it isn't a primitive parameter (#1025, #1109), and
+		// the numpy check, no longer gated off by one, runs. Its numpy touches the same statically-known trailing dimension, so it isn't
+		// flagged.
 		Function einsum = getFunction("einsum_via_matmul");
-		assertNull("`einsum_via_matmul`'s numpy check is gated off by its primitive parameter.", einsum.getHasNumpyCallsOnParameters());
+		assertFalse("`einsum_via_matmul`'s `num_inner_dims` is one constant.", einsum.getHasPrimitiveParameter());
+		assertFalse("`einsum_via_matmul`'s numpy touches only a statically-known trailing shape dimension.",
+				einsum.getHasNumpyCallsOnParameters());
 	}
 
 	/**
@@ -12709,17 +15393,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function nil = getFunction("nil_prod");
 		assertFalse("`nil_prod`'s numpy is over an empty slice, which consumes no dimension values.", nil.getHasNumpyCallsOnParameters());
-		assertEquals("`nil_prod` still hybridizes (P1).", P1, nil.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`nil_prod` does not convert.", nil.getPassingPrecondition());
+		assertNotNull("`nil_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				nil.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function stride = getFunction("stride_prod");
 		assertFalse("`stride_prod`'s strided slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				stride.getHasNumpyCallsOnParameters());
-		assertEquals("`stride_prod` still hybridizes (P1).", P1, stride.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`stride_prod` does not convert.", stride.getPassingPrecondition());
+		assertNotNull("`stride_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				stride.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 
 		Function rest = getFunction("rest_prod");
 		assertFalse("`rest_prod`'s mid-start slice is untracked, so the shape is unprovable and permitted precision-favoringly.",
 				rest.getHasNumpyCallsOnParameters());
-		assertEquals("`rest_prod` still hybridizes (P1).", P1, rest.getPassingPrecondition());
+		// TODO: In `drive`'s body the engine keeps both arms of `tf.executing_eagerly()`, since a function may run traced
+		// (https://github.com/wala/ML/issues/1110), so the rank-2 `Input` reaches this function and it declines. This program
+		// calls `drive` only eagerly, so the decline is a lost conversion: https://github.com/wala/ML/issues/1122.
+		assertNull("`rest_prod` does not convert.", rest.getPassingPrecondition());
+		assertNotNull("`rest_prod` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.",
+				rest.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 	}
 
 	/**
@@ -12821,6 +15520,783 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNull("`cat` must not pass a precondition.", cat.getPassingPrecondition());
 		assertNotNull("`cat` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.",
 				cat.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins that the closure scan of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 stays shallow when one
+	 * function defines many closures. {@code outer} defines 1,500 sibling lambdas that read its parameter. Scanning each closure nested in
+	 * a tainted variable's scope from every function that can read the variable, rather than only from the function defining it, made each
+	 * sibling's scan recurse into the next, so the recursion grew with the number of siblings and overflowed the stack on a subject with
+	 * this shape. The analysis must complete, still flag {@code outer_numpy}, whose lambda applies numpy to its parameter, and leave
+	 * {@code outer} unflagged. The failure depends on the worker threads' stack size, which is why the checks run in parallel here; a
+	 * serial run of this fixture did not overflow even before the fix, so a green run without the fix is not a pass on the merits.
+	 */
+	@Test
+	public void testClosureTaintAcrossManySiblings() throws Exception {
+		// The checks run on worker threads in parallel, whose stacks are smaller than the main thread's, as in an evaluator run.
+		this.processFunctionsInParallel = true;
+		Set<Function> functions = this.getFunctions();
+
+		Function numpy = findFunction(functions, "outer_numpy");
+		assertTrue("`outer_numpy` applies numpy to its parameter through a closure.", numpy.getHasNumpyCallsOnParameters());
+
+		Function outer = findFunction(functions, "outer");
+		assertFalse("`outer` applies no numpy to its parameter.", outer.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins that the closure taint of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061 stays bounded. Each of
+	 * {@code outer}'s sixteen sibling lambdas passes a closure to its own top-level helper, and each helper has a closure of its own. A
+	 * helper is not nested in {@code outer}, so it cannot read {@code outer}'s variables; scanning it with them, and so rescanning every
+	 * sibling under ever-different lexical seeds, overflowed the stack on a subject with this shape and takes minutes here. The analysis
+	 * must complete in well under a minute (it took 353 s before the fix and about 3 s after), still flag {@code outer_numpy}, whose lambda
+	 * applies numpy to its parameter inside a closure a helper calls, and leave {@code outer} unflagged.
+	 */
+	@Test
+	public void testClosureTaintAcrossManyHelpers() throws Exception {
+		long start = System.nanoTime();
+		Set<Function> functions = this.getFunctions();
+		long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start);
+		assertTrue("The analysis takes " + seconds + " s; the closure scan should stay bounded.", seconds < 60);
+
+		Function numpy = findFunction(functions, "outer_numpy");
+		assertTrue("`outer_numpy` applies numpy to its parameter through a closure.", numpy.getHasNumpyCallsOnParameters());
+
+		Function outer = findFunction(functions, "outer");
+		assertFalse("`outer` applies no numpy to its parameter.", outer.getHasNumpyCallsOnParameters());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083: Python applied to a tensor in a way tracing cannot carry,
+	 * where the tensor-type analysis types the condition or the argument as a tensor. Measured under {@code tf.function} on TensorFlow
+	 * 2.9.3, each of these raises while the eager function runs: {@code none_return_greater} returns {@code None} on one path of a branch
+	 * on {@code tf.greater(...)} and a tensor on the other ({@code ValueError} from AutoGraph's conversion to {@code tf.cond}),
+	 * {@code none_merge_greater} leaves a variable {@code None} on one path of such a branch, {@code local_after_join_greater} binds a
+	 * local in only one arm of one and reads it after the paths join ({@code ValueError} for both), {@code bool_of_greater} takes
+	 * {@code bool} of one ({@code OperatorNotAllowedInGraphError}), and {@code via_callee_greater} reaches {@code none_return_greater}.
+	 * {@code none_return}, {@code none_merge}, {@code bool_of}, {@code local_after_join}, and {@code via_callee} do the same with a Python
+	 * comparison of tensors, and {@code none_return_unmodeled} branches on {@code tf.reduce_any(tf.math.is_nan(x))}. Six controls trace and
+	 * still hybridize: {@code tensor_branches} and {@code tensor_branches_greater}, whose paths both yield tensors; {@code int_of} and
+	 * {@code float_of}, whose conversions AutoGraph turns into casts; {@code local_in_branch}, which binds a local only inside a branch,
+	 * unbound rather than {@code None} on the other path; and {@code static_none}, whose branch is on a static extent. {@code mask_or_none}
+	 * tests a parameter with {@code is None}, a Python {@code bool} decided while tracing, and traces with and without the argument, so it
+	 * is not refused. {@code primitive_branch} branches on a primitive parameter, so it is refused for that (code 12), not for this.
+	 * {@code dataset_size} branches on {@code dataset.cardinality() == tf.data.INFINITE_CARDINALITY} and returns {@code None} on one path,
+	 * which raises a {@code ValueError} under tracing; it is refused since Ariadne models {@code Dataset.cardinality()} and the cardinality
+	 * constants (https://github.com/wala/ML/issues/1072), so the condition is typed as a scalar {@code int64} tensor comparison.
+	 */
+	@Test
+	public void testUntraceablePythonOverTensors() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("none_return_greater", "none_merge_greater", "bool_of_greater", "local_after_join_greater",
+				"via_callee_greater", "none_return", "none_merge", "bool_of", "local_after_join", "via_callee", "none_return_unmodeled")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+		}
+
+		for (String identifier : List.of("tensor_branches", "tensor_branches_greater", "int_of", "float_of", "local_in_branch",
+				"static_none")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		Function mask = findFunction(functions, "mask_or_none");
+		assertEquals("The check runs on `mask_or_none` and decides it.", FALSE, mask.getHasUntraceablePythonOnParameters());
+		assertNull("`mask_or_none`'s `is None` branch is not refused.", mask.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+
+		Function primitive = findFunction(functions, "primitive_branch");
+		assertNotNull("`primitive_branch` fails with HAS_PRIMITIVE_PARAMETERS.",
+				primitive.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PRIMITIVE_PARAMETERS.getCode()));
+		assertNull("`primitive_branch` is not refused for untraceable Python.", primitive.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+
+		// Its branch condition, `dataset.cardinality() == tf.data.INFINITE_CARDINALITY`, is a tensor and its paths disagree about `None`,
+		// so the traced function raises a `ValueError`. Ariadne types `Dataset.cardinality()` and the cardinality constants as scalar
+		// `int64` tensors (https://github.com/wala/ML/issues/1072), so the condition has a tensor type and the check refuses it.
+		Function size = findFunction(functions, "dataset_size");
+		assertEquals("The check runs on `dataset_size` and refuses it.", TRUE, size.getHasUntraceablePythonOnParameters());
+		assertNull("`dataset_size` must not pass a precondition.", size.getPassingPrecondition());
+		assertNotNull("`dataset_size`'s tensor branch fails with HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.", size.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075: a value that does not cross the {@code tf.function}
+	 * boundary unchanged. Measured under {@code tf.function} on TensorFlow 2.9.3: {@code returns_variable} returns a {@code tf.Variable},
+	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples;
+	 * {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which comes back as a tensor its
+	 * caller cannot write to; and {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of
+	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword.
+	 * {@code returns_variable_pairs} returns a variable inside a list it builds with {@code +=}. One more changes but isn't yet detected,
+	 * for the engine reason its TODO cites: {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary
+	 * unchanged: {@code reads_variable} only reads a variable, {@code stacks_tensor_array} returns its array stacked, and
+	 * {@code selects_tensor_keys} is only passed tensors.
+	 */
+	@Test
+	public void testUncrossableBoundaryValues() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("returns_variable", "returns_variable_pair", "returns_tensor_array", "selects_keys",
+				"selects_keys_by_keyword")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_UNCROSSABLE_BOUNDARY_VALUES.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+		}
+
+		for (String identifier : List.of("reads_variable", "stacks_tensor_array", "selects_tensor_keys")) {
+			Function function = findFunction(functions, identifier);
+			assertNull("`" + identifier + "` is not refused for an uncrossable value.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+		}
+
+		// The tuple `+=` appends is held in a channel `m`'s object catalog doesn't name (https://github.com/wala/ML/issues/1069), but the
+		// engine lists that channel among the list's elements, so the walk sees the returned variable.
+		Function pairs = findFunction(functions, "returns_variable_pairs");
+		assertNull("`returns_variable_pairs` must not pass a precondition.", pairs.getPassingPrecondition());
+		assertNotNull("`returns_variable_pairs`'s variable, appended with `+=`, is seen.",
+				pairs.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+
+		// TODO: Refuse this once Ariadne models a Keras weight as a variable rather than a tensor: https://github.com/wala/ML/issues/1068.
+		// It returns the
+		// layer's kernel, which comes back from `tf.function` as a tensor its caller cannot assign to, but `add_weight`'s summary
+		// allocates a tensor, so no variable reaches the return.
+		Function mapWeights = findFunction(functions, "Weights.map_weights");
+		assertNull("`Weights.map_weights`'s returned Keras weight is not yet seen as a variable.", mapWeights.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117: a function that may return a Python primitive, which
+	 * {@code tf.function} converts to a tensor. Measured on TensorFlow 2.9.3, each function converted alone: {@code hidden_units} returns
+	 * an {@code int}, so its caller's dictionary lookup raises {@code TypeError: Tensor is unhashable}, and the {@code Dense} layer that
+	 * {@code Head} constructs from it while Keras builds the model raises {@code TypeError: int() argument must be ... not 'Tensor'};
+	 * {@code grid} returns a tuple of {@code int}s, so its caller's lookup raises the same {@code TypeError}, and the {@code Reshape} layer
+	 * {@code Grid} constructs from it raises {@code OperatorNotAllowedInGraphError}; and {@code is_training} returns a {@code bool}, so its
+	 * caller's lookup raises the same {@code TypeError}. Eagerly, every caller runs.
+	 */
+	@Test
+	public void testReturnedPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("hidden_units", "grid", "is_training")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` may return a Python primitive.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with RETURNS_PYTHON_PRIMITIVE.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+		}
+	}
+
+	/**
+	 * Pins the {@code shape_list} helper of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117, which returns a
+	 * shape as a list whose static dimensions are Python {@code int}s. Measured on TensorFlow 2.9.3, converted, the {@code Dense} layer
+	 * {@code Projection} constructs from the static last dimension while Keras builds the model raises
+	 * {@code TypeError: int() argument must be ... not 'Tensor'}; eagerly, the model builds.
+	 */
+	@Test
+	public void testReturnedPrimitiveShapeList() throws Exception {
+		Function function = getFunction("shape_list");
+
+		// An element of `x.shape.as_list()` is a Python int of unknown value (https://github.com/wala/ML/issues/1104), represented by the
+		// int type's key (wala/ML#1148). The comprehension stores it in the returned list, among the elements the engine lists for it.
+		assertTrue("`shape_list`'s static dimensions are seen.", function.getReturnsPrimitive());
+		assertTrue("`shape_list`'s result is used.", function.getHasUsedResults());
+		assertNull("`shape_list` must not pass a precondition.", function.getPassingPrecondition());
+		assertNotNull("`shape_list` fails with RETURNS_PYTHON_PRIMITIVE.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+	}
+
+	/**
+	 * The controls of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117, each of which behaves the same converted
+	 * on TensorFlow 2.9.3: {@code scaled} returns only tensors, one inside a dictionary; {@code accumulate} returns {@code None}, which
+	 * {@code tf.function} returns as {@code None}; {@code scaled_and_size} returns a tensor and an integer computed by a TensorFlow
+	 * operation, which is already a tensor; and {@code discarded_width} returns {@code 6}, but every call discards the result.
+	 */
+	@Test
+	public void testReturnedPrimitiveControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("scaled", "accumulate", "scaled_and_size")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` returns no Python primitive.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
+
+			if (identifier.equals("scaled_and_size")) {
+				// `tf.size(x)` is a dynamic shape op, so returning it passes a shape value outbound, which the shape-value check refuses
+				// without proving that a caller reads it statically. This caller converts it eagerly with `int`, where the returned
+				// tensor carries its value, so the refusal is an over-refusal, the accepted cost of that check's conservatism.
+				assertNull("`scaled_and_size` is refused for its returned size.", function.getPassingPrecondition());
+				assertNotNull("`scaled_and_size` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+			} else
+				assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+
+		Function discarded = findFunction(functions, "discarded_width");
+		assertTrue("`discarded_width` returns a Python primitive.", discarded.getReturnsPrimitive());
+		assertFalse("Every call of `discarded_width` discards its result.", discarded.getHasUsedResults());
+		assertEquals("`discarded_width` still hybridizes (P1).", P1, discarded.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins scalars computed in Python for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117. Measured on TensorFlow
+	 * 2.9.3, converted, {@code scaled} returns {@code n * 2}, {@code counted} returns {@code len(xs)}, and {@code doubled_count} returns
+	 * {@code len(xs) * 2}, each as a tensor, so each caller's dictionary lookup raises {@code TypeError: Tensor is unhashable}; eagerly,
+	 * each is an {@code int}.
+	 */
+	@Test
+	public void testReturnedPrimitiveComputed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// The front end folds straight-line constant arithmetic over names bound once in the file, so `n = 3` then `n * 2` is the
+		// literal 6 in the IR, with no binary operation, and the check catches it as a literal return. That is why `doubled_count` uses
+		// `m`: a second binding of `n` anywhere in the file would stop the fold, and `scaled` would be missed.
+		Function scaled = findFunction(functions, "scaled");
+		assertTrue("`scaled`'s folded literal is seen.", scaled.getReturnsPrimitive());
+		assertNull("`scaled` must not pass a precondition.", scaled.getPassingPrecondition());
+		assertNotNull("`scaled` fails with RETURNS_PYTHON_PRIMITIVE.",
+				scaled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+
+		// `len(xs)` is a Python int of unknown value, which the engine represents by the int type's key (wala/ML#1148).
+		Function counted = findFunction(functions, "counted");
+		assertTrue("`counted`'s computed scalar is seen.", counted.getReturnsPrimitive());
+		assertTrue("`counted`'s result is used.", counted.getHasUsedResults());
+		assertNull("`counted` must not pass a precondition.", counted.getPassingPrecondition());
+		assertNotNull("`counted` fails with RETURNS_PYTHON_PRIMITIVE.",
+				counted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+
+		// The product computed from `len(xs)` is a Python int of unknown value too, represented by the int type's key
+		// (https://github.com/wala/ML/issues/1149).
+		Function doubledCount = findFunction(functions, "doubled_count");
+		assertTrue("`doubled_count`'s computed scalar is seen.", doubledCount.getReturnsPrimitive());
+		assertTrue("`doubled_count`'s result is used.", doubledCount.getHasUsedResults());
+		assertNull("`doubled_count` must not pass a precondition.", doubledCount.getPassingPrecondition());
+		assertNotNull("`doubled_count` fails with RETURNS_PYTHON_PRIMITIVE.",
+				doubledCount.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+	}
+
+	/**
+	 * Pins a primitive returned as an element of a list built by {@code append}, concatenation or repetition for
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117. The engine lists such an element among the list's
+	 * elements, though the list's catalog doesn't name the channel a concatenation or a repetition stores it under, so the check sees it.
+	 * Measured on TensorFlow 2.9.3, converted, {@code appended}, {@code concatenated} and {@code repeated} return their literal {@code 3},
+	 * and {@code appended_count} its {@code len(xs)}, as a tensor, so each caller's dictionary lookup raises
+	 * {@code TypeError: Tensor is unhashable}; eagerly, each is an {@code int}.
+	 */
+	@Test
+	public void testReturnedPrimitiveAppended() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("appended", "appended_count", "concatenated", "repeated")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` may return a Python primitive.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with RETURNS_PYTHON_PRIMITIVE.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+		}
+	}
+
+	/**
+	 * Asserts that the named function is refused because a shape known only as a tensor value crosses its boundary.
+	 *
+	 * @param functions The functions under analysis.
+	 * @param identifier The function's identifier.
+	 */
+	private static void assertPassesShapeValueAcrossBoundary(Set<Function> functions, String identifier) {
+		Function function = findFunction(functions, identifier);
+		assertTrue("`" + identifier + "` passes a shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
+		assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+		assertNotNull("`" + identifier + "` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/**
+	 * A gating layer's helpers, which pass a shape known only as a tensor value between them. Measured on TensorFlow 2.9.3, converting
+	 * either helper alone with a bare decorator makes the model's {@code predict} raise
+	 * {@code TypeError: int() argument must be ... not 'NoneType'} from {@code Projection.build}'s {@code add_weight}: {@code _pre_combine}
+	 * returns {@code lost_shape}, whose value doesn't cross, and {@code _post_combine} reshapes by its {@code lost_shape} parameter, whose
+	 * value doesn't cross either, so the restored tensor's trailing dimensions are {@code None}. Converting neither runs.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundary() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertPassesShapeValueAcrossBoundary(functions, "Gating._pre_combine");
+		assertPassesShapeValueAcrossBoundary(functions, "Gating._post_combine");
+
+		// The caller keeps the shape inside its own graph, and converting it runs.
+		Function call = findFunction(functions, "Gating.call");
+		assertFalse("`Gating.call` passes no shape value across its boundary.", call.getPassesShapeValueAcrossBoundary());
+		assertNull("`Gating.call` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", call.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/** A parameter's value gives the static dimensions of a returned reshape: the inbound direction. */
+	@Test
+	public void testShapeValueAcrossBoundaryInbound() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "restore");
+	}
+
+	/** A returned slice of a dynamic shape: the outbound direction. */
+	@Test
+	public void testShapeValueAcrossBoundaryOutbound() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "trailing");
+	}
+
+	/** A dynamic shape returned as an element of a tuple: the outbound direction through a container. */
+	@Test
+	public void testShapeValueAcrossBoundaryOutboundTuple() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "flatten");
+	}
+
+	/**
+	 * A dynamic shape returned through a class method, {@code C.k(x)}: the outbound direction through a callee reached with its class bound
+	 * first, which the walk descends into.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryClassMethod() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "trailing");
+	}
+
+	/**
+	 * Static methods called through an instance, {@code o.s(x)}, which bind no receiver, so the call's arguments align with the method's
+	 * parameters as passed. {@code trailing} returns a dynamic shape through one and is refused; {@code flattened} passes its parameter as
+	 * the data operand of a reshape by a constant shape, so no parameter's value reaches a shape operand, and it converts. Aligned as
+	 * though a receiver were bound, its parameter would land on the shape operand and it would be refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryStaticViaInstance() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertPassesShapeValueAcrossBoundary(functions, "trailing");
+
+		Function flattened = findFunction(functions, "flattened");
+		assertFalse("`flattened` passes no shape value across its boundary.", flattened.getPassesShapeValueAcrossBoundary());
+		assertEquals("`flattened` still hybridizes (P1).", P1, flattened.getPassingPrecondition());
+	}
+
+	/**
+	 * The controls: {@code constant_reshape} reshapes by a constant; {@code flatten_batch} reshapes by a dynamic shape it computes, which
+	 * stays inside its graph, and returns only the reshaped tensor; {@code scale} is an ordinary tensor function. Each converts.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("constant_reshape", "flatten_batch", "scale")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` passes no shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
+	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
+	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:
+	 * {@code Sampler.next_inputs} reads the targets {@code setup_target} rebinds (TensorFlowTTS's {@code Tacotron2Sampler}),
+	 * {@code Attention.__call__} the keys and values {@code setup_memory} rebinds, {@code Attention._compute_window_mask} the window
+	 * {@code setup_window} rebuilds (TensorFlowTTS's {@code TFTacotronLocationSensitiveAttention}), {@code Decoder.step} both of these
+	 * through its callees ({@code TFTacotronDecoder.step}), and {@code AttentionalRNNDecoder._get_initial_state} the memory
+	 * {@code initialize} rebinds (OpenNMT-tf), {@code LoopFedDecoder._get_initial_state} the same, with the memory computed from a loop
+	 * variable, {@code Memory.read} the keys that another class's {@code __init__} rebinds on each construction, {@code Builder.read} the
+	 * batch that a {@code build} outside Keras rebinds on each call, and {@code Node.read} the field that a child's {@code __init__}
+	 * rebinds on its parent, an object it doesn't set up. {@code make_features} (OpenNMT-tf's {@code SequenceRecordInputter}) fills in the
+	 * dictionary its caller passes, which {@code tf.function} refuses with a {@code ValueError}; the side-effect precondition refuses it.
+	 * Four controls match the eager reader: {@code InitOnly.scaled} reads a field set only in its class's {@code __init__},
+	 * {@code Derived.scaled} one set only in a base's {@code __init__}, {@code BuildOnly.call} one set only in a Keras layer's
+	 * {@code build}, and {@code VariableField.read} a variable another method updates with {@code assign}. {@code IntField.counted} reads
+	 * an {@code int} field another method rebinds, which diverges under tracing too, and is refused, since a scalar read counts
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). {@code StringField.labeled} reads a string field another
+	 * method rebinds, used only as an op's name, which matches but is refused for the same reason, as its TODO says. Two more controls
+	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
+	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused. Four
+	 * more cases pin how the engine's {@code dict.copy} model reaches this precondition, each against the same body, which fills in its
+	 * {@code features} dictionary unless that already holds {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy},
+	 * passed a copy of a dictionary lacking that key, raises the {@code ValueError} and is refused. {@code make_features_of_full_copy},
+	 * passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns before any write and runs, but is
+	 * refused. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter, as OpenNMT-tf's
+	 * {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its own and runs.
+	 * The full copy's comment says why its refusal is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that
+	 * only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
+	 */
+	@Test
+	public void testReboundStateReads() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Sampler.next_inputs", "Attention.__call__", "Attention._compute_window_mask", "Decoder.step",
+				"AttentionalRNNDecoder._get_initial_state", "LoopFedDecoder._get_initial_state", "Memory.read", "Builder.read",
+				"Node.read")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads rebound tensor state.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_REBOUND_STATE_READS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// Filling in the caller's dictionary is a write to an object created outside the function, so the side-effect precondition refuses
+		// it.
+		Function makeFeatures = findFunction(functions, "make_features");
+		assertNull("`make_features` must not pass a precondition.", makeFeatures.getPassingPrecondition());
+		assertNotNull("`make_features` fails with HAS_PYTHON_SIDE_EFFECTS.",
+				makeFeatures.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// The analysis tells objects apart by allocation site, so a holder created afresh on each call is one object to it, and its getter
+		// is
+		// refused although this program never rebinds a holder between two of its reads.
+		Function get = findFunction(functions, "Holder.get");
+		assertEquals("`Holder.get` reads a field `Holder.set` writes.", TRUE, get.getHasReboundStateReads());
+		assertNotNull("`Holder.get` fails with HAS_REBOUND_STATE_READS.",
+				get.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// A rebound `int` field is read stale under tracing too, and a scalar read counts since
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048.
+		Function counted = findFunction(functions, "IntField.counted");
+		assertEquals("`IntField.counted` reads an int field `IntField.recount` rebinds.", TRUE, counted.getHasReboundStateReads());
+		assertNull("`IntField.counted` must not pass a precondition.", counted.getPassingPrecondition());
+		assertNotNull("`IntField.counted` fails with HAS_REBOUND_STATE_READS.",
+				counted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// TODO: Convert this. A known false refusal: the rebound string is a scalar read, which counts whatever it's used for, but it's
+		// used only as an op's name, so the values the function computes don't change
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		Function labeled = findFunction(functions, "StringField.labeled");
+		assertEquals("`StringField.labeled` reads a string field `StringField.relabel` rebinds.", TRUE, labeled.getHasReboundStateReads());
+		assertNotNull("`StringField.labeled` fails with HAS_REBOUND_STATE_READS.",
+				labeled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		for (String identifier : List.of("InitOnly.scaled", "BuildOnly.call", "VariableField.read", "sums_list", "uses_fresh_holder",
+				"Derived.scaled")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// TODO: Convert this. A known false refusal, from a precision limit of this check rather than an engine gap: the field is set only
+		// in `_reset`, which only `__init__` calls, but a set-up method is credited only with its own writes, since a helper may also be
+		// called elsewhere. Crediting it would need the helper's callers to be the object's set-up methods alone.
+		Function resettingRead = findFunction(functions, "Resetting.read");
+		assertEquals("`Resetting.read` reads a field `Resetting._reset` writes.", TRUE, resettingRead.getHasReboundStateReads());
+		assertNotNull("`Resetting.read` fails with HAS_REBOUND_STATE_READS.",
+				resettingRead.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		// Its caller passes a copy of a dictionary that lacks "tensor", and filling the copy in makes `tf.function` raise a `ValueError`.
+		// The copy is created outside the function (https://github.com/wala/ML/issues/1082), so the side-effect precondition refuses it.
+		Function makeFeaturesOfCopy = findFunction(functions, "make_features_of_copy");
+		assertEquals("`make_features_of_copy` fills in the copied dictionary.", TRUE, makeFeaturesOfCopy.getHasPythonSideEffects());
+		assertNull("`make_features_of_copy` must not pass a precondition.", makeFeaturesOfCopy.getPassingPrecondition());
+		assertNotNull("`make_features_of_copy` fails with HAS_PYTHON_SIDE_EFFECTS.", makeFeaturesOfCopy.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// A conservative refusal, and a lost conversion: the copy always holds "tensor", so the body returns before it writes, and the
+		// function runs under `tf.function`. The parameter is seen to hold the copy, which is created outside the function
+		// (https://github.com/wala/ML/issues/1082), and the side-effect precondition doesn't ask whether a write can execute. Converting it
+		// would need a path-sensitive analysis (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1130).
+		Function makeFeaturesOfFullCopy = findFunction(functions, "make_features_of_full_copy");
+		assertEquals("`make_features_of_full_copy`'s write to the copied dictionary is seen though it never executes.", TRUE,
+				makeFeaturesOfFullCopy.getHasPythonSideEffects());
+		assertNull("`make_features_of_full_copy` does not yet pass a precondition.", makeFeaturesOfFullCopy.getPassingPrecondition());
+		assertNotNull("`make_features_of_full_copy` fails with HAS_PYTHON_SIDE_EFFECTS.", makeFeaturesOfFullCopy.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// Each dictionary it fills in is one its caller creates, through a call the engine resolves over the list of inputters, so the
+		// side-effect precondition refuses it without a `dict.copy` model. OpenNMT-tf's `ParallelInputter` has this shape, but there
+		// `SequenceRecordInputter.make_features` is still converted, so this fixture doesn't reproduce whatever keeps the refusal from
+		// reaching it there.
+		Function recordMakeFeatures = findFunction(functions, "RecordInputter.make_features");
+		assertEquals("`RecordInputter.make_features` fills in a dictionary its caller creates.", TRUE,
+				recordMakeFeatures.getHasPythonSideEffects());
+		assertNull("`RecordInputter.make_features` must not pass a precondition.", recordMakeFeatures.getPassingPrecondition());
+		assertNotNull("`RecordInputter.make_features` fails with HAS_PYTHON_SIDE_EFFECTS.", recordMakeFeatures.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
+
+		// The body creates the only dictionary it fills in, so its writes are not side effects, with or without a `dict.copy` model.
+		Function makeFeaturesFresh = findFunction(functions, "make_features_fresh");
+		assertEquals("`make_features_fresh` writes only a dictionary it creates.", FALSE, makeFeaturesFresh.getHasPythonSideEffects());
+		// It returns `tf.shape(element)[0]` as the dictionary's length, a shape value crossing outbound, which the shape-value check
+		// refuses without proving that a caller reads it statically. A length is consumed as a value, such as by a mask, so this is
+		// likely an over-refusal, the accepted cost of that check's conservatism.
+		assertNull("`make_features_fresh` is refused for its returned length.", makeFeaturesFresh.getPassingPrecondition());
+		assertNotNull("`make_features_fresh` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", makeFeaturesFresh.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/**
+	 * The fields of a {@code NamedTuple} argument are not rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). {@code tf.function} flattens a {@code NamedTuple}
+	 * argument into its tensors on every call, and a {@code NamedTuple}'s fields can't be rebound: the only writes to them are those of the
+	 * engine's constructor for a {@code NamedTuple} without an {@code __init__} (https://github.com/wala/ML/issues/579), which allocates
+	 * the object. Measured on TensorFlow 2.9.3, {@code AutoEncoder.call} converted returns what it returns eagerly for two inputs.
+	 */
+	@Test
+	public void testReboundStateReadsNamedTupleArgument() throws Exception {
+		Function function = findFunction(this.getFunctions(), "AutoEncoder.call");
+		assertEquals("`AutoEncoder.call` reads only a NamedTuple argument's fields.", FALSE, function.getHasReboundStateReads());
+		assertNull("`AutoEncoder.call` is not refused for rebound state.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+	}
+
+	/**
+	 * A function whose argument one caller may rebind to a tensor that a helper returns reads no rebound state through it
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} passes a tensor argument in afresh
+	 * on every call. Unless it concatenates, {@code SelfLoopConvolution.call} rebinds the adjacency lists to the tensor {@code tf.concat}
+	 * returns in {@code add_self_loops}, and its {@code _calculate_messages} reaches {@code MessagePassing._count_incoming_edges} and
+	 * {@code calculate_messages}, which iterate them. The engine's summary of {@code tf.concat} populates the tensor it allocates, and
+	 * those writes were taken for rebinding. {@code PlainConvolution._calculate_messages}, whose caller doesn't rebind the lists, is the
+	 * control.
+	 */
+	@Test
+	public void testReboundStateReadsArgumentReboundToTensor() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("MessagePassing._count_incoming_edges", "calculate_messages",
+				"SelfLoopConvolution._calculate_messages", "PlainConvolution._calculate_messages")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
+	 * A read through {@code self} of a field another method rebinds stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). Measured on TensorFlow 2.9.3, {@code Streaming.call}
+	 * converted returns {@code [0]} twice after {@code index} rebinds the candidates and identifiers, where the eager call returns
+	 * {@code [0]} then {@code [3]}. The status message names the field and the write.
+	 */
+	@Test
+	public void testReboundStateReadsSelfFieldRebound() throws Exception {
+		Function function = findFunction(this.getFunctions(), "Streaming.call");
+		assertEquals("`Streaming.call` reads fields `Streaming.index` rebinds.", TRUE, function.getHasReboundStateReads());
+		assertNull("`Streaming.call` must not pass a precondition.", function.getPassingPrecondition());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+		assertNotNull("`Streaming.call` fails with HAS_REBOUND_STATE_READS.", entry);
+		assertTrue("The message names the field and the write: " + entry.getMessage(), entry.getMessage()
+				.matches("(?s).*field `_(candidates|identifiers)` of `.*Streaming`, rebound by `.*Streaming/index` at A\\.py:1[56]\\..*"));
+	}
+
+	/**
+	 * A {@code NamedTuple} or a {@code tf.concat} result held in a field that another method rebinds stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). The summary that allocates each writes its contents, and
+	 * those writes are initialization, but the field holding it is rebound outside {@code __init__}, so a trace keeps the object it held.
+	 * Measured on TensorFlow 2.9.3, {@code Holder.read} converted returns {@code [2.]} twice after {@code reset}, where the eager call
+	 * returns {@code [2.]} then {@code [3.]}, and {@code Box.read} returns {@code [5. 5.]} twice where the eager call returns
+	 * {@code [5. 5.]} then {@code [7. 7.]}.
+	 */
+	@Test
+	public void testReboundStateReadsHeldInRebound() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("Holder.read", "field `g` of `.*Holder`, rebound by `.*Holder/reset` at A\\.py:19\\.",
+				"Box.read", "field `t` of `.*Box`, rebound by `.*Box/reset` at A\\.py:30\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads through a rebound field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
+	 * The proxy the front end allocates for a {@code super()} call is not rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). Each method calling {@code super()} allocates a fresh
+	 * {@code superfun} object and sets its {@code $class} and {@code $self} fields in its prologue, and the engine's {@code super} model
+	 * reads them back. {@code Encoder.encoder} calls layers whose {@code build} calls {@code super()}, and whose {@code __init__}, outside
+	 * its closure, does too, so the {@code $self} that {@code __init__} writes matched the read.
+	 */
+	@Test
+	public void testReboundStateReadsSuperProxy() throws Exception {
+		Function function = findFunction(this.getFunctions(), "Encoder.encoder");
+		assertEquals("`Encoder.encoder` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+		assertNull("`Encoder.encoder` is not refused for rebound state.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+	}
+
+	/**
+	 * A summary's write to a field holding an object it allocates is not a rebinding
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). The engine's {@code tf.GradientTape} summary binds a
+	 * {@code gradient} method object on each tape it creates, and the tapes of {@code gradient_of_sum} and {@code gradient_of_square} share
+	 * an abstraction, so each function's {@code tape.gradient} read matched the other's tape creation. Measured on TensorFlow 2.9.3, each
+	 * converted returns what it returns eagerly.
+	 */
+	@Test
+	public void testReboundStateReadsSummaryMethod() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("gradient_of_sum", "gradient_of_square")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
+	 * An opaque object passed as an argument, whose field another function rebinds, stays refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140): {@code tf.function} keys such an argument by identity,
+	 * so a trace keeps the tensor the field held. So does a class attribute the module rebinds: the module's code allocates the class
+	 * object, but it is program source, which may write the object again after a read, so its writes aren't the object's set-up. Measured
+	 * on TensorFlow 2.9.3, {@code apply} and {@code scaled}, each converted, return {@code [2. 4.]} twice, where the eager calls return
+	 * {@code [2. 4.]} then {@code [3. 6.]}. The status message names the field and the write.
+	 */
+	@Test
+	public void testReboundStateReadsOpaqueArgument() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("apply", "field `w` of `.*Weights`, rebound by `.*Weights/set_weights` at A\\.py:14\\.",
+				"scaled", "field `factor` of `.*`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rebound tensor field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
+	 * A Python scalar read from a field another function rewrites is rebound state
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076). Since
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048, a primitive field of an object keyed by its identity makes
+	 * no primitive parameter, since it never causes a retrace, so a rewrite of it after tracing is read stale. Measured on TensorFlow
+	 * 2.9.3, {@code read_box} and {@code Counter.read}, each converted, return {@code [1. 2.]} twice after {@code set_box} and
+	 * {@code Counter.bump} rewrite the field, with one trace, where the eager calls return {@code [1. 2.]} then {@code [5. 10.]}.
+	 * {@code read_fixed} and {@code Fixed.read}, whose field is set only in {@code __init__}, match the eager calls. The status message
+	 * names the field and the write.
+	 */
+	@Test
+	public void testReboundScalarFieldReads() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map.of("read_box", "field `n` of `.*Box`, rebound by `.*set_box` at A\\.py:23\\.",
+				"Counter.read", "field `n` of `.*Counter`, rebound by `.*Counter/bump` at A\\.py:31\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rebound scalar field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+
+		for (String identifier : List.of("read_fixed", "Fixed.read")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+	}
+
+	/**
+	 * Scalar reads of a field only ever holding one literal aren't rebound state, however the field is written, while a field holding more
+	 * than one value is (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076). Measured on TensorFlow 2.9.3, each
+	 * function converted returns what it returns eagerly, except {@code Grown.read}, {@code Prefixed.read} and {@code Retuned.scaled},
+	 * which return the first call's value after their field is rewritten. {@code module_scaled} reads a constant of another module,
+	 * {@code Rated.self_scaled} and {@code Rated.class_scaled} a class-body constant, which the class body writes, and {@code switched} a
+	 * keyword argument two call sites pass with different values. {@code Grown.read} reads a field only ever holding a computed number,
+	 * which the engine keys as an {@code int} (https://github.com/wala/ML/issues/1149), {@code Prefixed.read} one only ever holding a
+	 * computed string, and {@code Retuned.scaled} a class-body constant the module reassigns to another literal.
+	 */
+	@Test
+	public void testReboundScalarFieldReadsControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("module_scaled", "Rated.self_scaled", "Rated.class_scaled", "switched")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("The check runs on `" + identifier + "` and decides it.", FALSE, function.getHasReboundStateReads());
+			assertNull("`" + identifier + "` is not refused for rebound state.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		}
+
+		// The computed string is refused, though not as a scalar read: the refusal doesn't depend on the scalar test.
+		for (Entry<String, String> reader : Map.of("Grown.read", "field `n` of `.*Grown`, rebound by `.*Grown/grow` at A\\.py:\\d+\\.",
+				"Prefixed.read", "field `prefix` of `.*Prefixed`, rebound by `.*Prefixed/rename` at A\\.py:\\d+\\.", "Retuned.scaled",
+				"field `RATE` of `.*Retuned`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.").entrySet()) {
+			Function function = findFunction(functions, reader.getKey());
+			assertEquals("`" + reader.getKey() + "` reads a rewritten field.", TRUE, function.getHasReboundStateReads());
+			assertNull("`" + reader.getKey() + "` must not pass a precondition.", function.getPassingPrecondition());
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+					PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
+			assertTrue("The message names the field and the write: " + entry.getMessage(),
+					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1078: a function reaching a replica context's
+	 * {@code merge_call}, nested in a function a {@code tf.distribute.MirroredStrategy} runs per replica. Measured on TensorFlow 2.9.3 with
+	 * two logical CPU devices, with {@code strategy.run} called eagerly and from a {@code tf.function}: with {@code apply_step}, which
+	 * calls {@code optimizer.apply_gradients}, converted, {@code strategy.run(nested_step, ...)} raises
+	 * {@code RuntimeError: merge_call called while defining a new graph or a tf.function} (TensorFlow's {@code mirrored_run.py}, its "case
+	 * 2"). Converting any of the others raises nothing: {@code nested_step} and {@code direct_step}, which calls {@code apply_gradients}
+	 * itself, are the functions passed to {@code run}, which the strategy rewrites when converted ("case 1"), and {@code scale}, called
+	 * from {@code math_step}, does only math.
+	 */
+	@Test
+	public void testNestedMergeCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Refuse this once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1050, released in 0.52.105, which
+		// models the Keras optimizers so that `apply_gradients` resolves to a node; the precondition then follows (#1078). Until then
+		// the call graph has the `strategy.run` edge to `nested_step`, but the `apply_gradients` call resolves to no node.
+		Function apply = findFunction(functions, "apply_step");
+		assertEquals("`apply_step`'s merge call under the replica step is not yet seen.", P1, apply.getPassingPrecondition());
+		assertTrue("`apply_step` is still converted.", apply.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		for (String identifier : List.of("nested_step", "direct_step", "scale", "math_step")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+			assertTrue("`" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Pins the parameter-flow numpy precondition through closures
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a nested function that reads an enclosing function's
+	 * parameter reads it lexically rather than receiving it as an argument, so the taint must follow the lexical read. Each {@code via_*}
+	 * function applies numpy to its parameter only inside a nested function, a comprehension ({@code via_comprehension}), a lambda
+	 * ({@code via_lambda}), a nested {@code def} ({@code via_nested_def}), a nested {@code def} reaching a numpy callee by argument flow
+	 * ({@code via_nested_callee}), a lambda that a helper calls ({@code via_helper_call}) or that {@code tf.map_fn} runs
+	 * ({@code via_map_fn}), so the body itself never calls it, and a nested {@code def} passed elements of the parameters from inside a
+	 * comprehension ({@code via_nested_def_arguments}, distilling VaDER's {@code VADER._cluster}). {@code via_own_exposed_read} applies
+	 * numpy to a parameter in its own body after a lambda reads it, so the body reads it lexically too. Each raises under
+	 * {@code tf.function} tracing on TensorFlow 2.9.3. Two controls trace and still hybridize: {@code clean_closure}'s nested function
+	 * applies only a TensorFlow op, and {@code closure_over_local}'s applies numpy to a local array, not to a parameter.
+	 */
+	@Test
+	public void testNumpyCallsThroughClosure() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("via_comprehension", "via_lambda", "via_nested_def", "via_nested_callee", "via_helper_call",
+				"via_map_fn", "via_nested_def_arguments", "via_own_exposed_read")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` applies numpy to its parameter through a closure.", function.getHasNumpyCallsOnParameters());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		for (String identifier : List.of("clean_closure", "closure_over_local")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` applies no numpy to its parameter.", function.getHasNumpyCallsOnParameters());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
 	}
 
 	/**
@@ -12943,21 +16419,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Barren counterpart of {@link #testRecursion2}: {@code not_recursive_fn} computes {@code abs(n - 1)}. The {@code n - 1} subtraction
-	 * types as tensor computation in isolation, but wrapping it in the opaque Python builtin {@code abs()} suppresses the analysis's typing
-	 * of the intermediate, so no tensor computation is detected and the function fails with
-	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} instead of hybridizing (issue 709). This is an analysis-modeling limitation;
-	 * blocking the eager-to-hybrid conversion here is incompleteness-safe (we decline to hybridize but never violate semantics).
+	 * Counterpart of {@link #testRecursion2} with the Python builtin {@code abs()} in place of {@code tf.abs()}: {@code not_recursive_fn}
+	 * returns {@code abs(n - 1)} when {@code n > 0}. The comparison {@code n > 0} on the tensor parameter is tensor computation, so the
+	 * function hybridizes as {@link #testRecursion2} does. Ariadne through 0.52.105 left the comparison untyped, so this test pinned
+	 * {@link PreconditionFailure#NO_TENSOR_COMPUTATION} (issue 709).
+	 * <p>
+	 * TODO: {@code abs(n - 1)} is tensor computation too, but Ariadne doesn't model the builtin {@code abs()} on a tensor, so it and
+	 * {@code n - 1} stay untyped (https://github.com/wala/ML/issues/1087).
 	 */
 	@Test
 	public void testRecursion2Barren() throws Exception {
 		Function f = getFunction("not_recursive_fn");
 		assertTrue(f.getHasTensorParameter());
 		assertFalse(f.isRecursive());
-		assertFalse("The abs() wrapper suppresses typing of the n - 1 intermediate, so no tensor computation is detected.",
-				f.getHasTensorComputation());
-		assertNull(f.getPassingPrecondition());
-		assertNotNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		assertTrue("The comparison n > 0 on a tensor is tensor computation.", f.getHasTensorComputation());
+		assertNull(f.getEntryMatchingFailure(PreconditionFailure.NO_TENSOR_COMPUTATION));
+		// As in testRecursion2, the `else` path returns the Python int 1 (issue 1117), but the only call discards the result.
+		assertTrue(f.getReturnsPrimitive());
+		assertFalse(f.getHasUsedResults());
+		assertFalse(f.getStatus().hasError());
+		assertEquals(P1, f.getPassingPrecondition());
+		assertEquals(Collections.singleton(CONVERT_TO_HYBRID), f.getTransformations());
 	}
 
 	/**
@@ -13034,5 +16516,1162 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		TensorType expected = new TensorType(FLOAT32, List.of(new NumericDim(2)));
 		assertEquals("Cache must be populated from Ariadne's call-site classification under followTypeHints.", Set.of(expected),
 				t.getTensorTypes());
+	}
+
+	/**
+	 * Test that a parameter receiving the list {@code tf.unstack} or {@code tf.split} returns, or a slice of it, gets no input signature.
+	 * Ariadne's summary of either returns a list whose one stand-in piece is written at fixed indices, and the tensor analysis types the
+	 * list itself as that piece, so the parameter read as a flat tensor and received a specification of one piece, which makes the body's
+	 * unpacking raise in a graph.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1012">Issue 1012</a>
+	 */
+	@Test
+	public void testInferInputSignatureUnstackedList() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : new String[] { "unstack_sum", "split_sum", "slice_sum" }) {
+			Function f = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertFalse("`" + name + "` receives a list a TensorFlow operation returns, so no signature describes it.",
+					f.getInferredInputSignature().isPresent());
+			assertEquals("`" + name + "` blocks on an unmodeled container.",
+					Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), f.getInferredInputSignatureAbsenceReason());
+			assertTrue("`" + name + "`'s parameter receives a library list.", f.getParameters().get(0).receivesLibraryContainer());
+		}
+
+		// Control: a library summary whose element structure the analysis reads is an ordinary modeled container, and keeps its nested
+		// signature. The directory iterator's batch tuple in `testTensorTypedContainerParameter` is that case.
+
+		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension. Its string parameter is the
+		// literal "iou" at its only call, so it isn't a primitive parameter (#1025, #1109), and the function is hybridized. Its list
+		// parameters receive slices of a list a TensorFlow operation returns, so, like the functions above, it gets no signature.
+		Function perAnchor = findFunction(functions, "per_anchor");
+		assertFalse("`per_anchor`'s string argument is one constant.", perAnchor.getHasPrimitiveParameter());
+		assertTrue("`per_anchor` is hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertFalse("`per_anchor` receives slices of a library list, so no signature describes it.",
+				perAnchor.getInferredInputSignature().isPresent());
+		assertEquals("`per_anchor` blocks on an unmodeled container.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				perAnchor.getInferredInputSignatureAbsenceReason());
+
+		// Controls: a tensor argument, an element of an unstacked list, and gpt-2's shape, a split unpacked by the caller with one element
+		// passed on, keep their flat signatures.
+		Map<String, String> controls = Map.of("boxes_loss",
+				"[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]", "first_of",
+				"[tf.TensorSpec(shape=(3,), dtype=tf.float32)]", "split_heads", "[tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]", "attend",
+				"[tf.TensorSpec(shape=(2, 6), dtype=tf.float32)]");
+
+		for (Map.Entry<String, String> control : controls.entrySet()) {
+			Function f = findFunction(functions, control.getKey());
+			assertEquals("`" + control.getKey() + "` keeps its signature.", control.getValue(),
+					f.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+			assertFalse("`" + control.getKey() + "`'s parameters receive no library list.",
+					f.getParameters().stream().anyMatch(Parameter::receivesLibraryContainer));
+		}
+	}
+
+	/**
+	 * Calls whose arguments come from an external dataset, typed by the fixture's sidecar, count as evidence like any other call (cf.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998). {@code mixed} is called once with small concrete tensors,
+	 * as a test would call it, and once with arguments read from {@code pickle.load}. {@code control} receives only the concrete call.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedCallingContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control's only call is concrete, so its signature is the call's.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float64), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The sidecar types the loaded call's `inputs` as float32, which no specification shares with the concrete call's float64.
+		for (String name : List.of("mixed", "outer", "inner")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s calls disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+					function.getInferredInputSignatureAbsenceReason());
+			assertEquals("Only `inputs` disagrees.", List.of("inputs"),
+					function.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+		}
+
+		// The call inside `assertRaises` passes `None`, and `tf.reduce_sum(None)` raises `ValueError` under the specification too, so the
+		// signature from the tensor call stands.
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure the specification preserves keeps the signature.",
+				"[tf.TensorSpec(shape=(2, 2), dtype=tf.float32)]",
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function mixedDtypes = findFunction(functions, "mixed_dtypes");
+		assertEquals("Calls that disagree in dtype withhold the specification.",
+				Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), mixedDtypes.getInferredInputSignatureAbsenceReason());
+
+		// The call that omits `mask` leaves it to its `None` default, which a specification covering `mask` rejects, so the specification
+		// is withheld (https://github.com/wala/ML/issues/1040).
+		Function optional = findFunction(functions, "optional");
+		assertEquals("A parameter that one call leaves to its `None` default withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), optional.getInferredInputSignatureAbsenceReason());
+		assertEquals("Only `mask` blocks.", List.of("mask"),
+				optional.getBlockingParameterReasons().keySet().stream().map(Parameter::getName).toList());
+
+		// Typed calls through a Keras layer's `call`, with the argument passed by keyword, keep the specification.
+		Function buildMask = findFunction(functions, "Encoder.build_mask");
+		assertEquals("Typed keyword calls through a layer's `call` keep their specification.",
+				"[tf.TensorSpec(shape=(4, 5, 10), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.int32)]",
+				buildMask.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// A specification would reject the guarded `leak_outer(None)` with `ValueError` before the body raises the `TypeError` the guard
+		// declares (#1005).
+		Function leakOuter = findFunction(functions, "leak_outer");
+		assertEquals("A specification would change the exception a declared failure raises.",
+				Optional.of(InferenceResult.AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION),
+				leakOuter.getInferredInputSignatureAbsenceReason());
+
+		// The guarded call reaches `leak_inner` with `None`, which a specification rejects with `ValueError` instead of the declared
+		// `TypeError`, so the specification is withheld (https://github.com/wala/ML/issues/1040).
+		Function leakInner = findFunction(functions, "leak_inner");
+		assertEquals("A `None` forwarded from a declared failure one level up withholds the specification.",
+				Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), leakInner.getInferredInputSignatureAbsenceReason());
+
+		// FIXME: No sidecar entry can address `batch["x"]`, so the loaded call contributes nothing and the pinned signature, from the
+		// concrete call alone, is known wrong
+		// (https://github.com/wala/ML/issues/1041).
+		Function subscripted = findFunction(functions, "subscripted");
+		assertEquals("Today's signature, from the concrete call alone.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				subscripted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1055: one argument that is a tensor or {@code None} by a
+	 * condition is typed by its tensor branch, but a specification from that branch rejects the call that passes {@code None}. The analysis
+	 * reports the conditional's {@code None} as a {@code None} member of the parameter's types (https://github.com/wala/ML/issues/1040),
+	 * passed directly or forwarded through a parameter, so the signature is withheld. {@code initialize} and {@code dynamic_decode} follow
+	 * OpenNMT-tf's route from its decoder to {@code BeamSearch.initialize}, by keyword. {@code control} receives the same tensor, never
+	 * {@code None}, and {@code guarded} receives {@code None} only from a declared failure.
+	 */
+	@Test
+	public void testInferInputSignatureNoneArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("forward", "maybe_none", "dynamic_decode", "initialize")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("A specification for `" + name + "` would reject the call that passes `None`.",
+					Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), function.getInferredInputSignatureAbsenceReason());
+		}
+
+		String signature = "[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(), dtype=tf.int32)]";
+
+		Function control = findFunction(functions, "control");
+		assertEquals("The control receives no `None`, so it keeps its signature.", signature,
+				control.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function guarded = findFunction(functions, "guarded");
+		assertEquals("A declared failure's `None` leaves the signature from the tensor call.", signature,
+				guarded.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Every absence reason that holds for a parameter is reported, as every failed precondition of a function is, not only the first.
+	 * {@code none_and_mixed}'s {@code x} receives tensors of two dtypes and {@code None}, so both {@code RECEIVES_NONE} and
+	 * {@code HETEROGENEOUS_DTYPE} hold, each with its own INFO, while the function-level reason stays the first. {@code mixed} receives the
+	 * same tensors without {@code None}, so only the dtype conflict holds.
+	 */
+	@Test
+	public void testInferInputSignatureEveryAbsenceReason() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function noneAndMixed = findFunction(functions, "none_and_mixed");
+		assertTrue("`none_and_mixed` is still hybridized.", noneAndMixed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("The function-level reason is the first that holds.", Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE),
+				noneAndMixed.getInferredInputSignatureAbsenceReason());
+
+		Parameter x = noneAndMixed.getParameters().get(0);
+		assertEquals("Both reasons are reported, in the order the dispatch found them.",
+				List.of(InferenceResult.AbsenceReason.RECEIVES_NONE, InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				List.copyOf(noneAndMixed.getBlockingParameterReasons().get(x)));
+
+		List<String> messages = Arrays.stream(noneAndMixed.getStatus().getEntries()).filter(e -> e.getSeverity() == INFO)
+				.filter(e -> e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()).map(RefactoringStatusEntry::getMessage).toList();
+
+		for (InferenceResult.AbsenceReason reason : List.of(InferenceResult.AbsenceReason.RECEIVES_NONE,
+				InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE))
+			assertTrue("Each reason has its own INFO: " + reason + ".",
+					messages.stream().anyMatch(m -> m.contains("`x`") && m.endsWith(Function.dropMessage(reason))));
+
+		Function mixed = findFunction(functions, "mixed");
+		assertEquals("Without `None`, only the dtype conflict holds.",
+				Map.of(mixed.getParameters().get(0), Set.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE)),
+				mixed.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A container parameter's nested specification covers a call that passes a container of loaded values (cf.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003). Each function below is called once with a tuple or list
+	 * of tensors and once with a container of values read from {@code pickle.load}, which the fixture's sidecar types; {@code pair_typed}
+	 * receives only typed tuples.
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function typed = findFunction(functions, "pair_typed");
+		assertEquals("A container parameter reached only with typed tuples keeps its nested specification.",
+				"[[tf.TensorSpec(shape=(4, 3), dtype=tf.float32), tf.TensorSpec(shape=(4, 3), dtype=tf.float32)]]",
+				typed.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The sidecar types the loaded pair's elements as (8, 3), which joins with the concrete (4, 3) on the first axis. A `**` splat and
+		// a
+		// call through `pair_outer` reach the parameter the same way.
+		for (String name : List.of("pair_sum", "pair_outer", "pair_inner", "pair_splat")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s nested specification covers both calls.",
+					"[[tf.TensorSpec(shape=(None, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function listSum = findFunction(functions, "list_sum");
+		assertEquals("A loaded list whose elements agree with the concrete call keeps the specification.",
+				"[[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.float32)]]",
+				listSum.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A container parameter reached with loaded values, in a function whose other parameter needs a dtype pin, keeps the specification that
+	 * carries the pin. {@code pin_typed} is the control, reached only with typed tuples.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1003">Issue 1003</a>
+	 */
+	@Test
+	public void testInferInputSignatureUntypedContainerPin() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		String expected = "[tf.TensorSpec(shape=(2,), dtype=tf.float32), [tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.float32)]]";
+
+		// The float64 `X64` multiplies a float32 variable, so its specification pins float32, which TensorFlow casts the NumPy argument to.
+		for (String name : List.of("pin_typed", "pin_mix")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` converts.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s specification carries the pin and the nested pair.", expected,
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function flatAndCont = findFunction(functions, "flat_and_cont");
+		assertEquals("A flat and a container parameter, both loaded in one call, keep their specification.", expected,
+				flatAndCont.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1004: an argument passed through a starred unpack binds an
+	 * element of the unpacked sequence, so the parameter gets a flat specification. On TensorFlow 2.9.3 a nested one rejects the very call
+	 * it was derived from.
+	 */
+	@Test
+	public void testInferInputSignatureStarredArgument() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// Each unpack binds the parameter to the sequence's element, so every function gets the flat specification its calls pass.
+		for (String name : List.of("t3", "t4", "t5", "M.m", "M.plain", "K.sm_inst", "K.sm")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s parameters are flat.",
+					"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		// At the originating site the receiver is bound, so a container parameter ahead of the unpack keeps its own nested specification.
+		Function beforeStar = findFunction(functions, "M.before_star");
+		assertEquals("A container parameter ahead of the unpack is aligned with its own argument.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(4,), dtype=tf.float32)], tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				beforeStar.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Checking functions in parallel gives the same hybridization, tensor parameters, and status entries as checking them serially (issue
+	 * 315). The first run is the parallel one, so whatever of PyDev's caches are still cold, such as those of the fixture's own module, are
+	 * filled while functions are checked in parallel. The races this guards against don't show deterministically, so a pass is no proof of
+	 * their absence; the test keeps the parallel path exercised and its results in agreement with the serial one.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/315">Issue 315</a>
+	 */
+	@Test
+	public void testParallelMatchesSerial() throws Exception {
+		this.processFunctionsInParallel = true;
+		Map<String, String> coldParallel = summarize(this.getFunctions());
+
+		Function.clearCaches();
+		this.processFunctionsInParallel = false;
+		Map<String, String> serial = summarize(this.getFunctions());
+
+		assertEquals(5, serial.size());
+		assertTrue(serial.get("hybrid_tensor"), serial.get("hybrid_tensor").startsWith("true true "));
+		assertTrue(serial.get("hybrid_primitive"), serial.get("hybrid_primitive").startsWith("true "));
+		assertTrue(serial.get("eager_tensor"), serial.get("eager_tensor").startsWith("false true "));
+		assertTrue(serial.get("eager_primitive"), serial.get("eager_primitive").startsWith("false "));
+		assertEquals("The first run, in parallel.", serial, coldParallel);
+
+		this.processFunctionsInParallel = true;
+
+		for (int i = 0; i < 4; i++) {
+			Function.clearCaches();
+			assertEquals("Run " + i + " in parallel.", serial, summarize(this.getFunctions()));
+		}
+	}
+
+	/**
+	 * Summarizes each function's hybridization, tensor parameter, and status entries, keyed by its identifier.
+	 *
+	 * @param functions The functions to summarize.
+	 * @return Each function's summary, keyed by its identifier.
+	 */
+	private static Map<String, String> summarize(Set<Function> functions) {
+		return functions.stream()
+				.collect(Collectors.toMap(Function::getIdentifier,
+						f -> f.isHybrid() + " " + f.getHasTensorParameter() + " " + Arrays.stream(f.getStatus().getEntries())
+								.map(e -> e.getSeverity() + ":" + e.getCode() + ":" + e.getMessage()).sorted().toList()));
+	}
+
+	/**
+	 * A default filled in with {@code if num_segments is None: num_segments = ...} and then forwarded never passes {@code None} on, so
+	 * {@code segment_sum}'s {@code num_segments} receives only the filled-in tensor.
+	 */
+	@Test
+	public void testInferInputSignatureFilledDefault() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function segmentSum = findFunction(this.getFunctions(), "segment_sum");
+		assertTrue("`segment_sum` is still hybridized.", segmentSum.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// https://github.com/ponder-lab/ML/pull/1068 rules out `None` on the edge from the `is None` test.
+		assertEquals("`None` is ruled out, so the filled-in default is a tensor.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(), dtype=tf.int32)]",
+				segmentSum.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), segmentSum.getBlockingParameterReasons());
+	}
+
+	/**
+	 * With {@code fit(dataset)} and Keras's default train step, {@code call} receives the element's inputs, so {@code count}'s
+	 * {@code index}, the int32 component of those inputs, is an int32 vector.
+	 */
+	@Test
+	public void testInferInputSignatureFitDefaultStepComponent() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function count = findFunction(this.getFunctions(), "count");
+		assertTrue("`count` is still hybridized.", count.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1067, the default step gives `call` the element's inputs rather than the whole
+		// element.
+		assertEquals("The signature comes from the element's inputs, not its targets.", "[tf.TensorSpec(shape=(2,), dtype=tf.int32)]",
+				count.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The engine reads `call`'s inputs as a dataset component that is a pair of tensors
+		// (https://github.com/ponder-lab/ML/pull/1087), so they reduce to a nested specification, one entry per member.
+		Function call = findFunction(this.getFunctions(), "Model.call");
+		assertEquals("`call`'s inputs are the pair, member by member.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int32)]]",
+				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * An {@code np.full} array with an explicit {@code dtype} is an int32 vector, so {@code gather}'s {@code indices} is tensor-typed.
+	 */
+	@Test
+	public void testInferInputSignatureNpFull() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function gather = findFunction(this.getFunctions(), "gather");
+		assertTrue("`gather` is still hybridized.", gather.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1069, `np.full` carries its explicit dtype.
+		assertEquals("`indices` is an int32 vector.",
+				"[tf.TensorSpec(shape=(3,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int32)]",
+				gather.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), gather.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A column regrouped by {@code list(zip(*rows))} keeps its tensors, so {@code total}'s {@code column}, their concatenation, is float32
+	 * with an unresolved concatenated extent.
+	 */
+	@Test
+	public void testInferInputSignatureListOfStarredZip() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function total = findFunction(this.getFunctions(), "total");
+		assertTrue("`total` is still hybridized.", total.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1070, `list(...)` keeps its argument's elements and `zip(*rows)` zips the rows.
+		assertEquals("The concatenation is float32.", "[tf.TensorSpec(shape=(2, None), dtype=tf.float32)]",
+				total.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A negated int32 tensor is an int32 tensor, so {@code select}'s {@code y} is tensor-typed.
+	 */
+	@Test
+	public void testInferInputSignatureUnaryMinus() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function select = findFunction(this.getFunctions(), "select");
+		assertTrue("`select` is still hybridized.", select.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1071, unary `-` on a tensor keeps the operand's tensor type.
+		assertEquals("`y` is an int32 tensor.", "[tf.TensorSpec(shape=(3,), dtype=tf.int32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]",
+				select.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), select.getBlockingParameterReasons());
+	}
+
+	/**
+	 * {@code tf.constant(float(n))} is a float32 scalar, so {@code scale}'s {@code factor} has a known dtype.
+	 */
+	@Test
+	public void testInferInputSignatureFloatBuiltin() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function scale = findFunction(this.getFunctions(), "scale");
+		assertTrue("`scale` is still hybridized.", scale.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1071, `float(n)` names the builtin, so the constant is float32.
+		assertEquals("`factor` is a float32 scalar.",
+				"[tf.TensorSpec(shape=(2,), dtype=tf.float32), tf.TensorSpec(shape=(), dtype=tf.float32)]",
+				scale.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), scale.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A value joined in one frame from an int32 allocation and one whose dtype cannot be read is int32 at one allocation and unknown at the
+	 * other, so {@code increment}'s {@code n} is of a partially known dtype rather than of an unknown one.
+	 */
+	@Test
+	public void testInferInputSignaturePartialDtypeUnion() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function increment = findFunction(this.getFunctions(), "increment");
+		assertTrue("`increment` is still hybridized.", increment.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1077, the union keeps its int32 member beside `UNKNOWN` instead of collapsing.
+		assertEquals("`n`'s dtype is partial.",
+				Map.of(increment.getParameters().get(0), Set.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE)),
+				increment.getBlockingParameterReasons());
+	}
+
+	/**
+	 * An integer subscript of a tensor parameter, and of a component unpacked from a tuple parameter, is a row of that tensor. So
+	 * {@code masked}'s {@code row}, a row of {@code build_targets}'s parameter, and {@code labels}'s {@code row}, the nonzero entries of a
+	 * row of the component {@code call} unpacks, are int32 vectors.
+	 */
+	@Test
+	public void testInferInputSignatureSubscriptOfUnpackedParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// With https://github.com/ponder-lab/ML/pull/1076, an integer subscript of a parameter is a row of it.
+		Function masked = findFunction(functions, "masked");
+		assertEquals("`masked` has a tensor parameter.", TRUE, masked.getHasTensorParameter());
+		assertTrue("`masked` is hybridized.", masked.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`row` is an int32 vector.", "[tf.TensorSpec(shape=(5,), dtype=tf.int32)]",
+				masked.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// With https://github.com/ponder-lab/ML/pull/1076, the mask of a row of the unpacked component is int32.
+		Function labels = findFunction(functions, "labels");
+		assertTrue("`labels` is still hybridized.", labels.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`row` is an int32 vector of unknown length.", "[tf.TensorSpec(shape=(None,), dtype=tf.int32)]",
+				labels.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A kernel a {@code tf.keras.Model} subclass creates with {@code add_weight} is a float32 tensor of the weight's shape, so
+	 * {@code project}'s {@code kernel} is tensor-typed.
+	 */
+	@Test
+	public void testInferInputSignatureModelAddWeight() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function project = findFunction(this.getFunctions(), "project");
+		assertTrue("`project` is still hybridized.", project.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1074, `add_weight` on a model allocates the kernel.
+		assertEquals("`kernel` is a float32 tensor of the weight's shape.",
+				"[tf.TensorSpec(shape=(5, 4), dtype=tf.float32), tf.TensorSpec(shape=(4, 2), dtype=tf.float32)]",
+				project.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), project.getBlockingParameterReasons());
+	}
+
+	/**
+	 * {@code w.astype(x.dtype)} takes {@code x}'s float32 dtype, so {@code add}'s {@code y} has a known dtype.
+	 */
+	@Test
+	public void testInferInputSignatureAstypeOtherDtype() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function add = findFunction(this.getFunctions(), "add");
+		assertTrue("`add` is still hybridized.", add.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1072, a dtype given as another array's `.dtype` reads as that array's dtype.
+		assertEquals("`y` is float32.", "[tf.TensorSpec(shape=(2, 3), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]",
+				add.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), add.getBlockingParameterReasons());
+	}
+
+	/**
+	 * A {@code tf.keras.layers.RNN} over a built-in {@code SimpleRNNCell} takes the step's float32 dtype, so {@code average}'s
+	 * {@code sequence} has a known dtype.
+	 */
+	@Test
+	public void testInferInputSignatureBuiltinRnnCell() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function average = findFunction(this.getFunctions(), "average");
+		assertTrue("`average` is still hybridized.", average.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		// With https://github.com/ponder-lab/ML/pull/1073, a built-in cell has a step.
+		assertEquals("`sequence` is float32.", "[tf.TensorSpec(shape=(2, 3, 4), dtype=tf.float32)]",
+				average.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * NumPy's array-building functions carry their NumPy dtypes. A concatenation of outer products, a stack, and the rows {@code a[idx,]}
+	 * selects are float64 arrays of the run-time shapes, and {@code np.random.choice} draws int64 indices. {@code total} is a control: a
+	 * concatenation of {@code np.random.normal} arrays is already typed.
+	 */
+	@Test
+	public void testInferInputSignatureNumpyConstructors() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function total = findFunction(functions, "total");
+		assertEquals("The control's concatenation is typed.", "[tf.TensorSpec(shape=(8, 3), dtype=tf.float64)]",
+				total.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// With https://github.com/ponder-lab/ML/pull/1075, `np.outer` has a summary.
+		Function outerTotal = findFunction(functions, "outer_total");
+		assertTrue("`outer_total` is still hybridized.", outerTotal.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The concatenation of outer products is float64.", "[tf.TensorSpec(shape=(7, 3), dtype=tf.float64)]",
+				outerTotal.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// With https://github.com/ponder-lab/ML/pull/1075, `np.stack` has a summary.
+		Function stackedTotal = findFunction(functions, "stacked_total");
+		assertEquals("`stacked_total` has a tensor parameter.", TRUE, stackedTotal.getHasTensorParameter());
+		assertTrue("`stacked_total` is hybridized.", stackedTotal.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The stack is float64.", "[tf.TensorSpec(shape=(4, 3, 2), dtype=tf.float64)]",
+				stackedTotal.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// With https://github.com/ponder-lab/ML/pull/1075, `a[idx,]` selects rows instead of peeling the leading axis.
+		Function selectedTotal = findFunction(functions, "selected_total");
+		assertEquals("The selected rows keep their rank.", "[tf.TensorSpec(shape=(2, 3), dtype=tf.float64)]",
+				selectedTotal.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// With https://github.com/ponder-lab/ML/pull/1075, `np.random.choice` has a summary.
+		Function gather = findFunction(functions, "gather");
+		assertTrue("`gather` is still hybridized.", gather.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`indices` is an int64 vector.",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int64)]",
+				gather.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Nothing blocks.", Map.of(), gather.getBlockingParameterReasons());
+	}
+
+	/**
+	 * With {@code fit} on {@code ((x, mask), y)} and Keras's default train step, {@code call} receives one batch of each member of the
+	 * tuple inputs, {@code (2, 4)} and {@code (2, 3)}, and none of the targets. {@code consume} receives those inputs from {@code call}.
+	 * {@code consume_mixed} receives a tuple whose members differ in dtype.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputs() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// The tuple inputs are no single tensor, so they carry no tensor type of their own.
+		assertEquals("The inputs have no flat typing.", "", inputs.getRenderedTensorTypes());
+
+		// The engine reads the inputs as a dataset component that is a pair of tensors (https://github.com/ponder-lab/ML/pull/1087), so
+		// each function reduces them to a nested specification, one entry per member, which admits the pair it receives. Before, they
+		// were typed as one tensor of several shapes, and the single specification written for them rejected the pair.
+		for (Function function : List.of(consume, findFunction(functions, "Model.call")))
+			assertEquals("`" + function.getIdentifier() + "` receives the pair, member by member.",
+					"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// The members of the mixed tuple differ in dtype, and each member has its own specification, so they no longer disagree.
+		Function consumeMixed = findFunction(functions, "consume_mixed");
+		for (Function function : List.of(consumeMixed, findFunction(functions, "MixedModel.call")))
+			assertEquals("`" + function.getIdentifier() + "` receives the mixed pair, member by member.",
+					"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		assertEquals("The mixed inputs have no flat typing.", "", consumeMixed.getParameters().get(0).getRenderedTensorTypes());
+	}
+
+	/**
+	 * The control for {@link #testInferInputSignatureFitStructuredInputs()}: {@code consume} receives the structured inputs of two models'
+	 * {@code fit}, a pair of float32 inputs from one and a pair of a float32 and an int32 input from the other. The pairs agree on their
+	 * length, but their second members disagree in dtype, so no nested specification admits both, and the signature is dropped at that
+	 * member. Each {@code call} receives one pair and keeps its specification.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsDisagree() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		assertEquals("`Model.call` receives the float32 pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+				findFunction(functions, "Model.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`MixedModel.call` receives the mixed pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				findFunction(functions, "MixedModel.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// The engine reads both pairs as dataset components of two members (https://github.com/ponder-lab/ML/pull/1087), so the form is
+		// modeled, and each member unions what the two pairs hold there.
+		List<Set<TensorType>> elementTypes = inputs.getContainerElementTypes();
+		assertNotNull("The pairs' members surface.", elementTypes);
+		assertEquals("The pairs have two members.", 2, elementTypes.size());
+		assertEquals("The first members agree.", 1, elementTypes.get(0).size());
+		assertEquals("The second members disagree.", 2, elementTypes.get(1).size());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No nested specification admits both pairs.", result.signature().isPresent());
+		assertEquals("The second members disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = consume.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the second member.", entry.getMessage().contains("Element 1 of parameter `inputs`"));
+	}
+
+	/**
+	 * A variant of {@link #testInferInputSignatureFitStructuredInputs()} with 7 rows, so {@code batch(2)} leaves a final batch of 1.
+	 * {@code call} and {@code consume} receive members of 2 rows and of 1 row, and a specification fixing the batch axis at 2 would reject
+	 * the final batch.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsShortBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// The engine reports each member at both batch sizes that reach `consume`, 2 rows and 1 row.
+		List<Set<TensorType>> elementTypes = findFunction(functions, "consume").getParameters().get(0).getContainerElementTypes();
+		assertNotNull("The pair's members surface.", elementTypes);
+		assertEquals("The pair has two members.", 2, elementTypes.size());
+
+		for (Set<TensorType> member : elementTypes)
+			assertEquals("Each member has a full and a short batch.", 2, member.size());
+
+		// The sizes disagree on the batch axis, so the reduction widens it to None, and the final batch is admitted.
+		for (String name : List.of("consume", "Model.call")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` admits the final batch.",
+					"[[tf.TensorSpec(shape=(None, 4), dtype=tf.float32), tf.TensorSpec(shape=(None, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * An integer subscript of a component unpacked from a tuple parameter in the same function, {@code a, gt = inputs} then
+	 * {@code f(gt[i])}, is a row of that component. {@code row_total} receives a constant index, {@code loop_total} a {@code range} loop
+	 * counter, and {@code call_total} a loop counter in a model's {@code call}.
+	 */
+	@Test
+	public void testInferInputSignatureSubscriptOfUnpackedLocal() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// With https://github.com/ponder-lab/ML/pull/1081, the subscript of the unpacked component is a row of it.
+		for (Map.Entry<String, String> entry : Map.of("row_total", "[tf.TensorSpec(shape=(4,), dtype=tf.int32)]", "loop_total",
+				"[tf.TensorSpec(shape=(4,), dtype=tf.int32)]", "call_total", "[tf.TensorSpec(shape=(5,), dtype=tf.int32)]").entrySet()) {
+			String name = entry.getKey();
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertTrue("`" + name + "` is hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s row is an int32 vector.", entry.getValue(),
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * {@code tf.tensor_scatter_nd_update} returns a tensor of its input's shape and dtype, so {@code total} and {@code int_total} each
+	 * receive one dtype.
+	 */
+	@Test
+	public void testInferInputSignatureTensorScatterNdUpdate() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// With https://github.com/ponder-lab/ML/pull/1082, the result carries no unknown member beside the input's type.
+		for (Map.Entry<String, String> entry : Map
+				.of("total", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]", "int_total", "[tf.TensorSpec(shape=(6,), dtype=tf.int32)]")
+				.entrySet()) {
+			String name = entry.getKey();
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "` receives one dtype.", entry.getValue(),
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
+	 * A grid {@code tf.meshgrid} returns is a float32 tensor, whether it is unpacked or subscripted. {@code grids} receives the whole list
+	 * of grids.
+	 */
+	@Test
+	public void testInferInputSignatureMeshgridElement() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// With https://github.com/ponder-lab/ML/pull/1082, a grid carries no unknown member beside its float32 type. The shape stays
+		// unknown because the grid's shape isn't composed.
+		for (String name : List.of("unpacked", "subscripted")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is still hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s grid is float32.", "[tf.TensorSpec(shape=None, dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		// With https://github.com/ponder-lab/ML/pull/1082, the grid sits at no numbered position in the list, so the list is a library
+		// container of unknown length.
+		Function grids = findFunction(functions, "grids");
+		assertTrue("`grids` is still hybridized.", grids.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The list of grids is an unsupported container.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), grids.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170: a reshape by a rank-0 shape. Measured on TensorFlow
+	 * 2.9.3, each of {@code pool}, {@code flatten_by_keyword} and {@code flatten_by_scalar_tensor} runs eagerly and raises
+	 * {@code ValueError: Shape must be rank 1 but is rank 0} under {@code tf.function}: {@code pool} through the helper it calls, as
+	 * tf_geometric's {@code DiffPool.call} does, with a Python int, {@code flatten_by_keyword} with one passed by keyword, and
+	 * {@code flatten_by_scalar_tensor} with a rank-0 tensor. So does {@code flatten_by_len}, with the result of {@code len}, an int of
+	 * unknown value, and {@code flatten_by_computed_int}, with the product of two dimensions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1181). The engine reports each shape operand as possibly rank
+	 * 0, so each is refused. {@code flatten_by_vector} reshapes by {@code [-1]} and converts.
+	 * <p>
+	 * {@code flatten_by_starred} raises the same way, but the engine reports the rank of its shape operand as unknown, and an unknown rank
+	 * is not refused, so it still converts.
+	 */
+	@Test
+	public void testReshapeWithScalarShape() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor", "flatten_by_len",
+				"flatten_by_computed_int")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` reshapes with a scalar shape.", function.getReshapesWithScalarShape());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with RESHAPES_WITH_SCALAR_SHAPE.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE.getCode()));
+			assertFalse("`" + identifier + "` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+
+		// This breaks when converted, but behind a starred argument, the shape operand is not aligned with any argument, so its rank is
+		// unknown by design, and an unknown rank converts.
+		assertConvertedWithUnknownShapeRank(findFunction(functions, "flatten_by_starred"));
+
+		Function vector = findFunction(functions, "flatten_by_vector");
+		assertFalse("`flatten_by_vector` reshapes with no scalar shape.", vector.getReshapesWithScalarShape());
+		assertEquals("`flatten_by_vector` hybridizes (P1).", P1, vector.getPassingPrecondition());
+		assertTrue("`flatten_by_vector` is converted.", vector.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * A Keras {@code Loss} subclass whose {@code call} is reached both from its module's {@code __main__} demo call and from training,
+	 * where {@code compile(loss=...)} stores the loss and a private step that a {@code train_on_batch} override calls invokes
+	 * {@code self.loss(...)}. Reduced from MusicTransformer-tensorflow2.0. Before the engine followed the stored loss (wala/ML#1146), the
+	 * training context was missing from the evidence, and the signature was built from the demo's fixed shapes alone, which training then
+	 * rejected. Now the training context contributes its own types, and the reduction across both contexts withholds the signature: the
+	 * labels arrive as an array built from pickled data, whose dtype is unknown. The function is still hybridized with a bare decorator.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
+	 */
+	@Test
+	public void testLossSignatureWithTrainingContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = this.getFunction("TransformerLoss.call");
+
+		assertTrue("`call` is still hybridized.", call.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		List<Parameter> parameters = call.getParameters();
+		Parameter yTrue = parameters.get(1);
+		Parameter yPred = parameters.get(2);
+
+		// The demo's types and training's types both reach `call`. The training types are what the demo-only signature lacked.
+		assertEquals("`y_true` receives the demo's labels and training's labels.",
+				Set.of(new TensorType(DType.INT64, List.of(new NumericDim(3), new NumericDim(1))),
+						new TensorType(DType.UNKNOWN, List.of(new NumericDim(8), new NumericDim(6)))),
+				yTrue.getTensorTypes());
+		assertEquals("`y_pred` receives the demo's predictions and training's predictions.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
+						new TensorType(FLOAT32, List.of(new NumericDim(8), new NumericDim(6), new NumericDim(2)))),
+				yPred.getTensorTypes());
+
+		assertFalse("No signature is emitted from the demo's shapes alone.", call.getInferredInputSignature().isPresent());
+		assertEquals("Training's labels have an unknown dtype, beside the demo's int64.",
+				Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Reduced from TensorFlow2.0-Examples' YOLOV3 {@code bbox_giou} and {@code bbox_iou}. The predicted boxes, each function's first
+	 * parameter, come from an element of the result of a functional model built with a list of outputs. The label boxes, the second
+	 * parameter of {@code bbox_giou}, come from an {@code np.zeros} whose shape tuple holds an element of an ndarray.
+	 */
+	@Test
+	public void testInferInputSignatureListOutputModelBoxes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// An element of a list-output model's result is read as the output at its position (https://github.com/wala/ML/issues/1157).
+		Function giou = findFunction(functions, "bbox_giou");
+		assertTrue("`bbox_giou` is hybridized.", giou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`boxes1` is the rank-5 output; `boxes2` keeps its rank, with the ndarray element's axes unresolved.",
+				"[tf.TensorSpec(shape=(4, 13, 13, 3, 4), dtype=tf.float32), tf.TensorSpec(shape=(4, None, None, 3, 4), dtype=tf.float32)]",
+				giou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// As above (https://github.com/wala/ML/issues/1157), `boxes1` is the output at its position, here rank 6.
+		Function iou = findFunction(functions, "bbox_iou");
+		assertTrue("`bbox_iou` is hybridized.", iou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`boxes1` is the rank-6 expanded output.",
+				"[tf.TensorSpec(shape=(4, 13, 13, 3, 1, 4), dtype=tf.float32), tf.TensorSpec(shape=(4, 1, 1, 1, 5, 4), dtype=tf.float32)]",
+				iou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from NLPGNN's {@code MaskCategoricalCrossentropy.__call__} and {@code MaskAccuracy.__call__}, as GAT's training script calls
+	 * them. The predictions come from an unsorted segment reduction whose {@code num_segments} is {@code tf.shape(x)[0]}, and the mask from
+	 * an {@code np.zeros} of an ndarray's {@code .shape[0]}. The labels come from an array loaded with {@code pickle}, whose shape is
+	 * unknown. {@code masked_mean} receives an {@code np.zeros} of a {@code len()}.
+	 */
+	@Test
+	public void testInferInputSignatureMaskLossesRuntimeSizes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// A segment reduction whose `num_segments` isn't a static constant keeps its rank, with the segment axis unknown
+		// (https://github.com/wala/ML/issues/1160), so the predictions are `(None, 4)`.
+		// TODO: The mask has no shape because `np.zeros(labels.shape[0])` has no rank (https://github.com/wala/ML/issues/1159). It
+		// should be rank 1 here, `(None,)`.
+		for (String name : List.of("MaskCategoricalCrossentropy.__call__", "MaskAccuracy.__call__")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s predictions are rank 2; today, its mask has no shape.",
+					"[tf.TensorSpec(shape=None, dtype=tf.float64), tf.TensorSpec(shape=(None, 4), dtype=tf.float32), "
+							+ "tf.TensorSpec(shape=None, dtype=tf.bool)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function maskedMean = findFunction(functions, "masked_mean");
+		assertTrue("`masked_mean` is hybridized.", maskedMean.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("A mask of `len()` entries is rank 1, with its extent unresolved.",
+				"[tf.TensorSpec(shape=(8,), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.float64)]",
+				maskedMean.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from transformer's {@code MultiplyConstant.call}, which receives an {@code Embedding} output whose {@code output_dim} the
+	 * analysis can't read.
+	 */
+	@Test
+	public void testInferInputSignatureEmbeddingUnreadDimension() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function call = findFunction(functions, "MultiplyConstant.call");
+		assertTrue("`MultiplyConstant.call` is hybridized.", call.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The embedding keeps its rank, with its last axis unresolved.",
+				"[tf.TensorSpec(shape=(None, None, None), dtype=tf.float32)]",
+				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Asserts that {@code function}, whose {@code tf.reshape} shape operand the engine reports as of unknown rank, is not refused for
+	 * reshaping with a scalar shape, and so is converted.
+	 *
+	 * @param function The function to check.
+	 */
+	private static void assertConvertedWithUnknownShapeRank(Function function) {
+		String identifier = function.getIdentifier();
+		assertFalse("Today, `" + identifier + "`'s shape operand is of unknown rank.", function.getReshapesWithScalarShape());
+		assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
+		assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * An element of a NumPy argument, read by a subscript and compared with a tensor of another dtype, refuses the conversion
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). The fixture reduces tf-eager-fasterrcnn's
+	 * {@code AnchorGenerator._generate_valid_flags}, whose {@code img_shape} is a row of an {@code int32} array from a tensor's
+	 * {@code numpy()}: eagerly {@code img_shape[0]} is a NumPy scalar, which the comparison converts to {@code float32}, and traced it is
+	 * an {@code int32} tensor, which the comparison rejects. {@code valid_flags} and the method
+	 * {@code AnchorGenerator._generate_valid_flags} are that case. {@code same_dtype_flags} is passed a {@code float32} array, whose
+	 * element has the other operand's dtype, and {@code tensor_flags} is passed a tensor, so neither is refused. Each was run on TensorFlow
+	 * 2.9.3, decorated and not.
+	 */
+	@Test
+	public void testNumpyElementDtypeCoercion() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("valid_flags", "AnchorGenerator._generate_valid_flags")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` combines an element of a NumPy argument with another dtype.", TRUE,
+					function.getHasNumpyElementDtypeCoercions());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.getCode()));
+		}
+
+		for (String name : List.of("same_dtype_flags", "tensor_flags")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` combines no element of a NumPy argument with another dtype.", FALSE,
+					function.getHasNumpyElementDtypeCoercions());
+			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// FIXME: Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor, which is the iteration
+		// check's hazard (#830), not an element's dtype. The unpacking lowers to the same read as an attribute read, so the iteration
+		// check doesn't see it. With https://github.com/wala/ML/issues/1117, it fails with HAS_TENSOR_PARAMETER_ITERATION.
+		Function proposals = findFunction(functions, "proposals");
+		assertEquals("Today, `proposals` doesn't iterate its argument.", FALSE, proposals.getHasTensorParameterIteration());
+		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
+				proposals.getHasNumpyElementDtypeCoercions());
+		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169 (distilling TensorSpeech-TensorFlowASR's
+	 * {@code WarpRNNTTest._run_rnnt}): passing a tensor parameter's value to {@code tf.constant}, positionally or as its {@code value}
+	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,
+	 * but tracing makes it symbolic, which {@code tf.constant} rejects. Converting the parameter with {@code tf.convert_to_tensor}, passing
+	 * {@code tf.constant} a list of the parameter's static dimensions, its rank, or a NumPy array built from them, which tracing keeps
+	 * concrete, and passing it a literal remain convertible. A subscript under the key {@code "shape"} reads an element, not the type, so
+	 * it does not stop the check.
+	 */
+	@Test
+	public void testTensorParameterConstantBlocksHybridization() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("WarpRNNTTest._run_rnnt", "constant_param", "constant_derived", "constant_keyword",
+				"constant_keyed")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` passes a tensor parameter to tf.constant.", function.getHasTensorParameterConstant());
+			assertNull("`" + identifier + "` must not pass a precondition; tf.constant rejects a symbolic tensor.",
+					function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_CONSTANT.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_CONSTANT.getCode()));
+		}
+
+		for (String identifier : List.of("convert_param", "constant_shape", "constant_literal", "constant_rank", "constant_arange")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` passes no tensor parameter to tf.constant.", Boolean.FALSE,
+					function.getHasTensorParameterConstant());
+			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171: a hybrid function that calls an API that works only
+	 * while a graph is being built. Each function below but {@code double} has no parameters and no Python side effects, so P2 would
+	 * de-hybridize it. Measured on TensorFlow 2.9.3, each runs decorated and fails eagerly: {@code average_checkpoints._build_model},
+	 * reduced from OpenNMT-tf's {@code CheckpointTest.testCheckpointAveraging}, and {@code get_updates_step} with
+	 * {@code ValueError: Variable ... has None for gradient}, and {@code gradients_step}, {@code backend_gradients_step} and
+	 * {@code calls_gradients_helper}, through the helper it calls, with
+	 * {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}. {@code compat_gradients_step} raises the same
+	 * through {@code tf.compat.v1.gradients}. The two {@code gradients_step} methods call {@code self.optimizer.get_gradients}, and fail
+	 * eagerly like {@code _build_model}: {@code InstanceOptimizerRegressor}'s model is compiled with an optimizer instance and is refused,
+	 * and {@code NamedOptimizerRegressor}'s with {@code optimizer="sgd"}, which is not yet caught. {@code double} calls none and
+	 * de-hybridizes.
+	 */
+	@Test
+	public void testGraphOnlyApiCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("average_checkpoints._build_model", "get_updates_step", "gradients_step", "backend_gradients_step",
+				"calls_gradients_helper", "compat_gradients_step", "InstanceOptimizerRegressor.gradients_step")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` is hybrid.", function.isHybrid());
+			assertTrue("`" + identifier + "` calls a graph-only API.", function.getHasGraphOnlyCalls());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_GRAPH_ONLY_CALLS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_GRAPH_ONLY_CALLS.getCode()));
+			assertFalse("`" + identifier + "` is not de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		// TODO: Refuse this once the engine gives an optimizer that `compile` receives by name a callee
+		// (https://github.com/wala/ML/issues/1154). Until then the stored string has no `get_gradients`, so the call names no API, and the
+		// method de-hybridizes, though it fails eagerly as the instance spelling does.
+		Function named = findFunction(functions, "NamedOptimizerRegressor.gradients_step");
+		assertFalse("Today, `NamedOptimizerRegressor.gradients_step` calls no graph-only API the engine names.",
+				named.getHasGraphOnlyCalls());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` de-hybridizes (P2).", P2, named.getPassingPrecondition());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER),
+				named.getTransformations());
+
+		Function helper = findFunction(functions, "gradients_of_square");
+		assertNull("The eager helper `gradients_of_square` is not checked.", helper.getHasGraphOnlyCalls());
+
+		Function plain = findFunction(functions, "double");
+		assertFalse("`double` calls no graph-only API.", plain.getHasGraphOnlyCalls());
+		assertEquals("`double` de-hybridizes (P2).", P2, plain.getPassingPrecondition());
+		assertEquals("`double` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER), plain.getTransformations());
+	}
+
+	/**
+	 * Asserts that the function named {@code identifier} may build a layer, has the given receiver, and is refused with
+	 * {@link PreconditionFailure#MAY_BUILD_LAYERS}, or is not, as {@code refused} says.
+	 *
+	 * @param functions The functions to look in.
+	 * @param identifier The function's identifier, such as {@code Inner.call}.
+	 * @param mayBuildLayers Whether the function may build a layer.
+	 * @param receiverIsModel Whether the function's receiver is a Keras model, {@code null} if unknown.
+	 * @param refused Whether the function is refused with {@link PreconditionFailure#MAY_BUILD_LAYERS}.
+	 */
+	private static void assertMayBuildLayers(Set<Function> functions, String identifier, boolean mayBuildLayers, Boolean receiverIsModel,
+			boolean refused) {
+		assertMayBuildLayers(findFunction(functions, identifier), mayBuildLayers, receiverIsModel, refused);
+	}
+
+	/**
+	 * Asserts that {@code function} may build a layer, has the given receiver, and is refused with
+	 * {@link PreconditionFailure#MAY_BUILD_LAYERS}, or is not, as {@code refused} says.
+	 *
+	 * @param function The function.
+	 * @param mayBuildLayers Whether the function may build a layer.
+	 * @param receiverIsModel Whether the function's receiver is a Keras model, {@code null} if unknown.
+	 * @param refused Whether the function is refused with {@link PreconditionFailure#MAY_BUILD_LAYERS}.
+	 */
+	private static void assertMayBuildLayers(Function function, boolean mayBuildLayers, Boolean receiverIsModel, boolean refused) {
+		String identifier = function.getIdentifier();
+		assertEquals("Whether `" + identifier + "` may build a layer.", mayBuildLayers, function.getMayBuildLayers());
+		assertEquals("Whether `" + identifier + "`'s receiver is a model.", receiverIsModel, function.getReceiverIsModel());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.MAY_BUILD_LAYERS.getCode());
+
+		if (refused) {
+			assertNotNull("`" + identifier + "` fails with MAY_BUILD_LAYERS.", entry);
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertFalse("`" + identifier + "` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+		} else
+			assertNull("`" + identifier + "` does not fail with MAY_BUILD_LAYERS.", entry);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172: a Keras {@code call} that builds its sublayers on
+	 * their first call. Measured on TensorFlow 2.9.3, decorating {@code Inner.call}, whose {@code Dense} is built on its first call, names
+	 * both {@code Inner} instances' weights {@code dense/kernel:0}, and the HDF5 save fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}, as TensorFlowTTS's FastSpeech layers do.
+	 * {@code Scaled.call} fails the same way through a program layer's {@code build}. Each is refused.
+	 * <p>
+	 * {@code Stack.call} builds the same sublayers, and decorating it drops the enclosing scopes from every weight name, but the names that
+	 * remain stay distinct, so the save succeeds. The engine cannot tell it from {@code Inner.call}, so it is refused too. {@code Net.call}
+	 * builds them as well, but its receiver is a Keras model, whose {@code call} saves regardless, so it is not refused.
+	 * {@code Flattener.call} calls a {@code Flatten}, which has no variables, and {@code Scale.call} runs after its own layer is built.
+	 */
+	@Test
+	public void testMayBuildLayers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String className : List.of("Inner", "Scaled", "Stack"))
+			assertMayBuildLayers(functions, className + ".call", true, false, true);
+
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+
+		for (String className : List.of("Flattener", "Scale"))
+			assertMayBuildLayers(functions, className + ".call", false, false, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a built-in {@code Embedding}, whose first call
+	 * creates its {@code embeddings} variable. {@code EmbLayer.call}, a layer's, is refused; {@code Net.call}, a model's, is not.
+	 */
+	@Test
+	public void testMayBuildLayersEmbedding() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "EmbLayer.call", true, false, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a subclass of {@code Embedding} that overrides
+	 * {@code call} without calling the superclass's. Keras builds the layer in {@code __call__}, before {@code call} runs, so
+	 * {@code TFEmbedding.call} builds nothing and is rightly not refused. {@code Net.call} does build it, but it is a model's, so it is not
+	 * refused either way.
+	 */
+	@Test
+	public void testMayBuildLayersEmbeddingSubclass() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "TFEmbedding.call", false, false, false);
+		// TODO: `Net.call` builds the embedding on its first call, but the engine dispatches `self.emb(x)` straight to the override and
+		// misses Keras's build: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(functions, "Net.call", false, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a subclass of {@code BatchNormalization},
+	 * reduced from YOLOv3, whose {@code call} calls the superclass's. Keras builds the layer in {@code __call__}, before {@code call} runs,
+	 * so decorating {@code BatchNormalization.call} keeps the weights' names distinct and the save succeeds, measured on TensorFlow 2.9.3.
+	 * {@code Block.call} builds both layers and is refused; {@code Net.call} is a model's and is not.
+	 */
+	@Test
+	public void testMayBuildLayersBatchNormalizationSubclass() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
+		// instead: https://github.com/wala/ML/issues/1166.
+		assertMayBuildLayers(functions, "BatchNormalization.call", true, false, true);
+		assertMayBuildLayers(functions, "Block.call", true, false, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a free function that first calls a model,
+	 * building it inside the trace. Measured on TensorFlow 2.9.3, decorating {@code step} keeps every weight's name distinct, such as
+	 * {@code net/stack/inner/dense/kernel:0}, since the model's own {@code __call__} enters its scope inside the trace, and the HDF5 save
+	 * succeeds. A function that is no method runs inside no layer's scope, so {@code step} is not refused, though it has no receiver.
+	 * {@code Inner.call} and {@code Stack.call} are layers' and are refused; {@code Net.call} is a model's and is not.
+	 */
+	@Test
+	public void testMayBuildLayersFreeFunction() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "step", true, null, false);
+		assertMayBuildLayers(functions, "Inner.call", true, false, true);
+		assertMayBuildLayers(functions, "Stack.call", true, false, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model nested in another. Measured on
+	 * TensorFlow 2.9.3, decorating {@code Inner.call} names both {@code Inner} instances' weights {@code dense/kernel:0}, yet the HDF5 save
+	 * succeeds, since each model's weights are saved apart. Neither {@code call} is refused.
+	 */
+	@Test
+	public void testMayBuildLayersNestedModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Inner.call", true, true, false);
+		assertMayBuildLayers(functions, "Outer.call", true, true, false);
 	}
 }

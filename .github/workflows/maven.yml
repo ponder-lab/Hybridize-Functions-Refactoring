@@ -56,6 +56,9 @@ jobs:
       run: pip3.10 install -r requirements.txt
     - name: Run Black
       run: black --fast --check --extend-exclude \/out .
+    - name: Test the strip-and-re-infer harness
+      working-directory: edu.cuny.hunter.hybridize.eval/reinfer
+      run: python3.10 -m unittest -v test_spec test_strip test_join test_run test_runner
     - name: Install test requirements
       run: pip3.10 install -r edu.cuny.hunter.hybridize.tests/requirements.txt
     - name: Install with Maven
@@ -77,3 +80,67 @@ jobs:
       # reporting stays best-effort and a token-less run does not fail the build. Runs with the token (including Dependabot once the token
       # is also added as a Dependabot secret) still upload.
       run: ./mvnw -U -s .travis.settings.xml -Dgithub.username=${{ github.actor }} -Dgithub.password=${{ secrets.GITHUB_TOKEN }} -Dlogging.config.file=\${maven.multiModuleProjectDirectory}/logging.ci.properties -DtrimStackTrace=true -Dtycho.showEclipseLog=false -B verify -Pjacoco coveralls:report -Dcoveralls.skip=${{ secrets.COVERALLS_REPO_TOKEN == '' }}
+    - name: Print the resolved engine build
+      # The builds run with `-q`, so the log never names the engine snapshot that resolved. Record the Ariadne jar the build resolved, with its
+      # SHA-1, comparable against the registry's published `.sha1`. For a snapshot, the resolved jar is the one named by the `<timestamp>` and
+      # `<buildNumber>` in the repository metadata `-U` refreshed; for a release, it is the jar at the pinned version. The Maven cache can carry
+      # jars of other versions and snapshots, and a `bnd-*` directory holds Tycho's wrapped copy, whose generated manifest gives it a different
+      # SHA-1 from the downloaded jar; both are counted, not printed. The other wrapped WALA bundles are releases and are listed in full.
+      if: always()
+      run: |
+        repo="$HOME/.m2/repository/com/ibm/wala"
+        ml="$repo/com.ibm.wala.cast.python.ml"
+        dependency=$(grep -A4 '<artifactId>com.ibm.wala.cast.python.ml</artifactId>' hybridize.target)
+        version=$(echo "$dependency" | sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' | head -n 1)
+        classifier=$(echo "$dependency" | sed -n 's/.*<classifier>\(.*\)<\/classifier>.*/\1/p' | head -n 1)
+        echo "### Resolved engine build" | tee -a "$GITHUB_STEP_SUMMARY"
+        echo "Pinned ML version: \`$version\`" | tee -a "$GITHUB_STEP_SUMMARY"
+        resolved=""
+        if [ ! -d "$ml/$version" ]; then
+          echo "- com.ibm.wala.cast.python.ml $version: not resolved" | tee -a "$GITHUB_STEP_SUMMARY"
+        else
+          expected=""
+          case "$version" in
+            *-SNAPSHOT)
+              metadata=$(find "$ml/$version" -maxdepth 1 -name 'maven-metadata-*.xml' ! -name 'maven-metadata-local.xml' -type f | sort | head -n 1)
+              if [ -z "$metadata" ]; then
+                echo "- No snapshot metadata for \`$version\`; cannot tell which cached jar resolved" | tee -a "$GITHUB_STEP_SUMMARY"
+              else
+                timestamp=$(sed -n 's/.*<timestamp>\(.*\)<\/timestamp>.*/\1/p' "$metadata" | head -n 1)
+                build=$(sed -n 's/.*<buildNumber>\(.*\)<\/buildNumber>.*/\1/p' "$metadata" | head -n 1)
+                echo "- \`${metadata#"$repo/"}\` timestamp \`$timestamp\` build \`$build\`" | tee -a "$GITHUB_STEP_SUMMARY"
+                if [ -z "$timestamp" ] || [ -z "$build" ]; then
+                  echo "- The metadata names no timestamp and build; cannot tell which cached jar resolved" | tee -a "$GITHUB_STEP_SUMMARY"
+                else
+                  expected="${version%-SNAPSHOT}-$timestamp-$build"
+                fi
+              fi
+              ;;
+            *)
+              expected="$version"
+              ;;
+          esac
+          if [ -n "$expected" ]; then
+            jar="$ml/$version/com.ibm.wala.cast.python.ml-$expected${classifier:+-$classifier}.jar"
+            if [ -f "$jar" ]; then
+              resolved="$jar"
+              echo "- (resolved) \`${jar#"$repo/"}\` SHA-1 \`$(sha1sum "$jar" | cut -d ' ' -f 1)\`" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- No cached jar matches \`${jar#"$repo/"}\`" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+        fi
+        if [ -d "$ml" ]; then
+          others=$(find "$ml" -name '*.jar' -type f ! -path '*/bnd-*' ! -path "$resolved" | wc -l)
+          echo "- $others other cached ML jars not used (other versions or snapshots; Tycho's \`bnd-*\` copies are not counted)" | tee -a "$GITHUB_STEP_SUMMARY"
+        fi
+        for artifact in com.ibm.wala.cast com.ibm.wala.core com.ibm.wala.ide com.ibm.wala.shrike com.ibm.wala.util; do
+          dir="$repo/$artifact"
+          if [ ! -d "$dir" ]; then
+            echo "- $artifact: not resolved" | tee -a "$GITHUB_STEP_SUMMARY"
+            continue
+          fi
+          find "$dir" -name '*.jar' -type f | sort | while read -r jar; do
+            echo "- \`${jar#"$repo/"}\` SHA-1 \`$(sha1sum "$jar" | cut -d ' ' -f 1)\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+        done

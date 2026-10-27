@@ -38,6 +38,7 @@ import org.python.pydev.core.MisconfigurationException;
 import org.python.pydev.core.PythonNatureWithoutProjectException;
 import org.python.pydev.plugin.nature.PythonNature;
 
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.eval.config.EvaluationOption;
 import edu.cuny.hunter.hybridize.eval.handlers.EvaluateHybridizeFunctionRefactoringHandler;
 
@@ -70,8 +71,11 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 	/** Exit code returned when the workspace contains no open Python project to evaluate. */
 	private static final int EXIT_NO_PROJECTS = 2;
 
-	/** Exit code returned when the evaluation completes but its status is not OK. */
+	/** Exit code returned when the evaluation is aborted before it completes. */
 	private static final int EXIT_EVALUATION_FAILED = 1;
+
+	/** Exit code returned when the evaluation completes but skips a project that failed. */
+	private static final int EXIT_PROJECTS_SKIPPED = 6;
 
 	/** Exit code returned when a command-line argument is unrecognized. */
 	private static final int EXIT_BAD_ARGUMENTS = 3;
@@ -81,6 +85,12 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 
 	/** Exit code returned when the interpreter named by {@link EvaluationOption#PYTHON_INTERPRETER} cannot be configured. */
 	private static final int EXIT_INTERPRETER_FAILED = 5;
+
+	/**
+	 * Exit code returned when the evaluation is aborted as one of the analysis's PyDev lookups lost its answer to a dead PyDev completion
+	 * server, so what was emitted is incomplete (see {@link LostPyDevAnswerError}).
+	 */
+	private static final int EXIT_LOST_PYDEV_ANSWER = 7;
 
 	/** Name of the file holding an Eclipse project's description. */
 	private static final String PROJECT_DESCRIPTION_FILE = ".project";
@@ -131,12 +141,21 @@ public class EvaluateHybridizeFunctionRefactoringApplication implements IApplica
 		LOG.info("Evaluating " + projects.length + " Python project(s) headlessly.");
 		IStatus status = new EvaluateHybridizeFunctionRefactoringHandler().evaluate(projects, new NullProgressMonitor());
 
-		if (!status.isOK()) {
-			LOG.log(status);
+		// Logged whatever its severity: a completed run's status carries the completion line that drivers read.
+		LOG.log(status);
+
+		if (status.getException() instanceof LostPyDevAnswerError)
+			return EXIT_LOST_PYDEV_ANSWER;
+
+		switch (status.getSeverity()) {
+		case IStatus.OK:
+		case IStatus.INFO:
+			return IApplication.EXIT_OK;
+		case IStatus.WARNING:
+			return EXIT_PROJECTS_SKIPPED;
+		default:
 			return EXIT_EVALUATION_FAILED;
 		}
-
-		return IApplication.EXIT_OK;
 	}
 
 	@Override

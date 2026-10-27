@@ -79,6 +79,7 @@ import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.Function.HybridizationParameters;
 import edu.cuny.hunter.hybridize.core.analysis.InputSignature;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.Parameter;
@@ -101,6 +102,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private static final String FUNCTIONS_CSV_FILENAME = "functions.csv";
 
 	private static final String CANDIDATES_CSV_FILENAME = "candidate_functions.csv";
+
+	/**
+	 * One row per candidate function left decorated with {@code @tf.function} after the refactoring, and so able to carry an
+	 * {@code input_signature} (#1167); see {@link Function#isSignatureCandidate()}.
+	 */
+	private static final String SIGNATURE_CANDIDATES_CSV_FILENAME = "signature_candidates.csv";
 
 	private static final String TRANSFORMATIONS_CSV_FILENAME = "transformations.csv";
 
@@ -154,6 +161,12 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	private static final String DEPTH_LIMITED_CSV_FILENAME = "depth_limited.csv";
 
+	/**
+	 * The scripts left out of the analysis because no PYTHONPATH entry contains them, when
+	 * {@link EvaluationOption#SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH} is on (issue 990): one row per script, so a skip is never silent.
+	 */
+	private static final String SKIPPED_SCRIPTS_CSV_FILENAME = "skipped_scripts.csv";
+
 	/** The {@code eval.properties} key for the targeted k-CFA depth; also the suffix of its system-property key. */
 	private static final String TARGETED_CFA_DEPTH_PROPERTY_KEY = "targetedCfaDepth";
 
@@ -201,6 +214,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	private boolean alwaysCheckTensorIteration = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_TENSOR_ITERATION.key());
 
 	private boolean alwaysCheckKerasSymbolicArguments = Boolean.getBoolean(EvaluationOption.ALWAYS_CHECK_KERAS_SYMBOLIC_ARGUMENTS.key());
+
+	private boolean skipScriptsOutsidePythonPath = Boolean.getBoolean(EvaluationOption.SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.key());
 
 	private boolean processFunctionsInParallel = Boolean.getBoolean(EvaluationOption.PROCESS_FUNCTIONS_IN_PARALLEL.key());
 
@@ -253,7 +268,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	public IStatus evaluate(IProject[] pythonProjects, IProgressMonitor monitor) {
 		List<String> resultsHeader = new ArrayList<>(
-				Arrays.asList("subject", "functions", "optimization available functions", "optimizable functions", "failed preconditions"));
+				Arrays.asList("subject", "functions", "optimization available functions", "optimizable functions", "failed preconditions",
+						"signature candidate functions", "hybridized functions with input signature"));
 
 		for (Refactoring refactoring : Refactoring.values())
 			resultsHeader.add(refactoring.toString());
@@ -280,6 +296,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		try (CSVPrinter resultsPrinter = createCSVPrinter(RESULTS_CSV_FILENAME, resultsHeader.toArray(String[]::new));
 				CSVPrinter functionsPrinter = createCSVPrinter(FUNCTIONS_CSV_FILENAME, buildFunctionAttributeColumnNames());
 				CSVPrinter candidatesPrinter = createCSVPrinter(CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
+				CSVPrinter signatureCandidatesPrinter = createCSVPrinter(SIGNATURE_CANDIDATES_CSV_FILENAME, buildAttributeColumnNames());
 				CSVPrinter transformationsPrinter = createCSVPrinter(TRANSFORMATIONS_CSV_FILENAME,
 						buildAttributeColumnNames("transformation"));
 				CSVPrinter optimizableFunctionPrinter = createCSVPrinter(OPTMIZABLE_CSV_FILENAME, buildAttributeColumnNames());
@@ -303,7 +320,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						buildAttributeColumnNames("param index", "param name", "is container", "container position", "type ordinal", "rank",
 								"dim index", "dim class", "dtype", "dtype top"));
 				CSVPrinter depthLimitedPrinter = createCSVPrinter(DEPTH_LIMITED_CSV_FILENAME,
-						new String[] { "subject", "method", "value number", "call string length" });) {
+						new String[] { "subject", "method", "value number", "call string length" });
+				CSVPrinter skippedScriptsPrinter = createCSVPrinter(SKIPPED_SCRIPTS_CSV_FILENAME, new String[] { "subject", "script" });) {
 			writeReadme();
 
 			if (BUILD_WORKSPACE) {
@@ -346,6 +364,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					processor.setAlwaysCheckStaleVariableReads(this.getAlwaysCheckStaleVariableReads());
 					processor.setAlwaysCheckTensorIteration(this.getAlwaysCheckTensorIteration());
 					processor.setAlwaysCheckKerasSymbolicArguments(this.getAlwaysCheckKerasSymbolicArguments());
+					processor.setSkipScriptsOutsidePythonPath(this.getSkipScriptsOutsidePythonPath());
 					resultsTimeCollector.stop();
 
 					// run the precondition checking.
@@ -357,6 +376,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 						status = refactoring.checkAllConditions(new NullProgressMonitor());
 						resultsTimeCollector.stop();
 
+						// A lookup that lost its answer stops the run, rather than only this project (#1121).
+						rethrowLostPyDevAnswer(status);
+
 						LOG.info("Preconditions " + (status.isOK() ? "passed" : "failed") + ".");
 					} else
 						status = new RefactoringStatus();
@@ -364,6 +386,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// functions.
 					Set<Function> functions = processor.getFunctions();
 					resultsRecord.add(functions.size());
+
+					// decorators. Printed before any other per-function output, since a decorator whose name can't be resolved here is
+					// recorded as a status entry on its function (#1121), and every CSV that reports statuses must see it.
+					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					for (Function func : functions) {
 						printFunction(functionsPrinter, func);
@@ -411,12 +437,21 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					printStatuses(errorPrinter, errorEntries);
 
+					// signature candidate functions: the candidates left decorated with `@tf.function` after the refactoring (#1167).
+					Set<Function> signatureCandidates = candidates.stream().filter(Function::isSignatureCandidate)
+							.collect(Collectors.toSet());
+					resultsRecord.add(signatureCandidates.size()); // number.
+
+					for (Function function : signatureCandidates)
+						signatureCandidatesPrinter.printRecord(buildAttributeColumnValues(function));
+
+					// hybridized functions with input signature: the conversions whose new decorator carries an `input_signature`. With the
+					// RECONFIGURE count, these are the signatures the refactoring adds or changes (#1167).
+					resultsRecord.add(candidates.stream().filter(Function::isHybridizedWithInputSignature).count());
+
 					// general refactoring statuses.
 					Set<RefactoringStatusEntry> generalEntries = getRefactoringStatusEntries(functions, x -> true);
 					printStatuses(statusPrinter, generalEntries);
-
-					// decorators.
-					printDecorators(decoratorPrinter, functions, monitor.slice(IProgressMonitor.UNKNOWN));
 
 					// refactoring type counts.
 					for (Refactoring refactoringKind : Refactoring.values())
@@ -486,13 +521,14 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					for (DepthLimitedPoint point : depthLimitedPoints)
 						depthLimitedPrinter.printRecord(project.getName(), point.method(), point.valueNumber(), point.callStringLength());
 
+					for (String script : processor.getProjectToSkippedScripts().getOrDefault(project, List.of()))
+						skippedScriptsPrinter.printRecord(project.getName(), script);
+
 					// actually perform the refactoring if there are no fatal
-					// errors.
+					// errors. Untimed: the results time is the analysis time, whether or not the change is performed.
 					if (shouldPerformChange() && !status.hasFatalError()) {
-						resultsTimeCollector.start();
 						Change change = refactoring.createChange(monitor.slice(IProgressMonitor.UNKNOWN));
 						change.perform(monitor.slice(IProgressMonitor.UNKNOWN));
-						resultsTimeCollector.stop();
 					}
 
 					// overall results time.
@@ -509,6 +545,11 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					if (e instanceof VirtualMachineError vmError)
 						throw vmError;
 
+					// A PyDev lookup that lost its answer to a dead completion server is rethrown, too: the server serves every
+					// project, so the run's results can't be trusted to be complete (#1121).
+					if (e instanceof LostPyDevAnswerError lostAnswer)
+						throw lostAnswer;
+
 					LOG.error("Evaluation failed for project " + project.getName() + "; recording and skipping it.", e);
 					failedProjects.add(project.getName() + " (" + e.getClass().getSimpleName()
 							+ (e.getMessage() != null ? ": " + e.getMessage() : "") + ")");
@@ -519,6 +560,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				monitor.worked(1);
 			}
+		} catch (LostPyDevAnswerError e) {
+			// Logged by the processor where the check stopped, or, if it escaped later, wherever the returned status is logged.
+			return Status.error("Evaluation aborted, and its results are incomplete: " + e.getMessage(), e);
 		} catch (Exception e) {
 			return Status.error("Encountered error with evaluation.", e);
 		} finally {
@@ -537,6 +581,18 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					+ failedCount + " failed and were skipped: " + String.join(", ", failedProjects));
 
 		return Status.info("Evaluation completed: all " + pythonProjects.length + " project(s) succeeded.");
+	}
+
+	/**
+	 * Rethrows the {@link LostPyDevAnswerError} with which the given status's condition checking stopped, if any (#1121).
+	 *
+	 * @param status The status of the condition checking.
+	 * @throws LostPyDevAnswerError If the condition checking stopped as a PyDev lookup lost its answer.
+	 */
+	private static void rethrowLostPyDevAnswer(RefactoringStatus status) {
+		for (RefactoringStatusEntry entry : status.getEntries())
+			if (entry.isFatalError() && entry.getData() instanceof LostPyDevAnswerError lostAnswer)
+				throw lostAnswer;
 	}
 
 	private static boolean shouldPerformChange() {
@@ -666,7 +722,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				"tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",
 				"jit_compile", "reduce_retracing", "inferred input_signature", "input_signature relation", "input_signature absence reason",
-				"refactoring", "passing precondition", "status");
+				"refactoring", "passing precondition", "status", "tensor computation unresolved");
 	}
 
 	/**
@@ -688,9 +744,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 				| File | One row per |
 				| ---- | ----------- |
-				| `results.csv` | evaluated project (subject). |
+				| `results.csv` | evaluated project (subject). Its `signature candidate functions` column counts \
+				`signature_candidates.csv`'s rows, and its `hybridized functions with input signature` column counts the candidates \
+				converted to hybrid (`CONVERT_TO_HYBRID`) whose new decorator carries an `input_signature`; with the `RECONFIGURE` \
+				count, these are the signatures the refactoring adds or changes. |
 				| `functions.csv` | function considered by the refactoring. |
 				| `candidate_functions.csv` | candidate function: one that is already hybrid or has a tensor-like parameter. |
+				| `signature_candidates.csv` | candidate function left decorated with `@tf.function` after the refactoring, so it could \
+				carry an `input_signature`: one converted to hybrid, or a hybrid one that stays hybrid, whether reconfigured or kept \
+				because a precondition fails. Functions converted to eager and eager functions left eager are excluded. |
 				| `transformations.csv` | (candidate function, transformation). |
 				| `optimizable.csv` | candidate function passing the preconditions. |
 				| `nonoptimizable.csv` | candidate function failing a precondition. |
@@ -698,26 +760,31 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 				| `statuses.csv` | refactoring status entry of a considered function. |
 				| `decorators.csv` | (function, decorator name). |
 				| `calls.csv` | resolved call expression (emitted only when `outputCalls` is set). |
-				| `blocked_parameters.csv` | parameter that blocked input-signature inference, with its absence reason. |
+				| `blocked_parameters.csv` | (parameter that blocked input-signature inference, absence reason): a parameter \
+				for which several reasons hold has a row for each. |
 				| `tensor_specs.csv` | `TensorSpec` of a modeled input signature, keyed by (function, source, param index). A signature \
 				spans one row per non-`self` parameter, so per-signature facts (content, relation to a supplied signature, and absence \
 				reason) are in `functions.csv`, not here. Modeled, not written into source: every considered function is included, \
 				with no optimizability gate, so a function that failed a precondition still contributes rows. Join on the primary key \
 				columns against `optimizable.csv` to restrict to functions that pass the preconditions. |
-				| `signature_absences.csv` | recorded input-signature absence: a blocking parameter, a function-level reason, inference \
-				that never ran (`NOT_ATTEMPTED`), or a supplied signature that could not be modeled (`UNMODELED`). Together with \
+				| `signature_absences.csv` | recorded input-signature absence: a (blocking parameter, reason), one row for each \
+				reason of a parameter for which several hold; a function-level reason; inference that never ran \
+				(`NOT_ATTEMPTED`); or a supplied signature that could not be modeled (`UNMODELED`). Together with \
 				`tensor_specs.csv`, every considered function contributes at least one row. |
 				| `parameters.csv` | non-`self` declared parameter. |
 				| `parameter_dimensions.csv` | (non-`self` parameter, inferred tensor type, dimension). |
 				| `depth_limited.csv` | points-to result abandoned at the targeted CFA depth. |
+				| `skipped_scripts.csv` | script left out as uncovered by any source folder (`skipScriptsOutsidePythonPath`). |
 				""");
 	}
 
 	/**
-	 * Emits one row per parameter that blocked input-signature inference for the given function, naming the parameter and its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}. Where the {@code functions.csv} {@code input_signature
-	 * absence reason} column reports only the function's first blocking reason, this surfaces the per-parameter attribution (#654). Reads
-	 * the memoized inference result without triggering inference, so it leaves the function's status untouched.
+	 * Emits one row per (parameter, reason) that blocked input-signature inference for the given function, naming the parameter and the
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}, as {@code failed_preconditions.csv} has one row per
+	 * failure. A parameter for which several reasons hold contributes a row for each, in the order the dispatch found them. Where the
+	 * {@code functions.csv} {@code input_signature absence reason} column reports only the function's first blocking reason, this surfaces
+	 * the per-parameter attribution (#654). Reads the memoized inference result without triggering inference, so it leaves the function's
+	 * status untouched.
 	 *
 	 * @param printer The {@code blocked_parameters.csv} printer.
 	 * @param function The function whose blocking parameters to emit.
@@ -725,8 +792,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 	 */
 	private static void printBlockedParameters(CSVPrinter printer, Function function) throws IOException {
 		for (var entry : function.getBlockingParameterReasons().entrySet())
-			printer.printRecord(
-					buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), entry.getValue()));
+			for (var reason : entry.getValue())
+				printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), entry.getKey().getName(), reason));
 	}
 
 	/**
@@ -759,15 +826,15 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	/**
 	 * Emits one {@code signature_absences.csv} row per recorded input-signature absence for the given function: when inference was blocked,
-	 * one row per blocking parameter (source {@code "absent"}) carrying its
-	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}; a function-level absence (no blocking parameter) and
-	 * inference that never ran each as a single {@code "absent"} row (the latter with reason {@code NOT_ATTEMPTED}); and a supplied
-	 * signature that could not be fully modeled (e.g., a name reference rather than a {@code TensorSpec} list) as a single
-	 * {@code "supplied"} row with reason {@code UNMODELED}. These are exactly the non-spec rows of the pre-#854
-	 * {@code input_signatures.csv}, split out so {@code tensor_specs.csv} carries specs only; across the two files, every considered
-	 * function still contributes at least one row, preserving #816's invariant (added by #818) that a function's absence from the
-	 * transformed set is always explained by something present in the output. Reads the memoized inference result without recomputing, so
-	 * it leaves the function's status untouched.
+	 * one row per (blocking parameter, reason) (source {@code "absent"}) carrying the
+	 * {@link edu.cuny.hunter.hybridize.core.analysis.InferenceResult.AbsenceReason}, so a parameter for which several reasons hold
+	 * contributes a row for each; a function-level absence (no blocking parameter) and inference that never ran each as a single
+	 * {@code "absent"} row (the latter with reason {@code NOT_ATTEMPTED}); and a supplied signature that could not be fully modeled (e.g.,
+	 * a name reference rather than a {@code TensorSpec} list) as a single {@code "supplied"} row with reason {@code UNMODELED}. These are
+	 * exactly the non-spec rows of the pre-#854 {@code input_signatures.csv}, split out so {@code tensor_specs.csv} carries specs only;
+	 * across the two files, every considered function still contributes at least one row, preserving #816's invariant (added by #818) that
+	 * a function's absence from the transformed set is always explained by something present in the output. Reads the memoized inference
+	 * result without recomputing, so it leaves the function's status untouched.
 	 *
 	 * @param printer The {@code signature_absences.csv} printer.
 	 * @param function The function whose absence rows to emit.
@@ -779,7 +846,8 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		if (function.getInferredInputSignature().isEmpty()) {
 			if (!function.getBlockingParameterReasons().isEmpty())
 				for (var entry : function.getBlockingParameterReasons().entrySet())
-					printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", entry.getValue()));
+					for (var reason : entry.getValue())
+						printer.printRecord(buildAttributeColumnValues(function, entry.getKey().getIndex(), "absent", reason));
 			else if (function.getInferredInputSignatureAbsenceReason().isPresent())
 				// A function-level absence (e.g., a speculative tensor parameter) blocks no individual parameter, so the
 				// per-parameter loop above emits nothing for it.
@@ -911,6 +979,9 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		printer.print(function.getPassingPrecondition());
 		printer.print(function.getStatus().isOK() ? 0 : function.getStatus().getEntryWithHighestSeverity().getSeverity());
 
+		// Appended last, rather than beside `tensor computation`, so that the earlier columns keep their positions for positional readers.
+		printer.print(function.isTensorComputationUnresolved());
+
 		// end the record.
 		printer.println();
 	}
@@ -1002,6 +1073,10 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	public boolean getAlwaysCheckKerasSymbolicArguments() {
 		return alwaysCheckKerasSymbolicArguments;
+	}
+
+	public boolean getSkipScriptsOutsidePythonPath() {
+		return skipScriptsOutsidePythonPath;
 	}
 
 	public boolean getProcessFunctionsInParallel() {

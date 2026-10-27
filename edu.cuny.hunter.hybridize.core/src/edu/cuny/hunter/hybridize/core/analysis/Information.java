@@ -26,7 +26,15 @@ public enum Information {
 	 * already traced and hybridizing it may add no benefit. Advisory-only in phase 1; see
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767.
 	 */
-	CALLER_COVERAGE(4);
+	CALLER_COVERAGE(4),
+
+	/**
+	 * A decorator whose name can't be resolved (issue 1121), so it is missing from the reported decorator names and can't be ruled out as
+	 * the hybridization decorator. Carried at {@link org.eclipse.ltk.core.refactoring.RefactoringStatus#WARNING} rather than as a
+	 * precondition failure, since some such lookups fail legitimately and repeatably (e.g., an ambiguous user decorator); see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1121.
+	 */
+	UNRESOLVED_DECORATOR(5);
 
 	static {
 		// check that the codes are unique.

@@ -64,9 +64,12 @@ public enum PreconditionFailure {
 
 	/**
 	 * The function's body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
-	 * {@code tf.sqrt(x, tf.float32)}). Eager execution never validates the name, but {@code tf.function} tracing opens a name scope with it
-	 * and raises, so hybridization would not preserve semantics. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * {@code tf.sqrt(x, tf.float32)}), or passes {@code None}, literally or through a parameter defaulting to it, where the API's own
+	 * default name is a string (e.g., {@code tf.boolean_mask(x, mask, name=None)}). Eager execution never validates the name, but
+	 * {@code tf.function} tracing opens a name scope with it and raises, so hybridization would not preserve semantics. Since tracing a
+	 * function traces its callees, a function calling one of these, without passing the name such a callee forwards, fails too. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087.
 	 */
 	HAS_INVALID_NAME_ARGUMENTS(17),
 
@@ -94,10 +97,16 @@ public enum PreconditionFailure {
 	HAS_STALE_VARIABLE_READS(19),
 
 	/**
-	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}. Eagerly the elements are tensors and
-	 * the loop runs; under {@code tf.function} tracing the parameter is symbolic, and iterating a symbolic tensor raises
-	 * {@code OperatorNotAllowedInGraphError} even with AutoGraph converting the loop. In-body {@code tf.range} loops are
-	 * AutoGraph-supported and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}, or passes it to a Python builtin that
+	 * iterates it, such as {@code enumerate}, {@code zip} or {@code list} (the table is in {@code TensorIterationAnalysis}). Eagerly the
+	 * elements are tensors and the iteration runs; under {@code tf.function} tracing the parameter is symbolic. A builtin that iterates a
+	 * symbolic tensor raises {@code OperatorNotAllowedInGraphError} ({@code reversed} raises a {@code TypeError}). AutoGraph converts a
+	 * {@code for} directly over one to a {@code tf.while_loop}, which raises or traces to a different result when the body can't be staged:
+	 * it mutates Python state, changes a loop-carried value's dtype or shape, returns inside the loop, or converts an element to a Python
+	 * value. The check doesn't decide stageability, so it refuses every such loop. In-body {@code tf.range} loops are AutoGraph-supported
+	 * and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137.
 	 */
 	HAS_TENSOR_PARAMETER_ITERATION(20),
 
@@ -209,7 +218,228 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808">Issue 808</a>
 	 */
-	NARROWING_WOULD_DROP_SPEC_TEXT(30);
+	NARROWING_WOULD_DROP_SPEC_TEXT(30),
+
+	/**
+	 * A hybrid function that a hybrid-to-eager rule (no tensor parameter, a primitive parameter, or no tensor computation) would otherwise
+	 * de-hybridize carries a supplied {@code input_signature}, so it is kept hybrid. Each rule has its own reason. Under no tensor
+	 * parameter (P2), the body receives tensors, and removing the decorator changes how the arguments are converted and validated. Under a
+	 * primitive parameter (P3), the signature means a primitive argument does not cause retracing. Under no tensor computation (P6),
+	 * removing the decorator deletes the validation and conversion of the arguments. The function selects no transformation.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997">Issue 997</a>
+	 */
+	HAS_SUPPLIED_INPUT_SIGNATURE(31),
+
+	/**
+	 * The function is a method whose first argument is bound (an instance method or a {@code classmethod}) and is decorated with
+	 * {@code tf.custom_gradient}. Under {@code tf.function}, {@code custom_gradient} runs in graph mode and converts every argument to a
+	 * tensor, the bound {@code self} or {@code cls} included, which raises; with {@code tf.function} beneath {@code custom_gradient}
+	 * instead, the gradient function's return is rejected. No decorator order works, so the conversion is declined. A {@code staticmethod}
+	 * and a plain function have no bound argument and are hybridized above {@code tf.custom_gradient} (#996).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1000">Issue 1000</a>
+	 */
+	IS_BOUND_CUSTOM_GRADIENT_METHOD(32),
+
+	/**
+	 * The function is hybrid and has an inferred input signature that would be added to its decorator, but the names the signature is
+	 * written with, {@code TensorSpec} or a dtype constant, aren't in scope under the file's import shape, as with
+	 * {@code from tensorflow import function} alone. Writing it would raise {@code NameError}, so the signature is withheld and the
+	 * decorator is not reconfigured. A file with no TensorFlow import of its own, such as one reaching {@code tf} by a star import, gets an
+	 * injected import instead and is reconfigured.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1018">Issue 1018</a>
+	 */
+	INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED(33),
+
+	/**
+	 * A call to the eager function sits inside a guard that dispatches on the exception it raises, and adding {@code tf.function} may
+	 * change that exception, so the guard would treat it differently. A guard is an {@code assertRaises} or {@code pytest.raises} block or
+	 * a {@code try} statement's body. A {@code tf.errors} class is what a kernel raises as it runs, but a bare decorator traces the
+	 * function with the argument's own shape and dtype, and an operation whose static check fails on them raises at trace time instead:
+	 * {@code tf.matmul} of a rank-1 tensor raises {@code InvalidArgumentError} eagerly and {@code ValueError} under {@code tf.function},
+	 * and an operation on a tensor of the wrong dtype {@code TypeError} (TensorFlow 2.9.3). A data-dependent error, such as an out-of-range
+	 * {@code tf.gather} or a failed {@code tf.debugging.assert_positive}, is still raised by the kernel and survives the decorator.
+	 * <p>
+	 * The two kinds cannot be told apart from the body, so the conversion is refused where the guarded call's argument for a tensor
+	 * parameter has a shape or dtype that no call outside every guard passes, or one that is not fully known, such as a container or a
+	 * {@code None}, and a guard around the call distinguishes the kernel's error from what tracing would raise. An argument of a type an
+	 * unguarded call passes traced without a static error, so its failure is data-dependent and the function converts. A failed static
+	 * check is raised eagerly as {@code InvalidArgumentError} in every case measured, so a guard is read for whether it admits that class
+	 * (or its ancestor {@code OpError}); another {@code tf.errors} class, such as the {@code OutOfRangeError} that ends a dataset loop, is
+	 * raised where tracing raises it too. An {@code assertRaises} or {@code pytest.raises} block declares that the call raises what it
+	 * admits, so it distinguishes when it admits {@code InvalidArgumentError} but not what tracing raises; one admitting neither declares
+	 * an exception that tracing raises where the body does. A {@code try} statement declares nothing about whether the call raises, so its
+	 * {@code except} clauses distinguish in either direction: when the first clause to catch what tracing raises is not the first to catch
+	 * {@code InvalidArgumentError}, as with {@code except tf.errors.InvalidArgumentError} or {@code except ValueError} alone. A guard
+	 * admits an exception by naming that class, {@code Exception}, or {@code BaseException}, and a bare {@code except} admits every
+	 * exception.
+	 * <p>
+	 * A {@code try} statement in the function's own body, around a call into TensorFlow or the program's own code, is a hazard of its own,
+	 * since converting the function makes that body a trace. The operation then no longer runs inside the statement: a kernel's error,
+	 * data-dependent or not, is raised when the graph runs, outside it, so any clause that may catch a kernel's error is bypassed, whether
+	 * it names a {@code tf.errors} class, {@code Exception}, or {@code BaseException}, is a bare {@code except}, or cannot be read. A
+	 * clause catching {@code ValueError} or {@code TypeError} but no kernel's error distinguishes as well, since a failed static check now
+	 * reaches it. No call outside the statement shows what the call is passed, so the clauses alone decide. Unlike
+	 * {@link InferenceResult.AbsenceReason#WITHHELD_DECLARED_FAILURE_EXCEPTION}, where only the signature changes the exception and is
+	 * withheld, here the bare decorator changes it, so there is no decoration that preserves the dispatch, and the refusal holds with
+	 * input-signature inference on or off.
+	 * <p>
+	 * Only guards written around the call itself are seen: an exception handled by a {@code try} statement in a caller further up the stack
+	 * is not, and neither is a call made by {@code unittest} on the program's behalf, as in {@code assertRaises(E, f, x)}, which the call
+	 * graph does not model.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1014">Issue 1014</a>
+	 */
+	TRACING_CHANGES_GUARDED_EXCEPTION(34),
+
+	/**
+	 * The function's body (transitively) applies Python to a tensor in a way tracing cannot carry, so hybridization raises where the eager
+	 * function runs: {@code bool} of a tensor, which tracing cannot evaluate on a symbolic tensor, or a branch on a tensor where the paths
+	 * disagree about {@code None} (a {@code return None} beside a returned tensor, or a variable left {@code None} on one path), which
+	 * AutoGraph's conversion of the branch to {@code tf.cond} rejects. A value is a tensor when the tensor-type analysis types it, so a
+	 * Python {@code bool}, such as an {@code is None} test's, is decided while tracing and left alone. A branch on a tensor whose paths
+	 * agree is converted by AutoGraph and is left alone, and so are {@code int} and {@code float}, which AutoGraph converts to casts. A
+	 * {@code None} return under a nested condition that is constant at trace time is still counted, which costs a refusal.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074">Issue 1074</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083">Issue 1083</a>
+	 */
+	HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS(35),
+
+	/**
+	 * A value crossing the function's {@code tf.function} boundary does not cross it unchanged. A returned {@code tf.Variable}, at the top
+	 * level or inside a returned list, tuple, or dictionary, is converted to a tensor holding its value, and a returned
+	 * {@code tf.TensorArray} to a tensor. The conversion raises nothing, but the eager object's identity and mutability are lost: a caller
+	 * that assigns to the variable, compares its reference, or writes to the array fails or means something else. A {@code tf.TensorSpec}
+	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}. A variable used
+	 * inside the body, or a tensor array stacked before it is returned, crosses nothing and is left alone.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
+	 */
+	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
+
+	/**
+	 * The function's body stores into a parameter-derived, tensor-typed value by subscript ({@code y[i] = v}, augmented forms included).
+	 * Eagerly the value can be a NumPy array, which supports the store; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * has no item assignment, so tracing raises a {@code TypeError}. A store into a Python collection, even one of tensors, does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098">Issue 1098</a>
+	 */
+	HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT(37),
+
+	/**
+	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, or whose
+	 * value may be a Python scalar ({@code int}, {@code float}, {@code bool} or {@code str}), and another function rebinds that field, as
+	 * the same object and field per the pointer analysis, outside the methods that set the object up once: the {@code __init__} of its
+	 * class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved through the engine's class
+	 * hierarchy, invoked on the object itself. Eagerly every call reads the field's current value; under {@code tf.function} the first
+	 * trace captures the value the field held then, and later calls reuse it after the field is rebound, so the converted function returns
+	 * the first call's state. A field set only there, and a {@code tf.Variable} updated in place with {@code assign}, are read live and
+	 * left alone. A rebound Python scalar is read stale the same way. Its read counts since
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048, under which a primitive field of an object keyed by its
+	 * identity no longer makes a primitive parameter, since it never causes a retrace. A field only ever holding one constant, such as a
+	 * class-body constant, is read live, since a scalar read counts only when its field may hold more than one value. The elements of a
+	 * list, tuple, dictionary, or set aren't covered, though, which {@code tf.function} passes in afresh when the container is an argument.
+	 * Objects are told apart by allocation site, so a getter of an object created afresh on each call is refused although no instance it
+	 * reads is rebound between two of its reads.
+	 * <p>
+	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
+	 * among them, does not retrace, and the value read when the function was traced persists.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076">Issue 1076</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#rules_of_tracing">Better performance with tf.function: Rules of tracing</a>
+	 * @see <a href="https://www.tensorflow.org/guide/function#changing_python_global_and_free_variables">Better performance with
+	 *      tf.function: Changing Python global and free variables</a>
+	 */
+	HAS_REBOUND_STATE_READS(39),
+
+	/**
+	 * The function may return a Python primitive: an {@code int}, {@code float}, {@code str}, or {@code bool} constant, at the top level or
+	 * inside a returned list, tuple, or dictionary. {@code tf.function} converts every returned Python value other than {@code None} to a
+	 * tensor, so the caller receives a tensor where it received a Python value, whatever it then does with it. A caller that hashes the
+	 * value, tests its type, or passes it to an API that needs a Python value, such as a layer's constructor called while Keras builds a
+	 * model, fails. A returned {@code bool} is converted too, so it counts. A returned {@code None}, and a value a TensorFlow operation
+	 * computes, such as {@code tf.size(x)}, cross unchanged and are left alone, and so is a function whose every call discards its result.
+	 * The check reads the constants in the returned values' points-to sets, so it covers literal Python constants, including straight-line
+	 * constant arithmetic over names bound once in the file, which the front end folds. A scalar computed at run time, such as
+	 * {@code len(xs)} or a product of it, has no abstract value and is not yet seen (https://github.com/wala/ML/issues/805).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117">Issue 1117</a>
+	 */
+	RETURNS_PYTHON_PRIMITIVE(40),
+
+	/**
+	 * A shape known only as a tensor value crosses the function's boundary: a parameter's value gives the static dimensions of an op's
+	 * result that the function returns, such as the shape operand of {@code tf.reshape}, or the function returns a value derived from a
+	 * dynamic shape op, such as {@code tf.shape(x)[1:]}. Inside one graph, shape inference partially evaluates such a shape tensor back to
+	 * static extents; across a {@code tf.function} call only the tensor's type crosses, not its value, so the dimensions become
+	 * {@code None}, and a caller that reads them statically, such as a Keras layer's lazy {@code build}, raises. Converting either side of
+	 * the boundary breaks the caller, with a bare decorator or an inferred signature alike. The check refuses on either direction without
+	 * proving that a static read exists downstream, a conservative over-refusal. See {@link ShapeValueBoundaryAnalysis}.
+	 */
+	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41),
+
+	/**
+	 * The function's body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}. Eagerly the value is a
+	 * NumPy array or an eager tensor, which {@code tf.constant} accepts; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * {@code tf.constant} rejects, so tracing raises a {@code TypeError} whatever the caller passes. A Python collection does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169">Issue 1169</a>
+	 */
+	HAS_TENSOR_PARAMETER_CONSTANT(42),
+
+	/**
+	 * A call site passes a parameter a NumPy array, and the body combines an element of it, read by a subscript, with a value of another
+	 * dtype at an operation that converts its operands, such as a comparison or an arithmetic operator. Eagerly the element is a NumPy
+	 * scalar, which the operation converts to the other operand's dtype; under {@code tf.function} the array crosses the boundary as a
+	 * tensor of its own dtype, and the operation rejects the element with a {@code TypeError}. No input signature repairs this, since one
+	 * casting the array to the imposed dtype changes every other read of it. Whether the argument is an array is Ariadne's fact, the NumPy
+	 * producing-library origin of the value the call site passes, so an element of a tensor's {@code numpy()} result counts. An element
+	 * read by unpacking, such as {@code h, w = shape}, is not covered: the engine doesn't yet tell a destructuring read from an attribute
+	 * read (https://github.com/wala/ML/issues/1117).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111">Issue 1111</a>
+	 */
+	HAS_NUMPY_ELEMENT_DTYPE_COERCIONS(43),
+
+	/**
+	 * The function, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0, such as {@code tf.reshape(t, -1)}.
+	 * Eagerly, TensorFlow's {@code Reshape} kernel accepts a scalar shape; in a graph, its shape inference requires a rank-1 shape operand,
+	 * so the converted function raises {@code ValueError: Shape must be rank 1 but is rank 0} on its first trace. The engine gives the
+	 * operand's rank, and only an operand that may be rank 0 refuses, so one that is a scalar on some path and a vector on another is
+	 * refused too. An operand of unknown rank, such as one behind a starred argument, is not refused. See
+	 * {@link ScalarShapeReshapeAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
+	 */
+	RESHAPES_WITH_SCALAR_SHAPE(44),
+
+	/**
+	 * The hybrid function, or code it calls, calls an API that works only while a graph is being built, such as {@code tf.gradients} or an
+	 * optimizer's {@code get_gradients}. Removing the decorator runs the call eagerly, where it raises or returns {@code None} gradients,
+	 * so the function is kept hybrid. The engine names the APIs a call invokes; which of them are graph-only is HFR's policy. This is the
+	 * hybrid-to-eager counterpart of {@link #HAS_EAGER_ONLY_CALLS}. See {@link GraphOnlyCallAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171">Issue 1171</a>
+	 */
+	HAS_GRAPH_ONLY_CALLS(45),
+
+	/**
+	 * The function, or code it calls, may create a Keras layer's variables, as a layer's first call does when it builds the layer. Under
+	 * {@code tf.function}, the build runs inside the trace, outside the name scopes of the layers that enclose it, so sibling layers'
+	 * variables get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}. The engine names the variable creation of a program
+	 * layer's {@code build} and of a built-in layer's first call alike. A call graph can't tell which call to a layer is its first, so a
+	 * function calling a layer that may already be built is refused too. A Keras model's {@code call} saves regardless, so a method whose
+	 * receiver the engine knows to be a model is exempt; one whose receiver is unknown is refused. A function that is no method runs inside
+	 * no layer's name scope, so it is exempt too. Neither is a {@code staticmethod} or {@code classmethod} helper on a nested layer
+	 * refused, as it has no {@code self} receiver. See {@link LayerBuildAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
+	 */
+	MAY_BUILD_LAYERS(46);
 
 	static {
 		// check that the codes are unique.

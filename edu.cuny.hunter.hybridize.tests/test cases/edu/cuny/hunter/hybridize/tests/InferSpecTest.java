@@ -13,6 +13,7 @@ import java.util.Set;
 
 import org.junit.Test;
 
+import com.ibm.wala.cast.python.ml.types.NoneType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
@@ -174,6 +175,28 @@ public class InferSpecTest {
 	}
 
 	/**
+	 * A {@code None} member, which a call passing {@code None} contributes (wala/ML#1040), is its own reason: its dtype is meaningless, so
+	 * read as {@code UNKNOWN} it would report an unresolved context when the call site in fact passes a value no tensor specification
+	 * accepts.
+	 */
+	@Test
+	public void testNoneMemberReceivesNone() {
+		AbsenceReason reason = Function.classifyDtypeBottom(Set.of(new TensorType(INT32, List.of(new NumericDim(3))), NoneType.INSTANCE));
+		assertEquals("A call passing None is not an unresolved dtype.", AbsenceReason.RECEIVES_NONE, reason);
+	}
+
+	/**
+	 * {@code None} takes precedence over a dtype conflict: whatever the tensors' dtypes, a specification rejects the call passing
+	 * {@code None}, which is the more specific cause.
+	 */
+	@Test
+	public void testNoneMemberPrecedesHeterogeneousDtype() {
+		AbsenceReason reason = Function.classifyDtypeBottom(Set.of(new TensorType(INT32, List.of(new NumericDim(3))),
+				new TensorType(FLOAT32, List.of(new NumericDim(3))), NoneType.INSTANCE));
+		assertEquals("None is reported before a dtype conflict.", AbsenceReason.RECEIVES_NONE, reason);
+	}
+
+	/**
 	 * A single agreed concrete dtype reaches neither dtype branch, so the bottom is attributed to the remaining axis. Pins that excluding
 	 * {@code UNKNOWN} did not make the dtype branches fire on a set they should not claim.
 	 */
@@ -196,21 +219,88 @@ public class InferSpecTest {
 		String partial = Function.dropMessage(AbsenceReason.PARTIAL_DTYPE);
 		String unknown = Function.dropMessage(AbsenceReason.UNKNOWN_DTYPE);
 		String sparsity = Function.dropMessage(AbsenceReason.HETEROGENEOUS_SPARSITY);
+		String none = Function.dropMessage(AbsenceReason.RECEIVES_NONE);
 
-		assertEquals("Four reasons must produce four distinct sentences.", 4, Set.of(heterogeneous, partial, unknown, sparsity).size());
+		assertEquals("Five reasons must produce five distinct sentences.", 5,
+				Set.of(heterogeneous, partial, unknown, sparsity, none).size());
 
 		assertTrue("Only a real conflict may say the call sites conflict.", heterogeneous.contains("conflicting dtypes"));
 		assertFalse("An unresolved context must not be reported as a conflict.", partial.contains("conflicting dtypes"));
 		assertTrue("The partial case must say the call sites do not disagree.", partial.contains("do not disagree"));
 		assertTrue("The dtype-top case names an undeterminable dtype.", unknown.contains("cannot be determined"));
 		assertTrue("The sparseness case names the layout.", sparsity.contains("sparse at some call sites"));
+		assertTrue("The None case names None.", none.contains("receives None"));
+	}
+
+	/**
+	 * A {@code None} member beside two concrete dtypes is two reasons, not one: a specification rejects the call passing {@code None}, and
+	 * the tensor calls disagree about the dtype whatever the {@code None} call does. Both are reported, {@code None} first as before.
+	 */
+	@Test
+	public void testNoneMemberAndHeterogeneousDtypeAreBothReported() {
+		Set<TensorType> contexts = Set.of(new TensorType(INT32, List.of(new NumericDim(3))),
+				new TensorType(FLOAT32, List.of(new NumericDim(3))), NoneType.INSTANCE);
+		assertEquals("Both the None member and the dtype conflict hold.",
+				List.of(AbsenceReason.RECEIVES_NONE, AbsenceReason.HETEROGENEOUS_DTYPE),
+				List.copyOf(Function.classifyDtypeBottoms(contexts)));
+		assertEquals("The single reason is the first of the set.", AbsenceReason.RECEIVES_NONE, Function.classifyDtypeBottom(contexts));
+	}
+
+	/**
+	 * A {@code None} member beside one concrete dtype and an unresolved context: the {@code None} call is rejected, and separately one
+	 * context did not resolve. {@code None}'s own {@code UNKNOWN} dtype is not what makes the dtype partial; the unresolved tensor is.
+	 */
+	@Test
+	public void testNoneMemberAndPartialDtypeAreBothReported() {
+		Set<TensorType> contexts = Set.of(new TensorType(INT32, List.of(new NumericDim(3))),
+				new TensorType(UNKNOWN, List.of(new NumericDim(3))), NoneType.INSTANCE);
+		assertEquals("Both the None member and the unresolved context hold.",
+				List.of(AbsenceReason.RECEIVES_NONE, AbsenceReason.PARTIAL_DTYPE), List.copyOf(Function.classifyDtypeBottoms(contexts)));
+	}
+
+	/**
+	 * A {@code None} member beside one concrete dtype is the {@code None} reason alone. {@code None}'s dtype is meaningless, so it must not
+	 * be counted as the unresolved context that would make the dtype partial.
+	 */
+	@Test
+	public void testNoneMemberAloneIsNotPartialDtype() {
+		assertEquals("None's dtype does not make the dtype partial.", Set.of(AbsenceReason.RECEIVES_NONE),
+				Function.classifyDtypeBottoms(Set.of(new TensorType(INT32, List.of(new NumericDim(3))), NoneType.INSTANCE)));
+	}
+
+	/** A {@code None} member beside a sparse tensor is not a mixed layout: {@code None} is neither sparse nor dense. */
+	@Test
+	public void testNoneMemberIsNotDense() {
+		assertEquals("None does not make the layout mixed.", Set.of(AbsenceReason.RECEIVES_NONE),
+				Function.classifyDtypeBottoms(Set.of(new TensorType(INT32, List.of(new NumericDim(3))).asSparse(), NoneType.INSTANCE)));
+	}
+
+	/** The dtype and sparseness axes are independent, so a dtype conflict does not hide a mixed layout. */
+	@Test
+	public void testHeterogeneousDtypeAndSparsityAreBothReported() {
+		Set<TensorType> contexts = Set.of(new TensorType(INT32, List.of(new NumericDim(3))).asSparse(),
+				new TensorType(FLOAT32, List.of(new NumericDim(3))));
+		assertEquals("Both the dtype conflict and the mixed layout hold.",
+				List.of(AbsenceReason.HETEROGENEOUS_DTYPE, AbsenceReason.HETEROGENEOUS_SPARSITY),
+				List.copyOf(Function.classifyDtypeBottoms(contexts)));
+	}
+
+	/**
+	 * When no other axis holds, the set is the sparseness reason alone, the remaining reason {@link Function#inferSpec(Set)} bottoms for,
+	 * matching the single-reason classifier.
+	 */
+	@Test
+	public void testNoOtherAxisFallsThroughToSparsenessAlone() {
+		assertEquals("One agreed concrete dtype leaves sparseness alone.", Set.of(AbsenceReason.HETEROGENEOUS_SPARSITY),
+				Function.classifyDtypeBottoms(
+						Set.of(new TensorType(INT32, List.of(new NumericDim(3))), new TensorType(INT32, List.of(new NumericDim(4))))));
 	}
 
 	/** Wizard-facing diagnostic text must not cite an issue tracker, mirroring the fixture-level assertion. */
 	@Test
 	public void testDropMessagesCiteNoIssueTracker() {
 		for (AbsenceReason reason : List.of(AbsenceReason.HETEROGENEOUS_DTYPE, AbsenceReason.PARTIAL_DTYPE, AbsenceReason.UNKNOWN_DTYPE,
-				AbsenceReason.HETEROGENEOUS_SPARSITY))
+				AbsenceReason.HETEROGENEOUS_SPARSITY, AbsenceReason.RECEIVES_NONE))
 			assertFalse("Wizard-facing status text must not cite an issue tracker.", Function.dropMessage(reason).matches(".*#\\d+.*"));
 	}
 }

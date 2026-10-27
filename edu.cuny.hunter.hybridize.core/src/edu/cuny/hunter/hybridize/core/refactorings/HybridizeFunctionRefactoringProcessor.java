@@ -1,20 +1,25 @@
 package edu.cuny.hunter.hybridize.core.refactorings;
 
 import static com.google.common.collect.Iterables.concat;
+import static edu.cuny.hunter.hybridize.core.utils.Util.getPath;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
 import static java.lang.Boolean.TRUE;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -23,7 +28,9 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
@@ -32,6 +39,7 @@ import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.NullChange;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
+import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.TextFileChange;
 import org.eclipse.ltk.core.refactoring.participants.CheckConditionsContext;
@@ -39,15 +47,17 @@ import org.eclipse.ltk.core.refactoring.participants.RefactoringParticipant;
 import org.eclipse.ltk.core.refactoring.participants.SharableParticipants;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.TextEdit;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.preferences.InterpreterGeneralPreferences;
+import org.python.pydev.parser.jython.SimpleNode;
 
 import com.ibm.wala.cast.ipa.callgraph.CAstCallGraphUtil;
 import com.ibm.wala.cast.python.ipa.callgraph.PytestEntrypointBuilder;
 import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.ScriptOutsidePythonPathException;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.client.PythonTensorAnalysisEngine;
+import com.ibm.wala.cast.python.ml.client.TensorGenerator;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.ide.util.ProgressMonitorDelegate;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
@@ -69,9 +79,11 @@ import edu.cuny.hunter.hybridize.core.analysis.CantComputeRecursionException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferPrimitiveParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.CantInferTensorParametersException;
 import edu.cuny.hunter.hybridize.core.analysis.DepthLimitedPoint;
+import edu.cuny.hunter.hybridize.core.analysis.ExceptionHandlerAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.ExportAnalysis;
 import edu.cuny.hunter.hybridize.core.analysis.Function;
 import edu.cuny.hunter.hybridize.core.analysis.FunctionDefinition;
+import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
@@ -86,17 +98,41 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	private static final String DUMP_CALL_GRAPH_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpCallGraph";
 
+	private static final String DUMP_TENSOR_ANALYSIS_PROPERTY_KEY = "edu.cuny.hunter.hybridize.dumpTensorAnalysis";
+
 	private static final String INFER_INPUT_SIGNATURES_PROPERTY_KEY = "edu.cuny.hunter.hybridize.inferInputSignatures";
 
 	private static final ILog LOG = getLog(HybridizeFunctionRefactoringProcessor.class);
+
+	/**
+	 * The order {@link Function}s are processed in: by project, file, and position in the file. Some analysis state is first-come, so
+	 * processing in the hash order of a {@link Set} of {@link Function}s, which changes from run to run, could change what is emitted.
+	 */
+	public static final Comparator<Function> PROCESSING_ORDER = Comparator.comparing((Function f) -> f.getProject().getName())
+			.thenComparing(f -> f.getContainingFile().getPath()).thenComparingInt(Function::getBeginningLineNumber)
+			.thenComparingInt(Function::getDefinitionOrdinal).thenComparing(Function::getIdentifier);
 
 	private Set<Function> functions = new LinkedHashSet<>();
 
 	private Map<IProject, PythonSSAPropagationCallGraphBuilder> projectToCallGraphBuilder = new HashMap<>();
 
-	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new HashMap<>();
+	/**
+	 * The mod analysis of each project, computed at most once per project. Concurrent because functions may be checked in parallel, and
+	 * {@link #computeMod(IProject, CallGraph, PointerAnalysis)} is first called from that loop.
+	 */
+	private Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = new ConcurrentHashMap<>();
 
 	private Map<IProject, CallGraph> projectToCallGraph = new HashMap<>();
+
+	/**
+	 * Whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/990). Off by default, since such a script means the project's
+	 * source folders do not cover its code, and whether it matters is the project owner's call, not the tool's.
+	 */
+	private boolean skipScriptsOutsidePythonPath;
+
+	/** Each project's scripts that were left out of the analysis because no PYTHONPATH entry contains them, relative to the project. */
+	private Map<IProject, List<String>> projectToSkippedScripts = new HashMap<>();
 
 	private Map<IProject, TensorTypeAnalysis> projectToTensorTypeAnalysis = new HashMap<>();
 
@@ -104,6 +140,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 * True iff the {@link CallGraph} should be displayed.
 	 */
 	private boolean dumpCallGraph = Boolean.getBoolean(DUMP_CALL_GRAPH_PROPERTY_KEY);
+
+	/**
+	 * True iff the whole {@link TensorTypeAnalysis} should be logged. Its rendering grows with the call graph and passes the maximum
+	 * {@link String} length on large projects, so it is off unless asked for.
+	 */
+	private boolean dumpTensorAnalysis = Boolean.getBoolean(DUMP_TENSOR_ANALYSIS_PROPERTY_KEY);
 
 	private boolean alwaysCheckPythonSideEffects;
 
@@ -232,8 +274,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		this.inferInputSignatures = inferInputSignatures;
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet) {
 		this();
 
 		// Convert the FunctionDefs to Functions.
@@ -250,49 +291,45 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		}
 	}
 
-	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects) {
 		this(functionDefinitionSet);
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects);
 		this.processFunctionsInParallel = processFunctionsInParallel;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel);
 		this.alwaysCheckRecursion = alwaysCheckRecursion;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion);
 		this.useTestEntryPoints = useTestEntryPoints;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
-			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints)
-			throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints);
 		this.alwaysFollowTypeHints = alwaysFollowTypeHints;
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
-			boolean useSpeculativeAnalysis) throws TooManyMatchesException /* FIXME: This exception sounds too low-level. */ {
+			boolean useSpeculativeAnalysis) {
 		this(functionDefinitionSet, alwaysCheckPythonSideEffects, processFunctionsInParallel, alwaysCheckRecursion, useTestEntryPoints,
 				alwaysFollowTypeHints, useSpeculativeAnalysis, false);
 	}
 
 	public HybridizeFunctionRefactoringProcessor(Set<FunctionDefinition> functionDefinitionSet, boolean alwaysCheckPythonSideEffects,
 			boolean processFunctionsInParallel, boolean alwaysCheckRecursion, boolean useTestEntryPoints, boolean alwaysFollowTypeHints,
-			boolean useSpeculativeAnalysis, boolean inferInputSignatures) throws TooManyMatchesException /* FIXME: low-level. */ {
+			boolean useSpeculativeAnalysis, boolean inferInputSignatures) {
 		this();
 
 		this.alwaysCheckPythonSideEffects = alwaysCheckPythonSideEffects;
@@ -318,6 +355,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 	}
 
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * A PyDev lookup that lost its answer to a dead PyDev completion server stops the check: the returned status then has a fatal error
+	 * naming the lookup, whose data is the {@link LostPyDevAnswerError} (issue 1121).
+	 */
 	@Override
 	public RefactoringStatus checkFinalConditions(IProgressMonitor pm, CheckConditionsContext context)
 			throws CoreException, OperationCanceledException {
@@ -325,7 +368,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		SubMonitor progress = SubMonitor.convert(pm, Messages.CheckingPreconditions, 100);
 		// TODO: Adjust amount of work later.
 
-		status.merge(this.checkFunctions(progress.split(1)));
+		try {
+			status.merge(this.checkFunctions(progress.split(1)));
+		} catch (LostPyDevAnswerError e) {
+			LOG.error(e.getMessage(), e);
+			status.addEntry(RefactoringStatus.FATAL, e.getMessage(), null, Function.PLUGIN_ID, RefactoringStatusEntry.NO_CODE, e);
+		}
 
 		return status;
 	}
@@ -338,8 +386,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		Set<Function> allFunctions = this.getFunctions();
 
 		// collect the projects to be analyzed.
-		Map<IProject, Set<Function>> projectToFunctions = allFunctions.stream().filter(f -> f.getStatus().isOK())
-				.collect(Collectors.groupingBy(Function::getProject, Collectors.toSet()));
+		Map<IProject, Set<Function>> projectToFunctions = allFunctions.stream().filter(f -> f.getStatus().isOK()).sorted(PROCESSING_ORDER)
+				.collect(Collectors.groupingBy(Function::getProject, LinkedHashMap::new, Collectors.toCollection(LinkedHashSet::new)));
 
 		// process each project.
 		subMonitor.beginTask("Processing projects ...", projectToFunctions.keySet().size());
@@ -350,17 +398,44 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			LOG.info("PYTHONPATH for " + project + " is: " + pythonPath + ".");
 			assert pythonPath.stream().allMatch(File::exists) : "PYTHONPATH should exist.";
 
-			// create the analysis engine for the project.
-			EclipsePythonProjectTensorAnalysisEngine engine = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath,
-					this.getTargetedCfaDepth());
+			// create the analysis engine for the project, and its call graph builder. A script that no PYTHONPATH entry contains fails the
+			// project, naming the script, unless such scripts are to be skipped; then the engine is rebuilt without it (issue 990).
+			List<IPath> skipped = new ArrayList<>();
+			EclipsePythonProjectTensorAnalysisEngine candidate;
+			PythonSSAPropagationCallGraphBuilder built;
 
-			// build the call graph for the project.
-			PythonSSAPropagationCallGraphBuilder builder;
-			try {
-				builder = computeCallGraphBuilder(engine);
-			} catch (IOException e) {
-				throw new CoreException(Status.error("Could not compute call graph builder for: " + project.getName(), e));
+			while (true) {
+				candidate = new EclipsePythonProjectTensorAnalysisEngine(project, pythonPath, this.getTargetedCfaDepth(), skipped);
+
+				try {
+					built = computeCallGraphBuilder(candidate);
+					break;
+				} catch (IOException e) {
+					throw new CoreException(Status.error("Could not compute call graph builder for: " + project.getName(), e));
+				} catch (ScriptOutsidePythonPathException e) {
+					IPath script = projectRelative(project, e.getScript());
+					String message = "Project " + project.getName() + " has a script, " + (script == null ? e.getScript() : script)
+							+ ", that none of its PYTHONPATH entries " + e.getPythonPath()
+							+ " contains: its source folders do not cover it.";
+
+					if (!this.getSkipScriptsOutsidePythonPath() || script == null || skipped.contains(script))
+						throw new CoreException(
+								Status.error(message + " Correct the project's source folders"
+										+ (this.getSkipScriptsOutsidePythonPath() ? ""
+												: ", or, in the evaluator, skip such scripts with --skip-scripts-outside-python-path")
+										+ ".", e));
+
+					LOG.warn(message + " Skipping it, as configured.");
+					status.addWarning(message + " It was skipped, as configured.");
+					skipped.add(script);
+				}
 			}
+
+			if (!skipped.isEmpty())
+				this.getProjectToSkippedScripts().put(project, skipped.stream().map(IPath::toString).toList());
+
+			EclipsePythonProjectTensorAnalysisEngine engine = candidate;
+			PythonSSAPropagationCallGraphBuilder builder = built;
 
 			subMonitor.subTask("Building call graph.");
 			CallGraph callGraph;
@@ -384,7 +459,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				throw new CoreException(Status.error("Could not analyze tensors for: " + project.getName(), e));
 			}
 
-			LOG.info("Tensor analysis: " + analysis.toString());
+			if (this.dumpTensorAnalysis)
+				LOG.info("Tensor analysis: " + analysis.toString());
 
 			// The points-to results the tensor analysis abandoned at the targeted CFA depth limit (#670), rendered WALA-free for
 			// consumers outside this bundle. A non-empty population means raising this project's `targetedCfaDepth` may recover
@@ -425,7 +501,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// consulted while checking each individual function, so its base facts must exist before any check runs.
 			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Discovering if " + func + " is hybrid.");
-				func.computeHybridization(subMonitor.split(IProgressMonitor.UNKNOWN));
+				func.computeHybridization(this.splitForFunction(subMonitor));
 			});
 
 			// Which functions have every known call path dominated by a hybridized caller (issue 767, phase 1): an advisory and a
@@ -433,16 +509,35 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			Set<Function> callerCovered = Function.computeCallerCoverage(projectFunctions, callGraph);
 			projectFunctions.forEach(func -> func.setCallerCovered(callerCovered.contains(func)));
 
+			// Whether each function passes an invalid name argument to a TensorFlow API (issues 814 and 1087), and then which call
+			// one whose name argument raises under tracing. The scan is purely syntactic—no call-graph prerequisite and negligible
+			// cost—so it runs unconditionally rather than sharing the gate, and before any check, since a caller's verdict reads its
+			// callees'.
+			projectFunctions.forEach(Function::computeInvalidNameArguments);
+			Function.computeInvalidNameArgumentCallers(projectFunctions, callGraph);
+
+			// The modules whose `try` statements are read for the `except` clauses around a call (issue 1014): those of the project's
+			// functions, by the absolute path of their file, each read once and shared across the functions.
+			Map<String, ExceptionHandlerAnalysis> modules = new HashMap<>();
+
+			for (Function func : projectFunctions) {
+				SimpleNode module = func.getContainingModule();
+
+				if (module != null)
+					modules.computeIfAbsent(func.getContainingFile().getAbsolutePath(), k -> new ExceptionHandlerAnalysis(module));
+			}
+
 			this.getStream(projectFunctions).forEach(func -> {
 				LOG.info("Checking function: " + func + ".");
 
-				// Which of the function's nodes are reached only from call sites the tests declare must fail (issue 888). Must precede
-				// tensor-parameter inference, which is where the per-node evidence is read and attributed. Exits immediately unless
-				// signature inference is on, the only consumer of the exclusion.
-				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis());
+				// Which of the function's nodes are reached only from call sites the tests declare must fail (issue 888), and, for an
+				// eager function, which are reached only from guarded call sites (issue 1014). Must precede tensor-parameter inference,
+				// which is where the per-node evidence is read and attributed. Exits immediately for a hybrid function unless signature
+				// inference is on, the only consumer of the exclusion.
+				func.computeExpectedFailureNodes(callGraph, builder.getPointerAnalysis(), modules);
 
 				try {
-					func.inferTensorParameters(analysis, callGraph, builder, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferTensorParameters(analysis, callGraph, builder, this.splitForFunction(subMonitor));
 				} catch (CantInferTensorParametersException e) {
 					LOG.warn("Unable to compute whether " + func + " has tensor parameters.", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
@@ -454,15 +549,19 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Which defaulted parameters no caller supplies, and so may be left out of an inferred input signature (#787). Cheap
 				// enough to run unconditionally: it exits immediately for a function with no defaulted parameter, and
 				// `computeInputSignature` reads only the cache it populates.
+				// Whether the function's class extends a Keras layer or model as the engine models it is the other half of that question:
+				// Keras itself supplies `training` and `mask` to such a class's `call` (issue 1099). Also cheap: a walk over the class's
+				// bases, with no points-to query.
 				try {
-					func.inferSuppliedParameters(callGraph, subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferSuppliedParameters(callGraph, this.splitForFunction(subMonitor));
+					func.computeExtendsKerasCallableClass(callGraph);
 				} catch (CoreException e) {
 					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
 					throw new RuntimeException("Can't infer supplied parameters for: " + func + ".", e);
 				}
 
 				try {
-					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), subMonitor.split(IProgressMonitor.UNKNOWN));
+					func.inferPrimitiveParameters(callGraph, builder.getPointerAnalysis(), this.splitForFunction(subMonitor));
 				} catch (CantInferPrimitiveParametersException e) {
 					LOG.warn("Unable to infer primitive parameters for: " + func + ".", e);
 					func.addFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER,
@@ -539,17 +638,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// precondition region as the barren check, so it shares the gate; overridable independently via
 				// alwaysCheckEagerOnlyCalls.
 				if (this.getAlwaysCheckEagerOnlyCalls() || barrenCouldDecide)
-					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis());
+					func.computeEagerOnlyCalls(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// Check whether the function applies numpy to parameter-flowing values (issue 740). Same reachable region, same
 				// gate; overridable independently via alwaysCheckNumpyCalls.
 				if (this.getAlwaysCheckNumpyCalls() || barrenCouldDecide)
 					func.computeNumpyCallsOnParameters(callGraph, builder.getPointerAnalysis(), analysis);
-
-				// Check whether the function passes a non-string constant where a TensorFlow API declares `name` (issue 814). Its
-				// failure is reachable in the same precondition region as the other safety checks, but the scan is purely
-				// syntactic—no call-graph prerequisite and negligible cost—so it runs unconditionally rather than sharing the gate.
-				func.computeInvalidNameArguments();
 
 				// Check whether the inferred input signature leaves unresolved an axis the body reads statically (issue 811). Same
 				// reachable region, same gate; overridable independently via alwaysCheckStaticShapeReads. The compute short-circuits
@@ -559,9 +653,14 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeEagerDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis());
 
+				// Check whether an element of a NumPy argument is combined with a value of another dtype (issue 1111). Same reachable
+				// region and gate; a caller-side origin query per parameter, and a body scan only for a parameter passed an array.
+				if (barrenCouldDecide)
+					func.computeNumpyElementDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis(), tensorTypedKeys);
+
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
-					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
+					func.computeUnresolvedStaticallyReadAxes(callGraph, builder);
 
 				// Whether the replica dispatch is a caller decides if an emitted signature would describe a calling convention
 				// the function is never called by (issue 928). Cheap: a caller-direction walk with no points-to query.
@@ -572,40 +671,102 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (this.getAlwaysCheckStaleVariableReads() || barrenCouldDecide)
 					func.computeStaleVariableReads(callGraph, builder.getPointerAnalysis());
 
-				// Check whether the function iterates a parameter-derived tensor (issue 830). Same reachable region, same gate;
-				// overridable independently via alwaysCheckTensorIteration.
+				// Check whether the function iterates a parameter-derived tensor (issue 830), assigns into one (issue 1098), or passes
+				// one to tf.constant (issue 1169). Same reachable region, same gate; overridable independently via
+				// alwaysCheckTensorIteration.
 				if (this.getAlwaysCheckTensorIteration() || barrenCouldDecide)
-					func.computeTensorParameterIteration(callGraph, builder.getPointerAnalysis(), analysis);
+					func.computeTensorParameterIteration(callGraph, builder, analysis);
 
 				// Check whether a call site passes a Keras symbolic tensor (issue 887). Same reachable region, same gate;
 				// overridable independently via alwaysCheckKerasSymbolicArguments.
 				if (this.getAlwaysCheckKerasSymbolicArguments() || barrenCouldDecide)
-					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis());
+					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
+
+				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075), and whether
+				// a returned value may be a Python primitive whose result a caller uses (issue 1117). Same reachable region and gate; a
+				// points-to query per return and per caller argument, and a use query per caller result.
+				if (barrenCouldDecide)
+					func.computeUncrossableBoundaryValues(callGraph, builder);
+
+				// Check whether a shape known only as a tensor value crosses the boundary, inbound or outbound, which tracing loses. Same
+				// reachable region and gate; a def-use walk over the function and the user functions it calls.
+				if (barrenCouldDecide)
+					func.computeShapeValueAcrossBoundary(callGraph, builder, tensorTypedKeys);
+
+				// Check whether the function reshapes with a shape that may be a scalar, which graph shape inference rejects (issue 1170).
+				// Same reachable region and gate; a transitive walk asking the engine which APIs each call invokes and the rank of a
+				// reshape's shape operand.
+				if (barrenCouldDecide)
+					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
+
+				// Check whether a hybrid function calls an API that works only while a graph is being built, which removing its decorator
+				// breaks (issue 1171). Only a hybrid function can be de-hybridized, so only it is checked; a transitive walk asking the
+				// engine which APIs each call invokes.
+				if (TRUE.equals(func.isHybrid()))
+					func.computeGraphOnlyCalls(callGraph, builder);
+
+				// Check whether the function may build a Keras layer, whose variables a trace would create outside the enclosing layers'
+				// name scopes (issue 1172). Same reachable region and gate; a transitive walk, through library nodes too, asking the
+				// engine which APIs each call invokes.
+				if (barrenCouldDecide)
+					func.computeMayBuildLayers(callGraph, builder);
+
+				// Check whether the function reads a tensor or a Python scalar from a field another function rebinds (issues 1076 and
+				// 1048). Same reachable region and gate; a ref query per instruction of the reader's closure and a memoized mod query per
+				// writer.
+				if (barrenCouldDecide)
+					func.computeReboundStateReads(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// check the function preconditions.
 				func.check();
 
-				status.merge(func.getStatus());
-				subMonitor.worked(1);
+				if (!this.getProcessFunctionsInParallel())
+					subMonitor.worked(1);
 
 				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
 			});
+
+			// Merged after the loop rather than inside it: a RefactoringStatus isn't thread-safe, and this keeps the entries in the
+			// functions' order however they were checked (issue 315).
+			projectFunctions.forEach(func -> status.merge(func.getStatus()));
+
+			if (this.getProcessFunctionsInParallel())
+				subMonitor.worked(projectFunctions.size());
 		}
 
 		return status;
 	}
 
+	/**
+	 * Returns a progress monitor for one step of one function's analysis. A {@link SubMonitor} isn't thread-safe and supports one active
+	 * child at a time, so when functions are processed in parallel, each step gets a monitor that reports no progress, which is reported
+	 * after the loop instead, but still answers whether the loop's monitor was canceled (issue 315).
+	 *
+	 * @param monitor The monitor of the loop over the functions.
+	 * @return A child of the given monitor, or, when functions are processed in parallel, a monitor reporting only its cancellation.
+	 * @throws OperationCanceledException If the loop's monitor was canceled.
+	 */
+	private IProgressMonitor splitForFunction(SubMonitor monitor) {
+		if (!this.getProcessFunctionsInParallel())
+			return monitor.split(IProgressMonitor.UNKNOWN);
+
+		monitor.checkCanceled();
+
+		return new NullProgressMonitor() {
+			@Override
+			public boolean isCanceled() {
+				return monitor.isCanceled();
+			}
+		};
+	}
+
 	private Map<CGNode, OrdinalSet<PointerKey>> computeMod(IProject project, CallGraph callGraph,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
-		Map<IProject, Map<CGNode, OrdinalSet<PointerKey>>> projectToMod = this.getProjectToMod();
-
-		if (!projectToMod.containsKey(project)) {
+		// Atomic, so parallel function checks compute the whole-program closure once rather than each racing to compute it.
+		return this.getProjectToMod().computeIfAbsent(project, p -> {
 			ModRef<InstanceKey> modRef = new PythonModRefWithBuiltinFunctions();
-			Map<CGNode, OrdinalSet<PointerKey>> mod = modRef.computeMod(callGraph, pointerAnalysis);
-			projectToMod.put(project, mod);
-		}
-
-		return projectToMod.get(project);
+			return modRef.computeMod(callGraph, pointerAnalysis);
+		});
 	}
 
 	/**
@@ -708,12 +869,24 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 		return projectToCallGraphBuilder.get(project);
 	}
 
+	/**
+	 * Clears this processor's per-project analysis caches and the static function caches.
+	 * <p>
+	 * It also releases the engine's per-builder tensor caches for every builder this processor holds. The engine clears them itself at the
+	 * end of its own analysis, but queries made afterward through the builder, such as the dataset-component lookups made while inferring
+	 * parameters, write fresh entries that nothing else removes. Those entries' values strongly reach their weakly held builder, so they
+	 * never expire on their own and would keep each builder, its call graph, and its class hierarchy alive.
+	 * {@link TensorGenerator#clearCaches} is the engine's API for releasing them deterministically and is safe to call more than once.
+	 */
 	@Override
 	public void clearCaches() {
+		// Release the engine's caches before forgetting the builders that key them.
+		this.getProjectToCallGraphBuilder().values().forEach(TensorGenerator::clearCaches);
 		this.getProjectToCallGraphBuilder().clear();
 		this.getProjectToMod().clear();
 		this.getProjectToCallGraph().clear();
 		this.getProjectToTensorTypeAnalysis().clear();
+		this.getProjectToSkippedScripts().clear();
 		Function.clearCaches();
 	}
 
@@ -843,7 +1016,8 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	}
 
 	public Set<Function> getOptimizableFunctions() {
-		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).collect(Collectors.toSet());
+		return this.getFunctions().parallelStream().filter(f -> !f.getStatus().hasError()).sorted(PROCESSING_ORDER)
+				.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 
 	@Override
@@ -907,6 +1081,53 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 	 */
 	public void setAlwaysCheckNumpyCalls(boolean alwaysCheckNumpyCalls) {
 		this.alwaysCheckNumpyCalls = alwaysCheckNumpyCalls;
+	}
+
+	/**
+	 * Resolves a script name the analysis reports to a path relative to the project's directory.
+	 *
+	 * @param project The project.
+	 * @param script The script's name, as the analysis reports it: absolute, or relative to the directory the engine collects the project's
+	 *        scripts from.
+	 * @return The script's path relative to the project's directory, or {@code null} if it is not within the project.
+	 */
+	private static IPath projectRelative(IProject project, String script) {
+		// The directory the engine collects the project's scripts from, which the analysis names them against.
+		IPath location = getPath(project);
+		IPath path = org.eclipse.core.runtime.Path.fromOSString(script);
+		IPath absolute = path.isAbsolute() ? path : location.append(path);
+
+		return location.isPrefixOf(absolute) && absolute.toFile().isFile() ? absolute.makeRelativeTo(location) : null;
+	}
+
+	/**
+	 * Whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project (issue 990).
+	 *
+	 * @return True iff such scripts are skipped.
+	 */
+	public boolean getSkipScriptsOutsidePythonPath() {
+		return this.skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Sets whether a script that no PYTHONPATH entry contains is left out of the analysis rather than failing its project (issue 990). Off
+	 * by default: such a script means the project's source folders do not cover its code, which the project's owner should decide about.
+	 * Either way the script is named: a failure's message names it, and a skipped script is logged, reported as a warning in the
+	 * refactoring status, and listed by {@link #getProjectToSkippedScripts()}.
+	 *
+	 * @param skipScriptsOutsidePythonPath Whether to skip such scripts.
+	 */
+	public void setSkipScriptsOutsidePythonPath(boolean skipScriptsOutsidePythonPath) {
+		this.skipScriptsOutsidePythonPath = skipScriptsOutsidePythonPath;
+	}
+
+	/**
+	 * Returns each project's scripts that were left out of the analysis because no PYTHONPATH entry contains them (issue 990).
+	 *
+	 * @return The skipped scripts, relative to each project's directory.
+	 */
+	public Map<IProject, List<String>> getProjectToSkippedScripts() {
+		return this.projectToSkippedScripts;
 	}
 
 	public boolean getAlwaysCheckStaticShapeReads() {

@@ -32,10 +32,14 @@
 # CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, CHECK_STATIC_SHAPE_READS, CHECK_STALE_VARIABLE_READS, CHECK_TENSOR_ITERATION, PROCESS_IN_PARALLEL,
 # FOLLOW_TYPE_HINTS, SPECULATIVE,
 # TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS, PYTHON_INTERPRETER,
-# SOURCE_FOLDERS_FROM_PACKAGING.
+# SOURCE_FOLDERS_FROM_PACKAGING, SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
-# (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
-# (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
+# (e.g. the performance evaluation). PROCESS_IN_PARALLEL checks a project's
+# functions concurrently. The state they share in this tool is synchronized, every
+# call into PyDev's caches holds one lock, and their status entries are merged in
+# the functions' order (issue 315). PyDev's own background analysis would run
+# outside that lock, in serial mode as in parallel mode, but it has been observed
+# idle during evaluation. PROJECTS is a comma-separated list of project names to evaluate a
 # subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
 # comma-separated list of entries to register in the workspace before the run
 # (issue 658). An entry is an absolute subject directory; one with a committed
@@ -49,7 +53,22 @@
 # usable interpreter. PYTHON_INTERPRETER is the absolute path of a Python
 # executable to make the workspace's default PyDev interpreter, the one committed
 # metadata names as `Default`, before importing; the run exits 5 if it cannot be
-# configured.
+# configured. A project whose source folders leave uncovered a Python file the
+# analysis must bind (one containing an import, or a module of a package it
+# translates) fails, naming the file (issue 990). SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH=true
+# instead leaves such files out, listing each in skipped_scripts.csv; each one costs
+# another class-hierarchy build. Whether an uncovered file matters is the project's
+# call, so fix its metadata where it does.
+#
+# Exit codes: 0 when the evaluation completes and every project succeeds; 6 when
+# it completes but skips a project that failed (the completion line names it); 1
+# when the evaluation is aborted, or when this script is missing ECLIPSE,
+# WORKSPACE, or OUTDIR or refuses OUTDIR; 2 when the workspace has no open
+# Python project; 3 on an unrecognized argument; 4 and 5 as above; 7 when the
+# evaluation is aborted as a PyDev lookup lost its answer to a dead PyDev
+# completion server, so what was emitted is incomplete. The platform's own
+# codes, such as 13 for an error that ends the application, pass through
+# unchanged.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
@@ -114,4 +133,5 @@ exec "$ECLIPSE" \
 	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"} \
 	${IMPORT_PROJECTS+-Dedu.cuny.hunter.hybridize.eval.importProjects="$IMPORT_PROJECTS"} \
 	${PYTHON_INTERPRETER+-Dedu.cuny.hunter.hybridize.eval.pythonInterpreter="$PYTHON_INTERPRETER"} \
-	${SOURCE_FOLDERS_FROM_PACKAGING+-Dedu.cuny.hunter.hybridize.eval.sourceFoldersFromPackaging="$SOURCE_FOLDERS_FROM_PACKAGING"}
+	${SOURCE_FOLDERS_FROM_PACKAGING+-Dedu.cuny.hunter.hybridize.eval.sourceFoldersFromPackaging="$SOURCE_FOLDERS_FROM_PACKAGING"} \
+	${SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH+-Dedu.cuny.hunter.hybridize.eval.skipScriptsOutsidePythonPath="$SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH"}

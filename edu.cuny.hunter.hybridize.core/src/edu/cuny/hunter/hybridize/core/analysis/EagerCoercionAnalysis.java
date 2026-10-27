@@ -15,6 +15,7 @@ import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
@@ -134,8 +135,10 @@ class EagerCoercionAnalysis {
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
 			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				index.computeIfAbsent(local.getNode(), n -> new HashMap<>()).computeIfAbsent(local.getValueNumber(), v -> new HashSet<>())
-						.addAll(pair.snd.getTypes());
+				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
+				pair.snd.getTypes().stream().filter(type -> !type.isNone())
+						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
+								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
 
 		this.tensorTypeIndex = index;
 	}
@@ -220,6 +223,45 @@ class EagerCoercionAnalysis {
 		}
 
 		return new Outcome(dtypes, indeterminate, parameterPartners);
+	}
+
+	/**
+	 * The concrete dtypes that the consumers of an element of the parameter value {@code parameterValue}, read by a subscript, impose on it
+	 * where they differ from the element's own (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). The element's
+	 * direct consumers are read as {@link #eagerEffectiveDtypes} reads a parameter's, and what they impose is compared with the element's
+	 * own tensor typing, which must be a single concrete dtype. An element whose consumers are indeterminate, or whose own dtype is not
+	 * single and concrete, decides nothing, the allowing polarity of the parameter's own consumers.
+	 * <p>
+	 * A subscript is told from an attribute read by the engine's {@link PythonPropertyRead#isSubscript()}. A destructuring read, such as
+	 * {@code a, b = x}, is no subscript there (wala/ML#1117), so its elements are not read.
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param parameterValue The parameter's IR value number.
+	 * @return The imposed dtypes that differ from an element's own, empty if there is none.
+	 */
+	Set<DType> divergentElementDtypes(CGNode node, int parameterValue) {
+		Set<DType> divergent = new HashSet<>();
+
+		if (node.getIR() == null)
+			return divergent;
+
+		for (Iterator<SSAInstruction> uses = node.getDU().getUses(parameterValue); uses.hasNext();)
+			if (uses.next() instanceof PythonPropertyRead read && read.isSubscript() && read.getObjectRef() == parameterValue) {
+				int element = read.getDef();
+				Set<DType> own = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(element, Set.of()).stream()
+						.map(TensorType::getDType).collect(Collectors.toSet());
+
+				if (own.size() != 1 || own.contains(null) || own.contains(DType.UNKNOWN))
+					continue;
+
+				DType elementDtype = own.iterator().next();
+				Outcome outcome = this.eagerEffectiveDtypes(node, element);
+
+				if (!outcome.indeterminate())
+					outcome.dtypes().stream().filter(dtype -> dtype != elementDtype).forEach(divergent::add);
+			}
+
+		return divergent;
 	}
 
 	/**
