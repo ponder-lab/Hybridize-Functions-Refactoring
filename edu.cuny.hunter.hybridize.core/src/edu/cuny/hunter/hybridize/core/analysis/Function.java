@@ -2752,23 +2752,40 @@ public class Function {
 	 * The engine type names of a class and of every base it transitively declares, as the engine's class hierarchy models them: a base the
 	 * program defines is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified
 	 * name names, whose superclass the summary declares. A name the walk reaches is included whether or not it is a class of the hierarchy,
-	 * but only a class's bases are followed.
+	 * but only a class's bases are followed. Every class's declared bases and its superclass are both followed: the engine records a single
+	 * superclass per class, so a base after it under multiple inheritance is reached only through the declared bases, while a class that
+	 * records no bases, such as {@code object} or a summary's class shell that declares none, reaches its parent only through its
+	 * superclass.
 	 *
 	 * @param classHierarchy The engine's class hierarchy.
 	 * @param classTypeName The type name of the class to start from.
 	 * @return The type names of the class and its transitive bases.
 	 */
 	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeName classTypeName) {
+		return getClassAndBaseNames(classHierarchy, TypeReference.findOrCreate(PythonTypes.pythonLoader, classTypeName));
+	}
+
+	/**
+	 * The engine type names of a class and of every base it transitively declares, as
+	 * {@link #getClassAndBaseNames(IClassHierarchy, TypeName)} walks them, starting from the class {@code classType} names in its own
+	 * loader.
+	 *
+	 * @param classHierarchy The engine's class hierarchy.
+	 * @param classType The type of the class to start from.
+	 * @return The type names of the class and its transitive bases.
+	 */
+	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeReference classType) {
 		Set<TypeName> ret = new HashSet<>();
 		Set<TypeName> seen = new HashSet<>();
-		Deque<TypeName> worklist = new ArrayDeque<>();
-		worklist.add(classTypeName);
+		Deque<TypeReference> worklist = new ArrayDeque<>();
+		worklist.add(classType);
 
 		while (!worklist.isEmpty()) {
-			TypeName name = worklist.remove();
+			TypeReference reference = worklist.remove();
+			TypeName name = reference.getName();
 			ret.add(name);
 
-			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+			IClass cls = classHierarchy.lookupClass(reference);
 
 			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is not followed:
 			// a caller's first name may be derived from another type's, and the bases are resolved at the loader
@@ -2777,12 +2794,16 @@ public class Function {
 			if (cls == null || !seen.add(name))
 				continue;
 
-			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
-			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
-			if (cls instanceof IPythonClass)
-				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
-			else if (cls.getSuperclass() != null)
-				worklist.add(cls.getSuperclass().getName());
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. Each
+			// resolves in the loader of the class declaring it.
+			if (cls instanceof IPythonClass pythonClass)
+				for (TypeName base : pythonClass.getBaseTypeNames())
+					worklist.add(TypeReference.findOrCreate(cls.getClassLoader().getReference(), base));
+
+			// The superclass too, for a class that records no bases, such as a summary's class shell that declares none, or one outside
+			// the Python loader's modeled classes.
+			if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getReference());
 		}
 
 		return ret;
