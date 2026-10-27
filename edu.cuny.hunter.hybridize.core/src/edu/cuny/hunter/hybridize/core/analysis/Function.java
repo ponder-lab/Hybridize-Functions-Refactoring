@@ -5081,7 +5081,9 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+						&& !(isInvariantPrimitive(paramInx, nodes, pointerAnalysis)
+								&& this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -5097,6 +5099,96 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the parameter at the given IR parameter index is bound to one constant at every call, and so is exempt from
+	 * {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and from {@link PreconditionSuccess#P3}: in every calling context, its points-to
+	 * set is exactly one {@link ConstantKey}, the same one in each. Such a value can't vary the trace key, so it induces no retracing
+	 * (#1025, #1109). A computed Python scalar points to the engine's key for its type (wala/ML#1148, wala/ML#1149), not to a constant, so
+	 * a value that changes between calls, such as a loop counter, isn't exempt. A context in which the parameter points to nothing isn't
+	 * exempt either, since its value there is unknown.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}, one per calling context.
+	 * @param pointerAnalysis The {@link PointerAnalysis} for the given nodes.
+	 * @return True iff the parameter points to the same single {@link ConstantKey} in every one of the given nodes.
+	 */
+	private static boolean isInvariantPrimitive(int irParamIndex, Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		InstanceKey constant = null;
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (irParamIndex >= ir.getNumberOfParameters())
+				return false;
+
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(irParamIndex));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			if (pointsToSet.size() != 1)
+				return false;
+
+			InstanceKey instanceKey = pointsToSet.iterator().next();
+
+			if (!(instanceKey instanceof ConstantKey<?>) || constant != null && !constant.equals(instanceKey))
+				return false;
+
+			constant = instanceKey;
+		}
+
+		return constant != null;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} binds the parameter at the given IR parameter index to an argument the
+	 * analysis aligns, so that its points-to set holds every value it receives. The supply state of the parameter, as
+	 * {@link #isSuppliedAtAnyCallSite} computes it, must be determined at each call site: a starred (unpacked) positional argument at or
+	 * before the parameter's slot, unless the call names the parameter by keyword, makes the alignment past it undetermined (wala/ML#751),
+	 * and the parameter may then receive a value its points-to set doesn't show, such as a loop index forwarded through {@code *args}. A
+	 * call site that can't be examined, a parameter that can't be mapped to a positional {@link Parameter}, and a function with no call
+	 * site are undetermined too.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @return True iff the parameter's argument is aligned at every call site, and there is at least one.
+	 */
+	private boolean isArgumentAlignedAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		if (parameter.isKeywordOnly() || parameter.isSelf() || parameter.getIndex() != declarationIndex)
+			return false;
+
+		int positionalSlot = parameter.getIndex() + 1;
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null)
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						sawCallSite = true;
+
+						if (!invoke.getKeywords().contains(parameter.getName()) && hasStarredArgumentAtOrBefore(invoke, positionalSlot))
+							return false;
+					}
+			}
+
+		return sawCallSite;
 	}
 
 	/**
