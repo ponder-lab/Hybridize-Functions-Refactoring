@@ -16548,7 +16548,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		// TODO: The predictions have no shape because a segment reduction whose `num_segments` isn't a static constant has no rank
-		// (https://github.com/wala/ML/issues/1160). They should be rank 2 here, `(None, 4)`.
+		// (https://github.com/wala/ML/issues/1160). They should be rank 2: `(None, 4)`, or `(8, 4)` once callers of manual anchors are
+		// walked, since `aggregate` chooses the reduction by branch.
 		// TODO: The mask has no shape because `np.zeros(labels.shape[0])` has no rank (https://github.com/wala/ML/issues/1159). It
 		// should be rank 1 here, `(None,)`.
 		for (String name : List.of("MaskCategoricalCrossentropy.__call__", "MaskAccuracy.__call__")) {
