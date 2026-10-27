@@ -367,6 +367,17 @@ public enum PreconditionFailure {
 	RETURNS_PYTHON_PRIMITIVE(40),
 
 	/**
+	 * A shape known only as a tensor value crosses the function's boundary: a parameter's value gives the static dimensions of an op's
+	 * result that the function returns, such as the shape operand of {@code tf.reshape}, or the function returns a value derived from a
+	 * dynamic shape op, such as {@code tf.shape(x)[1:]}. Inside one graph, shape inference partially evaluates such a shape tensor back to
+	 * static extents; across a {@code tf.function} call only the tensor's type crosses, not its value, so the dimensions become
+	 * {@code None}, and a caller that reads them statically, such as a Keras layer's lazy {@code build}, raises. Converting either side of
+	 * the boundary breaks the caller, with a bare decorator or an inferred signature alike. The check refuses on either direction without
+	 * proving that a static read exists downstream, a conservative over-refusal. See {@link ShapeValueBoundaryAnalysis}.
+	 */
+	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41),
+
+	/**
 	 * The function, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0, such as {@code tf.reshape(t, -1)}.
 	 * Eagerly, TensorFlow's {@code Reshape} kernel accepts a scalar shape; in a graph, its shape inference requires a rank-1 shape operand,
 	 * so the converted function raises {@code ValueError: Shape must be rank 1 but is rank 0} on its first trace. The engine gives the
