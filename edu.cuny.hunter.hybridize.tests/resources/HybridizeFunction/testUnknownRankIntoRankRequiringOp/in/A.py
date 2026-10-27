@@ -25,6 +25,11 @@ def resize_spread(image):
     return tf.image.resize(*leading, image, (4, 4))
 
 
+def resize_spread_twice(image):
+    leading = []
+    return tf.image.resize(*leading, *leading, image, (4, 4))
+
+
 def resize_ranked(image):
     return tf.image.resize(image, size=(4, 4))
 
@@ -36,4 +41,5 @@ resize_image(transformed_img)
 crop_image(transformed_img)
 cast_only(transformed_img)
 resize_spread(transformed_img)
+resize_spread_twice(transformed_img)
 resize_ranked(img)

@@ -12988,8 +12988,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function kerasStatic = getFunction("keras_static");
 		assertTrue("`keras_static` reads axis 1 statically via `K.int_shape`.", kerasStatic.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`keras_static` hybridizes bare (P1).", P1, kerasStatic.getPassingPrecondition());
-		assertEquals("`keras_static`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+		// TODO: Hybridize this bare again once Ariadne summarizes `tf.keras.backend.int_shape`. It reads `x`'s static shape, which crosses
+		// a tf.function boundary, so the `tf.range` it bounds keeps its static extent, but the call has no resolved callee, so the
+		// shape-value check passes `x`'s value through it into `tf.range`'s bound and refuses the function as passing a shape value
+		// inbound. An over-refusal.
+		assertNull("`keras_static` is refused for now.", kerasStatic.getPassingPrecondition());
+		assertNotNull("`keras_static` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", kerasStatic.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		// Refused, it is not converted, so no signature is inferred for it to withhold; converted bare, it would be withheld as
+		// WITHHELD_STATICALLY_READ_AXES.
+		assertEquals("`keras_static` infers no signature to withhold.", Optional.empty(),
 				kerasStatic.getInferredInputSignatureAbsenceReason());
 
 		Function casted = getFunction("casted");
@@ -13079,9 +13087,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * TensorFlow-Examples' {@code resize_image}: a {@code .numpy()} array reaches the parameter with its shape unresolved, so its spec is
 	 * {@code shape=None}, and {@code tf.image.resize} raises at trace time without the rank of its {@code images}. Like a built-in Keras
 	 * layer's input (#883), the argument is a rank-only requirement, so the signature is withheld and the function hybridizes with a bare
-	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword, and {@code resize_spread} behind an
-	 * empty starred argument, whose positions are not aligned with the op's. {@code cast_only} reaches no such op and keeps its
-	 * unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
+	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword, and {@code resize_spread} and
+	 * {@code resize_spread_twice} behind one and two empty starred arguments, whose positions are not aligned with the op's.
+	 * {@code cast_only} reaches no such op and keeps its unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
 	 */
 	@Test
 	public void testUnknownRankIntoRankRequiringOp() throws Exception {
@@ -13089,14 +13097,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Set<Function> functions = this.getFunctions();
 
-		// `resize_spread` passes its parameter behind a starred argument, where the positions are not aligned: an empty spread puts it in
-		// `images`, so it is taken to reach the slot.
-		for (String name : List.of("resize_image", "crop_image", "resize_spread")) {
+		// `resize_spread` and `resize_spread_twice` pass their parameter behind starred arguments, where the positions are not aligned: an
+		// empty spread puts it in `images`, so it is taken to reach the slot.
+		for (String name : List.of("resize_image", "crop_image", "resize_spread", "resize_spread_twice")) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "`'s parameter arrives with an unknown shape.",
 					function.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
 			assertTrue("`" + name + "` passes its unknown-rank parameter where an op requires its rank.",
 					function.getHasUnresolvedStaticallyReadAxes());
+
+			// TODO: `resize_spread` should hybridize bare (P1). The shape-value boundary check counts the starred argument as one position,
+			// so the parameter lands in `size`'s slot and the function is refused:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1190.
+			if (name.equals("resize_spread")) {
+				assertNull("Today, `resize_spread` passes no precondition.", function.getPassingPrecondition());
+				assertNotNull("Today, `resize_spread` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+				assertFalse("Today, `resize_spread` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+				continue;
+			}
+
 			assertEquals("`" + name + "` hybridizes bare (P1); only the signature was unwritable.", P1, function.getPassingPrecondition());
 			assertTrue("`" + name + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 			assertEquals("`" + name + "`'s signature is withheld.",
@@ -15347,7 +15367,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = findFunction(functions, identifier);
 			assertFalse("`" + identifier + "` returns no Python primitive.", function.getReturnsPrimitive());
 			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
-			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+
+			if (identifier.equals("scaled_and_size")) {
+				// `tf.size(x)` is a dynamic shape op, so returning it passes a shape value outbound, which the shape-value check refuses
+				// without proving that a caller reads it statically. This caller converts it eagerly with `int`, where the returned
+				// tensor carries its value, so the refusal is an over-refusal, the accepted cost of that check's conservatism.
+				assertNull("`scaled_and_size` is refused for its returned size.", function.getPassingPrecondition());
+				assertNotNull("`scaled_and_size` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+			} else
+				assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
 
 		Function discarded = findFunction(functions, "discarded_width");
@@ -15382,6 +15411,98 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			Function function = findFunction(functions, identifier);
 			assertFalse("`" + identifier + "`'s computed scalar is not yet seen.", function.getReturnsPrimitive());
 			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
+			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Asserts that the named function is refused because a shape known only as a tensor value crosses its boundary.
+	 *
+	 * @param functions The functions under analysis.
+	 * @param identifier The function's identifier.
+	 */
+	private static void assertPassesShapeValueAcrossBoundary(Set<Function> functions, String identifier) {
+		Function function = findFunction(functions, identifier);
+		assertTrue("`" + identifier + "` passes a shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
+		assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+		assertNotNull("`" + identifier + "` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/**
+	 * A gating layer's helpers, which pass a shape known only as a tensor value between them. Measured on TensorFlow 2.9.3, converting
+	 * either helper alone with a bare decorator makes the model's {@code predict} raise
+	 * {@code TypeError: int() argument must be ... not 'NoneType'} from {@code Projection.build}'s {@code add_weight}: {@code _pre_combine}
+	 * returns {@code lost_shape}, whose value doesn't cross, and {@code _post_combine} reshapes by its {@code lost_shape} parameter, whose
+	 * value doesn't cross either, so the restored tensor's trailing dimensions are {@code None}. Converting neither runs.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundary() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertPassesShapeValueAcrossBoundary(functions, "Gating._pre_combine");
+		assertPassesShapeValueAcrossBoundary(functions, "Gating._post_combine");
+
+		// The caller keeps the shape inside its own graph, and converting it runs.
+		Function call = findFunction(functions, "Gating.call");
+		assertFalse("`Gating.call` passes no shape value across its boundary.", call.getPassesShapeValueAcrossBoundary());
+		assertNull("`Gating.call` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", call.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/** A parameter's value gives the static dimensions of a returned reshape: the inbound direction. */
+	@Test
+	public void testShapeValueAcrossBoundaryInbound() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "restore");
+	}
+
+	/** A returned slice of a dynamic shape: the outbound direction. */
+	@Test
+	public void testShapeValueAcrossBoundaryOutbound() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "trailing");
+	}
+
+	/** A dynamic shape returned as an element of a tuple: the outbound direction through a container. */
+	@Test
+	public void testShapeValueAcrossBoundaryOutboundTuple() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "flatten");
+	}
+
+	/**
+	 * A dynamic shape returned through a class method, {@code C.k(x)}: the outbound direction through a callee reached with its class bound
+	 * first, which the walk descends into.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryClassMethod() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "trailing");
+	}
+
+	/**
+	 * Static methods called through an instance, {@code o.s(x)}, which bind no receiver, so the call's arguments align with the method's
+	 * parameters as passed. {@code trailing} returns a dynamic shape through one and is refused; {@code flattened} passes its parameter as
+	 * the data operand of a reshape by a constant shape, so no parameter's value reaches a shape operand, and it converts. Aligned as
+	 * though a receiver were bound, its parameter would land on the shape operand and it would be refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryStaticViaInstance() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertPassesShapeValueAcrossBoundary(functions, "trailing");
+
+		Function flattened = findFunction(functions, "flattened");
+		assertFalse("`flattened` passes no shape value across its boundary.", flattened.getPassesShapeValueAcrossBoundary());
+		assertEquals("`flattened` still hybridizes (P1).", P1, flattened.getPassingPrecondition());
+	}
+
+	/**
+	 * The controls: {@code constant_reshape} reshapes by a constant; {@code flatten_batch} reshapes by a dynamic shape it computes, which
+	 * stays inside its graph, and returns only the reshaped tensor; {@code scale} is an ordinary tensor function. Each converts.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("constant_reshape", "flatten_batch", "scale")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` passes no shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
 			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
 		}
 	}
@@ -15494,7 +15615,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The body creates the only dictionary it fills in, so its writes are not side effects, with or without a `dict.copy` model.
 		Function makeFeaturesFresh = findFunction(functions, "make_features_fresh");
 		assertEquals("`make_features_fresh` writes only a dictionary it creates.", FALSE, makeFeaturesFresh.getHasPythonSideEffects());
-		assertEquals("`make_features_fresh` hybridizes (P1).", P1, makeFeaturesFresh.getPassingPrecondition());
+		// It returns `tf.shape(element)[0]` as the dictionary's length, a shape value crossing outbound, which the shape-value check
+		// refuses without proving that a caller reads it statically. A length is consumed as a value, such as by a mask, so this is
+		// likely an over-refusal, the accepted cost of that check's conservatism.
+		assertNull("`make_features_fresh` is refused for its returned length.", makeFeaturesFresh.getPassingPrecondition());
+		assertNotNull("`make_features_fresh` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", makeFeaturesFresh.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
 	}
 
 	/**
