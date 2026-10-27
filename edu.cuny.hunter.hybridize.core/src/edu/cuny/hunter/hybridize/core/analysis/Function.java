@@ -55,6 +55,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -6561,6 +6562,54 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
+	/**
+	 * Returns true iff the given transformation is applied to this function by the refactoring: it is selected, and the function fails no
+	 * precondition, which is what puts it among the processor's optimizable functions.
+	 *
+	 * @param transformation The transformation in question.
+	 * @return True iff the refactoring applies the given transformation to this function.
+	 */
+	private boolean appliesTransformation(Transformation transformation) {
+		// Mirrors HybridizeFunctionRefactoringProcessor.getOptimizableFunctions, which transforms the functions with no error status.
+		return this.getTransformations().contains(transformation) && !this.getStatus().hasError();
+	}
+
+	/**
+	 * Returns true iff this function is left decorated with {@code @tf.function} after the refactoring, and so could carry an
+	 * {@code input_signature}: it is converted to hybrid, or it is already hybrid and stays hybrid, whether it is reconfigured or kept as
+	 * it is because a precondition fails. A function converted to eager and an eager function left eager are not (#1167). A function whose
+	 * hybridity is unknown ({@link #isHybrid()} is {@code null}) is not a candidate either, which is conservative: it is counted only once
+	 * it is known to be decorated.
+	 *
+	 * @return True iff this function is decorated with {@code @tf.function} after the refactoring.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isSignatureCandidate() {
+		if (this.appliesTransformation(CONVERT_TO_HYBRID))
+			return true;
+
+		return TRUE.equals(this.isHybrid()) && !this.appliesTransformation(CONVERT_TO_EAGER);
+	}
+
+	/**
+	 * Returns true iff the refactoring converts this function to hybrid and the decorator it writes carries an inferred
+	 * {@code input_signature} (#1167). Decided by the same emission check {@link #convertToHybrid()} writes the keyword through
+	 * ({@link #inputSignatureKeyword(Optional, ImportContext)} under the file's emission import context), so a signature that was inferred
+	 * but is out of scope under the file's import shape, or that was withheld, does not count. The check runs over the memoized signature
+	 * ({@link #getInferredInputSignature()}) and never triggers inference, so this leaves the function's status untouched; a function
+	 * converted to hybrid with inference on computed that signature while its preconditions were checked.
+	 *
+	 * @return True iff the decorator added to this function carries an {@code input_signature}.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isHybridizedWithInputSignature() {
+		if (!this.appliesTransformation(CONVERT_TO_HYBRID) || !this.getInferInputSignatures())
+			return false;
+
+		Optional<InputSignature> signature = this.getInferredInputSignature();
+		return inputSignatureKeyword(signature, this.emissionImportContext(() -> signature)).isPresent();
+	}
+
 	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
 			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		List<TextEdit> ret = new ArrayList<>();
@@ -6743,6 +6792,17 @@ public class Function {
 	 * @return The names the injected line imports.
 	 */
 	private Set<String> namesToInject() {
+		return this.namesToInject(() -> this.inferInputSignature().signature());
+	}
+
+	/**
+	 * The names {@link #namesToInject()} returns, with this function's own signature read from the given supplier, which is consulted only
+	 * when input-signature emission applies.
+	 *
+	 * @param ownSignature Supplies this function's own signature.
+	 * @return The names the injected line imports.
+	 */
+	private Set<String> namesToInject(Supplier<Optional<InputSignature>> ownSignature) {
 		// `function` is always needed for a fresh decorator and is kept for a reconfigured one too, so the per-file record serves either.
 		// When input-signature emission applies, also bring the signature's spec-type constructors (`TensorSpec`, and `RaggedTensorSpec`
 		// for a ragged parameter) and dtype constants into scope so the emission proceeds unqualified rather than being skipped.
@@ -6761,7 +6821,7 @@ public class Function {
 			File file = this.getContainingFile();
 			SortedSet<String> specTypeNames = new TreeSet<>();
 			SortedSet<String> dtypeNames = new TreeSet<>();
-			this.inferInputSignature().signature().ifPresent(sig -> {
+			ownSignature.get().ifPresent(sig -> {
 				specTypeNames.addAll(sig.requiredSpecTypeNames());
 				dtypeNames.addAll(sig.requiredDTypeNames());
 			});
@@ -6826,13 +6886,23 @@ public class Function {
 	 * @return The import context for emission.
 	 */
 	private ImportContext emissionImportContext() {
+		return this.emissionImportContext(() -> this.inferInputSignature().signature());
+	}
+
+	/**
+	 * The import context {@link #emissionImportContext()} returns, with this function's own signature read from the given supplier.
+	 *
+	 * @param ownSignature Supplies this function's own signature, for the names an injected line would bring into scope.
+	 * @return The import context for emission.
+	 */
+	private ImportContext emissionImportContext(Supplier<Optional<InputSignature>> ownSignature) {
 		ImportContext ctx = getImportContext(this.getContainingDocument());
 
 		if (ctx != null)
 			return ctx;
 
 		Set<String> injectedNames = autoInjectedImportNames.get(this.getContainingFile());
-		return new ImportContext("", false, injectedNames != null ? injectedNames : this.namesToInject());
+		return new ImportContext("", false, injectedNames != null ? injectedNames : this.namesToInject(ownSignature));
 	}
 
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
@@ -7073,7 +7143,19 @@ public class Function {
 		 * upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature when
 		 * `RaggedTensorSpec` is imported but `TensorSpec` is not.
 		 */
-		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
+		return inputSignatureKeyword(this.inferInputSignature().signature(), ctx);
+	}
+
+	/**
+	 * Returns the {@code input_signature=...} keyword argument for the given signature when all its names are reachable under the given
+	 * import context, and {@link Optional#empty} otherwise; the emission check of {@link #computeInputSignatureKeyword(ImportContext)}.
+	 *
+	 * @param signature The signature to emit, if any.
+	 * @param ctx The import context for the containing file.
+	 * @return The {@code input_signature=...} keyword argument, or empty.
+	 */
+	private static Optional<String> inputSignatureKeyword(Optional<InputSignature> signature, ImportContext ctx) {
+		return signature.filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
 				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
