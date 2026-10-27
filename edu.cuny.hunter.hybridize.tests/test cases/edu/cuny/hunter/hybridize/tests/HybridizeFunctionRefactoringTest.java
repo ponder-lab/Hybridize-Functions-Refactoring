@@ -16642,6 +16642,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A Keras {@code Loss} subclass whose {@code call} is reached both from its module's {@code __main__} demo call and from training,
+	 * where {@code compile(loss=...)} stores the loss and a private step that a {@code train_on_batch} override calls invokes
+	 * {@code self.loss(...)}. Reduced from MusicTransformer-tensorflow2.0. Before the engine followed the stored loss (wala/ML#1146), the
+	 * training context was missing from the evidence, and the signature was built from the demo's fixed shapes alone, which training then
+	 * rejected. Now the training context contributes its own types, and the reduction across both contexts withholds the signature: the
+	 * labels arrive as an array built from pickled data, whose dtype is unknown. The function is still hybridized with a bare decorator.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/998">Issue 998</a>
+	 */
+	@Test
+	public void testLossSignatureWithTrainingContext() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = this.getFunction("TransformerLoss.call");
+
+		assertTrue("`call` is still hybridized.", call.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		List<Parameter> parameters = call.getParameters();
+		Parameter yTrue = parameters.get(1);
+		Parameter yPred = parameters.get(2);
+
+		// The demo's types and training's types both reach `call`. The training types are what the demo-only signature lacked.
+		assertEquals("`y_true` receives the demo's labels and training's labels.",
+				Set.of(new TensorType(DType.INT64, List.of(new NumericDim(3), new NumericDim(1))),
+						new TensorType(DType.UNKNOWN, List.of(new NumericDim(8), new NumericDim(6)))),
+				yTrue.getTensorTypes());
+		assertEquals("`y_pred` receives the demo's predictions and training's predictions.",
+				Set.of(new TensorType(FLOAT32, List.of(new NumericDim(3), new NumericDim(2))),
+						new TensorType(FLOAT32, List.of(new NumericDim(8), new NumericDim(6), new NumericDim(2)))),
+				yPred.getTensorTypes());
+
+		assertFalse("No signature is emitted from the demo's shapes alone.", call.getInferredInputSignature().isPresent());
+		assertEquals("Training's labels have an unknown dtype, beside the demo's int64.",
+				Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169 (distilling TensorSpeech-TensorFlowASR's
 	 * {@code WarpRNNTTest._run_rnnt}): passing a tensor parameter's value to {@code tf.constant}, positionally or as its {@code value}
 	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,
