@@ -17192,4 +17192,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
 		assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
+
+	/**
+	 * An element of a NumPy argument, read by a subscript and compared with a tensor of another dtype, refuses the conversion
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). The fixture reduces tf-eager-fasterrcnn's
+	 * {@code AnchorGenerator._generate_valid_flags}, whose {@code img_shape} is a row of an {@code int32} array from a tensor's
+	 * {@code numpy()}: eagerly {@code img_shape[0]} is a NumPy scalar, which the comparison converts to {@code float32}, and traced it is
+	 * an {@code int32} tensor, which the comparison rejects. {@code valid_flags} and the method
+	 * {@code AnchorGenerator._generate_valid_flags} are that case. {@code same_dtype_flags} is passed a {@code float32} array, whose
+	 * element has the other operand's dtype, and {@code tensor_flags} is passed a tensor, so neither is refused. Each was run on TensorFlow
+	 * 2.9.3, decorated and not.
+	 */
+	@Test
+	public void testNumpyElementDtypeCoercion() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("valid_flags", "AnchorGenerator._generate_valid_flags")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` combines an element of a NumPy argument with another dtype.", TRUE,
+					function.getHasNumpyElementDtypeCoercions());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.getCode()));
+		}
+
+		for (String name : List.of("same_dtype_flags", "tensor_flags")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` combines no element of a NumPy argument with another dtype.", FALSE,
+					function.getHasNumpyElementDtypeCoercions());
+			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// FIXME: Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor, which is the iteration
+		// check's hazard (#830), not an element's dtype. The unpacking lowers to the same read as an attribute read, so the iteration
+		// check doesn't see it. With https://github.com/wala/ML/issues/1117, it fails with HAS_TENSOR_PARAMETER_ITERATION.
+		Function proposals = findFunction(functions, "proposals");
+		assertEquals("Today, `proposals` doesn't iterate its argument.", FALSE, proposals.getHasTensorParameterIteration());
+		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
+				proposals.getHasNumpyElementDtypeCoercions());
+		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
+	}
 }
