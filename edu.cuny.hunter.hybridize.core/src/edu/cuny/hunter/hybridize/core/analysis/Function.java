@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
@@ -910,7 +911,8 @@ public class Function {
 	/**
 	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
 	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047).
+	 * (#1047), so neither is a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's
+	 * one key per scalar type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -929,12 +931,9 @@ public class Function {
 
 		seen.add(instanceKey);
 
-		if (instanceKey instanceof ConstantKey<?>) {
-			if (isPrimitiveConstant(instanceKey, ignoreBooleans)) {
-				// We have found a primitive.
-				subMonitor.done();
-				return true;
-			}
+		if (isPythonScalarKey(instanceKey) || instanceKey instanceof ConstantKey<?>) {
+			subMonitor.done();
+			return isPrimitiveValue(instanceKey, ignoreBooleans);
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
 			InstanceKey instanceKeyToProcess;
@@ -1003,6 +1002,22 @@ public class Function {
 
 		// It's a primitive unless it's a boolean value and we are ignoring booleans.
 		return !foundBooleanValue || !ignoreBooleans;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a Python primitive: a primitive constant per
+	 * {@link #isPrimitiveConstant(InstanceKey, boolean)}, or a Python {@code int}, {@code float} or {@code bool} of unknown value, which
+	 * the engine represents by one key per type (wala/ML#1148).
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a primitive constant or a Python scalar.
+	 */
+	static boolean isPrimitiveValue(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (isPythonScalarKey(instanceKey))
+			return !ignoreBooleans || !instanceKey.concreteType().getReference().equals(PythonTypes.PYTHON_BOOL);
+
+		return isPrimitiveConstant(instanceKey, ignoreBooleans);
 	}
 
 	/**
@@ -1319,6 +1334,12 @@ public class Function {
 	 * ({@link ScalarShapeReshapeAnalysis}); null if undetermined, in which case the precondition does not block.
 	 */
 	private Boolean reshapesWithScalarShape;
+
+	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, inbound or outbound
+	 * ({@link ShapeValueBoundaryAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean passesShapeValueAcrossBoundary;
 
 	/**
 	 * True iff this {@link Function}'s body, or code it calls, may create a Keras layer's variables, as a layer's first call does
@@ -1698,6 +1719,15 @@ public class Function {
 								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
 										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
 												+ "converts to a tensor.");
+							else if (TRUE.equals(this.getPassesShapeValueAcrossBoundary()))
+								// A shape known only as a tensor value crosses the boundary, inbound into a returned op's shape operand or
+								// outbound from a dynamic shape op: tracing keeps the shape tensor's type but not its value, so a caller's
+								// static dimensions become None. Conservative: no downstream static read is proven. A safety failure; it
+								// precedes the benefit signal. Converting a hybrid function's decorator cannot introduce it, since its
+								// boundary already exists, so the hybrid side does not check it.
+								this.addFailure(PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY,
+										"Can't hybridize a function that passes a tensor shape's value across its boundary; tracing keeps the "
+												+ "shape tensor's type but not its value, so a caller's static shape is lost.");
 							else if (this.isBoundCustomGradientMethod())
 								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
 								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
@@ -2692,9 +2722,10 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 *
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the reads and through which the engine names the TensorFlow
+	 *        APIs a call invokes.
 	 */
-	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
 		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
 		if (!this.getInferInputSignatures()) {
 			this.hasUnresolvedStaticallyReadAxes = FALSE;
@@ -2738,7 +2769,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
 		// sampling a single node can miss a read at an imprecise context.
-		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, builder);
 		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
 		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
 
@@ -3634,6 +3665,64 @@ public class Function {
 	 */
 	public Boolean getReshapesWithScalarShape() {
 		return this.reshapesWithScalarShape;
+	}
+
+	/**
+	 * Computes whether a shape known only as a tensor value crosses this {@link Function}'s boundary ({@link ShapeValueBoundaryAnalysis}),
+	 * storing the result for {@link #getPassesShapeValueAcrossBoundary()}. A determinate {@code TRUE} from any of the function's nodes
+	 * decides it; otherwise a node without an IR leaves it undetermined. When the function has no call-graph node, the result is left
+	 * undetermined, mirroring the sibling safety checks.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks to name the TensorFlow APIs a call invokes.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), which tell a shape value combined with data apart from one combined with constants.
+	 */
+	public void computeShapeValueAcrossBoundary(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " passes a shape value across its boundary.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " passes a shape value across its boundary without a call graph node.");
+			return;
+		}
+
+		ShapeValueBoundaryAnalysis analysis = new ShapeValueBoundaryAnalysis(builder, tensorTypedKeys);
+		Boolean ret = Boolean.FALSE;
+
+		for (CGNode node : nodes) {
+			Boolean passes = analysis.passesShapeValue(node, this.isMethod());
+
+			if (Boolean.TRUE.equals(passes)) {
+				ret = Boolean.TRUE;
+				break;
+			}
+
+			if (passes == null)
+				ret = null;
+		}
+
+		this.passesShapeValueAcrossBoundary = ret;
+		LOG.info(this + " passes a shape value across its boundary: " + ret + ".");
+	}
+
+	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, {@code null} if undetermined.
+	 *
+	 * @return True iff a parameter's value gives a returned result's static dimensions, or a returned value derives from a dynamic shape
+	 *         op; null if undetermined.
+	 */
+	public Boolean getPassesShapeValueAcrossBoundary() {
+		return this.passesShapeValueAcrossBoundary;
 	}
 
 	/**
@@ -5801,6 +5890,20 @@ public class Function {
 			}
 		}
 
+		// An unknown-rank spec where every context that resolved agrees on one rank: the unknown comes from a context the analysis did not
+		// resolve, not from the callers, and it discards a rank the body or a traced caller may need, so the signature is withheld (#1150).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet())
+			if (entry.getValue() instanceof InputSignature.Single single && single.type().getDims() == null
+					&& isPartialRank(entry.getKey().getConformingTensorTypes())) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this
+								+ "` receives tensors of one rank at some call sites and "
+								+ "a tensor whose shape could not be determined at others, so its specification would have an unknown "
+								+ "rank, which an operation needing the rank rejects at trace time; input-signature inference is dropped "
+								+ "and the function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_PARTIAL_RANK);
+			}
+
 		/*
 		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
 		 * omitted when nothing after it contributes a spec: dropping one that precedes a spec would bind that spec to the dropped
@@ -6445,6 +6548,20 @@ public class Function {
 		}
 
 		return Optional.of(withSparseness(new TensorType(dtype, shape), sparse));
+	}
+
+	/**
+	 * True iff {@code contexts} hold a tensor of unknown shape beside tensors that all have one known rank: the unknown-rank reduction
+	 * {@link #inferSpec} makes of them is due to the unresolved contexts alone (#1150). {@code None} members are left out, since they have
+	 * no shape and block the parameter on their own.
+	 *
+	 * @param contexts The {@link TensorType}s observed for a parameter across call contexts.
+	 * @return True iff some context has unknown dimensions and the others agree on a single rank, of which there is at least one.
+	 */
+	public static boolean isPartialRank(Set<TensorType> contexts) {
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+		Set<Integer> ranks = tensors.stream().map(TensorType::getDims).filter(Objects::nonNull).map(List::size).collect(Collectors.toSet());
+		return ranks.size() == 1 && tensors.stream().anyMatch(t -> t.getDims() == null);
 	}
 
 	/**
