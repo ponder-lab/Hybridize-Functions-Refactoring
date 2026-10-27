@@ -132,14 +132,14 @@ class StaticShapeReadAnalysis {
 	 * Fully-qualified names of the TensorFlow dynamic shape ops, whose results are tensors and therefore valid under a wildcard axis: their
 	 * reads are laundered, the central static/dynamic distinction of the precondition.
 	 */
-	private static final Set<String> DYNAMIC_SHAPE_OP_FQNS = Set.of("tensorflow.shape", "tensorflow.size", "tensorflow.rank");
+	static final Set<String> DYNAMIC_SHAPE_OP_FQNS = Set.of("tensorflow.shape", "tensorflow.size", "tensorflow.rank");
 
 	/**
 	 * Fully-qualified names of the ops whose arguments require Python integers for a shape target: a statically-read dimension flowing into
 	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption;
 	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882).
 	 */
-	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
+	static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
 
 	/**
 	 * The arguments of an op that a statically-read dimension breaks: positional indices, from 0 for the first argument after the callee,
@@ -148,7 +148,7 @@ class StaticShapeReadAnalysis {
 	 * @param positions The positional indices.
 	 * @param keywords The keyword names.
 	 */
-	private record ShapeArguments(Set<Integer> positions, Set<String> keywords) {
+	record ShapeArguments(Set<Integer> positions, Set<String> keywords) {
 	}
 
 	/**
@@ -161,7 +161,7 @@ class StaticShapeReadAnalysis {
 	 * longest length. A changed meaning makes the signature as unwritable as a raise. {@code tf.split}'s {@code num} is unused beside an
 	 * integer {@code num_or_size_splits} but is counted too, as the simpler rule.
 	 */
-	private static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
+	static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
 			Map.entry("tensorflow.ones", new ShapeArguments(Set.of(0), Set.of("shape"))),
 			Map.entry("tensorflow.zeros", new ShapeArguments(Set.of(0), Set.of("shape"))),
 			Map.entry("tensorflow.fill", new ShapeArguments(Set.of(0, 1), Set.of("dims", "value"))),
@@ -213,7 +213,7 @@ class StaticShapeReadAnalysis {
 	 * carrying the operator, so no comparison instruction is produced. A comparison whose value is merely returned or stored does produce
 	 * one, and it decides no branch, so it stays unflagged; flagging it would decline functions that are fine.
 	 */
-	private static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
+	static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
 
 	/** The unary-negation operator name (see {@link NumpyParameterFlowAnalysis}'s rationale for name matching). */
 	private static final String NEGATION_OPERATOR_NAME = "neg";
