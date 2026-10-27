@@ -1463,6 +1463,13 @@ public class Function {
 	private Boolean hasEagerOnlyCalls;
 
 	/**
+	 * True iff this hybrid {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), so that removing its decorator breaks it. {@code null} when it could not be determined, in which
+	 * case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171.
+	 */
+	private Boolean hasGraphOnlyCalls;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises
 	 * under {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the
 	 * precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
@@ -2220,11 +2227,21 @@ public class Function {
 	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
 	 * The failure gives the rule's own reason for keeping the decorator. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * <p>
+	 * A function that calls a graph-only API ({@link #getHasGraphOnlyCalls()}) is kept hybrid with
+	 * {@link PreconditionFailure#HAS_GRAPH_ONLY_CALLS} before either, whichever hybrid-to-eager rule selected the conversion, since running
+	 * the call eagerly breaks it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171).
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
 	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
-		if (this.getHybridizationParameters().hasInputSignatureParam())
+		if (TRUE.equals(this.getHasGraphOnlyCalls()))
+			// Calls an API that works only while a graph is being built, which eagerly raises or returns None gradients (issue 1171).
+			// A safety failure, so it holds whatever the rule that would have de-hybridized the function.
+			this.addFailure(PreconditionFailure.HAS_GRAPH_ONLY_CALLS,
+					"Can't de-hybridize a function that calls an API that works only while a graph is being built, such as tf.gradients "
+							+ "or an optimizer's get_gradients; eagerly, it raises or returns None gradients.");
+		else if (this.getHybridizationParameters().hasInputSignatureParam())
 			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
@@ -2326,6 +2343,48 @@ public class Function {
 	 */
 	public Boolean getHasEagerOnlyCalls() {
 		return this.hasEagerOnlyCalls;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), storing the result for {@link #getHasGraphOnlyCalls()}. When the function has no call-graph node,
+	 * the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes.
+	 */
+	public void computeGraphOnlyCalls(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " calls a graph-only API.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " calls a graph-only API without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it calls a graph-only API if any of them does.
+		GraphOnlyCallAnalysis analysis = new GraphOnlyCallAnalysis(callGraph, builder);
+		this.hasGraphOnlyCalls = nodes.stream().anyMatch(analysis::callsGraphOnlyApi);
+
+		LOG.info(this + (this.hasGraphOnlyCalls ? " calls a graph-only API." : " calls no graph-only APIs."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built, {@code null} if
+	 * undetermined.
+	 *
+	 * @return True iff a call of a graph-only API is reachable from this function; null if undetermined.
+	 */
+	public Boolean getHasGraphOnlyCalls() {
+		return this.hasGraphOnlyCalls;
 	}
 
 	/**
