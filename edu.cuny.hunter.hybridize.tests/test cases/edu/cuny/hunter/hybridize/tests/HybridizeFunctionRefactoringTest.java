@@ -523,10 +523,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * entries written by one test are never read by another; without clearing, every test's call graph is retained for the remainder of the
 	 * suite run. The evaluator clears per project for the same reason; only {@code analyzeAccuracyYPredAtDepth} cleared here, for its own
 	 * within-test reason. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/798.
+	 * <p>
+	 * It also clears the caches of every processor the test created, which releases the engine's per-builder tensor caches (see
+	 * {@link HybridizeFunctionRefactoringProcessor#clearCaches()}). Entries written there after the engine's own analysis finishes would
+	 * otherwise keep each test's call-graph builder, call graph, and class hierarchy alive for the rest of the run.
 	 */
 	@After
-	@SuppressWarnings("static-method") // JUnit 4 requires @After methods to be instance methods.
 	public void clearAnalysisCaches() {
+		this.processors.forEach(HybridizeFunctionRefactoringProcessor::clearCaches);
+		this.processors.clear();
 		Function.clearCaches();
 	}
 
@@ -579,6 +584,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/** The processor {@link #getFunctions(String)} last ran, for tests that inspect what it reports beyond the functions. */
 	private HybridizeFunctionRefactoringProcessor lastProcessor;
+
+	/** The processors {@link #createProcessor} created during the current test, whose caches {@link #clearAnalysisCaches()} clears. */
+	private final List<HybridizeFunctionRefactoringProcessor> processors = new ArrayList<>();
 
 	/**
 	 * The targeted k-CFA depth the harness forwards to the analysis engine, defaulting to the refactoring's own
@@ -861,6 +869,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		processor.setAlwaysCheckStaticShapeReads(this.alwaysCheckStaticShapeReads);
 		processor.setSkipScriptsOutsidePythonPath(this.skipScriptsOutsidePythonPath);
 		this.lastProcessor = processor;
+		this.processors.add(processor);
 		return processor;
 	}
 
