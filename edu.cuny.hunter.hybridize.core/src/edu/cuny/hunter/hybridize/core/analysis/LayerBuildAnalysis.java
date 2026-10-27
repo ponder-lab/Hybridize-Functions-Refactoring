@@ -23,7 +23,8 @@ import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
  * {@code build}. Under {@code tf.function}, that build runs inside the trace, outside the name scopes of the layers that enclose it, so
  * sibling layers' variables get the same names, and a save by name, such as to HDF5, fails. A Keras model's {@code call} is exempt:
  * decorating it drops the enclosing scopes from its weights' names too, but the save succeeds, whether or not the model is nested in
- * another one.
+ * another one. So is a function that is no method, such as a training step: it runs inside no layer's name scope, and a model it calls
+ * enters its own scope inside the trace.
  * <p>
  * Both facts come from the engine. {@link TensorFlowApis} names the call of {@code tensorflow.keras.layers.Layer.add_weight} both in a
  * program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a

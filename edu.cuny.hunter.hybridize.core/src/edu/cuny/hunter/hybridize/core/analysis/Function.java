@@ -1328,8 +1328,8 @@ public class Function {
 
 	/**
 	 * True iff this {@link Function}'s receiver is known to be a Keras model, false iff it is known not to be one, null if unknown,
-	 * including when this {@link Function} is no instance method ({@link LayerBuildAnalysis}). Only a known model exempts a function that
-	 * may build a layer from the precondition.
+	 * including when this {@link Function} is no instance method ({@link LayerBuildAnalysis}). Of the instance methods that may build a
+	 * layer, only one whose receiver is a known model is exempt from the precondition; a function that is no instance method is exempt too.
 	 */
 	private Boolean receiverIsModel;
 
@@ -1712,11 +1712,12 @@ public class Function {
 								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
 										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
 												+ "a rank-1 shape.");
-							else if (TRUE.equals(this.getMayBuildLayers()) && !TRUE.equals(this.getReceiverIsModel()))
+							else if (TRUE.equals(this.getMayBuildLayers()) && this.isMethod() && !TRUE.equals(this.getReceiverIsModel()))
 								// May build a Keras layer, creating its variables inside the trace and outside the enclosing layers'
 								// name scopes, so sibling layers' weights share names and a save by name fails (issue 1172). A
-								// model's call saves regardless, so only a receiver known to be a model is exempt; an unknown one is
-								// refused. A safety failure; it precedes the benefit signal.
+								// model's call saves regardless, and so does a function that is no method, which runs inside no
+								// layer's scope, so both are exempt; a method whose receiver is unknown is refused. A safety failure;
+								// it precedes the benefit signal.
 								this.addFailure(PreconditionFailure.MAY_BUILD_LAYERS,
 										"Can't hybridize a function that may build a Keras layer; its variables would be created inside the "
 												+ "trace, outside the enclosing layers' name scopes, so their names could collide.");
