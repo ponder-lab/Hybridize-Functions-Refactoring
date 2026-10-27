@@ -17674,4 +17674,90 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Inner.call", true, true, false);
 		assertMayBuildLayers(functions, "Outer.call", true, true, false);
 	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a method called unbound on a list literal, so
+	 * its receiver is an object no class constructor allocated and the engine can't name its class. {@code Projector.project} builds a
+	 * {@code Dense} on its first call, and a receiver of unknown class may be no model, so it is refused.
+	 */
+	@Test
+	public void testMayBuildLayersUnknownReceiver() throws Exception {
+		assertMayBuildLayers(this.getFunctions(), "Projector.project", true, null, true);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a method one call site shares between a Keras
+	 * model and a layer that is no model. {@code Block.project} builds a {@code Dense} on its first call, and its receiver may be either
+	 * object, so whether it is a model is unknown and the method is refused.
+	 */
+	@Test
+	public void testMayBuildLayersMixedReceivers() throws Exception {
+		assertMayBuildLayers(this.getFunctions(), "Block.project", true, null, true);
+	}
+
+	/**
+	 * A keyword-only primitive is not exempt from {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} as one constant at every call
+	 * (issues 1025 and 1109), since a keyword-only parameter's alignment with the call's arguments is unproven. {@code f}'s {@code scale}
+	 * is {@code 2} at both calls, yet it is still a primitive parameter. Every parameter of {@code f} is keyword-only, so each one's index
+	 * among the keyword-only parameters is also its declaration index, and only its being keyword-only keeps {@code scale} from the
+	 * exemption.
+	 */
+	@Test
+	public void testKeywordOnlyInvariantPrimitive() throws Exception {
+		Function f = this.getFunction("f");
+		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
+		assertEquals("`scale` is keyword-only, so it isn't exempt though it's always 2.", TRUE, f.getHasPrimitiveParameter());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * An element of a NumPy argument whose own dtype is not a single concrete one decides nothing for
+	 * {@link PreconditionFailure#HAS_NUMPY_ELEMENT_DTYPE_COERCIONS}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111), the allowing polarity. Each function compares an element
+	 * of its NumPy argument with a {@code float32} tensor. {@code plural_flags} is passed an array that is {@code int32} or
+	 * {@code float32}, so the element has two dtypes, and {@code unknown_flags} is passed an array of a constant built from parsed data,
+	 * whose dtype is unknown. Neither is refused for it.
+	 */
+	@Test
+	public void testNumpyElementIndefiniteDtype() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("plural_flags", "unknown_flags")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "`'s element has no single concrete dtype, so it decides nothing.", FALSE,
+					function.getHasNumpyElementDtypeCoercions());
+			assertNull("`" + name + "` does not fail with HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_ELEMENT_DTYPE_COERCIONS.getCode()));
+		}
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1037: with the system property
+	 * {@code edu.cuny.hunter.hybridize.dumpTensorAnalysis} set, the processor logs the whole tensor analysis, and the run completes.
+	 */
+	@Test
+	public void testDumpTensorAnalysis() throws Exception {
+		String key = "edu.cuny.hunter.hybridize.dumpTensorAnalysis";
+		String previous = System.getProperty(key);
+		ILog processorLog = getLog(HybridizeFunctionRefactoringProcessor.class);
+		List<IStatus> captured = new ArrayList<>();
+		ILogListener listener = (status, plugin) -> captured.add(status);
+		processorLog.addLogListener(listener);
+
+		try {
+			System.setProperty(key, Boolean.TRUE.toString());
+			assertEquals("`f` converts (P1).", P1, this.getFunction("f").getPassingPrecondition());
+		} finally {
+			processorLog.removeLogListener(listener);
+
+			if (previous == null)
+				System.clearProperty(key);
+			else
+				System.setProperty(key, previous);
+		}
+
+		assertTrue("The tensor analysis is logged.",
+				captured.stream().anyMatch(s -> s.getSeverity() == IStatus.INFO && s.getMessage().startsWith("Tensor analysis: ")));
+	}
 }
