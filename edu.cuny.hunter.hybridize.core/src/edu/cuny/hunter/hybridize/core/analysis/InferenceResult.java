@@ -183,6 +183,20 @@ public sealed interface InferenceResult {
 		WITHHELD_DECLARED_FAILURE_EXCEPTION,
 
 		/**
+		 * A parameter is observed with an unknown shape at one or more contexts and with one known rank at every other, so the reduction
+		 * yields an unknown-rank specification, {@code shape=None}, though every context that resolved agrees on the rank. Like
+		 * {@link #PARTIAL_DTYPE}, the callers do not disagree; one context simply did not resolve. Unlike a dtype, an unknown rank is a
+		 * valid specification, but it is not a harmless one: under it the parameter has no static rank at trace time, so an op in the body
+		 * that requires one raises, and so does one in a traced caller that the parameter reaches through the return, as with
+		 * {@code tf.map_fn} over an empty batch. The bare decorator traces each call at its argument's actual rank and has neither problem,
+		 * so the signature is withheld and the function is hybridized with a bare decorator. A parameter whose known ranks themselves
+		 * disagree is not this case: there {@code shape=None} is what the callers require, and it is still emitted.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150">Issue 1150</a>
+		 */
+		WITHHELD_PARTIAL_RANK,
+
+		/**
 		 * A complete signature was inferred, but it leaves unresolved (wildcard) an axis the function's body reads statically (#811), so
 		 * emitting it would break the function at trace time. The signature's absence is a choice rather than an inference failure, as it
 		 * also is for {@link #WITHHELD_DECLARED_FAILURE_EXCEPTION}: the conversion proceeds with a bare decorator, which is exactly what

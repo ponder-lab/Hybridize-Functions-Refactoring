@@ -2672,9 +2672,10 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 *
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the reads and through which the engine names the TensorFlow
+	 *        APIs a call invokes.
 	 */
-	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
 		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
 		if (!this.getInferInputSignatures()) {
 			this.hasUnresolvedStaticallyReadAxes = FALSE;
@@ -2718,7 +2719,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
 		// sampling a single node can miss a read at an imprecise context.
-		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, builder);
 		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
 		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
 
@@ -5737,6 +5738,20 @@ public class Function {
 			}
 		}
 
+		// An unknown-rank spec where every context that resolved agrees on one rank: the unknown comes from a context the analysis did not
+		// resolve, not from the callers, and it discards a rank the body or a traced caller may need, so the signature is withheld (#1150).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet())
+			if (entry.getValue() instanceof InputSignature.Single single && single.type().getDims() == null
+					&& isPartialRank(entry.getKey().getConformingTensorTypes())) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this
+								+ "` receives tensors of one rank at some call sites and "
+								+ "a tensor whose shape could not be determined at others, so its specification would have an unknown "
+								+ "rank, which an operation needing the rank rejects at trace time; input-signature inference is dropped "
+								+ "and the function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_PARTIAL_RANK);
+			}
+
 		/*
 		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
 		 * omitted when nothing after it contributes a spec: dropping one that precedes a spec would bind that spec to the dropped
@@ -6381,6 +6396,20 @@ public class Function {
 		}
 
 		return Optional.of(withSparseness(new TensorType(dtype, shape), sparse));
+	}
+
+	/**
+	 * True iff {@code contexts} hold a tensor of unknown shape beside tensors that all have one known rank: the unknown-rank reduction
+	 * {@link #inferSpec} makes of them is due to the unresolved contexts alone (#1150). {@code None} members are left out, since they have
+	 * no shape and block the parameter on their own.
+	 *
+	 * @param contexts The {@link TensorType}s observed for a parameter across call contexts.
+	 * @return True iff some context has unknown dimensions and the others agree on a single rank, of which there is at least one.
+	 */
+	public static boolean isPartialRank(Set<TensorType> contexts) {
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+		Set<Integer> ranks = tensors.stream().map(TensorType::getDims).filter(Objects::nonNull).map(List::size).collect(Collectors.toSet());
+		return ranks.size() == 1 && tensors.stream().anyMatch(t -> t.getDims() == null);
 	}
 
 	/**
