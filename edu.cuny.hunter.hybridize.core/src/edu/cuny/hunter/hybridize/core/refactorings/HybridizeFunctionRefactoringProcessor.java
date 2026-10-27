@@ -698,8 +698,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
 
-				// Check whether the function reads a tensor from a field another function rebinds (issue 1076). Same reachable region
-				// and gate; a ref query per instruction of the reader's closure and a memoized mod query per writer.
+				// Check whether the function reads a tensor or a Python scalar from a field another function rebinds (issues 1076 and
+				// 1048). Same reachable region and gate; a ref query per instruction of the reader's closure and a memoized mod query per
+				// writer.
 				if (barrenCouldDecide)
 					func.computeReboundStateReads(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 

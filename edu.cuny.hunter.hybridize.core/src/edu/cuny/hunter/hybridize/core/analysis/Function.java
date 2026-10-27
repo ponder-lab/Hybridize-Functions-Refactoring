@@ -1349,9 +1349,9 @@ public class Function {
 	private Boolean passesShapeValueAcrossBoundary;
 
 	/**
-	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed field of an object that another function rebinds
-	 * outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's first value.
-	 * {@code null} when it could not be determined, in which case the precondition does not block. See
+	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed or scalar-valued field of an object that another
+	 * function rebinds outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's
+	 * first value. {@code null} when it could not be determined, in which case the precondition does not block. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
 	 */
 	private Boolean hasReboundStateReads;
@@ -1720,11 +1720,12 @@ public class Function {
 										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
 												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
 							else if (this.getHasReboundStateReads() != null && this.getHasReboundStateReads())
-								// Reads a tensor from a field another function rebinds between calls, so a trace keeps the tensor the
-								// field held when it was traced (issue 1076). A safety failure; it precedes the benefit signal.
+								// Reads a tensor or a Python scalar from a field another function rebinds between calls, so a trace
+								// keeps the value the field held when it was traced (issues 1076 and 1048). A safety failure; it
+								// precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
-										"Can't hybridize a function that reads a tensor from a field another function rebinds; a trace "
-												+ "would keep the tensor the field held when it was traced. It reads the "
+										"Can't hybridize a function that reads a tensor or a Python scalar from a field another function "
+												+ "rebinds; a trace would keep the value the field held when it was traced. It reads the "
 												+ this.reboundStateWrite + ".");
 							else if (TRUE.equals(this.getReturnsPrimitive()) && !FALSE.equals(this.getHasUsedResults()))
 								// A returned Python primitive, at the top level or inside a returned container, is converted to a
@@ -3749,10 +3750,10 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed field that another function rebinds outside the
-	 * {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the result for
-	 * {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring the sibling
-	 * safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed or scalar-valued field that another function
+	 * rebinds outside the {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the
+	 * result for {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring
+	 * the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
 	 *
 	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
 	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
@@ -3784,8 +3785,8 @@ public class Function {
 	}
 
 	/**
-	 * True iff this {@link Function} reads a tensor-typed field that another function rebinds outside the methods setting its object up,
-	 * {@code null} if undetermined (issue 1076).
+	 * True iff this {@link Function} reads a tensor-typed or scalar-valued field that another function rebinds outside the methods setting
+	 * its object up, {@code null} if undetermined (issue 1076).
 	 *
 	 * @return True iff this function reads rebound tensor state, null if undetermined.
 	 */
