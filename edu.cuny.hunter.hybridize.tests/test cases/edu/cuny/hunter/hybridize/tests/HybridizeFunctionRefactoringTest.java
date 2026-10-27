@@ -16760,6 +16760,74 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The control for {@link #testInferInputSignatureFitStructuredInputs()}: {@code consume} receives the structured inputs of two models'
+	 * {@code fit}, a pair of float32 inputs from one and a pair of a float32 and an int32 input from the other. The pairs agree on their
+	 * length, but their second members disagree in dtype, so no nested specification admits both, and the signature is dropped at that
+	 * member. Each {@code call} receives one pair and keeps its specification.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsDisagree() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		assertEquals("`Model.call` receives the float32 pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+				findFunction(functions, "Model.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`MixedModel.call` receives the mixed pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				findFunction(functions, "MixedModel.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// The engine reads both pairs as dataset components of two members (https://github.com/ponder-lab/ML/pull/1087), so the form is
+		// modeled, and each member unions what the two pairs hold there.
+		List<Set<TensorType>> elementTypes = inputs.getContainerElementTypes();
+		assertNotNull("The pairs' members surface.", elementTypes);
+		assertEquals("The pairs have two members.", 2, elementTypes.size());
+		assertEquals("The first members agree.", 1, elementTypes.get(0).size());
+		assertEquals("The second members disagree.", 2, elementTypes.get(1).size());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No nested specification admits both pairs.", result.signature().isPresent());
+		assertEquals("The second members disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = consume.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the second member.", entry.getMessage().contains("Element 1 of parameter `inputs`"));
+	}
+
+	/**
+	 * A variant of {@link #testInferInputSignatureFitStructuredInputs()} with 7 rows, so {@code batch(2)} leaves a final batch of 1.
+	 * {@code call} and {@code consume} receive members of 2 rows and of 1 row, and a specification fixing the batch axis at 2 would reject
+	 * the final batch.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsShortBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// The engine reports each member at both batch sizes that reach `consume`, 2 rows and 1 row.
+		List<Set<TensorType>> elementTypes = findFunction(functions, "consume").getParameters().get(0).getContainerElementTypes();
+		assertNotNull("The pair's members surface.", elementTypes);
+		assertEquals("The pair has two members.", 2, elementTypes.size());
+
+		for (Set<TensorType> member : elementTypes)
+			assertEquals("Each member has a full and a short batch.", 2, member.size());
+
+		// The sizes disagree on the batch axis, so the reduction widens it to None, and the final batch is admitted.
+		for (String name : List.of("consume", "Model.call")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` admits the final batch.",
+					"[[tf.TensorSpec(shape=(None, 4), dtype=tf.float32), tf.TensorSpec(shape=(None, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * An integer subscript of a component unpacked from a tuple parameter in the same function, {@code a, gt = inputs} then
 	 * {@code f(gt[i])}, is a row of that component. {@code row_total} receives a constant index, {@code loop_total} a {@code range} loop
 	 * counter, and {@code call_total} a loop counter in a model's {@code call}.
