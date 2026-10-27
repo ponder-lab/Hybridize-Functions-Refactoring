@@ -5,15 +5,12 @@ import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
-import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.ml.client.ContainerElements;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.classLoader.CallSiteReference;
-import com.ibm.wala.classLoader.IField;
-import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
-import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
@@ -21,7 +18,6 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
-import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
@@ -36,9 +32,9 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * Each is decided from the points-to sets Ariadne computes, by the type of the allocation reached: its summaries allocate a variable, a
  * tensor array, and a tensor spec under types of their own, distinct from the module objects that construct them. A value inside a returned
  * or passed list, tuple, or dictionary crosses the boundary too, since {@code tf.function} flattens these structures, so the walk follows
- * container elements, transitively, through each container's object catalog. It follows nothing else: an arbitrary object cannot be
- * returned from {@code tf.function} at all. A named tuple is flattened like a tuple, but Ariadne types its instance as its class rather
- * than as a container, so a variable inside one is missed.
+ * container elements, transitively, through the element keys the engine lists for each container. It follows nothing else: an arbitrary
+ * object cannot be returned from {@code tf.function} at all. A named tuple is flattened like a tuple, but Ariadne types its instance as its
+ * class rather than as a container, so a variable inside one is missed.
  * <p>
  * The return side asks what the function's own body returns, and the argument side what its callers pass, examining the arguments at each
  * call site of the function's call-graph predecessors. Across returns and call sites the quantifier is existential: one return of a
@@ -85,13 +81,14 @@ class UncrossableBoundaryValueAnalysis {
 
 	/**
 	 * Whether the body of {@code nodes} may return a Python primitive, directly or as a container element, per
-	 * {@link Function#isPrimitiveConstant(InstanceKey, boolean)} with booleans counted (issue 1117).
+	 * {@link Function#isPrimitiveValue(InstanceKey, boolean)} with booleans counted (issue 1117): a primitive constant, or a Python scalar
+	 * of unknown value (wala/ML#1148).
 	 *
 	 * @param nodes The call-graph nodes of the function in question.
-	 * @return {@code TRUE} if some return reaches a primitive constant, {@code FALSE} if none does, or {@code null} if a node has no IR.
+	 * @return {@code TRUE} if some return reaches a primitive, {@code FALSE} if none does, or {@code null} if a node has no IR.
 	 */
 	Boolean returnsPrimitive(Set<CGNode> nodes) {
-		return this.returns(nodes, instanceKey -> Function.isPrimitiveConstant(instanceKey, false));
+		return this.returns(nodes, instanceKey -> Function.isPrimitiveValue(instanceKey, false));
 	}
 
 	/**
@@ -213,27 +210,15 @@ class UncrossableBoundaryValueAnalysis {
 		if (target.test(instanceKey))
 			return true;
 
-		TypeReference reference = instanceKey.concreteType().getReference();
-
-		if (!Util.isContainerType(reference))
+		if (!Util.isContainerType(instanceKey.concreteType().getReference()))
 			return false;
 
-		// A container's elements are the fields its object catalog names, as in `Parameter`'s tensor-container walk.
-		PointerKey catalogPointerKey = ((AstPointerKeyFactory) this.builder.getPointerKeyFactory())
-				.getPointerKeyForObjectCatalog(instanceKey);
-
-		for (InstanceKey catalogKey : this.pointerAnalysis.getPointsToSet(catalogPointerKey))
-			if (catalogKey instanceof ConstantKey<?> constantKey && constantKey.getValue() != null) {
-				IField field = instanceKey.concreteType().getField(Atom.findOrCreateAsciiAtom(constantKey.getValue().toString()));
-
-				if (field == null)
-					continue;
-
-				for (InstanceKey element : this.pointerAnalysis
-						.getPointsToSet(this.builder.getPointerKeyForInstanceField(instanceKey, field)))
-					if (this.reaches(element, target, seen))
-						return true;
-			}
+		// A container's elements are the element keys the engine lists, as in `Parameter`'s tensor-container walk. These include the
+		// channel a concatenation or a repetition stores into, which the container's catalog doesn't name.
+		for (PointerKey element : ContainerElements.of(this.builder, instanceKey).allElements())
+			for (InstanceKey elementValue : this.pointerAnalysis.getPointsToSet(element))
+				if (this.reaches(elementValue, target, seen))
+					return true;
 
 		return false;
 	}

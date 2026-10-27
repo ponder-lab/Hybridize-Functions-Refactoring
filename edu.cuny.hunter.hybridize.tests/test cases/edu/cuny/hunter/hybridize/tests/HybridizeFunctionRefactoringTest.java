@@ -12347,22 +12347,59 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testUnknownPrimitiveValueSetUnchanged() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : List.of("scaled", "defaulted", "listed")) {
+		for (String name : List.of("scaled", "relayed", "defaulted", "listed")) {
 			Function function = findFunction(functions, name);
 			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
 			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
 			assertEquals(name, P3, function.getPassingPrecondition());
 		}
+	}
 
-		// TODO: `relayed`'s argument is now a Python scalar of unknown value, which has an instance key of its type
-		// (https://github.com/wala/ML/issues/1148), and the primitive-parameter check doesn't yet count that key as a primitive. So
-		// `relayed` reads as having no primitive parameter, fails HAS_NO_PRIMITIVE_PARAMETERS, and isn't converted to eager. Fixed by
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/pull/1179, which restores the P3 conversion.
-		Function relayed = findFunction(functions, "relayed");
-		assertEquals("Today, `relayed` reads as having no primitive parameter.", FALSE, relayed.getHasPrimitiveParameter());
-		assertFalse("Today, `relayed` isn't converted to eager.", relayed.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertNull("Today, `relayed` passes no precondition.", relayed.getPassingPrecondition());
-		assertNotNull("Today, `relayed` fails HAS_NO_PRIMITIVE_PARAMETERS.", relayed.getEntryMatchingFailure(HAS_NO_PRIMITIVE_PARAMETERS));
+	/**
+	 * Python scalars of unknown value as arguments: the engine represents each by its type's key (wala/ML#1148), which counts as a
+	 * primitive wherever a constant does. {@code scale}'s {@code n} is only ever {@code len(xs)}, {@code scale_first}'s list holds it, and
+	 * {@code boxed}'s object of a program class has it in a field, so each is a primitive parameter. {@code wrapped}'s tensors and variable
+	 * are built from {@code len(xs)}, but a tensor is no primitive, whatever it was built from (wala/ML#451). Neither should
+	 * {@code layered}'s Keras layer be, whose units are {@code len(xs)}, but today it is. {@code summed}'s parameter is a list of tensors
+	 * at one call and {@code len(xs)} at the other, so the int's key is among the values its container reduction reads.
+	 */
+	@Test
+	public void testComputedScalarParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("scale", "scale_first")) {
+			Function function = findFunction(functions, name);
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		}
+
+		Function wrapped = findFunction(functions, "wrapped");
+		assertEquals("A tensor built from a computed int is no primitive.", FALSE, wrapped.getHasPrimitiveParameter());
+		assertEquals("wrapped has a tensor parameter.", TRUE, wrapped.getHasTensorParameter());
+		assertEquals("wrapped hybridizes (P1).", P1, wrapped.getPassingPrecondition());
+
+		// A computed int counts wherever a constant does, so `Box(len(xs))` is a primitive parameter as `Box(3)` is. `tf.function` keys
+		// such an object by its identity, and a trace reads the field's value at trace time, so a later change to it isn't seen.
+		Function boxed = findFunction(functions, "boxed");
+		assertEquals("boxed's program object, whose field holds a computed int, is a primitive parameter.", TRUE,
+				boxed.getHasPrimitiveParameter());
+		assertNotNull("boxed fails HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+
+		// TODO: Expect no primitive parameter once the engine identifies a Keras model or layer instance from the class hierarchy
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1047). A Keras model or layer, a library class or a
+		// program subclass of one, is exempt from primitive-field counting. The Keras layer classes are loaded where program classes are,
+		// so the loader test doesn't exclude them, and the units the layer stores read as a primitive field, as `Dense(3)`'s would.
+		Function layered = findFunction(functions, "layered");
+		assertEquals("layered's Keras layer, whose units are a computed int, reads as a primitive.", TRUE,
+				layered.getHasPrimitiveParameter());
+		assertNotNull("layered fails HAS_PRIMITIVE_PARAMETERS.", layered.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+
+		// The call passing `len(xs)` has its own calling context, in which `v` is only that int.
+		Function summed = findFunction(functions, "summed");
+		assertEquals("summed has a tensor parameter.", TRUE, summed.getHasTensorParameter());
+		assertEquals("summed has a primitive parameter.", TRUE, summed.getHasPrimitiveParameter());
+		assertNotNull("summed fails HAS_PRIMITIVE_PARAMETERS.", summed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 	}
 
 	/**
@@ -12375,23 +12412,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testComputedPrimitiveValuesUnchanged() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		Function g = findFunction(functions, "g");
-		assertFalse("g", g.isHybrid());
-		assertEquals("g has a tensor parameter.", TRUE, g.getHasTensorParameter());
-		assertEquals("g has a primitive parameter.", TRUE, g.getHasPrimitiveParameter());
-		assertNotNull("g fails HAS_PRIMITIVE_PARAMETERS.", g.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
-		assertFalse("g isn't converted.", g.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-
-		// FIXME: `f`'s loop-incremented `n` now has an instance key of its type (https://github.com/wala/ML/issues/1148), which the
-		// primitive-parameter check doesn't yet count as a primitive. So `f` reads as having no primitive parameter and is converted,
-		// although `n` takes six values, six traces under `tf.function`. Fixed by
-		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/pull/1179, which declines it again.
-		Function f = findFunction(functions, "f");
-		assertFalse("f", f.isHybrid());
-		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
-		assertEquals("Today, f reads as having no primitive parameter.", FALSE, f.getHasPrimitiveParameter());
-		assertNull("Today, f doesn't fail HAS_PRIMITIVE_PARAMETERS.", f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
-		assertTrue("Today, f is converted.", f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		for (String name : List.of("f", "g")) {
+			Function function = findFunction(functions, name);
+			assertFalse(name, function.isHybrid());
+			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
+			assertEquals(name + " has a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
+			assertNotNull(name + " fails HAS_PRIMITIVE_PARAMETERS.", function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+			assertFalse(name + " isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
 	}
 
 	/**
@@ -13672,13 +13700,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : Set.of("model_fn", "yolo", "model_fn_list", "model_fn_bn", "scale_op", "backbone", "convolutional", "upsample",
-				"head", "head_elem", "decode", "op_head", "upsample_bn")) {
+				"head", "head_elem", "op_head", "upsample_bn")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` is called with a Keras symbolic tensor.", TRUE, function.getHasKerasSymbolicArguments());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
 			assertNotNull("`" + name + "` fails with HAS_KERAS_SYMBOLIC_ARGUMENTS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS.getCode()));
 		}
+
+		// `decode`'s `i` is the `enumerate` index, a Python int the engine now represents by its type's key (wala/ML#1148), so `decode`
+		// has a primitive parameter. A function with one fails on it, so the Keras check isn't run for it.
+		Function decode = findFunction(functions, "decode");
+		assertEquals("`decode` has a primitive parameter.", TRUE, decode.getHasPrimitiveParameter());
+		assertNull("`decode` isn't checked for a Keras symbolic tensor.", decode.getHasKerasSymbolicArguments());
+		assertNull("`decode` does not convert.", decode.getPassingPrecondition());
+		assertNotNull("`decode` fails with HAS_PRIMITIVE_PARAMETERS.", decode.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 
 		for (String name : Set.of("upsample_eager", "head_eager")) {
 			Function function = findFunction(functions, name);
@@ -15393,10 +15429,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * which comes back as a tensor its caller cannot assign to; {@code returns_variable_pair} returns one inside a list of tuples;
 	 * {@code returns_tensor_array} returns a {@code tf.TensorArray} inside a tuple and a dictionary, which comes back as a tensor its
 	 * caller cannot write to; and {@code selects_keys}, which one call passes a dictionary of tensors and another a dictionary of
-	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword. Two more change
-	 * but are not yet detected, for the engine reasons their TODOs cite: {@code returns_variable_pairs} builds its list with {@code +=},
-	 * and {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary unchanged: {@code reads_variable} only
-	 * reads a variable, {@code stacks_tensor_array} returns its array stacked, and {@code selects_tensor_keys} is only passed tensors.
+	 * {@code tf.TensorSpec}s, raises on the latter call, as does {@code selects_keys_by_keyword}, passed them by keyword.
+	 * {@code returns_variable_pairs} returns a variable inside a list it builds with {@code +=}. One more changes but isn't yet detected,
+	 * for the engine reason its TODO cites: {@code Weights.map_weights} returns a Keras weight. Three controls cross the boundary
+	 * unchanged: {@code reads_variable} only reads a variable, {@code stacks_tensor_array} returns its array stacked, and
+	 * {@code selects_tensor_keys} is only passed tensors.
 	 */
 	@Test
 	public void testUncrossableBoundaryValues() throws Exception {
@@ -15416,10 +15453,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 		}
 
-		// TODO: Refuse this once Ariadne catalogs the elements `+=` appends to a list: https://github.com/wala/ML/issues/1069. Until then
-		// the appended tuple is held in a field that `m`'s object catalog does not name, so the walk does not see the returned variable.
+		// The tuple `+=` appends is held in a channel `m`'s object catalog doesn't name (https://github.com/wala/ML/issues/1069), but the
+		// engine lists that channel among the list's elements, so the walk sees the returned variable.
 		Function pairs = findFunction(functions, "returns_variable_pairs");
-		assertNull("`returns_variable_pairs`'s variable, appended with `+=`, is not yet seen.",
+		assertNull("`returns_variable_pairs` must not pass a precondition.", pairs.getPassingPrecondition());
+		assertNotNull("`returns_variable_pairs`'s variable, appended with `+=`, is seen.",
 				pairs.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
 		// TODO: Refuse this once Ariadne models a Keras weight as a variable rather than a tensor: https://github.com/wala/ML/issues/1068.
@@ -15464,13 +15502,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testReturnedPrimitiveShapeList() throws Exception {
 		Function function = getFunction("shape_list");
 
-		// TODO: Refuse this once Ariadne gives an element of `TensorShape.as_list()` a value: https://github.com/wala/ML/issues/1104.
-		// Until then the static elements' points-to set is empty, so the returned list holds only the dynamic tensor elements. The
-		// proposed model there represents such an element as a Python int of unknown value, or None, without a constant, and this check
-		// reads only constants, so refusing it also needs the check to recognize that unknown-int value.
-		assertFalse("`shape_list`'s static dimensions are not yet seen.", function.getReturnsPrimitive());
-		assertEquals("`shape_list` still hybridizes (P1).", P1, function.getPassingPrecondition());
-		assertNull("`shape_list` is not yet refused for a returned primitive.",
+		// An element of `x.shape.as_list()` is a Python int of unknown value (https://github.com/wala/ML/issues/1104), represented by the
+		// int type's key (wala/ML#1148). The comprehension stores it in the returned list, among the elements the engine lists for it.
+		assertTrue("`shape_list`'s static dimensions are seen.", function.getReturnsPrimitive());
+		assertTrue("`shape_list`'s result is used.", function.getHasUsedResults());
+		assertNull("`shape_list` must not pass a precondition.", function.getPassingPrecondition());
+		assertNotNull("`shape_list` fails with RETURNS_PYTHON_PRIMITIVE.",
 				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
 	}
 
@@ -15525,14 +15562,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`scaled` fails with RETURNS_PYTHON_PRIMITIVE.",
 				scaled.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
 
-		// TODO: Refuse these once Ariadne gives a computed Python scalar an abstract value: https://github.com/wala/ML/issues/805. Unlike
-		// `scaled`'s product, `len(xs)`, and the product computed from it, are computed at run time, so the returned value has no
-		// abstract value and the check doesn't see it.
-		for (String identifier : List.of("counted", "doubled_count")) {
+		// `len(xs)` is a Python int of unknown value, which the engine represents by the int type's key (wala/ML#1148).
+		Function counted = findFunction(functions, "counted");
+		assertTrue("`counted`'s computed scalar is seen.", counted.getReturnsPrimitive());
+		assertTrue("`counted`'s result is used.", counted.getHasUsedResults());
+		assertNull("`counted` must not pass a precondition.", counted.getPassingPrecondition());
+		assertNotNull("`counted` fails with RETURNS_PYTHON_PRIMITIVE.",
+				counted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+
+		// The product computed from `len(xs)` is a Python int of unknown value too, represented by the int type's key
+		// (https://github.com/wala/ML/issues/1149).
+		Function doubledCount = findFunction(functions, "doubled_count");
+		assertTrue("`doubled_count`'s computed scalar is seen.", doubledCount.getReturnsPrimitive());
+		assertTrue("`doubled_count`'s result is used.", doubledCount.getHasUsedResults());
+		assertNull("`doubled_count` must not pass a precondition.", doubledCount.getPassingPrecondition());
+		assertNotNull("`doubled_count` fails with RETURNS_PYTHON_PRIMITIVE.",
+				doubledCount.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+	}
+
+	/**
+	 * Pins a primitive returned as an element of a list built by {@code append}, concatenation or repetition for
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1117. The engine lists such an element among the list's
+	 * elements, though the list's catalog doesn't name the channel a concatenation or a repetition stores it under, so the check sees it.
+	 * Measured on TensorFlow 2.9.3, converted, {@code appended}, {@code concatenated} and {@code repeated} return their literal {@code 3},
+	 * and {@code appended_count} its {@code len(xs)}, as a tensor, so each caller's dictionary lookup raises
+	 * {@code TypeError: Tensor is unhashable}; eagerly, each is an {@code int}.
+	 */
+	@Test
+	public void testReturnedPrimitiveAppended() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("appended", "appended_count", "concatenated", "repeated")) {
 			Function function = findFunction(functions, identifier);
-			assertFalse("`" + identifier + "`'s computed scalar is not yet seen.", function.getReturnsPrimitive());
+			assertTrue("`" + identifier + "` may return a Python primitive.", function.getReturnsPrimitive());
 			assertTrue("`" + identifier + "`'s result is used.", function.getHasUsedResults());
-			assertEquals("`" + identifier + "` still hybridizes (P1).", P1, function.getPassingPrecondition());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with RETURNS_PYTHON_PRIMITIVE.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
 		}
 	}
 

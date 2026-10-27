@@ -1,6 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
@@ -801,10 +802,10 @@ public final class Parameter {
 		if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
 			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
 			return asin.concreteType().getReference();
-		} else if (instanceKey instanceof ConstantKey<?>) {
-			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			return constantKey.concreteType().getReference();
-		} else
+		} else if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
+			// A Python scalar of unknown value has one key per type, whose type is the scalar's (wala/ML#1148).
+			return instanceKey.concreteType().getReference();
+		else
 			throw new IllegalStateException("Not expecting: " + instanceKey.getClass());
 	}
 
