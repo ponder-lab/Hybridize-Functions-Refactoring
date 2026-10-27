@@ -12443,18 +12443,20 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// `tf.function` keys `Box(len(xs))` by its identity, so its field, a computed int, never causes a retrace, and it is no primitive
 		// parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
-		// TODO: A trace reads the field's value at trace time, so a field rewritten after tracing is read stale, and nothing refuses that
-		// now (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
+		// A trace reads the field's value at trace time, so a field rewritten after tracing is read stale, but `Box`'s field is set only in
+		// `__init__`, so `boxed` reads it live.
+		// TODO: Nothing refuses a stale read of a rewritten scalar field yet
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
 		Function boxed = findFunction(functions, "boxed");
 		assertEquals("boxed's program object is keyed by its identity, so its computed int field is no primitive.", FALSE,
 				boxed.getHasPrimitiveParameter());
 		assertNull("boxed doesn't fail HAS_PRIMITIVE_PARAMETERS.", boxed.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
-		// It's still not converted, though: no tensor computation is found in `x * box.n` when the field is the computed int, while
-		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant, converts.
-		// TODO: Expect conversion at P1 once the engine's scalar-operand test keeps the int key: https://github.com/wala/ML/issues/1161.
-		assertFalse("boxed isn't converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertNotNull("boxed fails NO_TENSOR_COMPUTATION.",
+		// `x * box.n` is a tensor computation when the field is the computed int (https://github.com/wala/ML/issues/1161), as it is in
+		// `testIdentityKeyedObjectParameter`'s `boxed`, whose field is a constant.
+		assertNull("boxed doesn't fail NO_TENSOR_COMPUTATION.",
 				boxed.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+		assertTrue("boxed is converted.", boxed.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("boxed hybridizes (P1).", P1, boxed.getPassingPrecondition());
 
 		// A Keras layer is no container, so `tf.function` keys it by its identity, and the units it stores, a computed int, are no
 		// primitive (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048).
