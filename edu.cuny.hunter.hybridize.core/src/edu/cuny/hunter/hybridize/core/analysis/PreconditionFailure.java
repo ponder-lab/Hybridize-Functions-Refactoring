@@ -386,7 +386,8 @@ public enum PreconditionFailure {
 	 * layer's {@code build} and of a built-in layer's first call alike. A call graph can't tell which call to a layer is its first, so a
 	 * function calling a layer that may already be built is refused too. A Keras model's {@code call} saves regardless, so a method whose
 	 * receiver the engine knows to be a model is exempt; one whose receiver is unknown is refused. A function that is no method runs inside
-	 * no layer's name scope, so it is exempt too. See {@link LayerBuildAnalysis}.
+	 * no layer's name scope, so it is exempt too. Neither is a {@code staticmethod} or {@code classmethod} helper on a nested layer
+	 * refused, as it has no {@code self} receiver. See {@link LayerBuildAnalysis}.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
 	 */
