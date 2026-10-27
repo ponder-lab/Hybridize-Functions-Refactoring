@@ -417,6 +417,16 @@ public enum PreconditionFailure {
 	RESHAPES_WITH_SCALAR_SHAPE(44),
 
 	/**
+	 * The hybrid function, or code it calls, calls an API that works only while a graph is being built, such as {@code tf.gradients} or an
+	 * optimizer's {@code get_gradients}. Removing the decorator runs the call eagerly, where it raises or returns {@code None} gradients,
+	 * so the function is kept hybrid. The engine names the APIs a call invokes; which of them are graph-only is HFR's policy. This is the
+	 * hybrid-to-eager counterpart of {@link #HAS_EAGER_ONLY_CALLS}. See {@link GraphOnlyCallAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171">Issue 1171</a>
+	 */
+	HAS_GRAPH_ONLY_CALLS(45),
+
+	/**
 	 * The function, or code it calls, may create a Keras layer's variables, as a layer's first call does when it builds the layer. Under
 	 * {@code tf.function}, the build runs inside the trace, outside the name scopes of the layers that enclose it, so sibling layers'
 	 * variables get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with

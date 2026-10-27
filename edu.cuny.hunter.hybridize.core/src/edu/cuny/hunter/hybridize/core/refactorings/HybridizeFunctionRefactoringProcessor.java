@@ -699,6 +699,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
 
+				// Check whether a hybrid function calls an API that works only while a graph is being built, which removing its decorator
+				// breaks (issue 1171). Only a hybrid function can be de-hybridized, so only it is checked; a transitive walk asking the
+				// engine which APIs each call invokes.
+				if (TRUE.equals(func.isHybrid()))
+					func.computeGraphOnlyCalls(callGraph, builder);
+
 				// Check whether the function may build a Keras layer, whose variables a trace would create outside the enclosing layers'
 				// name scopes (issue 1172). Same reachable region and gate; a transitive walk, through library nodes too, asking the
 				// engine which APIs each call invokes.
