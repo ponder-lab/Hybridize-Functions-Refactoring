@@ -7837,11 +7837,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This function has no parameters.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Each function has one primitive parameter. {@code f}'s is the same literal at its only call, so it isn't counted; {@code g}'s is a
+	 * different literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter2() throws Exception {
 		Function f = getFunction("f");
 		assertFalse("This function has one parameter.", f.getHasTensorParameter());
-		assertTrue("This function has one parameter.", f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertFalse("This function has one parameter.", g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	@Test
@@ -7851,11 +7859,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("This function has one (tensor) parameter.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Each function has one tensor parameter and one non-tensor parameter. {@code f}'s non-tensor argument is one literal at its only call,
+	 * so it isn't counted; {@code g}'s is a different literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter4() throws Exception {
 		Function f = getFunction("f");
 		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getHasTensorParameter());
-		assertTrue("This function has one tensor parameter and one non-tensor parameter.", f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("This function has one tensor parameter and one non-tensor parameter.", g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	@Test
@@ -7872,25 +7888,49 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("This function has one parameter with one tensor argument and one non-tensor argument.", f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * A tensor and an int argument. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different
+	 * literal at each of two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter7() throws Exception {
 		Function f = getFunction("f");
 		assertTrue(f.getHasTensorParameter());
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue(g.getHasTensorParameter());
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int passed through a module variable. {@code f} receives one variable holding one literal, so it isn't counted; {@code g} receives
+	 * two variables holding different literals, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter8() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
+	/**
+	 * An int passed through a module variable defined before the function. {@code f} receives one variable holding one literal, so it isn't
+	 * counted; {@code g} receives two variables holding different literals, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter9() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
 	@Test
@@ -7914,11 +7954,19 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getHasTensorParameter());
 	}
 
+	/**
+	 * A string argument. {@code f}'s is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at each of
+	 * two calls, so it is.
+	 */
 	@Test
 	public void testLikelyHasNonTensorParameter13() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
 		assertFalse(f.getHasTensorParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
+		assertFalse(g.getHasTensorParameter());
 	}
 
 	@Test
@@ -8031,22 +8079,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(f.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int beside a boolean. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at
+	 * each of two calls, beside the same boolean, so it is.
+	 */
 	@Test
 	public void testBooleanParameter3() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int beside a {@code False}. {@code f}'s int is one literal at its only call, so it isn't counted; {@code g}'s is a different
+	 * literal at each of two calls, beside the same boolean, so it is.
+	 */
 	@Test
 	public void testBooleanParameter4() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * An int alone. {@code f}'s is one literal at its only call, so it isn't counted; {@code g}'s is a different literal at each of two
+	 * calls, so it is.
+	 */
 	@Test
 	public void testBooleanParameter5() throws Exception {
 		Function f = getFunction("f");
-		assertTrue(f.getHasPrimitiveParameter());
+		assertFalse("Bound to one constant at every call, so it's exempt (#1025, #1109).", f.getHasPrimitiveParameter());
+
+		Function g = getFunction("g");
+		assertTrue("Called with two different constants, so it's a primitive parameter.", g.getHasPrimitiveParameter());
 	}
 
 	/**
@@ -8667,12 +8736,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getHasPrimitiveParameter());
 	}
 
+	/**
+	 * Functions called from pytest tests are analyzed. {@code func} is called with one literal, so its parameter isn't counted (#1025,
+	 * #1109); {@code func2} is called with two different literals, so it is a primitive parameter.
+	 */
 	@Test
 	public void testPytest() throws Exception {
 		Set<Function> functions = this.getFunctions("test_sample");
-		assertEquals(2, functions.size());
+		assertEquals(4, functions.size());
 		long count = functions.stream().filter(f -> f.getIdentifier().equals("func")).filter(Function::getHasPrimitiveParameter).count();
-		assertEquals(1, count);
+		assertEquals("`func`'s argument is one constant.", 0, count);
+		count = functions.stream().filter(f -> f.getIdentifier().equals("func2")).filter(Function::getHasPrimitiveParameter).count();
+		assertEquals("`func2`'s argument varies.", 1, count);
 	}
 
 	@Test
@@ -12263,7 +12338,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	/**
 	 * Issue 1025, reduced from tf-image's {@code _random_augmentations}: a hybrid function's primitive parameter that every call binds to
-	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, but P3 still de-hybridizes the function.
+	 * the same constant, a default its eager wrapper forwards, can't vary the trace key, so P3 doesn't de-hybridize the function.
 	 */
 	@Test
 	public void testInvariantPrimitiveForwardedDefault() throws Exception {
@@ -12272,17 +12347,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertTrue(function.isHybrid());
 		assertEquals("The tensor `image` is a tensor parameter.", TRUE, function.getHasTensorParameter());
-		// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars unrepresented,
-		// it can't (https://github.com/wala/ML/issues/805).
-		assertEquals("`prob_demanding_ops` is always 0.5, but it is a primitive parameter.", TRUE, function.getHasPrimitiveParameter());
-		assertTrue(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertEquals(P3, function.getPassingPrecondition());
+		assertEquals("`prob_demanding_ops` is always 0.5, so it isn't a primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+		assertFalse(function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertNotEquals(P3, function.getPassingPrecondition());
 	}
 
 	/**
 	 * Issue 1025, reduced from tf-image's {@code random_pad_to_square} under {@code @convert_type}. The primitive {@code max_extend} is
 	 * always its default, but the decorator's wrapper forwards it through {@code *args}, so the call reaching the function has an unpacked
-	 * argument at or before the parameter's slot, and P3 de-hybridizes the function.
+	 * argument at or before the parameter's slot, and P3 de-hybridizes the function. The parameter points to that one constant, but past
+	 * the unpack its points-to set needn't hold every value it receives, so it isn't exempt.
 	 */
 	@Test
 	public void testInvariantPrimitiveConvertTypeForwarding() throws Exception {
@@ -12298,8 +12372,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Issue 1025, reduced from VaDER's {@code _reconstruction_loss} and {@code _latent_loss}: the primitive arguments {@code K} and
-	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, but P3 still de-hybridizes both
-	 * methods. {@code output_activation} is a function object, not a primitive.
+	 * {@code eps} are instance state set once in the constructor, and every call passes those attributes, so they can't vary the trace key,
+	 * and P3 doesn't de-hybridize either method. {@code output_activation} is a function object, not a primitive.
 	 */
 	@Test
 	public void testInvariantPrimitiveInstanceAttributes() throws Exception {
@@ -12310,12 +12384,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertTrue(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			// TODO: Keep the decorator once the points-to set can show the value set complete. With computed Python scalars
-			// unrepresented, it can't (https://github.com/wala/ML/issues/805).
-			assertEquals(name + "'s primitive arguments are each one constant, but it has a primitive parameter.", TRUE,
+			assertEquals(name + "'s primitive arguments are each one constant, so it has no primitive parameter.", FALSE,
 					function.getHasPrimitiveParameter());
-			assertTrue(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-			assertEquals(name, P3, function.getPassingPrecondition());
+			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertNotEquals(name, P3, function.getPassingPrecondition());
 		}
 	}
 
@@ -12333,13 +12405,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 			assertFalse(name, function.isHybrid());
 			assertEquals(name + " has a tensor parameter.", TRUE, function.getHasTensorParameter());
-			// TODO: Convert once the points-to set can show the value set complete. With computed Python scalars unrepresented, it can't
-			// (https://github.com/wala/ML/issues/805).
+			// TODO: Convert once tuples with equal constant elements count as one value. Each caller passes its own tuple, a separate
+			// allocation, not a single constant, so the parameter isn't exempt
+			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1109).
 			assertEquals(name + "'s tuples of constants are fixed, but it has a primitive parameter.", TRUE,
 					function.getHasPrimitiveParameter());
 			assertNotNull(name, function.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
 			assertFalse(name, function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 		}
+	}
+
+	/**
+	 * Issue 1109, reduced from tf-eager-fasterrcnn's {@code bbox2delta} with scalar instance state: {@code bbox2delta}'s primitive
+	 * {@code std} is the same constant at every call, so it can't vary the trace key, and P1 converts the function. {@code offset} is the
+	 * control: its callers pass different constants, so it's still declined.
+	 */
+	@Test
+	public void testInvariantPrimitiveEagerScalars() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function bbox2delta = findFunction(functions, "bbox2delta");
+		assertFalse(bbox2delta.isHybrid());
+		assertEquals("bbox2delta has a tensor parameter.", TRUE, bbox2delta.getHasTensorParameter());
+		assertEquals("`std` is always 0.1, so it isn't a primitive parameter.", FALSE, bbox2delta.getHasPrimitiveParameter());
+		assertNull(bbox2delta.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertTrue(bbox2delta.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals(P1, bbox2delta.getPassingPrecondition());
+
+		Function offset = findFunction(functions, "offset");
+		assertFalse(offset.isHybrid());
+		assertEquals("offset has a tensor parameter.", TRUE, offset.getHasTensorParameter());
+		assertEquals("`amount` is 1.0 at one call and 2.0 at the other.", TRUE, offset.getHasPrimitiveParameter());
+		assertNotNull(offset.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(offset.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
+	 * Control for issues 1025 and 1109: {@code f}'s {@code n} is 0 at one call and each index of a {@code range} loop at the other, so it
+	 * varies, and it's still a primitive parameter.
+	 */
+	@Test
+	public void testRangeIndexPrimitive() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function f = findFunction(functions, "f");
+		assertEquals("f has a tensor parameter.", TRUE, f.getHasTensorParameter());
+		assertEquals("`n` varies over the loop, so it's a primitive parameter.", TRUE, f.getHasPrimitiveParameter());
+		assertNotNull(f.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertFalse(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 	}
 
 	/**
@@ -12486,10 +12599,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Control for issues 1025 and 1109: the analysis gives a computed Python scalar, the result of a binary operation, no abstract value
-	 * (wala/ML#805, wala/ML#398), so a value set merged with one keeps only its constant operands. {@code f}'s {@code n} is incremented in
-	 * a loop from 0 and points to 0 alone; {@code g}'s tuple has a computed second element whose field points to nothing. Each primitive
-	 * takes six values, six traces under {@code tf.function}, so it declines the function.
+	 * Control for issues 1025 and 1109: a computed Python scalar, the result of a binary operation, points to its type's key
+	 * (wala/ML#1149), not to a constant. {@code f}'s {@code n} is incremented in a loop from 0, and its computed values point to the
+	 * {@code int} key, so it isn't one constant and isn't exempt as an invariant primitive; {@code g}'s tuple has a computed second
+	 * element. Each primitive takes six values, six traces under {@code tf.function}, so it declines the function.
 	 */
 	@Test
 	public void testComputedPrimitiveValuesUnchanged() throws Exception {
@@ -12569,7 +12682,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * is undetermined: {@link Function#isSuppliedAtAnyCallSite} consults {@code PythonInvokeInstruction.getStarredPositions()} and reads
 	 * {@code null} rather than {@code FALSE}, so the defaulted-primitive exemption (which requires a definite {@code FALSE}) does not apply
 	 * and {@code combine} declines for {@code HAS_PRIMITIVE_PARAMETERS}. This is the corpus {@code compute_loss(pred, conv, *target[i], i)}
-	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable.
+	 * case; before the fix the parameter was wrongly read as unsupplied, exempted, and the function wrongly optimizable. Past the unpack,
+	 * {@code scale} points only to its default, one constant, though it receives the loop index, so the one-constant exemption (#1025,
+	 * #1109) must not apply either: it requires the argument to be aligned at every call site.
 	 */
 	@Test
 	public void testDefaultedPrimitiveAfterStarUnpackDeclines() throws Exception {
@@ -15030,10 +15145,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				reduce.getHasNumpyCallsOnParameters());
 		assertEquals("`reduce_tail` still hybridizes (P1).", P1, reduce.getPassingPrecondition());
 
-		// `einsum_via_matmul` takes a primitive parameter (`num_inner_dims`), so the numpy check is gated off (it fails on the literal
-		// regardless) and never runs: its result is left undetermined.
+		// `einsum_via_matmul`'s `num_inner_dims` is the literal 1 at its only call, so it isn't a primitive parameter (#1025, #1109), and
+		// the numpy check, no longer gated off by one, runs. Its numpy touches the same statically-known trailing dimension, so it isn't
+		// flagged.
 		Function einsum = getFunction("einsum_via_matmul");
-		assertNull("`einsum_via_matmul`'s numpy check is gated off by its primitive parameter.", einsum.getHasNumpyCallsOnParameters());
+		assertFalse("`einsum_via_matmul`'s `num_inner_dims` is one constant.", einsum.getHasPrimitiveParameter());
+		assertFalse("`einsum_via_matmul`'s numpy touches only a statically-known trailing shape dimension.",
+				einsum.getHasNumpyCallsOnParameters());
 	}
 
 	/**
@@ -16499,11 +16617,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// Control: a library summary whose element structure the analysis reads is an ordinary modeled container, and keeps its nested
 		// signature. The directory iterator's batch tuple in `testTensorTypedContainerParameter` is that case.
 
-		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension: its string parameter makes
-		// it a primitive-parameter function, so it is not hybridized and has no signature to get wrong.
+		// The shape of automl's `_iou_per_anchor`, fed slices of an unstacked list rebuilt by a comprehension. Its string parameter is the
+		// literal "iou" at its only call, so it isn't a primitive parameter (#1025, #1109), and the function is hybridized. Its list
+		// parameters receive slices of a list a TensorFlow operation returns, so, like the functions above, it gets no signature.
 		Function perAnchor = findFunction(functions, "per_anchor");
-		assertTrue("`per_anchor` has a primitive parameter.", perAnchor.getHasPrimitiveParameter());
-		assertFalse("`per_anchor` is not hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertFalse("`per_anchor`'s string argument is one constant.", perAnchor.getHasPrimitiveParameter());
+		assertTrue("`per_anchor` is hybridized.", perAnchor.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertFalse("`per_anchor` receives slices of a library list, so no signature describes it.",
+				perAnchor.getInferredInputSignature().isPresent());
+		assertEquals("`per_anchor` blocks on an unmodeled container.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				perAnchor.getInferredInputSignatureAbsenceReason());
 
 		// Controls: a tensor argument, an element of an unstacked list, and gpt-2's shape, a split unpacked by the caller with one element
 		// passed on, keep their flat signatures.
@@ -17441,5 +17565,52 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					function.getHasTensorParameterConstant());
 			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
 		}
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171: a hybrid function that calls an API that works only
+	 * while a graph is being built. Each function below but {@code double} has no parameters and no Python side effects, so P2 would
+	 * de-hybridize it. Measured on TensorFlow 2.9.3, each runs decorated and fails eagerly: {@code average_checkpoints._build_model},
+	 * reduced from OpenNMT-tf's {@code CheckpointTest.testCheckpointAveraging}, and {@code get_updates_step} with
+	 * {@code ValueError: Variable ... has None for gradient}, and {@code gradients_step}, {@code backend_gradients_step} and
+	 * {@code calls_gradients_helper}, through the helper it calls, with
+	 * {@code RuntimeError: tf.gradients is not supported when eager execution is enabled}. {@code compat_gradients_step} raises the same
+	 * through {@code tf.compat.v1.gradients}. The two {@code gradients_step} methods call {@code self.optimizer.get_gradients}, and fail
+	 * eagerly like {@code _build_model}: {@code InstanceOptimizerRegressor}'s model is compiled with an optimizer instance and is refused,
+	 * and {@code NamedOptimizerRegressor}'s with {@code optimizer="sgd"}, which is not yet caught. {@code double} calls none and
+	 * de-hybridizes.
+	 */
+	@Test
+	public void testGraphOnlyApiCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("average_checkpoints._build_model", "get_updates_step", "gradients_step", "backend_gradients_step",
+				"calls_gradients_helper", "compat_gradients_step", "InstanceOptimizerRegressor.gradients_step")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` is hybrid.", function.isHybrid());
+			assertTrue("`" + identifier + "` calls a graph-only API.", function.getHasGraphOnlyCalls());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_GRAPH_ONLY_CALLS.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_GRAPH_ONLY_CALLS.getCode()));
+			assertFalse("`" + identifier + "` is not de-hybridized.", function.getTransformations().contains(CONVERT_TO_EAGER));
+		}
+
+		// TODO: Refuse this once the engine gives an optimizer that `compile` receives by name a callee
+		// (https://github.com/wala/ML/issues/1154). Until then the stored string has no `get_gradients`, so the call names no API, and the
+		// method de-hybridizes, though it fails eagerly as the instance spelling does.
+		Function named = findFunction(functions, "NamedOptimizerRegressor.gradients_step");
+		assertFalse("Today, `NamedOptimizerRegressor.gradients_step` calls no graph-only API the engine names.",
+				named.getHasGraphOnlyCalls());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` de-hybridizes (P2).", P2, named.getPassingPrecondition());
+		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER),
+				named.getTransformations());
+
+		Function helper = findFunction(functions, "gradients_of_square");
+		assertNull("The eager helper `gradients_of_square` is not checked.", helper.getHasGraphOnlyCalls());
+
+		Function plain = findFunction(functions, "double");
+		assertFalse("`double` calls no graph-only API.", plain.getHasGraphOnlyCalls());
+		assertEquals("`double` de-hybridizes (P2).", P2, plain.getPassingPrecondition());
+		assertEquals("`double` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER), plain.getTransformations());
 	}
 }

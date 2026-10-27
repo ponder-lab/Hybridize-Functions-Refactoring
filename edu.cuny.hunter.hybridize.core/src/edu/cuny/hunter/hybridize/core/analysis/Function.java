@@ -1463,6 +1463,13 @@ public class Function {
 	private Boolean hasEagerOnlyCalls;
 
 	/**
+	 * True iff this hybrid {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), so that removing its decorator breaks it. {@code null} when it could not be determined, in which
+	 * case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171.
+	 */
+	private Boolean hasGraphOnlyCalls;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises
 	 * under {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the
 	 * precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
@@ -2220,11 +2227,21 @@ public class Function {
 	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
 	 * The failure gives the rule's own reason for keeping the decorator. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * <p>
+	 * A function that calls a graph-only API ({@link #getHasGraphOnlyCalls()}) is kept hybrid with
+	 * {@link PreconditionFailure#HAS_GRAPH_ONLY_CALLS} before either, whichever hybrid-to-eager rule selected the conversion, since running
+	 * the call eagerly breaks it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171).
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
 	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
-		if (this.getHybridizationParameters().hasInputSignatureParam())
+		if (TRUE.equals(this.getHasGraphOnlyCalls()))
+			// Calls an API that works only while a graph is being built, which eagerly raises or returns None gradients (issue 1171).
+			// A safety failure, so it holds whatever the rule that would have de-hybridized the function.
+			this.addFailure(PreconditionFailure.HAS_GRAPH_ONLY_CALLS,
+					"Can't de-hybridize a function that calls an API that works only while a graph is being built, such as tf.gradients "
+							+ "or an optimizer's get_gradients; eagerly, it raises or returns None gradients.");
+		else if (this.getHybridizationParameters().hasInputSignatureParam())
 			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
@@ -2326,6 +2343,48 @@ public class Function {
 	 */
 	public Boolean getHasEagerOnlyCalls() {
 		return this.hasEagerOnlyCalls;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), storing the result for {@link #getHasGraphOnlyCalls()}. When the function has no call-graph node,
+	 * the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes.
+	 */
+	public void computeGraphOnlyCalls(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " calls a graph-only API.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " calls a graph-only API without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it calls a graph-only API if any of them does.
+		GraphOnlyCallAnalysis analysis = new GraphOnlyCallAnalysis(callGraph, builder);
+		this.hasGraphOnlyCalls = nodes.stream().anyMatch(analysis::callsGraphOnlyApi);
+
+		LOG.info(this + (this.hasGraphOnlyCalls ? " calls a graph-only API." : " calls no graph-only APIs."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built, {@code null} if
+	 * undetermined.
+	 *
+	 * @return True iff a call of a graph-only API is reachable from this function; null if undetermined.
+	 */
+	public Boolean getHasGraphOnlyCalls() {
+		return this.hasGraphOnlyCalls;
 	}
 
 	/**
@@ -5080,7 +5139,9 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+						&& !(isInvariantPrimitive(paramInx, nodes, pointerAnalysis)
+								&& this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -5096,6 +5157,96 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the parameter at the given IR parameter index is bound to one constant at every call, and so is exempt from
+	 * {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and from {@link PreconditionSuccess#P3}: in every calling context, its points-to
+	 * set is exactly one {@link ConstantKey}, the same one in each. Such a value can't vary the trace key, so it induces no retracing
+	 * (#1025, #1109). A computed Python scalar points to the engine's key for its type (wala/ML#1148, wala/ML#1149), not to a constant, so
+	 * a value that changes between calls, such as a loop counter, isn't exempt. A context in which the parameter points to nothing isn't
+	 * exempt either, since its value there is unknown.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}, one per calling context.
+	 * @param pointerAnalysis The {@link PointerAnalysis} for the given nodes.
+	 * @return True iff the parameter points to the same single {@link ConstantKey} in every one of the given nodes.
+	 */
+	private static boolean isInvariantPrimitive(int irParamIndex, Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		InstanceKey constant = null;
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (irParamIndex >= ir.getNumberOfParameters())
+				return false;
+
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(irParamIndex));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			if (pointsToSet.size() != 1)
+				return false;
+
+			InstanceKey instanceKey = pointsToSet.iterator().next();
+
+			if (!(instanceKey instanceof ConstantKey<?>) || constant != null && !constant.equals(instanceKey))
+				return false;
+
+			constant = instanceKey;
+		}
+
+		return constant != null;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} binds the parameter at the given IR parameter index to an argument the
+	 * analysis aligns, so that its points-to set holds every value it receives. The supply state of the parameter, as
+	 * {@link #isSuppliedAtAnyCallSite} computes it, must be determined at each call site: a starred (unpacked) positional argument at or
+	 * before the parameter's slot, unless the call names the parameter by keyword, makes the alignment past it undetermined (wala/ML#751),
+	 * and the parameter may then receive a value its points-to set doesn't show, such as a loop index forwarded through {@code *args}. A
+	 * call site that can't be examined, a parameter that can't be mapped to a positional {@link Parameter}, and a function with no call
+	 * site are undetermined too.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @return True iff the parameter's argument is aligned at every call site, and there is at least one.
+	 */
+	private boolean isArgumentAlignedAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		if (parameter.isKeywordOnly() || parameter.isSelf() || parameter.getIndex() != declarationIndex)
+			return false;
+
+		int positionalSlot = parameter.getIndex() + 1;
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null)
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						sawCallSite = true;
+
+						if (!invoke.getKeywords().contains(parameter.getName()) && hasStarredArgumentAtOrBefore(invoke, positionalSlot))
+							return false;
+					}
+			}
+
+		return sawCallSite;
 	}
 
 	/**

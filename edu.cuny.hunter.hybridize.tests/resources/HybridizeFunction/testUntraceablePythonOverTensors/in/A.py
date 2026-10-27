@@ -134,6 +134,7 @@ for f in (
 static_none(tf.constant([1.0, 2.0, 3.0]))
 local_in_branch(t)
 primitive_branch(t, 0)
+primitive_branch(t, 1)
 local_after_join(tf.constant([1.0, 2.0]))
 mask_or_none(tf.ones([2, 3]))
 mask_or_none(tf.ones([2, 3]), tf.constant([1, 2]))
