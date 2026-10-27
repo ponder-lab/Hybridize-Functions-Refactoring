@@ -652,6 +652,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeEagerDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis());
 
+				// Check whether an element of a NumPy argument is combined with a value of another dtype (issue 1111). Same reachable
+				// region and gate; a caller-side origin query per parameter, and a body scan only for a parameter passed an array.
+				if (barrenCouldDecide)
+					func.computeNumpyElementDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis(), tensorTypedKeys);
+
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder);
@@ -685,6 +690,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// reachable region and gate; a def-use walk over the function and the user functions it calls.
 				if (barrenCouldDecide)
 					func.computeShapeValueAcrossBoundary(callGraph, builder, tensorTypedKeys);
+
+				// Check whether the function reshapes with a shape that may be a scalar, which graph shape inference rejects (issue 1170).
+				// Same reachable region and gate; a transitive walk asking the engine which APIs each call invokes and the rank of a
+				// reshape's shape operand.
+				if (barrenCouldDecide)
+					func.computeReshapesWithScalarShape(callGraph, builder, analysis);
 
 				// Check whether the function reads a tensor or a Python scalar from a field another function rebinds (issues 1076 and
 				// 1048). Same reachable region and gate; a ref query per instruction of the reader's closure and a memoized mod query per
