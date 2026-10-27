@@ -384,7 +384,33 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169">Issue 1169</a>
 	 */
-	HAS_TENSOR_PARAMETER_CONSTANT(42);
+	HAS_TENSOR_PARAMETER_CONSTANT(42),
+
+	/**
+	 * A call site passes a parameter a NumPy array, and the body combines an element of it, read by a subscript, with a value of another
+	 * dtype at an operation that converts its operands, such as a comparison or an arithmetic operator. Eagerly the element is a NumPy
+	 * scalar, which the operation converts to the other operand's dtype; under {@code tf.function} the array crosses the boundary as a
+	 * tensor of its own dtype, and the operation rejects the element with a {@code TypeError}. No input signature repairs this, since one
+	 * casting the array to the imposed dtype changes every other read of it. Whether the argument is an array is Ariadne's fact, the NumPy
+	 * producing-library origin of the value the call site passes, so an element of a tensor's {@code numpy()} result counts. An element
+	 * read by unpacking, such as {@code h, w = shape}, is not covered: the engine doesn't yet tell a destructuring read from an attribute
+	 * read (https://github.com/wala/ML/issues/1117).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111">Issue 1111</a>
+	 */
+	HAS_NUMPY_ELEMENT_DTYPE_COERCIONS(43),
+
+	/**
+	 * The function, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0, such as {@code tf.reshape(t, -1)}.
+	 * Eagerly, TensorFlow's {@code Reshape} kernel accepts a scalar shape; in a graph, its shape inference requires a rank-1 shape operand,
+	 * so the converted function raises {@code ValueError: Shape must be rank 1 but is rank 0} on its first trace. The engine gives the
+	 * operand's rank, and only an operand that may be rank 0 refuses, so one that is a scalar on some path and a vector on another is
+	 * refused too. An operand of unknown rank, such as one behind a starred argument, is not refused. See
+	 * {@link ScalarShapeReshapeAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
+	 */
+	RESHAPES_WITH_SCALAR_SHAPE(44);
 
 	static {
 		// check that the codes are unique.
