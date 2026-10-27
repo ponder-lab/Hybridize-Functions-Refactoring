@@ -913,21 +913,27 @@ public class Util {
 		return false;
 	}
 
+	/**
+	 * Returns true iff the given type is a built-in Python container in the engine's element model: a list, tuple, set, dict or
+	 * {@code enumerate} object, as {@link PythonTypes#isContainer(TypeReference)} decides.
+	 *
+	 * @param reference The type in question.
+	 * @return True iff the engine counts the type as a container.
+	 */
 	public static boolean isContainerType(TypeReference reference) {
-		return reference.equals(PythonTypes.dict) || reference.equals(PythonTypes.enumerate) || reference.equals(PythonTypes.list)
-				|| reference.equals(PythonTypes.set) || reference.equals(PythonTypes.tuple);
+		return PythonTypes.isContainer(reference);
 	}
 
 	/**
-	 * Returns true iff the given type is a positionally-indexed Python sequence: a list or tuple. The subset of
-	 * {@link #isContainerType(TypeReference)} whose elements the nested-spec reduction can model positionally; dicts, sets, and
-	 * {@code enumerate} objects are containers but not sequences (#781).
+	 * Returns true iff the given type is a positionally-indexed Python sequence: a list or tuple, as
+	 * {@link PythonTypes#isSequence(TypeReference)} decides. The subset of {@link #isContainerType(TypeReference)} whose elements the
+	 * nested-spec reduction can model positionally; dicts, sets, and {@code enumerate} objects are containers but not sequences (#781).
 	 *
 	 * @param reference The type in question.
 	 * @return True iff the type is {@code list} or {@code tuple}.
 	 */
 	public static boolean isSequenceType(TypeReference reference) {
-		return reference.equals(PythonTypes.list) || reference.equals(PythonTypes.tuple);
+		return PythonTypes.isSequence(reference);
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
